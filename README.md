@@ -54,6 +54,10 @@ ray-tracing pipeline, which settles the embedding approach; it lives in
 rather than crates.io (`Cargo.lock` pins the revision) — that fork is where
 **Solari**, Bevy's real-time raytraced lighting, is being built, and the goal is
 running it live in a tool used all day, on a real desktop with real windows.
+ Building
+that fork costs more than the rest of the workspace together, so it is behind a
+Cargo feature that is off by default — `TT_BEVY=1 bun run dev`, or `--features
+bevy` ([docs/COMMANDS.md](docs/COMMANDS.md#the-bevy-feature)).
 
 ## The two surfaces
 

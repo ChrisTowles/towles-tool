@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       vt_or_app: ${{ steps.filter.outputs.vt_or_app }}
+      bevy: ${{ steps.filter.outputs.bevy }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -48,9 +49,22 @@ jobs:
               - 'crates-tauri/tt-app/**'
               # tt-jarvis and tt-pane are excluded from the plain `rust` job
               # (GTK dev-deps, Bevy from a git fork), so the GTK-provisioned
-              # `rust-tauri` job is their ONLY coverage. Leaving them out of
+              # `rust-app` job is their ONLY coverage. Leaving them out of
               # this filter would mean a change touching only those crates ran
               # no Rust CI at all.
+              - 'crates/tt-jarvis/**'
+              - 'crates-tauri/tt-pane/**'
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/ci.yml'
+            # Compiling Bevy from its git fork is the single most expensive
+            # thing this workflow can do, and the `bevy` feature is off by
+            # default precisely so it normally doesn't happen. This narrower
+            # filter is what turns it back on: only a change that can actually
+            # affect the renderer pays for one. Deliberately *not* including
+            # tt-app — nothing there is conditional on the feature.
+            bevy:
               - 'crates/tt-jarvis/**'
               - 'crates-tauri/tt-pane/**'
               - 'Cargo.lock'
@@ -98,16 +112,23 @@ jobs:
       #
       # crates/tt-jarvis and crates-tauri/tt-pane are excluded for the same
       # class of reason. tt-jarvis is Tauri-free and so *looks* like it belongs
-      # here, but its dev-dependencies pull in gtk for the cadence benchmark, so
-      # `--all-targets` needs glib-2.0/GTK system libs this runner does not
-      # install; it also builds Bevy from a git fork, which dominates the job's
-      # wall-clock. tt-pane needs both GTK and Tauri. Both are covered by the
-      # `rust-tauri` job, which provisions webkit2gtk/GTK.
+      # here, but its dev-dependencies pull in gtk for the cadence benchmark —
+      # and dev-dependencies cannot be optional — so `--all-targets` needs
+      # glib-2.0/GTK system libs this runner does not install. tt-pane needs both
+      # GTK and Tauri. Both are covered by the `rust-app` job, which provisions
+      # webkit2gtk/GTK.
       - name: rustfmt
         run: cargo fmt --check
 
       - name: clippy
         run: cargo clippy --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
+
+      # tt-jarvis as it is actually built everywhere else: `bevy` off, which
+      # leaves the frame-time maths and no fork to compile. Only the library, so
+      # none of the GTK dev-deps that keep it out of the step above are needed —
+      # seconds, and it is the one place this default configuration is linted.
+      - name: clippy (tt-jarvis, no renderer)
+        run: cargo clippy -p tt-jarvis -- -D warnings
 
       - name: test
         run: cargo test --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
@@ -373,18 +394,21 @@ jobs:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
         run: cargo test --profile ci -p tt-app --no-default-features
 
-      # The native Bevy pane. Excluded from the plain `rust` job because
-      # tt-jarvis's dev-dependencies need GTK (the cadence benchmark) and it
-      # builds Bevy from a git fork — but this job already provisions GTK *and*
-      # already compiles Bevy transitively via tt-app -> tt-pane -> tt-jarvis,
-      # so covering them here is nearly free and keeps them from having no lint
-      # coverage at all.
+      # The native Bevy pane, with the renderer switched on — the only place in
+      # CI that compiles Bevy. tt-app above no longer does: its `bevy` feature is
+      # off by default, so the steps before this one build the whole shell
+      # without the fork. That makes these two steps the entire cost, hence the
+      # `changes.bevy` gate: a PR that cannot affect the renderer skips them and
+      # the fork never gets built. Excluded from the plain `rust` job for the
+      # separate reason that tt-jarvis's cadence-benchmark dev-deps need GTK.
       - name: clippy (native pane)
+        if: needs.changes.outputs.bevy == 'true'
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo clippy --profile ci -p tt-jarvis -p tt-pane --all-targets -- -D warnings
+        run: cargo clippy --profile ci -p tt-jarvis -p tt-pane --features tt-jarvis/bevy,tt-pane/bevy --all-targets -- -D warnings
 
       - name: test (native pane)
+        if: needs.changes.outputs.bevy == 'true'
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo test --profile ci -p tt-jarvis -p tt-pane
+        run: cargo test --profile ci -p tt-jarvis -p tt-pane --features tt-jarvis/bevy,tt-pane/bevy

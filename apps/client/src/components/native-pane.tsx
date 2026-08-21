@@ -18,12 +18,10 @@ export function NativePane({
   paneId,
   className,
   visible = true,
-  fallback,
 }: {
   paneId: string;
   className?: string;
   visible?: boolean;
-  fallback?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const lastRect = useRef<CssRect | null>(null);
@@ -114,7 +112,7 @@ export function NativePane({
     <div ref={ref} className={cn("relative overflow-hidden bg-black/40", className)}>
       {unavailable !== null && (
         <div className="flex h-full items-center justify-center p-3 text-center text-xs text-muted-foreground">
-          {fallback ?? unavailable}
+          {unavailable}
         </div>
       )}
     </div>

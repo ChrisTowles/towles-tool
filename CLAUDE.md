@@ -18,11 +18,14 @@ bun run e2e                         # regression suite vs the real shell
 cd apps/client && bun run lint      # oxlint  (`bun run format` for oxfmt)
 ```
 
-`clippy --all`/`test --all` need zig, webkit2gtk/GTK and a Bevy fork; without
-those prereqs use CI's variant, and **a new crate needing GTK must be added to
-both its `--exclude` list and the `vt_or_app` paths-filter in
-`.github/workflows/ci.yml`, or it silently gets no Rust CI**. Full list, flags
-and Linux gotchas: **[docs/COMMANDS.md](docs/COMMANDS.md)**. The binary is
+`clippy --all`/`test --all` need zig and webkit2gtk/GTK; without those prereqs
+use CI's variant, and **a new crate needing GTK must be added to both its
+`--exclude` list and the `vt_or_app` paths-filter in `.github/workflows/ci.yml`,
+or it silently gets no Rust CI**. **Bevy is behind an off-by-default `bevy`
+feature** that `tt-jarvis`/`tt-pane`/`tt-app` forward down — nothing builds the
+fork unless asked (`TT_BEVY=1 bun run dev`, `--features bevy`), and CI compiles
+it only when those two crates change. Full list, flags and Linux gotchas:
+**[docs/COMMANDS.md](docs/COMMANDS.md)**. The binary is
 **`tt`** — the `ttr` cutover was hard ([docs/CUTOVER.md](docs/CUTOVER.md)).
 
 **`comment-budget` is the one gate on comment sprawl**, per-surface in

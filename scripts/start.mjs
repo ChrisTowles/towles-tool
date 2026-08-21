@@ -9,6 +9,7 @@ import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { SpawnFailed } from "./errors.mjs";
+import { withBevyFeature } from "./task-port.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -49,7 +50,7 @@ if (install.error || install.status !== 0) {
 
 const build = spawnSync(
   "tauri",
-  ["build", ...bundleArgs],
+  withBevyFeature(["build", ...bundleArgs]),
   { stdio: "inherit", cwd: repoRoot, shell: process.platform === "win32" },
 );
 // A build that ran and failed already printed why; one that never launched

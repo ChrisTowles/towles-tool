@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Bevy scene rendered into a surface it did not create — the native embedded pane"
 
-# Excluded from the default CI workspace build (like tt-vt/tt-app): bevy is a
-# very large dependency and a cold build dominates CI wall-clock. See the
-# `--exclude tt-jarvis` note in CLAUDE.md's Commands section.
+# Still excluded from the plain `rust` CI job even with `bevy` off: the cadence
+# benchmark's dev-dependencies pull gtk in unconditionally on Linux, and
+# dev-dependencies cannot be made optional. Coverage is the `rust-app` job.
 
 [dependencies]
 # NOTE: no direct `wgpu` dependency on purpose. We never name a wgpu type — the
@@ -14,7 +14,9 @@ description = "Bevy scene rendered into a surface it did not create — the nati
 # here could put a second major in the tree, which would make two incompatible
 # `RawWindowHandle` graphs and break the foreign-surface handoff. Let bevy own
 # wgpu entirely.
-raw-window-handle = "0.6.2"
+raw-window-handle = { version = "0.6.2", optional = true }
+# Not optional: `stats` is percentile maths with no Bevy in it, and stays
+# compiled — and unit-tested — with the `bevy` feature off.
 serde = { workspace = true }
 
 # Bevy comes from **slyedoc's Solari fork**, not crates.io — see the Solari
@@ -22,6 +24,7 @@ serde = { workspace = true }
 # Cargo.lock pins the exact revision, and `cargo update -p bevy` moves us onto
 # newer work deliberately rather than silently.
 [dependencies.bevy]
+optional = true
 git = "https://github.com/slyedoc/bevy"
 branch = "solari-rt-pipeline"
 default-features = false
@@ -70,6 +73,16 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 gtk = "0.18"
 
 [features]
+# The renderer itself, and **off by default**. Bevy builds from a git fork and a
+# cold build of it dominates everything else in this workspace, while the pane it
+# feeds is off by default in the product too (`agentboard.jarvisPane`). With this
+# off the crate is `stats` alone and no Bevy enters the graph, so an ordinary
+# build — local or CI — never pays for it. Reach it through `tt-pane`/`tt-app`'s
+# feature of the same name, or directly:
+#
+#   cargo build -p tt-jarvis --features bevy
+bevy = ["dep:bevy", "dep:raw-window-handle"]
+
 # Opt-in gate for the harnesses that need Wayland/GTK.
 #
 # Their dependencies are already `cfg(target_os = "linux")`-scoped, but the
@@ -82,7 +95,14 @@ gtk = "0.18"
 #
 # Without this, `cargo test -p tt-jarvis --all-targets` on a Mac breaks on a
 # crate whose library half is perfectly portable.
-linux-harness = []
+linux-harness = ["bevy"]
+
+# `gate_report` is deliberately absent: it reads the harness's JSONL through
+# `stats` alone, so it builds — and stays lint-covered — with Bevy out of the
+# graph.
+[[example]]
+name = "bench_standalone"
+required-features = ["bevy"]
 
 [[example]]
 name = "bench_subsurface"

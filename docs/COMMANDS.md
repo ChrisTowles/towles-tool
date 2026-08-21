@@ -54,9 +54,10 @@ job trades its OIDC id-token for a short-lived credential, so no token is stored
 here. That trust can only be configured against a package that already exists,
 so a **new** npm name is published by hand once.
 
-`clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), `tt-app` and
-`tt-pane` (need webkit2gtk/GTK), and `tt-jarvis` (GTK dev-deps for its
-benchmark, plus Bevy from a git fork — minutes of cold build). Without those
+`clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), and `tt-app`,
+`tt-pane` and `tt-jarvis` (webkit2gtk/GTK — for `tt-jarvis` only its cadence
+benchmark's dev-deps, which `--all-targets` builds anyway). Bevy is *not* among
+the costs: it sits behind the off-by-default `bevy` feature. Without those
 prereqs, use CI's variant:
 
 ```sh
@@ -64,7 +65,7 @@ cargo clippy --workspace --exclude tt-vt --exclude tt-app \
   --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
 ```
 
-Those four are covered by CI's GTK-provisioned `rust-tauri` job instead, and
+Those four are covered by CI's GTK-provisioned `rust-app` job instead, and
 that job is path-gated — **a new crate needing GTK must be added to both the
 `--exclude` list and the `vt_or_app` paths-filter in `.github/workflows/ci.yml`,
 or it silently gets no Rust CI at all.**
@@ -139,11 +140,30 @@ the app to look at (CLI-only, docs-only, crate-internal refactors with no
 
 ## The CI variant of the Rust checks
 
-`cargo clippy --all` / `cargo test --all` build `tt-vt` (needs zig 0.15.x),
-`tt-app` and `tt-pane` (webkit2gtk/GTK) and `tt-jarvis` (Bevy from a git fork).
-Without those prerequisites installed, use CI's variant, which excludes exactly
-those four.
+`cargo clippy --all` / `cargo test --all` build `tt-vt` (needs zig 0.15.x) and
+`tt-app`, `tt-pane`, `tt-jarvis` (webkit2gtk/GTK). Without those prerequisites
+installed, use CI's variant, which excludes exactly those four.
 
 **A new crate needing GTK must be added to both that `--exclude` list and the
 `vt_or_app` paths-filter in `.github/workflows/ci.yml`**, or it silently gets no
 Rust CI at all.
+
+## The `bevy` feature
+
+Bevy builds from a git fork and a cold build of it dwarfs everything else here,
+so **the renderer is behind a Cargo feature that is off by default** —
+`tt-jarvis`, `tt-pane` and `tt-app` each declare a `bevy` feature and forward it
+down that chain. Off, `tt-pane` compiles the same stub it already uses off
+Linux: the commands stay registered and `pane_attach` reports the pane
+unsupported, so `agentboard.jarvisPane` errors rather than drawing.
+
+```sh
+TT_BEVY=1 bun run dev               # or bun start / bun run dev:drive
+cargo build -p tt-app --features bevy
+cargo clippy -p tt-jarvis -p tt-pane --features tt-jarvis/bevy,tt-pane/bevy --all-targets -- -D warnings
+```
+
+CI compiles the fork in exactly one place — the `rust-app` job's two "native
+pane" steps — and only when a change can affect it (`crates/tt-jarvis/**`,
+`crates-tauri/tt-pane/**`, or a workspace/lockfile/toolchain file). Every other
+job, and every release build, is Bevy-free.

@@ -4,31 +4,31 @@
 //! frame callback, so driving it from a GTK tick would starve the webview. That splits
 //! ownership, load-bearingly: the **main thread** owns the Wayland proxies — creation,
 //! position, visibility, teardown — while the **render thread** owns the Bevy `App` and
-//! swapchain, taking [`PaneRect`](tt_jarvis::surface::PaneRect) over a channel.
+//! swapchain, taking `tt_jarvis::surface::PaneRect` over a channel.
 //!
 //! Teardown happens once, at exit: dropping a `Pane` stops the render thread and *joins
 //! it* before releasing the subsurface (frames-in-flight). Nothing drops one while the
 //! app runs — dropping a Bevy app takes the process with it — so panes are retired
-//! ([`PaneHost::detach`]). Linux-only; elsewhere [`PaneHost`] is a stub.
+//! ([`PaneHost::detach`]). Linux-only, and behind the off-by-default `bevy` feature.
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 use std::sync::mpsc::{self, Sender};
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 use std::sync::Mutex;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 use std::thread::JoinHandle;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 use tt_jarvis::surface::PaneRect;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 pub mod wayland;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 mod render;
 
 #[derive(Debug, thiserror::Error)]
@@ -49,7 +49,7 @@ impl From<PaneError> for String {
 
 /// A rect as the frontend measures it: CSS pixels, relative to the window's client
 /// area. Converted to physical pixels here so the rounding decision lives on one side
-/// of the wire — [`PaneRect::from_css`](tt_jarvis::surface::PaneRect::from_css).
+/// of the wire — `tt_jarvis::surface::PaneRect::from_css`.
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct CssRect {
     pub x: f64,
@@ -67,7 +67,7 @@ pub struct PaneInfo {
 }
 
 /// What the main thread sends the render thread.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 enum RenderMsg {
     Resize(PaneRect),
     /// Stop presenting and park until [`RenderMsg::Resume`]. Deliberately
@@ -79,7 +79,7 @@ enum RenderMsg {
 }
 
 /// One embedded pane.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 pub struct Pane {
     surface: wayland::Subsurface,
     tx: Sender<RenderMsg>,
@@ -87,7 +87,7 @@ pub struct Pane {
     rect: PaneRect,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 impl Pane {
     /// The single home of the hide sequence: park the renderer first, then move the
     /// surface, or a mid-flight frame lands in the position being vacated.
@@ -109,7 +109,7 @@ impl Pane {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 impl Drop for Pane {
     fn drop(&mut self) {
         // The one real teardown path, and it runs only at shutdown — see
@@ -121,11 +121,11 @@ impl Drop for Pane {
     }
 }
 
-/// Process-wide pane registry, keyed by the frontend's pane id. Fieldless off Linux,
-/// where [`PaneHost::attach`] can only fail.
+/// Process-wide pane registry, keyed by the frontend's pane id. Fieldless in a stub
+/// build, where [`PaneHost::attach`] can only fail.
 #[derive(Default)]
 pub struct PaneHost {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "bevy"))]
     panes: Mutex<Vec<(String, Pane)>>,
 }
 
@@ -139,11 +139,12 @@ impl PaneHost {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", feature = "bevy")))]
 mod unsupported {
-    //! macOS/Windows are not wired yet. The macOS design (an `NSView` with a
-    //! `CAMetalLayer` above the `WKWebView`) has never run on a Mac, and drawing
-    //! nothing silently would be worse than reporting it missing.
+    //! Every build without a renderer: macOS/Windows, and Linux with the `bevy`
+    //! feature off. The macOS design (an `NSView` with a `CAMetalLayer` above the
+    //! `WKWebView`) has never run on a Mac, and drawing nothing silently would be
+    //! worse than reporting it missing — as true of a build that left Bevy out.
     use super::*;
 
     impl PaneHost {
@@ -155,7 +156,7 @@ mod unsupported {
             _scale: f64,
         ) -> Result<PaneInfo, PaneError> {
             Err(PaneError::Unsupported(
-                "the native Bevy pane is currently Linux/Wayland only".into(),
+                "needs Linux/Wayland and a build with the `bevy` Cargo feature".into(),
             ))
         }
 
@@ -171,7 +172,7 @@ mod unsupported {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "bevy"))]
 impl PaneHost {
     /// Create the pane's surface and start its renderer. Idempotent per id: a
     /// strict-mode double-mount cannot spawn two renderers against one rectangle, and

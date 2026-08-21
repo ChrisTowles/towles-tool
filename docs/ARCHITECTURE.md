@@ -76,8 +76,10 @@ the CLI and the app can consume it.
 - `tt-vt` — libghostty-vt terminal-state engine behind the canvas terminals.
   Needs zig 0.15.x; see [`crates/tt-vt/CLAUDE.md`](../crates/tt-vt/CLAUDE.md).
 - `tt-jarvis` — the **native pane**: Bevy rendering into a surface it did not
-  create, opt-in and off by default. Nothing takes a pane down while the app
-  runs, and that is deliberate: **[NATIVE-PANE.md](NATIVE-PANE.md)**.
+  create, opt-in and off by default — at build time too, behind the `bevy`
+  Cargo feature this crate, `tt-pane` and `tt-app` all forward
+  ([COMMANDS.md](COMMANDS.md#the-bevy-feature)). Nothing takes a pane down while
+  the app runs, and that is deliberate: **[NATIVE-PANE.md](NATIVE-PANE.md)**.
 - `tt-browser` — Chrome as a supervised child driven over CDP, behind the
   **Chrome pane**. The profile is the app's own and starts empty: the feature is
   login persistence, never an import of the user's Chrome profile. Shutdown goes

@@ -10,7 +10,7 @@ description = "Embeds tt-jarvis's Bevy renderer in a native surface inside the T
 
 [dependencies]
 tauri = { workspace = true }
-tt-jarvis = { path = "../../crates/tt-jarvis" }
+tt-jarvis = { path = "../../crates/tt-jarvis", features = ["bevy"], optional = true }
 tracing = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
@@ -18,8 +18,17 @@ thiserror = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 # Must match the gtk that `tauri` links (0.18) — `gtk_window()` hands us its
 # types, so a second gtk major in the tree would not typecheck.
-gtk = "0.18"
-wayland-client = "0.31"
+gtk = { version = "0.18", optional = true }
+wayland-client = { version = "0.31", optional = true }
+
+[features]
+# The renderer, and **off by default** — the one switch that decides whether
+# Bevy is in the build at all. Off, this crate is the same stub it already
+# compiles to off Linux: the four commands stay registered and `attach` reports
+# the pane unsupported, which is what the frontend already handles. `tt-app`
+# forwards a feature of the same name; see `crates/tt-jarvis/Cargo.toml` for why
+# the default is off.
+bevy = ["dep:tt-jarvis", "dep:gtk", "dep:wayland-client"]
 
 [lints]
 workspace = true

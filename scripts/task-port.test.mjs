@@ -15,6 +15,7 @@ import {
   taskEnvName,
   resolveWebdriverPort,
   killPort,
+  withBevyFeature,
 } from "./task-port.mjs";
 
 /**
@@ -323,4 +324,34 @@ test(
 test("killPort is a no-op when nothing is listening", { skip: process.platform === "win32" }, async () => {
   const port = await findEphemeralFreePort();
   await assert.doesNotReject(() => killPort(port));
+});
+
+// The `bevy` feature is off in every build that doesn't ask, so the default has
+// to stay the untouched argv — and asking must not drop `wdio`, which dev:drive
+// already passes through the same one flag.
+test("withBevyFeature leaves argv alone unless TT_BEVY asks", () => {
+  const argv = ["dev", "--features", "wdio"];
+  for (const value of [undefined, "0", "false", ""]) {
+    withCleanEnv(["TT_BEVY"], () => {
+      if (value !== undefined) process.env.TT_BEVY = value;
+      assert.deepEqual(withBevyFeature(argv), argv);
+    });
+  }
+});
+
+test("withBevyFeature merges into an existing --features rather than repeating it", () => {
+  withCleanEnv(["TT_BEVY"], () => {
+    process.env.TT_BEVY = "1";
+    assert.deepEqual(withBevyFeature(["dev", "--features", "wdio"]), [
+      "dev",
+      "--features",
+      "wdio,bevy",
+    ]);
+    assert.deepEqual(withBevyFeature(["build", "--no-bundle"]), [
+      "build",
+      "--no-bundle",
+      "--features",
+      "bevy",
+    ]);
+  });
 });

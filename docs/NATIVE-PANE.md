@@ -25,7 +25,15 @@ it.
 **Opt-in, off by default** while it's a proof-of-concept
 (`agentboard.jarvisPane`; the cube button in the rail header, or Settings →
 Agentboard) — one switch for both surfaces: off, the rail strip isn't
-rendered and the folder header offers no `jarvis` button. `visible={false}`
+rendered and the folder header offers no `jarvis` button. Off at *build*
+time too: the renderer is behind a `bevy` Cargo feature that `tt-jarvis`,
+`tt-pane` and `tt-app` each declare and forward down, and it is off by
+default because compiling the fork costs more than the rest of the
+workspace together. Without it `tt-pane` is the same stub it compiles to
+off Linux — the commands stay registered and `pane_attach` reports the pane
+unsupported, so the settings toggle errors instead of drawing. Build it in
+with `TT_BEVY=1 bun run dev` or `--features bevy`
+([COMMANDS.md](COMMANDS.md#the-bevy-feature)). `visible={false}`
 is the *only* way to get a shown pane out of the way of DOM that must
 appear over it (a screen switch): the surface composites above the webview,
 so no ancestor's `hidden` reaches it.
@@ -47,7 +55,8 @@ be gone and isn't looks exactly like a stale screenshot.
 
 Bevy comes from **`slyedoc/bevy@solari-rt-pipeline` (0.20.0-dev)**. Keep it
 there — tracking that fork is the goal, and `Cargo.lock` pins the revision
-so builds stay reproducible. Bevy accepts a foreign surface through public
+so builds stay reproducible; the feature gate above decides whether it is
+built, never which revision. Bevy accepts a foreign surface through public
 API with no renderer fork; `surface.rs`'s module docs explain how, and are
 the place to read before changing it.
 
