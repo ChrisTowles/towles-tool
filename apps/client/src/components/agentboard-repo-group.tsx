@@ -468,7 +468,7 @@ export function RepoGroup({
                       ? () => onRecreateWorktree(folder)
                       : undefined
                   }
-                          onOpenFiles={() => onOpenFiles(folder.dir)}
+                  onOpenFiles={() => onOpenFiles(folder.dir)}
                   onOpenPreview={() => onOpenPreview(folder.dir)}
                   onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
                   onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}

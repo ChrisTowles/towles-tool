@@ -343,6 +343,97 @@ describe("linkAt (paths)", () => {
   });
 });
 
+/** A TUI's own hard wrap: no soft-wrap flag, content stopping on the box edge
+ * its gutter implies, and the continuation re-indented behind that gutter.
+ * Geometry taken from a real 62-column Claude Code capture (edge cols-3,
+ * gutter 2), scaled to COLS. */
+describe("linkAt (hard-wrapped TUI output)", () => {
+  const GUTTER = 2;
+  const EDGE = COLS - 1 - GUTTER;
+
+  /** `head` ends flush on the box edge; `tail` resumes behind the gutter. */
+  function boxWrap(head: string, tail: string) {
+    return [row(head, EDGE - head.length + 1), row(tail, GUTTER)];
+  }
+
+  it("joins a path Claude Code broke mid-token at its box edge", () => {
+    const head = "/home/u/repo/deeply/nested/dir/";
+    const tail = "sub/some-file-name.ts";
+    const lines = boxWrap(head, tail);
+    expect(lines[0].runs[0].x + head.length - 1).toBe(EDGE);
+
+    const link = pathAt(lines, COLS, EDGE - 4, 0);
+    expect(link?.path).toBe(head + tail);
+    expect(link?.segments).toEqual([
+      { y: 0, start: EDGE - head.length + 1, end: EDGE },
+      { y: 1, start: GUTTER, end: GUTTER + tail.length - 1 },
+    ]);
+  });
+
+  it("resolves the same whole path from the continuation row", () => {
+    const head = "/home/u/repo/deeply/nested/dir/";
+    const tail = "sub/some-file-name.ts";
+    const lines = boxWrap(head, tail);
+    expect(pathAt(lines, COLS, GUTTER + 3, 1)?.path).toBe(head + tail);
+  });
+
+  it("joins a URL broken at the box edge", () => {
+    const head = "https://example.com/a/b/c/d/";
+    const tail = "e/f/page.html";
+    expect(urlAt(boxWrap(head, tail), COLS, EDGE, 0)?.url).toBe(head + tail);
+  });
+
+  it("leaves a word-boundary wrap alone: it stops short of the edge", () => {
+    const head = "/home/u/repo/deeply/nested/dir/";
+    const lines = [row(head, EDGE - head.length - 2), row("sub/some-file.ts", GUTTER)];
+    expect(linkAt(lines, COLS, EDGE - 4, 0)).toBeNull();
+  });
+
+  it("will not glue two short tokens that merely meet at the edge", () => {
+    // wrap-ansi only splits a token too wide for a line of its own, so `the`
+    // would have moved down whole — the next row's path stands on its own.
+    const lines = boxWrap("the", "/tmp/x.ts");
+    expect(linkAt(lines, COLS, EDGE, 0)).toBeNull();
+    expect(pathAt(lines, COLS, GUTTER + 2, 1)?.path).toBe("/tmp/x.ts");
+  });
+
+  it("joins a message body, whose right pad is zero", () => {
+    // Claude Code's assistant body runs to cols-1 while its input box stops at
+    // cols-3; only the gutter is constant, so the edge is derived from it.
+    const head = "/home/u/repo/deeply/nested/dir/";
+    const tail = "sub/some-file.ts";
+    const lines = [row(head, COLS - head.length), row(tail, GUTTER)];
+    const link = pathAt(lines, COLS, COLS - 4, 0);
+    expect(link?.path).toBe(head + tail);
+    expect(link?.segments).toEqual([
+      { y: 0, start: COLS - head.length, end: COLS - 1 },
+      { y: 1, start: GUTTER, end: GUTTER + tail.length - 1 },
+    ]);
+  });
+
+  it("refuses an unindented continuation: that is a raw dump, not a box", () => {
+    const head = "/home/u/repo/deeply/nested/dir/";
+    const lines = [row(head, COLS - head.length), row("sub/some-file.ts")];
+    expect(linkAt(lines, COLS, COLS - 4, 0)).toBeNull();
+    expect(pathAt(lines, COLS, 2, 1)?.path).toBe("sub/some-file.ts");
+  });
+
+  it("merges an OSC 8 hyperlink the emitter reopened after the break", () => {
+    const uri = "file:///home/u/repo/deeply/nested/dir/sub/file.ts&line=3";
+    const lines = [
+      { runs: [{ x: EDGE - 9, width: 10, text: "dir/sub/fi", link: uri }] },
+      { runs: [{ x: GUTTER, width: 5, text: "le.ts", link: uri }] },
+    ];
+    const link = pathAt(lines, COLS, EDGE - 2, 0);
+    expect(link?.path).toBe("/home/u/repo/deeply/nested/dir/sub/file.ts");
+    expect(link?.line).toBe(3);
+    expect(link?.segments).toEqual([
+      { y: 0, start: EDGE - 9, end: EDGE },
+      { y: 1, start: GUTTER, end: GUTTER + 4 },
+    ]);
+  });
+});
+
 describe("linkLabel", () => {
   it("renders a URL as-is and a path with its line", () => {
     expect(linkLabel({ kind: "url", url: "https://x.dev", segments: [] })).toBe("https://x.dev");
