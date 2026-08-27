@@ -44,11 +44,7 @@ export function JarvisPane({
           </IconBtn>
         }
       />
-      <NativePane
-        paneId={jarvisPaneId(folder.dir)}
-        visible={visible}
-        className="min-h-0 flex-1"
-      />
+      <NativePane paneId={jarvisPaneId(folder.dir)} visible={visible} className="min-h-0 flex-1" />
     </div>
   );
 }
