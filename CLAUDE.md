@@ -40,8 +40,10 @@ else's build.
 
 **Verifying UI/IPC changes — drive the real app**, never a bare browser or the
 mock dev server: `bun run dev:drive` plus a `drive` verb (`shot` is blind to the
-native pane — use `winshot`), or `bun run e2e` for pass/fail. A screenshot that
-looks right is not proof the render was clean: every verb prints a console-error
+native pane — use `winshot`), or `bun run e2e` for pass/fail — both need the
+singleton free, so an app already up for this checkout fails `e2e` with a
+WebDriver-never-ready error that reads like a crash. A screenshot that looks
+right is not proof the render was clean: every verb prints a console-error
 summary, and React reports bad markup only at runtime. **After a task that
 touches the app, leave `bun start` running for Chris.**
 
@@ -56,7 +58,8 @@ background agents) are **not** tasks; nothing here renders or removes them.
 The rules that bite: **the main checkout is load-bearing** (every task's git
 state lives in its `.git`); **one branch per task, named after it**; **ports come
 from the rendered `.env`**, never hardcoded; **never touch sibling task
-directories**, since other agents work there concurrently; and **attribute a
+directories**, since other agents work there concurrently — one sharing *this*
+checkout may even commit your tree, so check `git log` first; and **attribute a
 running process to its worktree before acting on it** (`readlink
 /proc/<pid>/cwd` — a bare `pkill -f "tauri dev"` hits every task, which
 `.claude/hooks/guard-task-pkill.sh` rejects). "The MCP tools aren't there" means

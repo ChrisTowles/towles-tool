@@ -40,3 +40,11 @@ output (DEC mode 2026, used by TUIs to batch redraws) is honored with a
 **bounded** hold: a stuck or misbehaving TUI that never closes the
 synchronized-output block can't freeze a pane forever, since the hold caps
 out and flushes anyway.
+
+## Verifying against a real program
+
+Capture the program's bytes from a correctly-sized pty and replay them
+through an `Engine`, rather than hand-writing escape sequences — a guess at
+a TUI's box geometry is usually wrong. Claude Code hard-wraps its own text,
+so the soft-wrap bit is never set on any of its rows, and it pads 0 columns
+right in the message body, 1 in the user echo and 2 in the input box.
