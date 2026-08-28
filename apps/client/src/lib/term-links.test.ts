@@ -411,6 +411,26 @@ describe("linkAt (hard-wrapped TUI output)", () => {
     ]);
   });
 
+  it("joins a path spanning three rows, its middle row one whole token", () => {
+    // The shape from a real report: the path outruns two rows, so the middle
+    // row is nothing but path, gutter to edge.
+    const head = "/home/u/deep-dir-name/";
+    const mid = "x".repeat(COLS - GUTTER); // gutter to the last column
+    const tail = "-and-the-rest/file.txt";
+    const lines = [row(head, COLS - head.length), row(mid, GUTTER), row(tail, GUTTER)];
+    expect(lines[1].runs[0].x + mid.length - 1).toBe(COLS - 1);
+
+    const link = pathAt(lines, COLS, COLS - 4, 0);
+    expect(link?.path).toBe(head + mid + tail);
+    expect(link?.segments).toEqual([
+      { y: 0, start: COLS - head.length, end: COLS - 1 },
+      { y: 1, start: GUTTER, end: COLS - 1 },
+      { y: 2, start: GUTTER, end: GUTTER + tail.length - 1 },
+    ]);
+    // and from the middle row, which touches neither end of the path
+    expect(pathAt(lines, COLS, COLS / 2, 1)?.path).toBe(head + mid + tail);
+  });
+
   it("refuses an unindented continuation: that is a raw dump, not a box", () => {
     const head = "/home/u/repo/deeply/nested/dir/";
     const lines = [row(head, COLS - head.length), row("sub/some-file.ts")];
