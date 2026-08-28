@@ -88,10 +88,8 @@ export function TerminalView({
   onExit: (exit: TermExit) => void;
   /** OSC 0/2. Claude Code emits `✳ <title>`, which the rail uses as its label. */
   onTitle?: (termId: string, title: string) => void;
-  /** Absent, links open via `term_open_path` in the preferred editor. */
   onOpenPath?: (path: string, line: number | null) => void;
-  /** Bump to focus this pane's hidden input, for the paths that jump into a
-   * terminal without a click on its canvas. Absent/unchanged does nothing. */
+  /** Bump to focus this pane's hidden input; absent/unchanged does nothing. */
   focusRequest?: number;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -110,7 +108,6 @@ export function TerminalView({
   const openPathInEditorRef = useRef(openPathInEditor);
   openPathInEditorRef.current = openPathInEditor;
 
-  // The canvas paints from `searchRef`; `bridgeRef` hands the overlay its IPC.
   const searchRef = useRef<{ matches: SearchMatch[]; current: number }>({
     matches: [],
     current: -1,
@@ -125,11 +122,8 @@ export function TerminalView({
     selectAll: () => void;
     hasSelection: () => boolean;
     clearScrollback: () => void;
-    /** Open a path link in the preferred editor (resolved against the cwd). */
     openPath: (link: Extract<TermLink, { kind: "path" }>) => void;
-    /** The link under a canvas pixel (right-click point), or null. */
     linkAtPoint: (offsetX: number, offsetY: number) => TermLink | null;
-    /** Re-measure the cell grid at a new terminal font size (px), in place. */
     setFontSize: (px: number) => void;
   } | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -149,7 +143,6 @@ export function TerminalView({
     void invoke("term_paste", { termId, text, force: true });
   };
   const copyOnSelectRef = useCopyOnSelect();
-  // Whether board-wide shortcuts yield instead of going to the shell.
   const shortcutsWorkInTerminalRef = useShortcutsWorkInTerminal();
   // Ref'd so the key handler reads it live: re-running that effect would
   // restart the shell.
@@ -242,17 +235,13 @@ export function TerminalView({
       cursor: null as Cursor | null,
       modes: { altScreen: false, mouseTracking: false },
       scrolledBack: false,
-      /** URL under the mouse — underlined and Ctrl/Cmd-clickable. */
       hoveredLink: null as TermLink | null,
-      /** Absolute row of the viewport top — maps search matches to viewport
-       * rows, and converts pointer cells to the absolute rows `term_select`
-       * speaks. */
+      /** Absolute row of the viewport top — the frame search matches and
+       * pointer cells convert into, which is what `term_select` speaks. */
       viewportTop: 0,
-      /** Scrollback depth, which is also the largest `viewportTop` can get
-       * (they are equal at the live bottom) — the clamp an optimistic scroll
-       * predicts against. */
+      /** Scrollback depth, and so the largest `viewportTop` can get — the
+       * clamp an optimistic scroll predicts against. */
       scrollbackRows: 0,
-      /** A selection is installed, wherever it currently sits. */
       selection: false,
     };
 
@@ -281,8 +270,7 @@ export function TerminalView({
         ctx.globalAlpha = flags & FAINT ? 0.6 : 1;
         setFont(flags);
         if (isWideRun(run)) {
-          // One fillText per grapheme cluster: combining marks and emoji
-          // selectors compose instead of shifting the grid.
+          // One fillText per grapheme cluster, so combining marks compose.
           let cx = px;
           for (const cluster of graphemeClusters(run.text)) {
             ctx.fillText(cluster, cx, y * cellH + baseline);
@@ -301,8 +289,7 @@ export function TerminalView({
             ctx.stroke();
           };
           if (flags & UNDERLINE) {
-            // SGR 58 falls back to the glyph color; the 4:x variants are what
-            // nvim/helix diagnostics emit.
+            // SGR 58 falls back to the glyph color; 4:x is what nvim emits.
             ctx.strokeStyle = run.ulc !== undefined ? rgb(run.ulc) : fg;
             const uy = y * cellH + baseline + 2;
             switch (run.ul) {
@@ -453,8 +440,7 @@ export function TerminalView({
       }
       for (const row of frame.changed)
         grid.lines[row.y] = { runs: row.runs, wrapped: row.wrapped, sel: row.sel };
-      // Changed text under a hovered link: drop it rather than underline stale
-      // cells; the next mousemove re-detects.
+      // Changed text under a hovered link: the next mousemove re-detects.
       if (
         grid.hoveredLink &&
         (frame.full ||
@@ -502,15 +488,14 @@ export function TerminalView({
     };
     fitCanvas();
 
-    // StrictMode double-mounts in dev: `disposed` stops the stale mount from
-    // starting a second shell, `started` stops it killing one it didn't spawn.
+    // StrictMode double-mounts in dev: `disposed` stops a second shell,
+    // `started` stops the stale mount killing one it didn't spawn.
     let disposed = false;
     let started = false;
     const unlisteners: (() => void)[] = [];
     const disposers: (() => void)[] = [];
 
     void (async () => {
-      // Outside Tauri there is no PTY bridge; note it instead of throwing.
       if (!("__TAURI_INTERNALS__" in window)) {
         ctx.fillStyle = theme.fg;
         setFont(0);
@@ -570,11 +555,9 @@ export function TerminalView({
           scroll(null);
         }
       };
-      // The engine encodes against live terminal state (kitty, DECCKM, keypad
-      // mode) — the view never builds escapes.
+      // Encoded against live terminal state — the view never builds escapes.
       const sendKey = (event: KeyEventWire) => void invoke("term_key", { termId, event });
-      // The engine strips paste-bracket escapes and answers needsConfirm for a
-      // multi-line paste on a bare shell.
+      // needsConfirm answers a multi-line paste on a shell without brackets.
       const paste = (text: string) => {
         backToLive();
         void invoke<{ needsConfirm: boolean }>("term_paste", { termId, text }).then((reply) => {
@@ -592,47 +575,65 @@ export function TerminalView({
         });
       };
 
+      // A chord we answer sends no press, so it owes no release — under kitty
+      // REPORT_EVENTS a lone release is still bytes. Keyed by `code`, which
+      // outlives the modifier changing `key`.
+      const swallowedKeys = new Set<string>();
+
+      // WebKitGTK raises its own paste event for a keydown we already answered,
+      // handing the shell \x16 — zsh's quoted-insert — just before the pasted
+      // bytes, where it eats the opening ESC and strands a literal `^[[200~`.
+      let keydownHandledAt = 0;
+      const GESTURE_MS = 100;
+
+      const swallow = (e: KeyboardEvent) => {
+        e.preventDefault();
+        swallowedKeys.add(e.code);
+        keydownHandledAt = Date.now();
+      };
+
       const onKeyDown = (e: KeyboardEvent) => {
         if (e.isComposing) return;
-        // Board-wide actions bubble instead of becoming a control byte —
-        // encodeKey ignores shift on Ctrl combos, so Ctrl+Shift+N sends Ctrl+N.
-        if (shortcutsWorkInTerminalRef.current && matchesEditableOverride(e)) return;
+        // Board-wide actions bubble rather than become a control byte.
+        if (shortcutsWorkInTerminalRef.current && matchesEditableOverride(e)) {
+          swallowedKeys.add(e.code);
+          return;
+        }
         // The search chord is ours (plain Ctrl+F stays with the shell).
         if (matchesShortcut("term-search", e)) {
-          e.preventDefault();
+          swallow(e);
           setSearchOpen(true);
           return;
         }
         if (isCopyChord(e)) {
-          e.preventDefault();
+          swallow(e);
           copySelection();
           return;
         }
         if (isPasteChord(e)) {
-          e.preventDefault();
+          swallow(e);
           pasteClipboard();
           return;
         }
         // Font zoom is ours, not the shell's. Numpad emits `+`/`-`, hence both.
         if ((e.ctrlKey || e.metaKey) && !e.altKey) {
           if (e.key === "=" || e.key === "+") {
-            e.preventDefault();
+            swallow(e);
             setTerminalFontSizeRef.current(clampTerminalFontSize(fontSizeRef.current + 1));
             return;
           }
           if (e.key === "-" || e.key === "_") {
-            e.preventDefault();
+            swallow(e);
             setTerminalFontSizeRef.current(clampTerminalFontSize(fontSizeRef.current - 1));
             return;
           }
           if (e.key === "0") {
-            e.preventDefault();
+            swallow(e);
             setTerminalFontSizeRef.current(DEFAULT_TERMINAL_FONT_SIZE);
             return;
           }
         }
-        // These drive the scrollback, except on the alternate screen where a
-        // TUI owns them and the unshifted key is forwarded instead.
+        // Ours, except on the alternate screen where the TUI owns them.
         const scrollback = scrollbackKey(e);
         if (scrollback) {
           e.preventDefault();
@@ -650,6 +651,9 @@ export function TerminalView({
             });
             return;
           }
+          // Ours alone here; the branch above forwarded a press, so it owes
+          // the matching release.
+          swallowedKeys.add(e.code);
           const page = Math.max(1, grid.rows - 1);
           switch (scrollback) {
             case "page-up":
@@ -674,6 +678,7 @@ export function TerminalView({
         const wire = keyEventWire(e);
         if (wire) {
           e.preventDefault();
+          keydownHandledAt = Date.now();
           // A bare modifier press must not yank a scrolled-back viewport down.
           if (!MODIFIER_KEYS.has(e.key)) backToLive();
           sendKey(wire);
@@ -682,21 +687,26 @@ export function TerminalView({
       // Only kitty REPORT_EVENTS cares; the engine no-ops these otherwise.
       const onKeyUp = (e: KeyboardEvent) => {
         if (e.isComposing) return;
+        if (swallowedKeys.delete(e.code)) return;
         const wire = keyEventWire(e, "release");
         if (wire) sendKey(wire);
       };
       const onPaste = (e: ClipboardEvent) => {
         e.preventDefault();
-        // An image has no getData("text"), so the paste would vanish. \x16 tells
-        // a TUI to read it off the clipboard itself.
-        const items = e.clipboardData ? Array.from(e.clipboardData.items) : [];
-        if (items.some((it) => it.type.startsWith("image/"))) {
-          backToLive();
-          write("\x16");
+        // Ctrl+V already went to the shell, or Ctrl+Shift+V already pasted.
+        if (Date.now() - keydownHandledAt < GESTURE_MS) return;
+        const text = e.clipboardData?.getData("text");
+        // \x16 tells a TUI to read an image off the clipboard itself, but only
+        // when there is no text: sent ahead of one it is zsh's quoted-insert.
+        if (!text) {
+          const items = e.clipboardData ? Array.from(e.clipboardData.items) : [];
+          if (items.some((it) => it.type.startsWith("image/"))) {
+            backToLive();
+            write("\x16");
+          }
           return;
         }
-        const text = e.clipboardData?.getData("text");
-        if (text) paste(text);
+        paste(text);
       };
       // IME: composed text arrives on compositionend, not keydown.
       const onComposed = (e: CompositionEvent) => {
@@ -712,9 +722,8 @@ export function TerminalView({
             : Math.round(e.deltaY / cellH) || Math.sign(e.deltaY);
         if (lines === 0) return;
         const cell = cellOf(e);
-        // Shift means "this gesture is mine, not the program's" — the same
-        // override the click path applies, and the only way into scrollback
-        // while a program holds mouse tracking open.
+        // Shift claims the gesture from the program — the same override the
+        // click path applies, and the only way into a tracked scrollback.
         void invoke("term_wheel", { termId, x: cell.x, y: cell.y, lines, shift: e.shiftKey });
       };
       const focusInput = () => input.focus({ preventScroll: true });
@@ -728,11 +737,9 @@ export function TerminalView({
         copy: copySelection,
         paste: pasteClipboard,
         selectAll: () => void select("all"),
-        // The engine's answer, not `grid.lines`: a selection scrolled out of
-        // the viewport highlights no row while still being copyable.
+        // The engine's answer: a selection off-viewport is still copyable.
         hasSelection: () => grid.selection,
         clearScrollback: () => void invoke(TERM_CLEAR_COMMAND, { termId }),
-        // `onOpenPath` when the parent wired one, else the external editor.
         openPath: (link) => {
           const handler = onOpenPathRef.current;
           if (handler) handler(link.path, link.line);
@@ -743,8 +750,7 @@ export function TerminalView({
           const y = Math.max(0, Math.min(grid.rows - 1, Math.floor(offsetY / cellH)));
           return linkAt(grid.lines, grid.cols, x, y);
         },
-        // Re-measure in place — no shell restart — and resize the PTY if
-        // cols/rows changed for the same pixel box.
+        // Re-measure in place — no shell restart — and resize the PTY.
         setFontSize: (px) => {
           if (px === fontPx) return;
           fontPx = px;
@@ -769,8 +775,7 @@ export function TerminalView({
       // Reconcile if the persisted size loaded after this effect measured.
       if (fontPx !== fontSizeRef.current) bridgeRef.current.setFontSize(fontSizeRef.current);
 
-      // The pending selection IPC, so copy-on-select can await it before
-      // `term_copy` reads — those calls are otherwise unordered.
+      // Awaited by copy-on-select: `term_copy` is otherwise unordered.
       let lastSelect: Promise<unknown> = Promise.resolve();
       const select = (kind: "all" | "clear") => {
         lastSelect = invoke("term_select", { termId, kind });
@@ -789,9 +794,8 @@ export function TerminalView({
         });
         return lastSelect;
       };
-      // Measured off the canvas rect rather than `offsetX/offsetY`, so the
-      // same function serves events on the canvas, on the padded host (the
-      // wheel), and on the window (a drag that left the pane).
+      // Off the canvas rect, not `offsetX/offsetY`, so this also serves the
+      // padded host (the wheel) and the window (a drag that left the pane).
       const pointOf = (e: MouseEvent) => {
         const rect = canvas.getBoundingClientRect();
         return { x: (e.clientX - rect.left) / cellW, y: (e.clientY - rect.top) / cellH };
@@ -803,15 +807,12 @@ export function TerminalView({
           y: Math.max(0, Math.min(grid.rows - 1, Math.floor(p.y))),
         };
       };
-      // Whether a left-drag gesture is ours (vs. forwarded to the program).
       let dragging = false;
-      // A tracking program gets wheel, motion, middle and plain left clicks —
-      // never left drags or word/line gestures, which stay local selection. So
-      // a left press waits for mouseup to know which it was.
+      // A tracking program gets wheel, motion, middle and plain left clicks,
+      // never drags or word gestures — so a left press waits for mouseup.
       const mouseToProgram = (e: MouseEvent) =>
         grid.modes.mouseTracking && !grid.scrolledBack && !e.shiftKey;
-      // A held-back left press owed to the program if no drag develops, plus
-      // the *viewport* cell to replay it at — not the anchor's space.
+      // Owed to the program if no drag develops, at its *viewport* cell.
       let clickToProgram = false;
       let pressCell: { x: number; y: number } | null = null;
       const MOUSE_BUTTONS = ["left", "middle", "right"] as const;
@@ -864,8 +865,7 @@ export function TerminalView({
       };
       const onMouseMove = (e: MouseEvent) => {
         const cell = cellOf(e);
-        // Motion during a forwarded gesture, or hover under mode 1003. Deduped
-        // to cell granularity.
+        // Forwarded gesture or mode 1003 hover, deduped to cell granularity.
         if (mouseGestureToProgram || (!dragging && mouseToProgram(e))) {
           if (lastMotionCell?.x !== cell.x || lastMotionCell?.y !== cell.y) {
             lastMotionCell = cell;
@@ -873,15 +873,12 @@ export function TerminalView({
           }
           if (mouseGestureToProgram) return;
         }
-        // A drag is tracked on the window instead (see `onWindowMouseMove`),
-        // so it survives the pointer leaving the canvas.
+        // A drag tracks on the window, surviving the pointer leaving here.
         if (!dragging) setHoveredLink(linkAt(grid.lines, grid.cols, cell.x, cell.y));
       };
-      // Every pooled pane hears this; `dragging` is what says the drag is ours.
       const onWindowMouseMove = (e: MouseEvent) => {
         if (!dragging) return;
-        // A mouseup swallowed elsewhere (another app grabbed the pointer)
-        // would otherwise leave the gesture — and its autoscroll — running.
+        // A mouseup swallowed elsewhere would leave autoscroll running.
         if (e.buttons === 0) {
           onMouseUp(e);
           return;
@@ -903,8 +900,7 @@ export function TerminalView({
         clickToProgram = false;
         pressCell = null;
         void pointer("release", e).then(() => {
-          // No dedup needed: a completed gesture is discrete, and `term_copy`
-          // writes nothing when it left no selection (a plain click clears).
+          // `term_copy` writes nothing when the gesture left no selection.
           if (copyOnSelectRef.current) void copySelection();
           if (owed) {
             sendMouse(e, "press", owed);
@@ -916,7 +912,12 @@ export function TerminalView({
       // OSC 52 writes are gated to the focused terminal in the backend.
       const setFocus = (focused: boolean) => void invoke("term_focus", { termId, focused });
       const onFocus = () => setFocus(true);
-      const onBlur = () => setFocus(false);
+      // A chord that moved focus never delivers its release here, and the
+      // stale entry would eat an unrelated one.
+      const onBlur = () => {
+        swallowedKeys.clear();
+        setFocus(false);
+      };
 
       input.addEventListener("keydown", onKeyDown);
       input.addEventListener("keyup", onKeyUp);
