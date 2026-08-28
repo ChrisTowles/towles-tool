@@ -579,6 +579,9 @@ export function TerminalView({
       // REPORT_EVENTS a lone release is still bytes. Keyed by `code`, which
       // outlives the modifier changing `key`.
       const swallowedKeys = new Set<string>();
+      // A scrollback key forwarded to a TUI goes unshifted, so its release has
+      // to match: a shifted one against an unshifted press is an unpaired event.
+      const unshiftedKeys = new Set<string>();
 
       // WebKitGTK raises its own paste event for a keydown we already answered,
       // handing the shell \x16 — zsh's quoted-insert — just before the pasted
@@ -649,6 +652,7 @@ export function TerminalView({
               capsLock: false,
               numLock: false,
             });
+            unshiftedKeys.add(e.code);
             return;
           }
           // Ours alone here; the branch above forwarded a press, so it owes
@@ -689,7 +693,11 @@ export function TerminalView({
         if (e.isComposing) return;
         if (swallowedKeys.delete(e.code)) return;
         const wire = keyEventWire(e, "release");
-        if (wire) sendKey(wire);
+        if (!wire) return;
+        if (unshiftedKeys.delete(e.code)) {
+          Object.assign(wire, { shift: false, alt: false, ctrl: false, meta: false });
+        }
+        sendKey(wire);
       };
       const onPaste = (e: ClipboardEvent) => {
         e.preventDefault();
@@ -916,6 +924,7 @@ export function TerminalView({
       // stale entry would eat an unrelated one.
       const onBlur = () => {
         swallowedKeys.clear();
+        unshiftedKeys.clear();
         setFocus(false);
       };
 
