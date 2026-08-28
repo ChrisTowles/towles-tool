@@ -10,10 +10,10 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/ChrisTowles/towles-tool"
 homepage = "https://github.com/ChrisTowles/towles-tool/tree/main/crates/comment-budget"
 readme = "README.md"
-# The npm packaging is a release input, not something a crates.io consumer gets
+# The npm and PyPI packaging are release inputs, not something a crates.io consumer gets
 # — and the tests that guard it read files under `npm/`, so shipping them would
 # ship a test suite that cannot pass.
-exclude = ["npm", "tests/npm_pins.rs", "tests/npm_postinstall.rs"]
+exclude = ["npm", "pyproject.toml", "tests/npm_pins.rs", "tests/npm_postinstall.rs"]
 
 [lib]
 name = "comment_budget"
