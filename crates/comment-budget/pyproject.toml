@@ -1,0 +1,15 @@
+# The PyPI package: the same prebuilt binary npm gets, reachable from `uvx`,
+# `pipx`, and a pre-commit `additional_dependencies` line. Nothing here is
+# Python — `bin` bindings put the executable in the wheel's scripts directory
+# and stop. Every field but the name is `dynamic`, read from Cargo.toml at
+# build time, so the version keeps its one copy.
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "comment-budget"
+dynamic = ["version", "description", "readme", "keywords", "license", "urls"]
+
+[tool.maturin]
+bindings = "bin"

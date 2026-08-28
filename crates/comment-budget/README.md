@@ -27,6 +27,22 @@ nothing else measures it.
 ```sh
 cargo install comment-budget                   # or, for a prebuilt binary:
 bun add -d @towles-tool/comment-budget         # npm/pnpm/yarn work too
+uvx comment-budget                             # `uv tool install`, pipx and pip work too
+```
+
+As a [pre-commit](https://pre-commit.com) hook, the PyPI package is the whole
+install:
+
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: comment-budget
+        name: comment-budget
+        language: python
+        additional_dependencies: [comment-budget]
+        entry: comment-budget
+        pass_filenames: false     # it reads the branch's diff itself
 ```
 
 ## Use
