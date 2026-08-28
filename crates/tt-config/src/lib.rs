@@ -283,14 +283,10 @@ pub const DEFAULT_IMPROVER_DIRECT: &str = "Restate the task clearly and concisel
 pub const DEFAULT_IMPROVER_CLARIFY: &str = "Restate the task in 2 to 3 sentences, making \
 explicit what a one-line version leaves implied.";
 
-/// Decisions-first, so what comes back is the handful of choices worth
-/// overruling, not a wall of mechanical steps.
 pub const DEFAULT_IMPROVER_BRAINSTORM: &str = "Rewrite the task as a request for an \
 implementation plan in HTML that leads with the decisions I'm most likely to tweak — data model, \
 type interfaces, anything user-facing — and buries the mechanical work at the bottom.";
 
-/// The session reads the code first, so its questions are the ones the code
-/// can't answer.
 pub const DEFAULT_IMPROVER_INTERVIEW: &str = "Rewrite the task as a request to research the \
 codebase first and then interview me one question at a time about what is still ambiguous, \
 prioritizing questions where my answer would change the architecture.";
@@ -801,6 +797,13 @@ pub fn code_server_extensions_dir() -> Result<PathBuf> {
         .join("code-server-extensions"))
 }
 
+/// The hand-edited half of VS Code's `User/`. *Shared*; the state DB beside it
+/// is not, since two running apps would write it at once.
+pub fn code_server_shared_user_dir() -> Result<PathBuf> {
+    Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
+        .join("code-server-user"))
+}
+
 /// Claimed-port ledgers. *Shared*: every worktree reads the same one, and it
 /// must survive reboots (so not [`locks_dir`]) and stay out of a clone.
 pub fn task_ports_dir() -> Result<PathBuf> {
@@ -812,8 +815,6 @@ pub fn task_ports_dir() -> Result<PathBuf> {
 /// *forced* [`STATE_SCOPE_ENV`] still nests both so tests stay off the real tree.
 pub struct InstanceStateBases {
     pub data: PathBuf,
-    /// e.g. `~/.config/towles-tool` — holds `agentboard/` and
-    /// `tasks/<scope>/agentboard/`.
     pub config: PathBuf,
 }
 

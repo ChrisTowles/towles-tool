@@ -105,6 +105,18 @@ pub fn installed_binary(root: &Path) -> Option<PathBuf> {
     bin.is_file().then_some(bin)
 }
 
+/// The dist's built-in extensions directory — where [`crate::bridge`] belongs,
+/// since built-ins are scanned by listing rather than through the profile
+/// manifest every checkout shares. `None` unless `binary` is the install this
+/// app manages: a Homebrew or system tree is not ours to write into.
+pub fn builtin_extensions_dir(root: &Path, binary: &Path) -> Option<PathBuf> {
+    let dist = install_dir(root);
+    binary
+        .starts_with(&dist)
+        .then(|| dist.join("lib").join("vscode").join("extensions"))
+        .filter(|d| d.is_dir())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Downloading,
@@ -285,6 +297,28 @@ mod tests {
     fn the_host_this_test_runs_on_is_installable() {
         let (os, arch) = host();
         assert!(asset_for(os, arch).is_some(), "no pinned build for {os}/{arch}");
+    }
+
+    #[test]
+    fn a_builtin_dir_is_only_offered_for_the_install_we_manage() {
+        let root = tempfile::tempdir().unwrap();
+        let dist = install_dir(root.path());
+        let extensions = dist.join("lib").join("vscode").join("extensions");
+        std::fs::create_dir_all(&extensions).unwrap();
+        let ours = dist.join("bin").join("code-server");
+
+        assert_eq!(builtin_extensions_dir(root.path(), &ours), Some(extensions));
+        assert_eq!(builtin_extensions_dir(root.path(), Path::new("/usr/bin/code-server")), None);
+    }
+
+    /// A tree without one is a layout we don't recognise; writing a directory
+    /// into it would be inventing one.
+    #[test]
+    fn a_dist_with_no_extensions_dir_offers_nothing() {
+        let root = tempfile::tempdir().unwrap();
+        let bin = install_dir(root.path()).join("bin").join("code-server");
+        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+        assert_eq!(builtin_extensions_dir(root.path(), &bin), None);
     }
 
     #[test]

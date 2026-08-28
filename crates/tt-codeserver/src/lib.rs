@@ -11,6 +11,7 @@
 
 pub mod bridge;
 pub mod install;
+pub mod user_config;
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -101,6 +102,11 @@ pub struct CodeServerConfig {
     /// Shared: an installed extension is a machine fact, and the directory is
     /// large enough that per-instance copies are a real disk cost.
     pub extensions_dir: PathBuf,
+    /// Where [`bridge`] goes instead of the shared profile manifest, when there
+    /// is one ([`install::builtin_extensions_dir`]).
+    pub builtin_extensions_dir: Option<PathBuf>,
+    /// The settings and keybindings every checkout shares ([`user_config`]).
+    pub shared_user_dir: PathBuf,
     /// Ours, so the user's `~/.config/code-server/config.yaml` — which can pin
     /// a bind address or re-enable password auth — never reaches this process.
     pub config_file: PathBuf,
@@ -295,6 +301,9 @@ impl CodeServerChild {
         if !cfg.config_file.exists() {
             std::fs::write(&cfg.config_file, "auth: none\n")?;
         }
+        if let Err(e) = user_config::share(&cfg.user_data_dir, &cfg.shared_user_dir) {
+            tracing::warn!(error = %e, "code-server.user-config.share-failed");
+        }
         seed_user_settings(&cfg.user_data_dir);
         if let Some(parent) = cfg.session_socket.parent() {
             std::fs::create_dir_all(parent)?;
@@ -302,7 +311,8 @@ impl CodeServerChild {
         // A stale socket file from a crashed predecessor with this pid.
         let _ = std::fs::remove_file(&cfg.session_socket);
         std::fs::create_dir_all(&cfg.bridge_dir)?;
-        if let Err(e) = bridge::install(&cfg.extensions_dir) {
+        if let Err(e) = bridge::install(&cfg.extensions_dir, cfg.builtin_extensions_dir.as_deref())
+        {
             tracing::warn!(error = %e, "code-server.bridge.install-failed");
         }
 
@@ -527,6 +537,8 @@ mod tests {
             binary: PathBuf::from("/usr/bin/code-server"),
             user_data_dir: PathBuf::from("/tmp/ud"),
             extensions_dir: PathBuf::from("/tmp/ext"),
+            builtin_extensions_dir: None,
+            shared_user_dir: PathBuf::from("/tmp/shared-user"),
             config_file: PathBuf::from("/tmp/cfg.yaml"),
             session_socket: PathBuf::from("/tmp/cs.sock"),
             bridge_dir: PathBuf::from("/tmp/br"),

@@ -177,9 +177,22 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             linux_desktop::ensure_installed(&app.config().identifier);
 
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.set_title(&format!("Towles Tool — {}", task_label()));
-            }
+            // Built here, not from config (`"create": false`), for one reason:
+            // `on_new_window` can only be set on the builder, and without it a
+            // `window.open` out of the Files pane is silently dropped — which
+            // is every VS Code extension's sign-in (see `codeserver`).
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == ide::MAIN_WINDOW_LABEL)
+                .cloned()
+                .ok_or("tauri.conf.json has no `main` window")?;
+            let main = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .on_new_window(|url, _features| codeserver::on_new_window(url))
+                .build()?;
+            let _ = main.set_title(&format!("Towles Tool — {}", task_label()));
 
             // No-op off macOS — see macos_keys' module doc.
             macos_keys::install(app.handle());
