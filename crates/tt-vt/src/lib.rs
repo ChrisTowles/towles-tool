@@ -17,6 +17,7 @@ pub mod osc_color;
 pub mod osc_notify;
 pub mod search;
 pub mod session;
+pub mod unwrap;
 
 pub use engine::{
     Engine, EngineOptions, KeyAction, KeyEvent, MouseAction, MouseButton, MouseInput, PasteOutcome,

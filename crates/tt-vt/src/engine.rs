@@ -19,10 +19,10 @@ use libghostty_vt::screen::{CellContentTag, CellWide, Screen};
 use libghostty_vt::selection::gesture::{
     Autoscroll, AutoscrollTickEvent, DragEvent, Geometry, Gesture, PressEvent, ReleaseEvent,
 };
-use libghostty_vt::selection::FormatOptions;
+use libghostty_vt::selection::{FormatOptions, Order, Selection};
 use libghostty_vt::style::{StyleColor, Underline};
 use libghostty_vt::terminal::{
-    ColorScheme, Mode, Options, Point, PointCoordinate, ScrollViewport, Terminal,
+    ColorScheme, Mode, Options, Point, PointCoordinate, PointSpace, ScrollViewport, Terminal,
 };
 
 use crate::frame::{flags, Colors, Cursor, CursorShape, Frame, Modes};
@@ -31,31 +31,25 @@ use crate::osc52::Osc52Scanner;
 use crate::osc_color::{ColorQuery, OscColorScanner};
 use crate::osc_notify::OscNotifyScanner;
 use crate::search::{self, SearchMatch};
+use crate::unwrap;
 
-/// The selection paths that are not a pointer gesture.
 #[derive(Debug, Clone, Copy)]
 pub enum Select {
     All,
     Clear,
 }
 
-/// A raw pointer event, in **surface pixels** from the canvas' top-left —
-/// sub-cell positions decide repeat-click slop and edge overrun. What a
-/// gesture *means* (click count, cell/word/line, the anchor, autoscroll) is
-/// [`Gesture`]'s to decide; the view only reports what the pointer did.
+/// A raw pointer event, in **surface pixels** from the canvas' top-left — sub-cell positions decide
+/// repeat-click slop and edge overrun.
 #[derive(Debug, Clone, Copy)]
 pub enum Pointer {
-    /// `time_ms` is a monotonic stamp (DOM `MouseEvent.timeStamp`); without
-    /// it every press is a single click.
     Press { x: f64, y: f64, time_ms: f64 },
-    /// Button held. `rectangle` is the block-select modifier (Alt).
     Drag { x: f64, y: f64, rectangle: bool },
-    /// Button up. Ends the drag but keeps whatever it selected.
     Release,
 }
 
-/// Multi-click window and slop. libghostty promotes a press to double- or
-/// triple-click only when both are supplied, so they are set on every press.
+/// Multi-click window and slop. libghostty promotes a press to double- or triple-click only when
+/// both are supplied, so they are set on every press.
 const CLICK_REPEAT_INTERVAL: Duration = Duration::from_millis(500);
 const CLICK_REPEAT_DISTANCE_PX: f64 = 10.0;
 
@@ -73,50 +67,32 @@ pub struct EngineOptions {
     pub max_scrollback: usize,
 }
 
-/// UI theme pushed into the emulator so color queries answer the app's real
-/// colors instead of libghostty's stock defaults. OSC 10/11 (how programs
-/// detect a light vs dark background), the color-scheme DSR and indexed-color
-/// resolution all read from this.
+/// UI theme pushed into the emulator so color queries answer the app's real colors instead of
+/// libghostty's stock defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
-    /// Default foreground, packed 0xRRGGBB.
     pub fg: u32,
-    /// Default background, packed 0xRRGGBB.
     pub bg: u32,
-    /// Cursor color; `None` keeps libghostty's default (invert the cell).
     pub cursor: Option<u32>,
-    /// ANSI colors 0–15. Entries 16–255 keep the stock cube/grays, which are
-    /// theme-neutral by construction.
     pub palette16: [u32; 16],
-    /// Whether the theme is dark — the `CSI ? 996 n` color-scheme answer.
     pub dark: bool,
 }
 
-/// Outcome of a paste request (see [`Engine::paste`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PasteOutcome {
-    /// The text was encoded and queued for the PTY.
     Pasted,
-    /// Nothing was written: bracketed paste is off and the text contains a
-    /// newline. The caller confirms with the user and retries with `force`.
     NeedsConfirm,
 }
 
-/// A keystroke from the UI, in DOM `KeyboardEvent` terms. The engine encodes
-/// it against live terminal state (kitty keyboard flags, DECCKM, keypad
-/// mode, modifyOtherKeys, …) — the frontend never encodes escape sequences.
+/// A keystroke from the UI, in DOM `KeyboardEvent` terms.
 #[derive(Debug, Clone)]
 pub struct KeyEvent {
-    /// DOM `KeyboardEvent.code` — the physical key (`"KeyA"`, `"Enter"`).
     pub code: String,
-    /// DOM `KeyboardEvent.key` — the produced text when printable (`"a"`,
-    /// `"A"`, `"é"`), or a named key (`"Enter"`, `"ArrowUp"`).
     pub key: String,
     pub action: KeyAction,
     pub shift: bool,
     pub alt: bool,
     pub ctrl: bool,
-    /// Super/Command/Windows key.
     pub meta: bool,
     pub caps_lock: bool,
     pub num_lock: bool,
@@ -126,27 +102,20 @@ pub struct KeyEvent {
 pub enum KeyAction {
     Press,
     Repeat,
-    /// Only encoded when the program asked for release events (kitty
-    /// REPORT_EVENTS); a no-op otherwise, so the UI can always send it.
     Release,
 }
 
-/// A pointer event from the UI, forwarded to the program when it enabled mouse
-/// tracking, in whatever protocol it negotiated (X10, SGR, …). Events the
-/// current tracking mode doesn't want produce no bytes.
+/// A pointer event from the UI, forwarded to the program when it enabled mouse tracking, in
+/// whatever protocol it negotiated (X10, SGR, …).
 #[derive(Debug, Clone, Copy)]
 pub struct MouseInput {
     pub action: MouseAction,
-    /// The button involved; `None` for a pure motion event.
     pub button: Option<MouseButton>,
-    /// Viewport cell coordinates.
     pub x: u16,
     pub y: u16,
     pub shift: bool,
     pub alt: bool,
     pub ctrl: bool,
-    /// Whether any button is held during this event — drives button-event
-    /// (drag) tracking, mode 1002.
     pub any_button: bool,
 }
 
@@ -164,8 +133,8 @@ pub enum MouseButton {
     Right,
 }
 
-/// Cap on mouse-wheel reports per gesture — bounds what a single high-delta
-/// event (a fling, a coalesced touchpad swipe) can inject into the program.
+/// Cap on mouse-wheel reports per gesture — bounds what a single high-delta event (a fling, a
+/// coalesced touchpad swipe) can inject into the program.
 const MAX_WHEEL_REPORTS: u32 = 5;
 
 pub struct Engine {
@@ -173,56 +142,27 @@ pub struct Engine {
     render: RenderState<'static>,
     rows: RowIterator<'static>,
     cells: CellIterator<'static>,
-    /// Bytes the terminal wants written back to the PTY (DA1 replies etc.),
-    /// filled synchronously during `feed` by the pty-write effect.
     pty_out: Rc<RefCell<Vec<u8>>>,
     title_changed: Rc<StdCell<bool>>,
-    /// BEL received since the last drain (see [`Engine::take_bell`]).
     bell: Rc<StdCell<bool>>,
-    /// OSC 7 working directory changed since the last frame.
     pwd_changed: Rc<StdCell<bool>>,
-    /// Whether the pushed theme is dark (see [`Theme::dark`]); read by the
-    /// color-scheme query callback registered in [`Engine::new`].
     dark: Rc<StdCell<bool>>,
-    /// Watches the byte feed for OSC 52 set-clipboard sequences; libghostty-vt
-    /// exposes no clipboard callback.
     osc52: Osc52Scanner,
-    /// Watches the byte feed for OSC 10/11 color queries, which libghostty-vt
-    /// does not answer; [`Engine::feed`] synthesizes the replies.
     osc_color: OscColorScanner,
-    /// Watches the byte feed for OSC 9/777 desktop notifications, which
-    /// libghostty-vt carries no payload or callback for.
     osc_notify: OscNotifyScanner,
-    /// Cell pixel dimensions from the last resize — answers XTWINOPS size
-    /// queries (CSI 14/16 t).
     cell_px: Rc<StdCell<(u32, u32)>>,
-    /// Reused keystroke encoder; re-synced from terminal state per event
-    /// (see [`Engine::key`]).
     key_encoder: key::Encoder<'static>,
-    /// Reused pointer encoder; re-synced from terminal state per event
-    /// (see [`Engine::mouse`] / [`Engine::wheel`]).
     mouse_encoder: mouse::Encoder<'static>,
-    /// Force the next render to be a full frame (selection changed).
     force_full: bool,
-    /// Cursor state as of the last emitted frame. libghostty-vt's dirty
-    /// tracking covers cell content only, so a pure cursor move leaves
-    /// `dirty()` clean and the cursor would appear stuck without this.
     last_cursor: Option<Cursor>,
-    /// Whether a selection is installed, carried on every frame: one scrolled
-    /// out of view highlights no row, which would otherwise read as "nothing
-    /// to copy". libghostty has no getter short of formatting it.
     has_selection: bool,
-    /// libghostty's pointer-gesture state machine: click counting, the
-    /// behavior table, the drag anchor and autoscroll are its answers. The
-    /// anchor is a tracked grid ref, so it survives scrolling on its own.
+    sel_bounds: Option<(PointCoordinate, PointCoordinate)>,
     gesture: Gesture<'static>,
     press_ev: PressEvent<'static>,
     drag_ev: DragEvent<'static>,
     release_ev: ReleaseEvent<'static>,
     tick_ev: AutoscrollTickEvent<'static>,
-    /// Surface metrics for placing a pointer and judging edge overrun.
     geometry: Geometry,
-    /// Replayed on each autoscroll tick: a held pointer emits no events.
     drag_point: (f64, f64),
 }
 
@@ -298,6 +238,7 @@ impl Engine {
             force_full: false,
             last_cursor: None,
             has_selection: false,
+            sel_bounds: None,
             gesture: Gesture::new()?,
             press_ev: PressEvent::new()?,
             drag_ev: DragEvent::new()?,
@@ -314,11 +255,7 @@ impl Engine {
         })
     }
 
-    /// Encode a keystroke against live terminal state and queue the bytes for
-    /// the PTY. The encoder speaks whatever the program negotiated (kitty
-    /// keyboard, legacy xterm, DECCKM, keypad, modifyOtherKeys) because its
-    /// options are re-read from the terminal on every event. A keystroke the
-    /// current mode set doesn't encode simply produces no bytes.
+    /// Encode a keystroke against live terminal state and queue the bytes for the PTY.
     pub fn key(&mut self, event: &KeyEvent) -> Result<()> {
         self.key_encoder.set_options_from_terminal(&self.term);
 
@@ -381,10 +318,8 @@ impl Engine {
         Ok(())
     }
 
-    /// Push the UI theme into the emulator: default fg/bg/cursor colors, the
-    /// ANSI 0–15 palette entries, and the dark/light answer for color-scheme
-    /// queries. Forces a full repaint so rows rendered under the old theme
-    /// pick up the new defaults.
+    /// Push the UI theme into the emulator. Forces a full repaint so rows rendered under the old
+    /// theme pick up the new defaults.
     pub fn set_theme(&mut self, theme: &Theme) -> Result<()> {
         self.term.set_default_fg_color(Some(unpack_rgb(theme.fg)))?;
         self.term.set_default_bg_color(Some(unpack_rgb(theme.bg)))?;
@@ -399,12 +334,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Encode pasted text and queue it on the PTY-bound output. libghostty's
-    /// encoder strips an embedded bracketed-paste terminator, which would
-    /// otherwise let crafted clipboard content escape the bracket and inject
-    /// commands. With bracketed paste off and a newline in the text, pasting
-    /// would run commands immediately — unless `force`, nothing is written and
-    /// [`PasteOutcome::NeedsConfirm`] tells the caller to ask the user.
+    /// Encode pasted text and queue it on the PTY-bound output.
     pub fn paste(&mut self, text: &str, force: bool) -> Result<PasteOutcome> {
         let bracketed = self.term.mode(Mode::BRACKETED_PASTE)?;
         if !bracketed && !force && !libghostty_vt::paste::is_safe(text) {
@@ -428,7 +358,6 @@ impl Engine {
         }
     }
 
-    /// Feed raw PTY output into the terminal state machine.
     pub fn feed(&mut self, bytes: &[u8]) {
         self.term.vt_write(bytes);
         self.osc52.feed(bytes);
@@ -460,28 +389,22 @@ impl Engine {
         }
     }
 
-    /// Drain any OSC 52 set-clipboard writes recognized in the byte feed since
-    /// the last call, in order. The caller writes these to the system clipboard
-    /// (focus-gated); see [`crate::osc52`].
+    /// Drain any OSC 52 set-clipboard writes recognized in the byte feed since the last call, in
+    /// order.
     pub fn take_clipboard(&mut self) -> Vec<String> {
         self.osc52.take()
     }
 
-    /// Whether a BEL arrived since the last call — the universal TUI
-    /// attention signal, surfaced so the UI can badge the session.
     pub fn take_bell(&mut self) -> bool {
         self.bell.replace(false)
     }
 
-    /// Drain desktop-notification bodies (OSC 9 / OSC 777) recognized in the
-    /// byte feed since the last call — how Claude Code raises attention.
     pub fn take_notifications(&mut self) -> Vec<String> {
         self.osc_notify.take()
     }
 
-    /// Drain bytes the terminal produced in response to control sequences
-    /// (device attribute queries, size reports, ...). The caller must write
-    /// these back to the PTY.
+    /// Drain bytes the terminal produced in response to control sequences (device attribute
+    /// queries, size reports, ...).
     pub fn take_pty_output(&mut self) -> Vec<u8> {
         std::mem::take(&mut *self.pty_out.borrow_mut())
     }
@@ -506,7 +429,6 @@ impl Engine {
     }
 
     /// Scroll the viewport into scrollback (`delta` rows; up is negative).
-    /// `None` jumps back to the bottom (live) position.
     pub fn scroll(&mut self, delta: Option<isize>) {
         self.term.scroll_viewport(match delta {
             Some(d) => ScrollViewport::Delta(d),
@@ -514,9 +436,8 @@ impl Engine {
         });
     }
 
-    /// Sync the reused pointer encoder to current terminal state (tracking
-    /// mode, report format, grid size). 1px cells make surface-space
-    /// positions equal cell coordinates.
+    /// Sync the reused pointer encoder to current terminal state (tracking mode, report format,
+    /// grid size).
     fn sync_mouse_encoder(&mut self) -> Result<()> {
         self.mouse_encoder.set_options_from_terminal(&self.term).set_size(mouse::EncoderSize {
             screen_width: u32::from(self.term.cols()?),
@@ -531,11 +452,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Forward a pointer event to the program, encoded in its negotiated
-    /// mouse protocol. Writes nothing when the program never enabled mouse
-    /// tracking (a stale hint on the caller's side can't inject bytes) or
-    /// when the tracking mode doesn't want this event kind — the encoder
-    /// owns those rules.
+    /// Forward a pointer event to the program, encoded in its negotiated mouse protocol.
     pub fn mouse(&mut self, input: &MouseInput) -> Result<()> {
         if !self.term.is_mouse_tracking()? {
             return Ok(());
@@ -572,8 +489,8 @@ impl Engine {
         Ok(())
     }
 
-    /// Report a focus change to the program when it asked for focus events
-    /// (mode 1004): `CSI I` on gain, `CSI O` on loss. Silent otherwise.
+    /// Report a focus change to the program when it asked for focus events (mode 1004): `CSI I` on
+    /// gain, `CSI O` on loss. Silent otherwise.
     pub fn focus(&mut self, focused: bool) -> Result<()> {
         if !self.term.mode(Mode::FOCUS_EVENT)? {
             return Ok(());
@@ -585,12 +502,8 @@ impl Engine {
         Ok(())
     }
 
-    /// A mouse-wheel gesture at viewport cell (`x`, `y`), in policy order:
-    /// `shift` or already-scrolled-back pages our scrollback; mouse tracking
-    /// sends wheel reports (buttons 4/5) capped at [`MAX_WHEEL_REPORTS`]; the
-    /// alternate screen with mode 1007 sends arrows through the key encoder,
-    /// same cap; otherwise scroll. Shift outranks tracking to keep scrollback
-    /// reachable — the alternate screen has none, so there it is a no-op.
+    /// A mouse-wheel gesture at viewport cell (`x`, `y`). Shift outranks mouse tracking so
+    /// scrollback stays reachable; the alternate screen has none, so there it is a no-op.
     pub fn wheel(&mut self, x: u16, y: u16, lines: i32, shift: bool) -> Result<()> {
         if lines == 0 {
             return Ok(());
@@ -638,31 +551,30 @@ impl Engine {
         Ok(())
     }
 
-    /// Apply a selection operation (absolute screen coordinates — see
-    /// [`Select`]). Selection changes don't reliably mark rows dirty, so the
-    /// next render is forced full to repaint highlights everywhere
-    /// (including deselection).
+    /// Apply a selection operation (absolute screen coordinates — see [`Select`]).
     pub fn select(&mut self, op: Select) -> Result<()> {
         match op {
             Select::All => {
                 if let Some(sel) = self.term.select_all()? {
+                    let bounds = selection_bounds(&self.term, &sel)?;
                     self.term.set_selection(Some(&sel))?;
                     self.has_selection = true;
+                    self.sel_bounds = bounds;
                 }
             }
             Select::Clear => {
                 self.gesture.reset(&self.term);
                 self.term.set_selection(None)?;
                 self.has_selection = false;
+                self.sel_bounds = None;
             }
         }
         self.force_full = true;
         Ok(())
     }
 
-    /// Feed a pointer event to libghostty's gesture state machine and install
-    /// whatever selection it returns. A press that selects nothing clears —
-    /// that is a plain click. A release keeps what the drag took.
+    /// Feed a pointer event to libghostty's gesture state machine and install whatever selection it
+    /// returns.
     pub fn pointer(&mut self, ev: Pointer) -> Result<()> {
         match ev {
             Pointer::Press { x, y, time_ms } => {
@@ -675,8 +587,13 @@ impl Engine {
                     .set_repeat_interval(CLICK_REPEAT_INTERVAL)?
                     .set_repeat_distance(CLICK_REPEAT_DISTANCE_PX)?;
                 let sel = self.press_ev.apply(&mut self.gesture, &self.term, g)?;
+                let bounds = match sel.as_ref() {
+                    Some(sel) => selection_bounds(&self.term, sel)?,
+                    None => None,
+                };
                 self.term.set_selection(sel.as_ref())?;
                 self.has_selection = sel.is_some();
+                self.sel_bounds = bounds;
             }
             Pointer::Drag { x, y, rectangle } => {
                 self.drag_point = (x, y);
@@ -686,8 +603,10 @@ impl Engine {
                 self.drag_ev.set_position(x, y)?.set_rectangle(rectangle)?;
                 let sel = self.drag_ev.apply(&mut self.gesture, &self.term, g, geometry)?;
                 if let Some(sel) = sel {
+                    let bounds = selection_bounds(&self.term, &sel)?;
                     self.term.set_selection(Some(&sel))?;
                     self.has_selection = true;
+                    self.sel_bounds = bounds;
                 }
             }
             Pointer::Release => {
@@ -698,12 +617,10 @@ impl Engine {
         Ok(())
     }
 
-    /// Which way an in-flight drag wants the viewport to move, if at all.
     pub fn autoscroll(&self) -> Autoscroll {
         self.gesture.autoscroll(&self.term).unwrap_or(Autoscroll::None)
     }
 
-    /// Scroll one row, then re-point the drag head at the held pointer.
     pub fn autoscroll_tick(&mut self) -> Result<()> {
         let delta = match self.autoscroll() {
             Autoscroll::Up => -1,
@@ -718,47 +635,39 @@ impl Engine {
         self.tick_ev.set_position(x, y)?;
         let sel = self.tick_ev.apply(&mut self.gesture, &self.term, viewport, geometry)?;
         if let Some(sel) = sel {
+            let bounds = selection_bounds(&self.term, &sel)?;
             self.term.set_selection(Some(&sel))?;
             self.has_selection = true;
+            self.sel_bounds = bounds;
         }
         self.force_full = true;
         Ok(())
     }
 
-    /// Cell metrics and viewport origin for [`grid_ref_at`], read before the
-    /// gesture events borrow `term`.
+    /// Cell metrics and viewport origin for [`grid_ref_at`], read before the gesture events borrow
+    /// `term`.
     fn pointer_frame(&self) -> Result<((u32, u32), usize)> {
         Ok((self.cell_px.get(), self.viewport_top()?))
     }
 
-    /// Force the next render to emit a full frame even when libghostty
-    /// reports nothing dirty. The UI calls this when a hidden pane becomes
-    /// visible again: its canvas may hold stale content, and dirty-only
-    /// frames would never resend rows the engine considers clean (#47).
+    /// Force the next render to emit a full frame even when libghostty reports nothing dirty.
     pub fn request_full(&mut self) {
         self.force_full = true;
     }
 
-    /// Whether a synchronized-output batch (DEC 2026) is open: rendering
-    /// between BSU and ESU would show a half-drawn update, so the session
-    /// loop holds frames while this is set, bounded by its max-hold. A failed
-    /// query reads as "not synchronized" — never stuck on an FFI error.
+    /// Whether a synchronized-output batch (DEC 2026) is open: rendering between BSU and ESU would
+    /// show a half-drawn update.
     pub fn sync_output(&self) -> bool {
         self.term.mode(Mode::SYNC_OUTPUT).unwrap_or(false)
     }
 
-    /// Drop scrollback, keep the visible screen (xterm's CSI 3 J). Dirties no
-    /// visible row, so the next render is forced full — that is how the frame
-    /// carries the collapsed `scrollback_rows`/`viewport_top` to the UI.
+    /// Drop scrollback, keep the visible screen (xterm's CSI 3 J).
     pub fn clear_scrollback(&mut self) {
         self.feed(b"\x1b[3J");
         self.force_full = true;
     }
 
-    /// Case-insensitive search over scrollback + active area, top to bottom,
-    /// capped at `limit`. A plain-text pass pre-filters; matching rows are
-    /// re-read cell by cell so columns are exact across wide characters. Rows
-    /// are right-trimmed, so queries ending in spaces miss end-of-line hits.
+    /// Case-insensitive search over scrollback + active area, top to bottom, capped at `limit`.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchMatch>> {
         let mut out = Vec::new();
         let probe = query.to_lowercase();
@@ -785,8 +694,8 @@ impl Engine {
         Ok(out)
     }
 
-    /// One absolute screen row's cells (char + column + width), skipping
-    /// wide-char spacers. Empty cells read as spaces, like the render path.
+    /// One absolute screen row's cells (char + column + width), skipping wide-char spacers. Empty
+    /// cells read as spaces, like the render path.
     fn row_cells(&self, row: usize, cols: u16) -> Result<Vec<search::RowCell>> {
         let mut cells = Vec::with_capacity(cols as usize);
         for x in 0..cols {
@@ -803,14 +712,10 @@ impl Engine {
         Ok(cells)
     }
 
-    /// Absolute row index of the viewport's top (0 = oldest scrollback row).
-    /// At the live bottom this equals the scrollback depth.
     pub fn viewport_top(&self) -> Result<usize> {
         Ok(self.term.scrollbar()?.offset as usize)
     }
 
-    /// Scroll the viewport so absolute `row` is visible, about a third down
-    /// from the top. No-op when the viewport is already there.
     pub fn scroll_to(&mut self, row: usize) -> Result<()> {
         let sb = self.term.scrollbar()?;
         let max_top = sb.total.saturating_sub(sb.len);
@@ -823,14 +728,46 @@ impl Engine {
         Ok(())
     }
 
-    /// Plain text of the active selection, if any.
     pub fn copy_selection(&mut self) -> Result<Option<String>> {
-        let bytes = self.term.format_selection_alloc(None, FormatOptions::new())?;
-        Ok(bytes.map(|b| String::from_utf8_lossy(&b).into_owned()))
+        let Some(bytes) = self.term.format_selection_alloc(None, FormatOptions::new())? else {
+            return Ok(None);
+        };
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        Ok(Some(self.unwrap_own_wraps(text)?))
     }
 
-    /// Produce a frame of everything that changed since the last call, or
-    /// `None` when nothing did.
+    /// Rejoin what the emitter wrapped itself. Skipped unless the copied lines map one-to-one onto
+    /// the selected rows.
+    fn unwrap_own_wraps(&self, text: String) -> Result<String> {
+        let Some((start, end)) = self.sel_bounds else {
+            return Ok(text);
+        };
+        let lines: Vec<&str> = text.split('\n').collect();
+        if lines.len() < 2 || end.y < start.y || lines.len() as u32 != end.y - start.y + 1 {
+            return Ok(text);
+        }
+        let cols = self.term.cols()?;
+        let mut rows = Vec::with_capacity(lines.len());
+        for y in start.y..=end.y {
+            rows.push(self.row_chars(y as usize, cols)?);
+        }
+        Ok(unwrap::unwrap_hard_breaks(&lines, &rows, cols))
+    }
+
+    /// One absolute row as `cols` characters, a wide cell filling both of its columns so
+    /// measurements stay in column units.
+    fn row_chars(&self, row: usize, cols: u16) -> Result<unwrap::Row> {
+        let mut out = vec![' '; cols as usize];
+        for cell in self.row_cells(row, cols)? {
+            for i in 0..cell.width {
+                if let Some(slot) = out.get_mut(usize::from(cell.col + i)) {
+                    *slot = cell.ch;
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub fn render(&mut self) -> Result<Option<Frame>> {
         let title = self
             .title_changed
@@ -1025,11 +962,8 @@ impl Engine {
     }
 }
 
-/// Collect a grapheme-cluster cell's full codepoint sequence — the base
-/// codepoint followed by any combining marks / ZWJ joiners — into a string.
-/// libghostty's buffer can hold NUL placeholders, which are skipped; a cluster
-/// that yields no printable codepoints falls back to a space so the column
-/// still advances.
+/// Collect a grapheme-cluster cell's full codepoint sequence — the base codepoint followed by any
+/// combining marks / ZWJ joiners — into a string.
 fn grapheme_text(cell: &CellIteration) -> Result<String> {
     let mut text = String::new();
     for c in cell.graphemes()? {
@@ -1043,9 +977,8 @@ fn grapheme_text(cell: &CellIteration) -> Result<String> {
     Ok(text)
 }
 
-/// Read the OSC 8 hyperlink URI at a grid reference, growing the scratch
-/// buffer on `OutOfSpace` (most URIs fit the initial guess; a handful of
-/// pathologically long ones retry once at the exact required size).
+/// Read the OSC 8 hyperlink URI at a grid reference, growing the scratch buffer on `OutOfSpace`
+/// (most URIs fit the initial guess.
 fn read_hyperlink_uri(gref: &libghostty_vt::screen::GridRef<'_>) -> Result<String> {
     let mut buf = vec![0u8; 128];
     loop {
@@ -1060,11 +993,17 @@ fn read_hyperlink_uri(gref: &libghostty_vt::screen::GridRef<'_>) -> Result<Strin
     }
 }
 
-/// The cell **edge** a surface-pixel position resolves to, clamped into the
-/// viewport. An edge because libghostty spans `[min, max)` over a gesture's
-/// two pins: round both and the cell under the pointer joins once the pointer
-/// passes its middle, either drag direction. Free-standing so the reference
-/// borrows only the terminal, leaving the gesture events mutably borrowable.
+/// The cell **edge** a surface-pixel position resolves to, clamped into the viewport.
+fn selection_bounds(
+    term: &Terminal<'_, '_>,
+    sel: &Selection<'_>,
+) -> Result<Option<(PointCoordinate, PointCoordinate)>> {
+    let ordered = sel.to_ordered(term, Order::Forward)?;
+    let start = term.point_from_grid_ref(&ordered.start(), PointSpace::Screen)?;
+    let end = term.point_from_grid_ref(&ordered.end(), PointSpace::Screen)?;
+    Ok(start.zip(end))
+}
+
 fn grid_ref_at<'t>(
     term: &'t Terminal<'static, 'static>,
     (cw, ch): (u32, u32),
@@ -1099,9 +1038,6 @@ mod tests {
         Engine::new(EngineOptions { cols: 20, rows: 4, max_scrollback: 10 }).expect("engine")
     }
 
-    /// The runs on viewport row 0 of the next frame. Renders once — a second
-    /// render on an unchanged engine returns `None`, so callers read every
-    /// field they need from this single result.
     fn row0_runs(engine: &mut Engine) -> Vec<crate::frame::Run> {
         let frame = engine.render().expect("render").expect("a frame");
         let row = frame.changed.iter().find(|r| r.y == 0).expect("row 0 present");

@@ -40,3 +40,19 @@ output (DEC mode 2026, used by TUIs to batch redraws) is honored with a
 **bounded** hold: a stuck or misbehaving TUI that never closes the
 synchronized-output block can't freeze a pane forever, since the hold caps
 out and flushes anyway.
+
+## Verifying against a real program
+
+Capture the program's bytes from a correctly-sized pty and replay them
+through an `Engine`, rather than hand-writing escape sequences — a guess at
+a TUI's box geometry is usually wrong. Claude Code hard-wraps its own text,
+so the soft-wrap bit is never set on any of its rows, and it pads 0 columns
+right in the message body, 1 in the user echo and 2 in the input box.
+
+Going the other way — "the shell mangled what we sent" — pipe the exact
+bytes into `script -q -c "zsh -i" out.raw` and read `out.raw` with `cat -v`.
+That splits our encoding from the shell's reading in one step, needing
+neither the app nor a build, and `cat -v` in a live pane shows what the pty
+really delivered. What it caught here: `\x16` reaching zsh ahead of a paste
+is `quoted-insert`, which eats the paste's opening ESC and leaves a literal
+`^[[200~` on the command line.
