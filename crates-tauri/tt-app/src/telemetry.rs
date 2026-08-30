@@ -12,7 +12,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::{Duration, Utc};
-use tt_telemetry::{AttentionSummary, KeyboardDay, KeyboardScore, TelemetryRecord};
+use tt_telemetry::query::{EventDb, QueryResult};
+use tt_telemetry::{
+    AttentionSummary, Bucket, BuildKey, BuildSnapshot, DashboardSummary, Delta, GroupBy,
+    KeyboardDay, KeyboardScore, Rule, RuleScore, TelemetryRecord,
+};
 
 fn telemetry_dir() -> Result<PathBuf, String> {
     tt_config::telemetry_dir().map_err(|e| e.to_string())
@@ -110,4 +114,236 @@ fn keyboard_day(dir: &Path, date: &str, is_today: bool) -> Result<KeyboardDay, S
         cache.get_or_insert_with(HashMap::new).insert(date.to_string(), day.clone());
     }
     Ok(day)
+}
+
+/// The last `days` UTC calendar days, today included: an empty day shows as a
+/// gap rather than the range silently reaching further back.
+#[tauri::command]
+pub async fn telemetry_dashboard(days: u32, group_by: String) -> Result<DashboardSummary, String> {
+    let dir = telemetry_dir()?;
+    let group_by =
+        GroupBy::parse(&group_by).ok_or_else(|| format!("unknown group_by: {group_by}"))?;
+    let days = i64::from(days).clamp(1, KEYBOARD_WINDOW_DAYS);
+    tauri::async_runtime::spawn_blocking(move || {
+        let today = Utc::now().date_naive();
+        let dates: Vec<String> = (0..days)
+            .rev()
+            .map(|back| (today - Duration::days(back)).format("%Y-%m-%d").to_string())
+            .collect();
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        let bucket = if days == 1 { Bucket::Hour } else { Bucket::Day };
+        Ok(tt_telemetry::summarize_dashboard(&dates, &records, bucket, group_by))
+    })
+    .await
+    .map_err(|e| format!("telemetry dashboard task panicked: {e}"))?
+}
+
+/// One snapshot per build × day over the newest `days` files on disk — the
+/// Builds tab's experiment list. Reads whole days, so the same 75,000-record
+/// caveat as the dashboard applies.
+#[tauri::command]
+pub async fn telemetry_builds(days: u32) -> Result<Vec<BuildSnapshot>, String> {
+    let dir = telemetry_dir()?;
+    let days = (days as usize).clamp(1, KEYBOARD_WINDOW_DAYS as usize);
+    tauri::async_runtime::spawn_blocking(move || {
+        let dates = tt_telemetry::recent_days(&dir, days).map_err(|e| e.to_string())?;
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::snapshots(&records))
+    })
+    .await
+    .map_err(|e| format!("telemetry builds task panicked: {e}"))?
+}
+
+/// `other` measured against `base`. Only the two days named are read, so a
+/// re-compare after a chip change costs two files, not the fortnight.
+#[tauri::command]
+pub async fn telemetry_build_compare(
+    base: BuildKey,
+    other: BuildKey,
+) -> Result<Vec<Delta>, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dates = vec![base.day.clone(), other.day.clone()];
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        let snapshots = tt_telemetry::snapshots(&records);
+        let find = |key: &BuildKey| {
+            snapshots
+                .iter()
+                .find(|s| s.key() == *key)
+                .ok_or_else(|| format!("no telemetry for build {} on {}", key.sha, key.day))
+        };
+        Ok(tt_telemetry::compare(find(&base)?, find(&other)?))
+    })
+    .await
+    .map_err(|e| format!("telemetry build compare task panicked: {e}"))?
+}
+
+/// The newest `limit` matches plus the full count, so the bar can say "684
+/// rows" while the DOM holds a few hundred.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordPage {
+    pub records: Vec<TelemetryRecord>,
+    pub total: usize,
+}
+
+/// The Log tab's query over the last `days` files, filtered here because a
+/// fortnight can be a million records and only the page should cross IPC.
+#[tauri::command]
+pub async fn telemetry_records(
+    days: u32,
+    filters: Vec<tt_telemetry::Filter>,
+    query: String,
+    limit: usize,
+) -> Result<RecordPage, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dates =
+            tt_telemetry::recent_days(&dir, days.max(1) as usize).map_err(|e| e.to_string())?;
+        let all = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        let hits = tt_telemetry::apply(&all, &filters, &query);
+        let total = hits.len();
+        let records = hits.iter().rev().take(limit).map(|r| (*r).clone()).collect();
+        Ok(RecordPage { records, total })
+    })
+    .await
+    .map_err(|e| format!("telemetry records task panicked: {e}"))?
+}
+
+/// The records written inside the span that closed at `ts` on `day`. Several
+/// spans can close in one millisecond; the longest wins, its tree holds the rest.
+#[tauri::command]
+pub async fn telemetry_trace(ts: String, day: String) -> Result<Vec<TelemetryRecord>, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let records = tt_telemetry::read_day(&dir, &day).map_err(|e| e.to_string())?;
+        let Some(parent) = records
+            .iter()
+            .filter(|r| r.ts == ts && r.duration_ms.is_some())
+            .max_by_key(|r| r.duration_ms)
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(tt_telemetry::children_of(parent, &records).into_iter().cloned().collect())
+    })
+    .await
+    .map_err(|e| format!("telemetry trace task panicked: {e}"))?
+}
+
+/// Days the Query tab loads — the log's retention, so "everything there is".
+const QUERY_WINDOW_DAYS: usize = 14;
+
+/// The Query tab's database, kept for the UTC day it was built on: loading a
+/// fortnight of JSONL (~30 MB) per Run would dwarf any query, but today's file
+/// keeps growing, so the day rollover and an explicit reload are the two
+/// rebuild triggers.
+static QUERY_DB: Mutex<Option<(String, EventDb)>> = Mutex::new(None);
+
+fn build_query_db(dir: &Path) -> Result<EventDb, String> {
+    let days = tt_telemetry::recent_days(dir, QUERY_WINDOW_DAYS).map_err(|e| e.to_string())?;
+    let records = tt_telemetry::read_days(dir, &days).map_err(|e| e.to_string())?;
+    EventDb::build(&records).map_err(|e| e.to_string())
+}
+
+fn utc_today() -> String {
+    Utc::now().format("%Y-%m-%d").to_string()
+}
+
+/// One read-only statement over the last fortnight of records. A run is a
+/// user gesture, so it's logged — shape and outcome only, never the SQL.
+#[tauri::command]
+pub async fn telemetry_query(sql: String) -> Result<QueryResult, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let today = utc_today();
+        let mut slot = QUERY_DB.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref().is_none_or(|(day, _)| *day != today) {
+            let db = build_query_db(&dir)?;
+            *slot = Some((today, db));
+        }
+        let Some((_, db)) = slot.as_ref() else {
+            return Err("telemetry query database missing after build".to_string());
+        };
+        let result = tt_telemetry::query::run(db, &sql, tt_telemetry::query::ROW_CAP);
+        match &result {
+            Ok(r) => tracing::info!(
+                rows = r.rows.len(),
+                truncated = r.truncated,
+                elapsed_ms = r.elapsed_ms,
+                outcome = "ok",
+                "telemetry.query_ran"
+            ),
+            Err(e) => tracing::info!(
+                rows = 0,
+                truncated = false,
+                elapsed_ms = 0,
+                outcome = e.outcome(),
+                "telemetry.query_ran"
+            ),
+        }
+        result.map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("telemetry query task panicked: {e}"))?
+}
+
+/// Rebuilds the Query tab's database from disk now, so lines written since
+/// the last build (today's file is live) are queryable before the day rolls.
+#[tauri::command]
+pub async fn telemetry_query_reload() -> Result<(), String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = build_query_db(&dir)?;
+        tracing::info!(records = db.record_count(), "telemetry.query_reloaded");
+        *QUERY_DB.lock().unwrap_or_else(|e| e.into_inner()) = Some((utc_today(), db));
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("telemetry query reload task panicked: {e}"))?
+}
+
+/// The rules in settings, in the crate's scoring shape.
+fn load_rules() -> Result<Vec<Rule>, String> {
+    let settings = tt_config::load().map_err(|e| e.to_string())?;
+    Ok(settings.telemetry_rules.into_iter().map(Rule::from).collect())
+}
+
+/// The last `n` UTC calendar days, today last — calendar days rather than the
+/// files on disk, so a silent day is a gap in the sparkline and "today" is
+/// always the real today, not the newest file.
+fn utc_days_back(n: i64) -> Vec<String> {
+    let today = Utc::now().date_naive();
+    (0..n).rev().map(|back| (today - Duration::days(back)).format("%Y-%m-%d").to_string()).collect()
+}
+
+/// Every enabled rule scored per day over the last `days` days: the Rules tab.
+#[tauri::command]
+pub async fn telemetry_rules(days: u32) -> Result<Vec<RuleScore>, String> {
+    let dir = telemetry_dir()?;
+    let days = i64::from(days).clamp(1, KEYBOARD_WINDOW_DAYS);
+    tauri::async_runtime::spawn_blocking(move || {
+        let rules = load_rules()?;
+        let dates = utc_days_back(days);
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::score(&rules, &records, &dates))
+    })
+    .await
+    .map_err(|e| format!("telemetry rules task panicked: {e}"))?
+}
+
+/// How many enabled rules are failing right now — the status-bar pill. Polled,
+/// so it reads only as far back as the widest enabled rule's window: with the
+/// shipped rules that is today's file alone.
+#[tauri::command]
+pub async fn telemetry_rules_failing() -> Result<usize, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let rules = load_rules()?;
+        let window = rules.iter().filter(|r| r.enabled).map(|r| r.days).max().unwrap_or(1);
+        let dates = utc_days_back(i64::from(window).clamp(1, KEYBOARD_WINDOW_DAYS));
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::score(&rules, &records, &dates).iter().filter(|s| s.failing).count())
+    })
+    .await
+    .map_err(|e| format!("telemetry rules task panicked: {e}"))?
 }

@@ -19,55 +19,41 @@ use serde_json::Value;
 
 use crate::TelemetryRecord;
 
-/// A focus session shorter than this counts as fragmented — a glance at the
-/// app rather than a stretch of work in it. Two minutes is deliberately
-/// generous: checking a PR's checks or a running agent's last line is a real
-/// use of the app, and shouldn't read as thrash below it.
+/// Under this a stretch is a glance, not work; generous on purpose, since
+/// checking a PR's checks is a real use of the app.
 const FRAGMENT_MS: i64 = 2 * 60 * 1000;
 
-/// The message of the event that records the window gaining/losing OS focus
-/// (`crates-tauri/tt-app/src/lib.rs`'s `WindowEvent::Focused`).
-const FOCUS_EVENT: &str = "window.focus_changed";
+/// Emitted by `WindowEvent::Focused` in `tt-app/src/lib.rs`.
+pub(crate) const FOCUS_EVENT: &str = "window.focus_changed";
 
-/// The message of the frontend's one telemetry seam for user gestures
-/// (`ui_action` in `crates-tauri/tt-app/src/lib.rs`).
-const ACTION_EVENT: &str = "ui.action";
+/// The frontend's one gesture seam (`ui_action` in `tt-app/src/lib.rs`).
+pub(crate) const ACTION_EVENT: &str = "ui.action";
 
 /// Needs-you notification events are `notify_needs_you: fired` /
 /// `notify_needs_you: skipped, <reason>`, so they're matched by prefix.
 const NOTIFY_PREFIX: &str = "notify_needs_you";
 
 /// The span every subprocess opens (`tt-exec`'s run paths).
-const SPAWN_SPAN: &str = "process.spawn";
+pub(crate) const SPAWN_SPAN: &str = "process.spawn";
 
-/// Longest breakdown list returned for any category. The frontend renders a
-/// bar chart per category; beyond this the bars are unreadable and the tail
-/// is better answered by the Log tab's search.
+/// Longest breakdown list; past this the tail is the Log tab's job.
 const TOP_N: usize = 10;
 
 /// One day's attention picture, derived from that day's event-log records.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttentionSummary {
-    /// The log day this summarizes, echoed back so a stale response is
-    /// recognisable as one.
     pub date: String,
-    /// Records the day held, including the ones no section below counts.
     pub record_count: usize,
-    /// First and last record timestamps — the outer bounds of the day's
-    /// activity, which is not the same as the day's focused time.
     pub first_ts: Option<String>,
     pub last_ts: Option<String>,
-    /// `last_ts - first_ts`: how long the app was *up*, the denominator
-    /// focused time is a share of.
+    /// `last_ts - first_ts`: how long the app was *up*, focused time's denominator.
     pub elapsed_ms: i64,
     pub focus: FocusSummary,
     pub actions: ActionSummary,
     pub notifications: NotificationSummary,
     pub machine: MachineSummary,
-    /// 24 buckets, `hour` in local time. Always all 24, including empty ones,
-    /// so the frontend renders a fixed-width chart with real gaps in it
-    /// rather than a compressed one that hides them.
+    /// Always all 24 local hours, empty ones included — a gap is data.
     pub hours: Vec<HourBucket>,
 }
 
@@ -75,18 +61,14 @@ pub struct AttentionSummary {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FocusSummary {
-    /// Total time the window held OS focus.
     pub focused_ms: i64,
-    /// Number of separate focused stretches.
     pub session_count: usize,
     /// The longest unbroken one — the day's best shot at deep work.
     pub longest_ms: i64,
     /// Sessions shorter than [`FRAGMENT_MS`]: glances, not work.
     pub fragment_count: usize,
-    /// Times focus left the window. Each one is a context switch *away* from
-    /// this app, whatever it switched to.
+    /// Times focus left the window: context switches *away* from this app.
     pub departures: usize,
-    /// Every session, in order, for the timeline strip.
     pub sessions: Vec<FocusSession>,
 }
 
@@ -96,9 +78,8 @@ pub struct FocusSession {
     pub start: String,
     pub end: String,
     pub duration_ms: i64,
-    /// True when the day ended (or the app exited) with the window still
-    /// focused, so `end` is the last record's timestamp rather than an
-    /// observed blur. The stretch is a lower bound, not a measurement.
+    /// The day ended (or the app exited) still focused, so `end` is the last
+    /// record rather than an observed blur: a lower bound, not a measurement.
     pub open_ended: bool,
 }
 
@@ -107,10 +88,8 @@ pub struct FocusSession {
 #[serde(rename_all = "camelCase")]
 pub struct ActionSummary {
     pub total: usize,
-    /// Consecutive actions landing on a different screen than the one before.
-    /// A cheap proxy for in-app context switching, and deliberately *not* the
-    /// same number as [`FocusSummary::departures`] — this counts moving around
-    /// inside the app, that counts leaving it.
+    /// Consecutive actions on different screens: moving around *inside* the
+    /// app, where [`FocusSummary::departures`] counts leaving it.
     pub screen_switches: usize,
     pub by_screen: Vec<Count>,
     pub by_action: Vec<Count>,
@@ -120,11 +99,8 @@ pub struct ActionSummary {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationSummary {
-    /// Notifications that actually reached the OS.
     pub fired: usize,
-    /// Ones suppressed (window already focused, notifications off). Kept
-    /// separate because a high skip count is a healthy signal, not an
-    /// interruption.
+    /// Suppressed (window focused, notifications off): a healthy signal, not an interruption.
     pub skipped: usize,
 }
 
@@ -133,10 +109,8 @@ pub struct NotificationSummary {
 #[serde(rename_all = "camelCase")]
 pub struct MachineSummary {
     pub spawn_count: usize,
-    /// Summed span durations. Wall-clock *inside* spans, not of the day —
-    /// concurrent spawns overlap, so this can exceed `elapsed_ms`.
+    /// Summed span durations; concurrent spawns overlap, so this can exceed `elapsed_ms`.
     pub total_ms: i64,
-    /// Spawns whose `outcome` field was anything but `ok`.
     pub failures: usize,
     pub by_executable: Vec<ExecutableStat>,
 }
@@ -152,7 +126,6 @@ pub struct ExecutableStat {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HourBucket {
-    /// Local-time hour, `0..=23`.
     pub hour: u32,
     pub focused_ms: i64,
     pub actions: usize,
@@ -166,9 +139,8 @@ pub struct Count {
     pub count: usize,
 }
 
-/// The stable identity of a record: a span's own `name`, or — for an event,
-/// whose `name` is the throwaway `event <file>:<line>` — its message. See the
-/// module docs for why this isn't just `record.name`.
+/// A span's own `name`, or — for an event, whose `name` is the throwaway
+/// `event <file>:<line>` — its message.
 pub(crate) fn event_name(record: &TelemetryRecord) -> &str {
     match record.fields.get("message") {
         Some(Value::String(message)) => message,
@@ -176,21 +148,17 @@ pub(crate) fn event_name(record: &TelemetryRecord) -> &str {
     }
 }
 
-fn field_str<'a>(record: &'a TelemetryRecord, key: &str) -> Option<&'a str> {
+pub(crate) fn field_str<'a>(record: &'a TelemetryRecord, key: &str) -> Option<&'a str> {
     record.fields.get(key)?.as_str()
 }
 
-fn parse_ts(ts: &str) -> Option<DateTime<FixedOffset>> {
+pub(crate) fn parse_ts(ts: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(ts).ok()
 }
 
 /// Reduce one day's records to its attention picture. Pure — no clock, no
-/// filesystem — so the whole surface is unit-testable from a record list.
-///
-/// Records are assumed to be in write order (which is what [`crate::read_day`]
-/// returns); the focus state machine and the screen-switch count both depend
-/// on it. Out-of-order or malformed timestamps are skipped rather than
-/// poisoning a total.
+/// filesystem. Records must be in write order (what [`crate::read_day`]
+/// returns): the focus state machine and the screen-switch count depend on it.
 pub fn summarize(date: &str, records: &[TelemetryRecord]) -> AttentionSummary {
     let first_ts = records.first().map(|r| r.ts.clone());
     let last_ts = records.last().map(|r| r.ts.clone());
@@ -222,21 +190,24 @@ pub fn summarize(date: &str, records: &[TelemetryRecord]) -> AttentionSummary {
     }
 }
 
-/// Pair `window.focus_changed` events into focused stretches — one state
-/// machine over the whole day, not one per process. The app restarts several
-/// times a day, and each restart's first event is a `focused: true` the
-/// previous process never blurred; treating a repeat `true` as a no-op and
-/// closing at the day's last record avoids double-counting either way.
-fn summarize_focus(
-    records: &[TelemetryRecord],
+/// The paired focus stretches of a record run, shared with `dashboard.rs`.
+pub(crate) struct FocusPairing {
+    pub sessions: Vec<FocusSession>,
+    pub departures: usize,
+}
+
+/// Pair `window.focus_changed` events into stretches — one state machine over
+/// the whole run, not one per process: each restart's first event is a
+/// `focused: true` the previous process never blurred.
+pub(crate) fn pair_focus<'a>(
+    records: impl IntoIterator<Item = &'a TelemetryRecord>,
     last_ts: Option<&str>,
-    hours: &mut [HourBucket],
-) -> FocusSummary {
+) -> FocusPairing {
     let mut sessions: Vec<FocusSession> = Vec::new();
     let mut open: Option<DateTime<FixedOffset>> = None;
     let mut departures = 0usize;
 
-    for record in records.iter().filter(|r| event_name(r) == FOCUS_EVENT) {
+    for record in records.into_iter().filter(|r| event_name(r) == FOCUS_EVENT) {
         let Some(focused) = record.fields.get("focused").and_then(Value::as_bool) else {
             continue;
         };
@@ -248,11 +219,10 @@ fn summarize_focus(
             (false, Some(start)) => {
                 departures += 1;
                 open = None;
-                push_session(&mut sessions, hours, start, at, false);
+                push_session(&mut sessions, start, at, false);
             }
-            // A repeat `true` (restart) keeps the earlier start; a `false`
-            // with nothing open (blur before this file's first gain) is only
-            // a departure.
+            // A repeat `true` (restart) keeps the earlier start; a `false` with
+            // nothing open (blur before the first gain) is only a departure.
             (true, Some(_)) => {}
             (false, None) => departures += 1,
         }
@@ -262,7 +232,22 @@ fn summarize_focus(
         && let Some(end) = last_ts.and_then(parse_ts)
         && end > start
     {
-        push_session(&mut sessions, hours, start, end, true);
+        push_session(&mut sessions, start, end, true);
+    }
+
+    FocusPairing { sessions, departures }
+}
+
+fn summarize_focus(
+    records: &[TelemetryRecord],
+    last_ts: Option<&str>,
+    hours: &mut [HourBucket],
+) -> FocusSummary {
+    let FocusPairing { sessions, departures } = pair_focus(records, last_ts);
+    for session in &sessions {
+        if let (Some(start), Some(end)) = (parse_ts(&session.start), parse_ts(&session.end)) {
+            spread_over_hours(hours, start, end);
+        }
     }
 
     FocusSummary {
@@ -277,7 +262,6 @@ fn summarize_focus(
 
 fn push_session(
     sessions: &mut Vec<FocusSession>,
-    hours: &mut [HourBucket],
     start: DateTime<FixedOffset>,
     end: DateTime<FixedOffset>,
     open_ended: bool,
@@ -286,7 +270,6 @@ fn push_session(
     if duration_ms <= 0 {
         return;
     }
-    spread_over_hours(hours, start, end);
     sessions.push(FocusSession {
         start: start.to_rfc3339(),
         end: end.to_rfc3339(),
@@ -295,13 +278,9 @@ fn push_session(
     });
 }
 
-/// Split a focused stretch across the local hours it spans, so the hourly
-/// chart shows a two-hour session as two full bars rather than one spike at
-/// the minute it started.
-///
-/// Boundaries are found by stepping to the next whole hour in *elapsed*
-/// milliseconds rather than by setting the hour field, so a DST shift inside
-/// the stretch moves the bucket without losing or inventing time.
+/// Split a focused stretch across the local hours it spans. Boundaries are
+/// found by stepping in *elapsed* milliseconds rather than setting the hour
+/// field, so a DST shift inside the stretch neither loses nor invents time.
 fn spread_over_hours(
     hours: &mut [HourBucket],
     start: DateTime<FixedOffset>,
@@ -309,8 +288,7 @@ fn spread_over_hours(
 ) {
     let mut cursor = start.with_timezone(&Local);
     let end = end.with_timezone(&Local);
-    // A day holds at most 24 boundaries; the cap is a backstop against a
-    // corrupt timestamp pair turning this into an unbounded loop.
+    // Backstop against a corrupt timestamp pair looping forever.
     for _ in 0..26 {
         if cursor >= end {
             return;
@@ -351,7 +329,9 @@ fn summarize_actions(records: &[TelemetryRecord], hours: &mut [HourBucket]) -> A
     ActionSummary { total, screen_switches, by_screen: top(by_screen), by_action: top(by_action) }
 }
 
-fn summarize_notifications(records: &[TelemetryRecord]) -> NotificationSummary {
+pub(crate) fn summarize_notifications<'a>(
+    records: impl IntoIterator<Item = &'a TelemetryRecord>,
+) -> NotificationSummary {
     let mut fired = 0usize;
     let mut skipped = 0usize;
     for record in records {
@@ -397,18 +377,15 @@ fn summarize_machine(records: &[TelemetryRecord], hours: &mut [HourBucket]) -> M
         }
     }
 
-    // Ranked by time, not count: the point is where the waiting went, and a
-    // thousand 2ms `git status` calls cost less than a handful of fetches.
+    // Ranked by time, not count: a thousand 2ms `git status` calls cost less than a few fetches.
     by_executable.sort_unstable_by(|a, b| b.total_ms.cmp(&a.total_ms).then(b.count.cmp(&a.count)));
     by_executable.truncate(TOP_N);
 
     MachineSummary { spawn_count, total_ms, failures, by_executable }
 }
 
-/// Increment `key`'s tally, appending it if new. Linear scan on purpose:
-/// these categories are screens and action ids — a few dozen at most — and a
-/// `Vec` keeps insertion order stable for equal counts, which a `HashMap`
-/// would not.
+/// Linear scan on purpose: a few dozen keys at most, and a `Vec` keeps
+/// first-seen order for equal counts where a `HashMap` would not.
 fn bump(counts: &mut Vec<Count>, key: &str) {
     match counts.iter_mut().find(|c| c.key == key) {
         Some(entry) => entry.count += 1,
@@ -417,8 +394,7 @@ fn bump(counts: &mut Vec<Count>, key: &str) {
 }
 
 fn top(mut counts: Vec<Count>) -> Vec<Count> {
-    // Stable sort, so ties keep the order they were first seen in — the point
-    // of `bump`'s `Vec` over a `HashMap`.
+    // Stable sort, so ties keep first-seen order.
     counts.sort_by_key(|c| std::cmp::Reverse(c.count));
     counts.truncate(TOP_N);
     counts
@@ -430,12 +406,11 @@ mod tests {
     use chrono::TimeZone;
     use serde_json::json;
 
-    /// Builds the record shape the reader produces for a `tracing` *event*:
-    /// a throwaway `name`, with the real identity in `message`.
     fn event(ts: &str, message: &str, fields: Value) -> TelemetryRecord {
         let mut object = fields.as_object().cloned().unwrap_or_default();
         object.insert("message".into(), Value::from(message));
         TelemetryRecord {
+            pid: None,
             ts: ts.to_string(),
             kind: "event".into(),
             level: "INFO".into(),
@@ -451,6 +426,7 @@ mod tests {
 
     fn spawn(ts: &str, executable: &str, duration_ms: i64, outcome: &str) -> TelemetryRecord {
         TelemetryRecord {
+            pid: None,
             ts: ts.to_string(),
             kind: "span".into(),
             level: "DEBUG".into(),
@@ -491,8 +467,7 @@ mod tests {
         assert!(summary.focus.sessions.iter().all(|s| !s.open_ended));
     }
 
-    /// An app restart emits a second `focused: true` with no intervening
-    /// blur. The earlier start must win rather than the stretch restarting.
+    /// A restart's second `focused: true` must not restart the stretch.
     #[test]
     fn repeated_focus_gain_does_not_restart_the_session() {
         let records = vec![
@@ -506,9 +481,7 @@ mod tests {
         assert_eq!(summary.focus.focused_ms, 30 * 60 * 1000);
     }
 
-    /// The app can exit (or the day can end) while focused, leaving a gain
-    /// with no matching blur. The stretch is closed at the last record and
-    /// flagged as the lower bound it is.
+    /// A gain with no blur closes at the last record, flagged as a lower bound.
     #[test]
     fn unclosed_focus_runs_to_the_last_record() {
         let records = vec![
@@ -585,12 +558,10 @@ mod tests {
         );
     }
 
-    /// A focused stretch crossing an hour boundary belongs to both hours in
-    /// proportion, not entirely to the one it started in.
+    /// A stretch crossing an hour boundary belongs to both hours in proportion.
     #[test]
     fn focus_time_is_split_across_the_hours_it_spans() {
-        // Anchored in the local zone so the assertion doesn't depend on where
-        // the test runs.
+        // Anchored in the local zone so the assertion holds anywhere.
         let start = Local.with_ymd_and_hms(2026, 7, 25, 10, 30, 0).unwrap();
         let end = Local.with_ymd_and_hms(2026, 7, 25, 11, 15, 0).unwrap();
         let records = vec![
@@ -615,9 +586,7 @@ mod tests {
         assert!(summary.focus.sessions.is_empty());
     }
 
-    /// The reader leaves a span's identity in `name` and an event's in
-    /// `message`; a span must never be looked up by `message`, and an event
-    /// never by its file:line `name`.
+    /// A span is never looked up by `message`, an event never by its file:line `name`.
     #[test]
     fn event_identity_comes_from_message_not_name() {
         let record = action("2026-07-25T10:00:00+00:00", "board.open", "board");

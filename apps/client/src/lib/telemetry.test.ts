@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TELEMETRY_FILTERS,
+  effectiveFilters,
+  filterLabel,
+  fmtCell,
   fmtDuration,
   focusShare,
   loadTelemetryFilters,
+  nearestRange,
+  numericColumns,
+  resultCaption,
   type AttentionSummary,
+  type Filter,
+  type QueryResult,
 } from "@/lib/telemetry";
 
 describe("loadTelemetryFilters", () => {
@@ -13,28 +21,33 @@ describe("loadTelemetryFilters", () => {
   });
 
   it("restores a fully valid stored value", () => {
-    const raw = JSON.stringify({ level: "ERROR", kind: "span", target: "tt_exec", query: "gh" });
-    expect(loadTelemetryFilters(raw)).toEqual({
-      level: "ERROR",
+    const stored = {
       kind: "span",
-      target: "tt_exec",
+      days: 7,
+      filters: [{ field: "durationMs", op: "gt", value: "2000" }],
       query: "gh",
-    });
+    };
+    expect(loadTelemetryFilters(JSON.stringify(stored))).toEqual(stored);
   });
 
-  it("degrades an unknown level or kind to 'all' but keeps the valid fields", () => {
-    const raw = JSON.stringify({ level: "LOUD", kind: "trace", target: "x", query: "q" });
-    expect(loadTelemetryFilters(raw)).toEqual({
-      level: "all",
-      kind: "all",
-      target: "x",
-      query: "q",
-    });
+  it("degrades an unknown kind or range to its default but keeps the valid fields", () => {
+    const raw = JSON.stringify({ kind: "trace", days: 5, query: "q" });
+    expect(loadTelemetryFilters(raw)).toEqual({ kind: "all", days: 1, filters: [], query: "q" });
   });
 
-  it("keeps an arbitrary target verbatim (targets are data-dependent)", () => {
-    const raw = JSON.stringify({ target: "some::module::path" });
-    expect(loadTelemetryFilters(raw).target).toBe("some::module::path");
+  it("drops a malformed filter and keeps the rest", () => {
+    const raw = JSON.stringify({
+      filters: [
+        { field: "level", op: "eq", value: "WARN" },
+        { field: "level", op: "like", value: "x" },
+        { field: "", op: "eq", value: "x" },
+        "not a filter",
+        { field: "outcome", op: "neq" },
+      ],
+    });
+    expect(loadTelemetryFilters(raw).filters).toEqual([
+      { field: "level", op: "eq", value: "WARN" },
+    ]);
   });
 
   it("degrades to defaults on malformed JSON", () => {
@@ -47,12 +60,38 @@ describe("loadTelemetryFilters", () => {
   });
 
   it("fills any missing field with its default", () => {
-    expect(loadTelemetryFilters(JSON.stringify({ level: "WARN" }))).toEqual({
-      level: "WARN",
-      kind: "all",
-      target: "all",
+    expect(loadTelemetryFilters(JSON.stringify({ kind: "event" }))).toEqual({
+      kind: "event",
+      days: 1,
+      filters: [],
       query: "",
     });
+  });
+});
+
+describe("effectiveFilters", () => {
+  it("prepends the kind chip as an eq predicate only when it is narrowed", () => {
+    const f: Filter[] = [{ field: "level", op: "eq", value: "WARN" }];
+    expect(effectiveFilters("all", f)).toBe(f);
+    expect(effectiveFilters("span", f)).toEqual([{ field: "kind", op: "eq", value: "span" }, ...f]);
+  });
+});
+
+describe("nearestRange", () => {
+  it("snaps up to the next range chip and caps at a fortnight", () => {
+    expect(nearestRange(1)).toBe(1);
+    expect(nearestRange(2)).toBe(3);
+    expect(nearestRange(7)).toBe(7);
+    expect(nearestRange(30)).toBe(14);
+  });
+});
+
+describe("filterLabel", () => {
+  it("prints field, glyph, value", () => {
+    expect(filterLabel({ field: "outcome", op: "neq", value: "ok" })).toBe("outcome ≠ ok");
+    expect(filterLabel({ field: "message", op: "contains", value: "notify" })).toBe(
+      "message contains notify",
+    );
   });
 });
 
@@ -109,5 +148,37 @@ describe("focusShare", () => {
   it("clamps above 100 rather than reporting an impossible share", () => {
     const summary = { ...base, elapsedMs: 1_000, focus: { ...base.focus, focusedMs: 5_000 } };
     expect(focusShare(summary)).toBe(100);
+  });
+});
+
+describe("query results", () => {
+  const result: QueryResult = {
+    columns: ["executable", "n", "avg_ms", "note"],
+    rows: [
+      ["gh", 3, 12.5, null],
+      ["git", 1, null, null],
+    ],
+    truncated: false,
+    elapsedMs: 41,
+  };
+
+  it("numericColumns: numbers and nulls right-align, all-null stays text", () => {
+    expect(numericColumns(result)).toEqual([false, true, true, false]);
+    expect(numericColumns({ ...result, rows: [] })).toEqual([false, false, false, false]);
+  });
+
+  it("resultCaption: count, elapsed, and the cap when it hit", () => {
+    expect(resultCaption(result)).toBe("2 rows · 41 ms");
+    expect(resultCaption({ ...result, rows: [result.rows[0]] })).toBe("1 row · 41 ms");
+    expect(resultCaption({ ...result, truncated: true }, 2000)).toBe(
+      "2 rows · 41 ms · first 2,000 only, narrow the query",
+    );
+  });
+
+  it("fmtCell: null is spelled out, reals get two places", () => {
+    expect(fmtCell(null)).toBe("null");
+    expect(fmtCell(3)).toBe("3");
+    expect(fmtCell(12.5)).toBe("12.50");
+    expect(fmtCell("gh")).toBe("gh");
   });
 });

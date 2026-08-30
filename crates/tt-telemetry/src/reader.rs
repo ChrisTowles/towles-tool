@@ -6,8 +6,8 @@ use serde_json::{Map, Value};
 
 use crate::event_log::event_log_date;
 use crate::schema::{
-    FIELD_DURATION_MS, FIELD_KIND, FIELD_LEVEL, FIELD_NAME, FIELD_TARGET, FIELD_TS,
-    FIELD_TT_BUILD_SHA, FIELD_TT_TASK,
+    FIELD_DURATION_MS, FIELD_KIND, FIELD_LEVEL, FIELD_NAME, FIELD_PROCESS_PID, FIELD_TARGET,
+    FIELD_TS, FIELD_TT_BUILD_SHA, FIELD_TT_TASK,
 };
 use crate::{Error, Result, TelemetryRecord};
 
@@ -42,6 +42,30 @@ pub fn read_day(dir: &Path, date: &str) -> Result<Vec<TelemetryRecord>> {
     Ok(content.lines().filter_map(parse_line).collect())
 }
 
+/// The records of every listed day, concatenated oldest day first — the
+/// multi-day read the dashboard, build comparison and query views share, so a
+/// fortnight is one call rather than fourteen. Dates are read in the order
+/// given after sorting ascending; a date with no file contributes nothing.
+pub fn read_days(dir: &Path, dates: &[String]) -> Result<Vec<TelemetryRecord>> {
+    let mut sorted: Vec<&String> = dates.iter().collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut out = Vec::new();
+    for date in sorted {
+        out.extend(read_day(dir, date)?);
+    }
+    Ok(out)
+}
+
+/// The newest `n` days that have a file, oldest first — the argument
+/// [`read_days`] wants for "the last fortnight".
+pub fn recent_days(dir: &Path, n: usize) -> Result<Vec<String>> {
+    let mut days = list_days(dir)?;
+    days.truncate(n);
+    days.reverse();
+    Ok(days)
+}
+
 fn take_string(obj: &mut Map<String, Value>, key: &str) -> Option<String> {
     match obj.remove(key)? {
         Value::String(s) => Some(s),
@@ -63,6 +87,7 @@ fn parse_line(line: &str) -> Option<TelemetryRecord> {
     let tt_task = take_string(&mut obj, FIELD_TT_TASK);
     let tt_build_sha = take_string(&mut obj, FIELD_TT_BUILD_SHA);
     let duration_ms = obj.remove(FIELD_DURATION_MS).and_then(|v| v.as_i64());
+    let pid = obj.get(FIELD_PROCESS_PID).and_then(|v| v.as_i64());
     for key in crate::schema::RESOURCE_KEYS {
         obj.remove(*key);
     }
@@ -76,6 +101,7 @@ fn parse_line(line: &str) -> Option<TelemetryRecord> {
         tt_task,
         tt_build_sha,
         duration_ms,
+        pid,
         fields: Value::Object(obj),
         raw: line.to_string(),
     })
@@ -143,6 +169,34 @@ mod tests {
     }
 
     #[test]
+    fn read_days_concatenates_oldest_first_and_skips_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let line = |d: &str| {
+            format!(
+                r#"{{"ts":"{d}T00:00:00+00:00","kind":"event","level":"INFO","target":"t","name":"n"}}"#
+            )
+        };
+        write_day(dir.path(), "2026-07-22", &[&line("2026-07-22")]);
+        write_day(dir.path(), "2026-07-20", &[&line("2026-07-20")]);
+
+        let dates =
+            ["2026-07-22", "2026-07-21", "2026-07-20", "2026-07-22"].map(String::from).to_vec();
+        let records = read_days(dir.path(), &dates).unwrap();
+        let days: Vec<&str> = records.iter().map(|r| r.day()).collect();
+        assert_eq!(days, vec!["2026-07-20", "2026-07-22"]);
+    }
+
+    #[test]
+    fn recent_days_caps_and_orders_oldest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        for d in ["2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22"] {
+            write_day(dir.path(), d, &["{}"]);
+        }
+        assert_eq!(recent_days(dir.path(), 2).unwrap(), vec!["2026-07-21", "2026-07-22"]);
+        assert_eq!(recent_days(dir.path(), 9).unwrap().len(), 4);
+    }
+
+    #[test]
     fn read_day_on_missing_file_is_empty() {
         let dir = tempfile::tempdir().unwrap();
         assert!(read_day(dir.path(), "2026-07-22").unwrap().is_empty());
@@ -168,8 +222,10 @@ mod tests {
         assert_eq!(r.name, "ui.action");
         assert_eq!(r.tt_task.as_deref(), Some("feat-x"));
         assert_eq!(r.duration_ms, None);
+        assert_eq!(r.pid, Some(1));
         assert_eq!(r.fields["action"], "repo.icon_set");
         assert!(r.fields.get("service.name").is_none());
+        assert!(r.fields.get("process.pid").is_none());
     }
 
     #[test]

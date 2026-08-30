@@ -43,8 +43,49 @@ const PromptImproverSchema = z
   })
   .passthrough();
 
+const TelemetryFilterSchema = z
+  .object({
+    field: z.string(),
+    op: z.enum(["eq", "neq", "contains", "gt", "lt"]),
+    value: z.string(),
+  })
+  .passthrough();
+
+const SavedViewSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    filters: z.array(TelemetryFilterSchema),
+    days: z.number(),
+    query: z.string(),
+  })
+  .passthrough();
+
+const TelemetryRuleSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    enabled: z.boolean(),
+    kind: z.enum(["share", "count"]),
+    select: z.array(TelemetryFilterSchema),
+    pass: z.array(TelemetryFilterSchema),
+    threshold: z.number(),
+    days: z.number(),
+  })
+  .passthrough();
+
 /** `settings_default_prompt_improvers` answers with a bare array. */
 export const PromptImproverListSchema = z.array(PromptImproverSchema);
+
+const SavedQuerySchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    sql: z.string(),
+  })
+  .passthrough();
+/** So does `settings_default_telemetry_rules`. */
+export const TelemetryRuleListSchema = z.array(TelemetryRuleSchema);
 
 const CalendarCollectorSchema = z
   .object({
@@ -131,6 +172,9 @@ export const UserSettingsSchema = z
     preferredEditor: z.string(),
     journalSettings: JournalSettingsSchema,
     promptImprovers: z.array(PromptImproverSchema),
+    savedViews: z.array(SavedViewSchema),
+    savedQueries: z.array(SavedQuerySchema),
+    telemetryRules: z.array(TelemetryRuleSchema),
     collectors: CollectorsSettingsSchema,
     agentboard: AgentboardBlockSchema.optional(),
   })

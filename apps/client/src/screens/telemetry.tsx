@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BarChart3,
   CircleAlert,
+  Database,
   Gauge,
+  GitCompare,
   Keyboard,
   LayoutDashboard,
   Lightbulb,
   RefreshCw,
   ScrollText,
-  Search,
+  ShieldCheck,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -19,7 +22,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -33,26 +35,57 @@ import { cn } from "@/lib/utils";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { keyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import {
+  effectiveFilters,
   LEVELS,
   loadTelemetryFilters,
+  nearestRange,
   saveTelemetryFilters,
   TELEMETRY_FILTERS_KEY,
   telemetryAttention,
+  telemetryBuilds,
+  telemetryDashboard,
   telemetryDays,
   telemetryEvents,
+  telemetryRecords,
+  telemetryRules,
+  telemetryTrace,
   type AttentionSummary,
+  type BuildSnapshot,
+  type DashboardGroupBy,
+  type DashboardRange,
+  type DashboardSummary,
+  type Filter,
   type KindFilter,
-  type LevelFilter,
+  type LogPreset,
+  type RangeDays,
+  type RecordPage,
+  type RuleScore,
   type TelemetryRecord,
 } from "@/lib/telemetry";
+import {
+  loadUserSettings,
+  nextSavedViewId,
+  onSettingsChanged,
+  saveUserSettings,
+  type SavedView,
+  type UserSettings,
+} from "@/lib/settings";
 import { AttentionTab } from "@/screens/telemetry/attention-tab";
+import { BuildsTab } from "@/screens/telemetry/builds-tab";
+import { DEFAULT_GROUP, DEFAULT_RANGE, DashboardTab } from "@/screens/telemetry/dashboard-tab";
+import type { LogPoint } from "@/screens/telemetry/dashboard-charts";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
+import { LogFilterBar } from "@/screens/telemetry/log-filter-bar";
+import { DEFAULT_RULES_RANGE, RulesTab, type RulesRange } from "@/screens/telemetry/rules-tab";
+import { TraceTree } from "@/screens/telemetry/trace-tree";
+import { QueryTab } from "@/screens/telemetry/query-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
 /** Telemetry — a viewer over `tt-telemetry`'s `events-<date>.jsonl`, re-read on
- * Refresh and on focus, never live-tailed. Holds a full day in memory (75,000+
- * records is normal) and `RENDER_LIMIT` bounds only the DOM; the fix is paging. */
+ * Refresh and on focus, never live-tailed. Overview/Attention/Insights hold the
+ * picked day in memory (75,000+ records is normal); the Log tab asks Rust for
+ * a filtered page over its own day range, since a fortnight is far more. */
 
 const LEVEL_TONE: Record<string, string> = {
   ERROR: "text-red-600 dark:text-red-400",
@@ -65,6 +98,9 @@ const LEVEL_TONE: Record<string, string> = {
 /** Rendering a day's rows as plain DOM nodes is what froze the page before this
  * cap existed; narrowing the search/filters is the way to see past it. */
 const RENDER_LIMIT = 300;
+
+/** Each keystroke would otherwise re-read up to 14 files in Rust. */
+const QUERY_DEBOUNCE_MS = 200;
 
 // Read once at module load, so the Log tab reopens with the filters last left on
 // it — the same restore-at-import pattern the workspace tabs use.
@@ -81,25 +117,41 @@ function countBy<T>(items: T[], key: (item: T) => string): { key: string; count:
 }
 
 export function TelemetryScreen() {
-  const { activeTab } = useWorkspace();
+  const { activeTab, openSettingsTab } = useWorkspace();
   const [tab, setTab] = useState("overview");
   const [days, setDays] = useState<string[] | null>(null);
   const [day, setDay] = useState<string | null>(null);
   const [events, setEvents] = useState<TelemetryRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState(restoredFilters.query);
-  const [level, setLevel] = useState<LevelFilter>(restoredFilters.level);
   const [kind, setKind] = useState<KindFilter>(restoredFilters.kind);
-  const [target, setTarget] = useState(restoredFilters.target);
+  const [logDays, setLogDays] = useState<RangeDays>(restoredFilters.days);
+  const [filters, setFilters] = useState<Filter[]>(restoredFilters.filters);
+  const [page, setPage] = useState<RecordPage | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [selected, setSelected] = useState<TelemetryRecord | null>(null);
   const [attention, setAttention] = useState<AttentionSummary | null>(null);
   const [attentionLoading, setAttentionLoading] = useState(false);
   const [keyboard, setKeyboard] = useState<KeyboardScore | null>(null);
   const [keyboardLoading, setKeyboardLoading] = useState(false);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardRange, setDashboardRange] = useState<DashboardRange>(DEFAULT_RANGE);
+  const [dashboardGroup, setDashboardGroup] = useState<DashboardGroupBy>(DEFAULT_GROUP);
+  const [builds, setBuilds] = useState<BuildSnapshot[] | null>(null);
+  const [buildsLoading, setBuildsLoading] = useState(false);
+  const [rules, setRules] = useState<RuleScore[] | null>(null);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [rulesRange, setRulesRange] = useState<RulesRange>(DEFAULT_RULES_RANGE);
+  const [rulesOnlyFailing, setRulesOnlyFailing] = useState(false);
 
   useEffect(() => {
-    saveTelemetryFilters({ level, kind, target, query });
-  }, [level, kind, target, query]);
+    saveTelemetryFilters({ kind, days: logDays, filters, query });
+  }, [kind, logDays, filters, query]);
+
+  useEffect(() => onSettingsChanged(() => void loadUserSettings().then(setSettings)), []);
 
   async function loadEvents(d: string) {
     setLoading(true);
@@ -112,6 +164,24 @@ export function TelemetryScreen() {
       },
     });
     setLoading(false);
+  }
+
+  // Only the latest request may land: a slow 14-day read must not overwrite
+  // the 1-day page the user switched to while it ran.
+  const logRequest = useRef(0);
+  async function loadLog() {
+    const id = ++logRequest.current;
+    setPageLoading(true);
+    const r = await telemetryRecords(logDays, effectiveFilters(kind, filters), query, RENDER_LIMIT);
+    if (id !== logRequest.current) return;
+    r.match({
+      ok: setPage,
+      err: (e) => {
+        setPage(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not read telemetry: ${errorMessage(e)}`);
+      },
+    });
+    setPageLoading(false);
   }
 
   /** Kept separate from `loadEvents` and fired only while the Attention tab
@@ -145,6 +215,49 @@ export function TelemetryScreen() {
     setKeyboardLoading(false);
   }
 
+  /** Range-scoped like the keyboard score, so it ignores the day picker too. */
+  async function loadDashboard() {
+    setDashboardLoading(true);
+    const r = await telemetryDashboard(dashboardRange, dashboardGroup);
+    r.match({
+      ok: setDashboard,
+      err: (e) => {
+        setDashboard(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not build the dashboard: ${errorMessage(e)}`);
+      },
+    });
+    setDashboardLoading(false);
+  }
+
+  /** The whole fortnight on disk, so a baseline can be a build from last week. */
+  async function loadBuilds() {
+    setBuildsLoading(true);
+    const r = await telemetryBuilds(14);
+    r.match({
+      ok: setBuilds,
+      err: (e) => {
+        setBuilds(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not list builds: ${errorMessage(e)}`);
+      },
+    });
+    setBuildsLoading(false);
+  }
+
+  /** Range-scoped like the dashboard; the rules come from settings, so a save
+   * there is picked up on the next load. */
+  async function loadRules() {
+    setRulesLoading(true);
+    const r = await telemetryRules(rulesRange);
+    r.match({
+      ok: setRules,
+      err: (e) => {
+        setRules(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not score rules: ${errorMessage(e)}`);
+      },
+    });
+    setRulesLoading(false);
+  }
+
   /** Re-lists the available days and resolves the selected one if unset. */
   async function refreshDays() {
     const daysResult = await telemetryDays();
@@ -167,8 +280,20 @@ export function TelemetryScreen() {
     if (day) void loadEvents(day);
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
+    if (tab === "dashboard") void loadDashboard();
+    if (tab === "builds") void loadBuilds();
+    if (tab === "rules") void loadRules();
+    if (tab === "log") void loadLog();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only on focus/mount; refreshDays/loadEvents/day are read fresh, not tracked (a changed day reloads via the effect below)
   }, [activeTab]);
+
+  // Structural changes reload at once; typing is debounced.
+  useEffect(() => {
+    if (tab !== "log") return;
+    const handle = setTimeout(() => void loadLog(), QUERY_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadLog reads these fresh; its identity is not a trigger
+  }, [tab, kind, logDays, filters, query]);
 
   useEffect(() => {
     if (day) void loadEvents(day);
@@ -187,12 +312,54 @@ export function TelemetryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAttention is read fresh, not tracked
   }, [tab, day]);
 
+  useEffect(() => {
+    if (tab === "dashboard") void loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadDashboard is read fresh, not tracked
+  }, [tab, dashboardRange, dashboardGroup]);
+
+  useEffect(() => {
+    if (tab === "builds") void loadBuilds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadBuilds is read fresh, not tracked
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab === "rules") void loadRules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadRules is read fresh, not tracked
+  }, [tab, rulesRange]);
+
   function manualRefresh() {
     uiAction("telemetry.refresh", "telemetry");
     void refreshDays();
     if (day) void loadEvents(day);
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
+    if (tab === "dashboard") void loadDashboard();
+    if (tab === "builds") void loadBuilds();
+    if (tab === "rules") void loadRules();
+  }
+
+  /** A rule card becomes a Log view of its population — the `select` filters,
+   * read from settings since the score carries only the id. */
+  function openRule(score: RuleScore) {
+    uiAction("telemetry.rule_opened", "telemetry", score.id);
+    const rule = settings?.telemetryRules.find((r) => r.id === score.id);
+    applyLogFilters({ days: rule?.days ?? 1, filters: rule?.select ?? [], query: "" });
+  }
+
+  /** A chart point becomes a Log view: the series as a structured filter on the
+   * field the dashboard is grouped by, and the day picker moved when the log has it. */
+  function openLogAt(point: LogPoint) {
+    const field = {
+      executable: "process.executable.name",
+      task: "ttTask",
+      working_directory: "process.working_directory",
+    }[dashboardGroup];
+    applyLogFilters({
+      days: 1,
+      filters: point.executable ? [{ field, op: "eq", value: point.executable }] : [],
+      query: "",
+    });
+    if (days?.includes(point.day)) setDay(point.day);
   }
 
   function switchTab(next: string) {
@@ -206,37 +373,75 @@ export function TelemetryScreen() {
     setSelected(record);
   }
 
-  const targets = useMemo(() => [...new Set(events.map((e) => e.target))].toSorted(), [events]);
+  function addFilter(f: Filter) {
+    uiAction("telemetry.filter_added", "telemetry", `${f.field} ${f.op}`);
+    setFilters((current) => [...current, f]);
+    setActiveViewId(null);
+  }
 
-  // A persisted target the loaded day never wrote would blank the select and
-  // hide every row — fall back for this view, leaving the stored choice intact.
-  const effectiveTarget = target === "all" || targets.includes(target) ? target : "all";
+  function removeFilter(index: number) {
+    const f = filters[index];
+    if (f) uiAction("telemetry.filter_removed", "telemetry", `${f.field} ${f.op}`);
+    setFilters((current) => current.filter((_, i) => i !== index));
+    setActiveViewId(null);
+  }
+
+  function setRange(range: RangeDays) {
+    uiAction("telemetry.range_set", "telemetry", String(range));
+    setLogDays(range);
+    setActiveViewId(null);
+  }
+
+  /** Pre-fills the Log tab and switches to it — the seam a sibling tab uses
+   * to say "show me these rows". */
+  function applyLogFilters(preset: LogPreset) {
+    setFilters(preset.filters);
+    setLogDays(nearestRange(preset.days));
+    setQuery(preset.query ?? "");
+    setKind("all");
+    setActiveViewId(null);
+    switchTab("log");
+  }
+
+  function selectView(view: SavedView) {
+    uiAction("telemetry.view_selected", "telemetry", view.id);
+    applyLogFilters({ days: view.days, filters: view.filters, query: view.query });
+    setActiveViewId(view.id);
+  }
+
+  async function saveViews(next: SavedView[]) {
+    if (!settings) return;
+    const updated = { ...settings, savedViews: next };
+    setSettings(updated);
+    if (!(await saveUserSettings(updated))) toast.error("Could not save the view.");
+  }
+
+  function saveView(label: string) {
+    if (!settings) return;
+    const id = nextSavedViewId(settings.savedViews, label);
+    uiAction("telemetry.view_saved", "telemetry", id);
+    void saveViews([
+      ...settings.savedViews,
+      { id, label, filters: effectiveFilters(kind, filters), days: logDays, query },
+    ]);
+    setActiveViewId(id);
+  }
+
+  function deleteView(id: string) {
+    if (!settings) return;
+    uiAction("telemetry.view_deleted", "telemetry", id);
+    void saveViews(settings.savedViews.filter((v) => v.id !== id));
+    if (activeViewId === id) setActiveViewId(null);
+  }
 
   // One pass, shared by the stat strip and Overview's "By level" breakdown.
   const levelCounts = useMemo(() => countBy(events, (e) => e.level), [events]);
 
-  // Derived per data change, not per render — otherwise every keystroke in the
-  // search box redoes `JSON.stringify`/`Object.entries` for every visible row.
-  const indexed = useMemo(
-    () => events.map((e) => ({ e, hay: searchHaystack(e), summary: fieldsSummary(e.fields) })),
-    [events],
+  // Summaries per page load, not per render: `Object.entries` for every row.
+  const shown = useMemo(
+    () => (page?.records ?? []).map((e) => ({ e, summary: fieldsSummary(e.fields) })),
+    [page],
   );
-
-  const q = query.trim().toLowerCase();
-  const shown = useMemo(() => {
-    const matches: { e: TelemetryRecord; summary: string | null }[] = [];
-    for (const { e, hay, summary } of indexed) {
-      if (
-        (level === "all" || e.level === level) &&
-        (kind === "all" || e.kind === kind) &&
-        (effectiveTarget === "all" || e.target === effectiveTarget) &&
-        (!q || hay.includes(q))
-      ) {
-        matches.push({ e, summary });
-      }
-    }
-    return matches;
-  }, [indexed, level, kind, effectiveTarget, q]);
 
   // Spans need their own pass (level counts don't cover kind/duration); error
   // count is read off `levelCounts` rather than re-filtered.
@@ -291,7 +496,11 @@ export function TelemetryScreen() {
 
       <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-border p-4 lg:grid-cols-4">
         <StatTile label="Records" value={String(events.length)} detail={day ?? undefined} />
-        <StatTile label="Shown" value={String(shown.length)} detail="after filters" />
+        <StatTile
+          label="Log matches"
+          value={page ? String(page.total) : "–"}
+          detail={`past ${logDays} ${logDays === 1 ? "day" : "days"}, after filters`}
+        />
         <StatTile
           label="Errors"
           value={String(stats.errorCount)}
@@ -322,6 +531,18 @@ export function TelemetryScreen() {
             <LayoutDashboard className="size-4" />
             Overview
           </TabsTrigger>
+          <TabsTrigger value="dashboard" className="justify-start gap-2 px-2 py-1.5">
+            <BarChart3 className="size-4" />
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="builds" className="justify-start gap-2 px-2 py-1.5">
+            <GitCompare className="size-4" />
+            Builds
+          </TabsTrigger>
+          <TabsTrigger value="rules" className="justify-start gap-2 px-2 py-1.5">
+            <ShieldCheck className="size-4" />
+            Rules
+          </TabsTrigger>
           <TabsTrigger value="attention" className="justify-start gap-2 px-2 py-1.5">
             <Gauge className="size-4" />
             Attention
@@ -329,6 +550,10 @@ export function TelemetryScreen() {
           <TabsTrigger value="keyboard" className="justify-start gap-2 px-2 py-1.5">
             <Keyboard className="size-4" />
             Keyboard
+          </TabsTrigger>
+          <TabsTrigger value="query" className="justify-start gap-2 px-2 py-1.5">
+            <Database className="size-4" />
+            Query
           </TabsTrigger>
           <TabsTrigger value="log" className="justify-start gap-2 px-2 py-1.5">
             <ScrollText className="size-4" />
@@ -346,7 +571,47 @@ export function TelemetryScreen() {
               events={events}
               levelCounts={levelCounts}
               day={day}
-              onOpenLog={() => switchTab("log")}
+              onOpenLog={() =>
+                applyLogFilters({
+                  days: 1,
+                  filters: [{ field: "level", op: "eq", value: "ERROR" }],
+                })
+              }
+            />
+          </TabsContent>
+
+          <TabsContent value="dashboard" className="p-4">
+            <DashboardTab
+              summary={dashboard}
+              loading={dashboardLoading}
+              range={dashboardRange}
+              group={dashboardGroup}
+              onRange={setDashboardRange}
+              onGroup={setDashboardGroup}
+              onRefresh={() => void loadDashboard()}
+              onOpenLog={openLogAt}
+            />
+          </TabsContent>
+
+          <TabsContent value="builds" className="p-4">
+            <BuildsTab
+              snapshots={builds}
+              loading={buildsLoading}
+              onRefresh={() => void loadBuilds()}
+            />
+          </TabsContent>
+
+          <TabsContent value="rules" className="p-4">
+            <RulesTab
+              scores={rules}
+              loading={rulesLoading}
+              range={rulesRange}
+              onlyFailing={rulesOnlyFailing}
+              onRange={setRulesRange}
+              onOnlyFailing={setRulesOnlyFailing}
+              onRefresh={() => void loadRules()}
+              onOpenRule={openRule}
+              onAddRule={() => openSettingsTab({ tab: "collectors", filter: "Telemetry rules" })}
             />
           </TabsContent>
 
@@ -358,71 +623,66 @@ export function TelemetryScreen() {
             <KeyboardTab score={keyboard} loading={keyboardLoading} />
           </TabsContent>
 
+          <TabsContent value="query" className="flex h-full min-h-0 flex-col p-4">
+            <QueryTab />
+          </TabsContent>
+
           <TabsContent value="log" className="p-4">
-            <Card title="Log" note={`${shown.length} of ${events.length}`}>
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <div className="relative w-64">
-                  <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search target, name, fields…"
-                    className="h-8 pl-8 text-sm"
-                  />
-                </div>
-                <FilterSelect
-                  value={level}
-                  onValueChange={setLevel}
-                  width="w-28"
-                  options={[
-                    { value: "all", label: "All levels" },
-                    ...LEVELS.map((l) => ({ value: l, label: l })),
-                  ]}
-                />
-                <FilterSelect
-                  value={kind}
-                  onValueChange={setKind}
-                  width="w-28"
-                  options={[
-                    { value: "all", label: "All kinds" },
-                    { value: "event", label: "Event" },
-                    { value: "span", label: "Span" },
-                  ]}
-                />
-                <FilterSelect
-                  value={effectiveTarget}
-                  onValueChange={setTarget}
-                  width="w-40"
-                  options={[
-                    { value: "all", label: "All targets" },
-                    ...targets.map((t) => ({ value: t, label: t })),
-                  ]}
-                />
-              </div>
+            <Card
+              title="Log"
+              note={
+                page
+                  ? `${page.total} ${page.total === 1 ? "row" : "rows"}${pageLoading ? " · reading…" : ""}`
+                  : pageLoading
+                    ? "reading…"
+                    : undefined
+              }
+            >
+              <LogFilterBar
+                kind={kind}
+                onKind={(k) => {
+                  uiAction("telemetry.filter_added", "telemetry", `kind ${k}`);
+                  setKind(k);
+                  setActiveViewId(null);
+                }}
+                days={logDays}
+                onDays={setRange}
+                filters={filters}
+                onAddFilter={addFilter}
+                onRemoveFilter={removeFilter}
+                query={query}
+                onQuery={setQuery}
+                views={settings?.savedViews ?? []}
+                activeViewId={activeViewId}
+                onSelectView={selectView}
+                onSaveView={saveView}
+                onDeleteView={deleteView}
+              />
 
               {shown.length === 0 ? (
                 <Empty inline>
-                  {events.length === 0
-                    ? day
-                      ? "No telemetry recorded this day."
+                  {page === null
+                    ? pageLoading
+                      ? "Reading the log…"
                       : "No telemetry logs found."
                     : "No records match."}
                 </Empty>
               ) : (
                 <>
                   <div className="-mx-1.5 flex flex-col">
-                    {shown.slice(0, RENDER_LIMIT).map(({ e, summary }, i) => (
+                    {shown.map(({ e, summary }, i) => (
                       <TelemetryRow
                         key={`${e.ts}-${i}`}
                         record={e}
                         summary={summary}
+                        showDay={logDays > 1}
                         onSelect={() => openRecord(e)}
                       />
                     ))}
                   </div>
-                  {shown.length > RENDER_LIMIT && (
+                  {page && page.total > shown.length && (
                     <p className="px-1.5 py-2 text-xs text-muted-foreground">
-                      Showing the first {RENDER_LIMIT} of {shown.length} matches — narrow the search
+                      Showing the newest {shown.length} of {page.total} matches — narrow the search
                       or filters to see the rest.
                     </p>
                   )}
@@ -437,7 +697,7 @@ export function TelemetryScreen() {
         </div>
       </Tabs>
 
-      <RecordDialog record={selected} onClose={() => setSelected(null)} />
+      <RecordDialog record={selected} onOpen={openRecord} onClose={() => setSelected(null)} />
     </div>
   );
 }
@@ -623,49 +883,6 @@ function InsightsTab({
   );
 }
 
-/** A generic filter dropdown — the level/kind/target selects differ only in
- * their option list and width. */
-function FilterSelect<T extends string>({
-  value,
-  onValueChange,
-  width,
-  options,
-}: {
-  value: T;
-  onValueChange: (v: T) => void;
-  width: string;
-  options: { value: T; label: string }[];
-}) {
-  return (
-    <Select value={value} onValueChange={(v) => onValueChange(v as T)}>
-      <SelectTrigger className={cn("h-8", width)}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>
-            {o.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-/** Everything the search box looks at, lowercased once per data change. */
-function searchHaystack(record: TelemetryRecord): string {
-  return [
-    record.target,
-    record.name,
-    record.ttTask,
-    record.ttBuildSha,
-    JSON.stringify(record.fields),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-}
-
 /** `HH:MM:SS` of an RFC 3339 timestamp, for a compact time column. */
 function timeOf(ts: string): string {
   const d = new Date(ts);
@@ -682,10 +899,13 @@ function fieldsSummary(fields: Record<string, unknown>): string | null {
 function TelemetryRow({
   record,
   summary,
+  showDay,
   onSelect,
 }: {
   record: TelemetryRecord;
   summary: string | null;
+  /** A multi-day range needs the date; a single day would only repeat it. */
+  showDay: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -698,7 +918,13 @@ function TelemetryRow({
       )}
     >
       <div className="flex w-full items-center gap-2.5">
-        <span className="w-20 shrink-0 font-mono text-[11px] text-muted-foreground">
+        <span
+          className={cn(
+            "shrink-0 font-mono text-[11px] text-muted-foreground",
+            showDay ? "w-36" : "w-20",
+          )}
+        >
+          {showDay && <span className="text-muted-foreground/60">{record.ts.slice(5, 10)} </span>}
           {timeOf(record.ts)}
         </span>
         <span
@@ -716,7 +942,12 @@ function TelemetryRow({
         </div>
       </div>
       {summary && (
-        <span className="w-full truncate pl-[86px] font-mono text-[11px] text-muted-foreground/70">
+        <span
+          className={cn(
+            "w-full truncate font-mono text-[11px] text-muted-foreground/70",
+            showDay ? "pl-[150px]" : "pl-[86px]",
+          )}
+        >
           {summary}
         </span>
       )}
@@ -726,11 +957,29 @@ function TelemetryRow({
 
 function RecordDialog({
   record,
+  onOpen,
   onClose,
 }: {
   record: TelemetryRecord | null;
+  onOpen: (record: TelemetryRecord) => void;
   onClose: () => void;
 }) {
+  const [children, setChildren] = useState<TelemetryRecord[] | null>(null);
+
+  // Children are fetched, not derived: with a multi-day range the page holds
+  // a few hundred rows, and the siblings live in the day file.
+  useEffect(() => {
+    setChildren(null);
+    if (!record || record.durationMs === null) return;
+    let live = true;
+    void telemetryTrace(record.ts, record.ts.slice(0, 10)).then((r) => {
+      if (live) setChildren(r.unwrapOr([]));
+    });
+    return () => {
+      live = false;
+    };
+  }, [record]);
+
   return (
     <Dialog open={!!record} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -749,6 +998,10 @@ function RecordDialog({
           <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-foreground">
             {prettyRaw(record.raw)}
           </pre>
+        )}
+
+        {record && children && children.length > 0 && (
+          <TraceTree parent={record} descendants={children} onOpen={onOpen} />
         )}
       </DialogContent>
     </Dialog>

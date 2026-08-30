@@ -20,4 +20,5 @@ pub(crate) const FIELD_DURATION_MS: &str = "duration_ms";
 /// surfacing.
 pub(crate) const FIELD_TT_TASK: &str = "tt.task";
 pub(crate) const FIELD_TT_BUILD_SHA: &str = "tt.build_sha";
-pub(crate) const RESOURCE_KEYS: &[&str] = &["service.name", "service.version", "process.pid"];
+pub(crate) const FIELD_PROCESS_PID: &str = "process.pid";
+pub(crate) const RESOURCE_KEYS: &[&str] = &["service.name", "service.version", FIELD_PROCESS_PID];

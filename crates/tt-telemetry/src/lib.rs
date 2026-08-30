@@ -10,15 +10,25 @@
 //!   *scoped* directory; the bare `~/.local/share/towles-tool/telemetry/` exists but
 //!   stays empty, so checking it by eye reads as "telemetry is broken". Use
 //!   `telemetry_dir()`.
-//! - [`list_days`]/[`read_day`] read them back uncached; [`summarize`] and
-//!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records.
+//! - [`list_days`]/[`read_day`]/[`read_days`] read them back uncached; [`summarize`],
+//!   [`keyboard_score`], [`apply`] and [`children_of`] aggregate/filter in Rust, since a day
+//!   can hold 75,000+ records.
+//! - [`list_days`]/[`read_day`]/[`read_days`] read them back uncached; [`summarize`] and
+//!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records, and
+//!   [`query`] answers ad-hoc SQL over a fortnight of them.
 
 mod attention;
+mod builds;
+mod dashboard;
 mod event_log;
+mod filter;
 mod keyboard;
 mod layer;
+pub mod query;
 mod reader;
+mod rules;
 mod schema;
+mod trace;
 mod types;
 
 /// Serializes every test in this crate that installs a subscriber to capture
@@ -36,13 +46,24 @@ pub use attention::{
     ActionSummary, AttentionSummary, Count, ExecutableStat, FocusSession, FocusSummary, HourBucket,
     MachineSummary, NotificationSummary, summarize,
 };
+pub use builds::{
+    BuildKey, BuildSnapshot, Delta, Direction, MIN_FOCUS_MS, Measures, PerHour, Unit, compare,
+    snapshots,
+};
+pub use dashboard::{
+    Bucket, BucketRow, DashboardFocus, DashboardSummary, DayWait, ExecutableProfile, GroupBy,
+    SeriesStat, summarize_dashboard,
+};
 pub use event_log::EventLog;
+pub use filter::{Filter, FilterOp, apply, matches};
 pub use keyboard::{
     GOAL_MIN_ACTIONS, GOAL_SHARE, KeyboardDay, KeyboardScore, ShortcutSplit, keyboard_score,
     summarize_keyboard,
 };
 pub use layer::EventLogLayer;
-pub use reader::{list_days, read_day};
+pub use reader::{list_days, read_day, read_days, recent_days};
+pub use rules::{DayScore, Rule, RuleKind, RuleScore, score};
+pub use trace::children_of;
 pub use types::TelemetryRecord;
 
 use serde_json::{Map, Value};

@@ -288,6 +288,14 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
+    id: "tq-run",
+    scope: "telemetry",
+    keys: "mod+enter",
+    description: "Run the query",
+    when: "the Query tab is showing",
+    allowInEditable: true,
+  },
+  {
     // Matched by the focused TerminalView itself (`matchesShortcut`), not window-level:
     // only the terminal owning the keystroke may open its overlay. Ctrl+F stays with the shell.
     id: "term-search",

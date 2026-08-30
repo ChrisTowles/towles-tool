@@ -13,6 +13,28 @@ const valid = {
   promptImprovers: [
     { id: "direct", label: "Direct", enabled: true, preferred: true, prompt: "Restate it." },
   ],
+  savedViews: [
+    {
+      id: "gh-failures",
+      label: "gh failures",
+      filters: [{ field: "outcome", op: "neq", value: "ok" }],
+      days: 1,
+      query: "",
+    },
+  ],
+  savedQueries: [{ id: "slow-spawns", label: "slow spawns", sql: "select 1" }],
+  telemetryRules: [
+    {
+      id: "zero-error",
+      label: "Zero ERROR",
+      enabled: true,
+      kind: "count",
+      select: [{ field: "level", op: "eq", value: "ERROR" }],
+      pass: [],
+      threshold: 0,
+      days: 1,
+    },
+  ],
   collectors: {
     calendar: {
       enabled: false,
