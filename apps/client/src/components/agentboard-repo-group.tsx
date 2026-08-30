@@ -205,7 +205,7 @@ export function RepoGroup({
   // Grouping is purely visual; the mechanics that move panes between windows
   // are unchanged. One AnimatePresence per group plus one for loose rows, so a
   // group's exiting row stays inside its own spine while it collapses.
-  const sessionRows = (folder: FolderData) => {
+  const sessionRows = (folder: FolderData, pad: string) => {
     const folderWins = (wins?.windows ?? []).filter((w) => w.folderDir === folder.dir);
     const byId = new Map(folder.sessions.map((s) => [s.id, s] as const));
     const grouped = new Set(folderWins.flatMap((w) => w.panes));
@@ -218,9 +218,14 @@ export function RepoGroup({
           .filter((row): row is ReactElement => row !== null),
       }))
       .filter((g) => g.rows.length > 0);
+    // The empty state only under the folder you're in, or a rail of untouched
+    // checkouts carries a row apiece saying nothing runs there. With nothing at
+    // all to show the block goes too: an empty one is padding reading as a gap.
+    const empty = folder.sessions.length === 0 && activeFolderDir === folder.dir;
+    if (!empty && groups.length === 0 && loose.length === 0) return null;
     return (
-      <>
-        {folder.sessions.length === 0 && (
+      <div className={pad}>
+        {empty && (
           <div className="flex items-center gap-2.5 py-1 pr-3 pl-9 text-[11px] italic text-muted-foreground/60">
             no sessions
             <button
@@ -254,7 +259,7 @@ export function RepoGroup({
           </div>
         ))}
         <AnimatePresence initial={false}>{loose.map((s) => sessionRow(folder, s))}</AnimatePresence>
-      </>
+      </div>
     );
   };
 
@@ -320,7 +325,7 @@ export function RepoGroup({
             initialGoal={taskFormInitialGoal}
           />
         )}
-        {!isCollapsed && <div className="pb-2">{sessionRows(folder)}</div>}
+        {!isCollapsed && sessionRows(folder, "pb-2")}
         {idle.size > 0 && showIdle && (
           <IdleToggleRow count={idle.size} revealed onToggle={onToggleIdle} />
         )}
@@ -473,7 +478,7 @@ export function RepoGroup({
                   onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
                   onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
                 />
-                {!fCollapsed && <div className="pb-1">{sessionRows(folder)}</div>}
+                {!fCollapsed && sessionRows(folder, "pb-1")}
               </motion.div>
             );
           })}
