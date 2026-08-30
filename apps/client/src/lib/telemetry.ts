@@ -300,3 +300,28 @@ export function effectiveFilters(kind: KindFilter, filters: Filter[]): Filter[] 
 export function nearestRange(days: number): RangeDays {
   return RANGE_DAYS.find((d) => d >= days) ?? 14;
 }
+
+/** The Rules tab: `tt_config::TelemetryRule` scored in Rust
+ * (`crates/tt-telemetry/src/rules.rs`). A `share` fails below `threshold`, a
+ * `count` above it; `today` is null with no population — no evidence, not 0%. */
+export type RuleKind = "share" | "count";
+
+export type RuleDayScore = { day: string; score: number | null; population: number };
+
+export type RuleScore = {
+  id: string;
+  label: string;
+  kind: RuleKind;
+  threshold: number;
+  today: number | null;
+  failing: boolean;
+  population: number;
+  series: RuleDayScore[];
+  /** The oldest day of the failing run ending today; empty days don't break it. */
+  failingSince: string | null;
+};
+
+export const telemetryRules = (days: number) => invoke<RuleScore[]>("telemetry_rules", { days });
+
+/** Enabled rules failing right now; the status bar polls this. */
+export const telemetryRulesFailing = () => invoke<number>("telemetry_rules_failing");

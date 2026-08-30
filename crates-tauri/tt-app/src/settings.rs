@@ -49,6 +49,13 @@ pub fn settings_default_prompt_improvers() -> Vec<tt_config::PromptImprover> {
     tt_config::PromptImprover::defaults()
 }
 
+/// The built-in telemetry rules, for the same reset button on the Rules list.
+#[tauri::command]
+pub fn settings_default_telemetry_rules() -> Vec<tt_config::TelemetryRule> {
+    tracing::info!("settings.default_telemetry_rules");
+    tt_config::TelemetryRule::defaults()
+}
+
 /// Persist edited settings, preserving any unknown keys already on disk, then
 /// signal the scheduler to re-read collector cadence.
 #[tauri::command]

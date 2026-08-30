@@ -22,6 +22,18 @@ const valid = {
       query: "",
     },
   ],
+  telemetryRules: [
+    {
+      id: "zero-error",
+      label: "Zero ERROR",
+      enabled: true,
+      kind: "count",
+      select: [{ field: "level", op: "eq", value: "ERROR" }],
+      pass: [],
+      threshold: 0,
+      days: 1,
+    },
+  ],
   collectors: {
     calendar: {
       enabled: false,

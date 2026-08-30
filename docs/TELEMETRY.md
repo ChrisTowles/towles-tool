@@ -92,6 +92,14 @@ session") must **not** call it, because it wasn't a keystroke the user
 passed up. Same aggregate-in-Rust rule as Attention, plus a cache: the
 score spans a fortnight and the status bar polls it, so finished days are
 memoized in `telemetry.rs` and only today's file is re-read.
+Its **Rules** tab is Braintrust's scorers with counting in place of a model
+(`tt_telemetry::score`, `crates/tt-telemetry/src/rules.rs`): a rule is
+settings (`tt_config::TelemetryRule`, editable under Settings → Collectors)
+whose `select` filters pick a population and whose score is either the share of
+it that also matches `pass` (failing *below* the threshold) or its size (failing
+*above*). Scores are per UTC day; an empty population is null, never 0% or
+100%. The status bar polls `telemetry_rules_failing` for the count of failing
+rules and shows it in sky — chrome states the fact, the tab wears the red.
 
 ## Backend half: every user-gesture command emits its own event
 

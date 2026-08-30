@@ -28,6 +28,7 @@ import {
   type UserSettings,
 } from "@/lib/settings";
 import { uiAction } from "@/lib/ui-action";
+import { TelemetryRulesEditor } from "./telemetry-rules";
 import {
   CadenceRow,
   clampHour,
@@ -576,6 +577,25 @@ export function collectorsSections(
               value={c.slack.refreshSeconds}
               unit="sec"
               onValue={(n) => setSlack({ refreshSeconds: n }, typed)}
+              onCommit={() => void flush()}
+            />
+          ),
+        },
+      ],
+    },
+    {
+      heading: "Telemetry rules",
+      keywords: ["telemetry", "rule", "rules", "scorer", "score", "threshold", "filter"],
+      rows: [
+        {
+          label: "Rules",
+          keywords: ["share", "count", "select", "pass", "days", "gh", "warn", "error"],
+          node: (
+            <TelemetryRulesEditor
+              rules={settings.telemetryRules}
+              onChange={(telemetryRules, opts) =>
+                update((s) => ({ ...s, telemetryRules }), opts)
+              }
               onCommit={() => void flush()}
             />
           ),

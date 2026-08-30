@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Flame, Keyboard, Stethoscope } from "lucide-react";
+import { Flame, Keyboard, ShieldAlert, Stethoscope } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isTauri } from "@/lib/tauri";
 import { claudeUsageLimits, type UsageLimitBar, type UsageLimits } from "@/lib/claude-sessions";
@@ -17,6 +17,7 @@ import {
   useKeyboardScore,
   type KeyboardScore,
 } from "@/lib/keyboard-score";
+import { useRulesFailing } from "@/lib/telemetry-rules";
 import { fmtAge, fmtCountdown, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
 import { taskExplorerSnapshot } from "@/lib/task-explorer";
@@ -218,11 +219,39 @@ function KeyboardHabit({ score }: { score: KeyboardScore }) {
   );
 }
 
+/** Sky on purpose, never amber or red: the bar is chrome, and a failing rule is
+ * a fact to read on the Rules tab, not an alarm to react to here. Hidden at
+ * zero — a pill saying "0" is noise. */
+function RulesFailing({ count }: { count: number }) {
+  const { openTab } = useWorkspace();
+  if (count === 0) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          className="flex items-center gap-1 tabular-nums hover:text-foreground"
+          aria-label="Telemetry rules failing"
+          onClick={() => openTab("telemetry")}
+        >
+          <ShieldAlert className="size-3.5" />
+          <span className="rounded-full bg-sky-500/15 px-1.5 font-mono text-[11px] text-sky-700 dark:text-sky-300">
+            {count}
+          </span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {count} telemetry {count === 1 ? "rule" : "rules"} failing today
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function StatusBar() {
   const { openTab } = useWorkspace();
   const usage = useResourceUsage();
   const claudeLimits = useClaudeUsageLimits();
   const keyboard = useKeyboardScore();
+  const rulesFailing = useRulesFailing();
   const version = useAppVersion();
 
   return (
@@ -237,6 +266,7 @@ export function StatusBar() {
       <div className="flex items-center gap-3">
         <CollectorHealthCluster />
         {keyboard && <KeyboardHabit score={keyboard} />}
+        {rulesFailing !== null && <RulesFailing count={rulesFailing} />}
         {claudeLimits && claudeLimits.bars.length > 0 && (
           <div className="flex items-center gap-2.5 tabular-nums">
             {claudeLimits.bars.map((b) => (
