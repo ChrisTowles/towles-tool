@@ -3,6 +3,7 @@ import {
   BarChart3,
   CircleAlert,
   Gauge,
+  GitCompare,
   Keyboard,
   LayoutDashboard,
   Lightbulb,
@@ -39,10 +40,12 @@ import {
   saveTelemetryFilters,
   TELEMETRY_FILTERS_KEY,
   telemetryAttention,
+  telemetryBuilds,
   telemetryDashboard,
   telemetryDays,
   telemetryEvents,
   type AttentionSummary,
+  type BuildSnapshot,
   type DashboardGroupBy,
   type DashboardRange,
   type DashboardSummary,
@@ -51,6 +54,7 @@ import {
   type TelemetryRecord,
 } from "@/lib/telemetry";
 import { AttentionTab } from "@/screens/telemetry/attention-tab";
+import { BuildsTab } from "@/screens/telemetry/builds-tab";
 import { DEFAULT_GROUP, DEFAULT_RANGE, DashboardTab } from "@/screens/telemetry/dashboard-tab";
 import type { LogPoint } from "@/screens/telemetry/dashboard-charts";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
@@ -107,6 +111,8 @@ export function TelemetryScreen() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>(DEFAULT_RANGE);
   const [dashboardGroup, setDashboardGroup] = useState<DashboardGroupBy>(DEFAULT_GROUP);
+  const [builds, setBuilds] = useState<BuildSnapshot[] | null>(null);
+  const [buildsLoading, setBuildsLoading] = useState(false);
 
   useEffect(() => {
     saveTelemetryFilters({ level, kind, target, query });
@@ -170,6 +176,20 @@ export function TelemetryScreen() {
     setDashboardLoading(false);
   }
 
+  /** The whole fortnight on disk, so a baseline can be a build from last week. */
+  async function loadBuilds() {
+    setBuildsLoading(true);
+    const r = await telemetryBuilds(14);
+    r.match({
+      ok: setBuilds,
+      err: (e) => {
+        setBuilds(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not list builds: ${errorMessage(e)}`);
+      },
+    });
+    setBuildsLoading(false);
+  }
+
   /** Re-lists the available days and resolves the selected one if unset. */
   async function refreshDays() {
     const daysResult = await telemetryDays();
@@ -193,6 +213,7 @@ export function TelemetryScreen() {
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
     if (tab === "dashboard") void loadDashboard();
+    if (tab === "builds") void loadBuilds();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only on focus/mount; refreshDays/loadEvents/day are read fresh, not tracked (a changed day reloads via the effect below)
   }, [activeTab]);
 
@@ -218,6 +239,11 @@ export function TelemetryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadDashboard is read fresh, not tracked
   }, [tab, dashboardRange, dashboardGroup]);
 
+  useEffect(() => {
+    if (tab === "builds") void loadBuilds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadBuilds is read fresh, not tracked
+  }, [tab]);
+
   function manualRefresh() {
     uiAction("telemetry.refresh", "telemetry");
     void refreshDays();
@@ -225,6 +251,7 @@ export function TelemetryScreen() {
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
     if (tab === "dashboard") void loadDashboard();
+    if (tab === "builds") void loadBuilds();
   }
 
   /** A chart point becomes a Log search: the series name as the query, and the
@@ -366,6 +393,10 @@ export function TelemetryScreen() {
             <BarChart3 className="size-4" />
             Dashboard
           </TabsTrigger>
+          <TabsTrigger value="builds" className="justify-start gap-2 px-2 py-1.5">
+            <GitCompare className="size-4" />
+            Builds
+          </TabsTrigger>
           <TabsTrigger value="attention" className="justify-start gap-2 px-2 py-1.5">
             <Gauge className="size-4" />
             Attention
@@ -404,6 +435,14 @@ export function TelemetryScreen() {
               onGroup={setDashboardGroup}
               onRefresh={() => void loadDashboard()}
               onOpenLog={openLogAt}
+            />
+          </TabsContent>
+
+          <TabsContent value="builds" className="p-4">
+            <BuildsTab
+              snapshots={builds}
+              loading={buildsLoading}
+              onRefresh={() => void loadBuilds()}
             />
           </TabsContent>
 

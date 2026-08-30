@@ -24,10 +24,10 @@ use crate::TelemetryRecord;
 const FRAGMENT_MS: i64 = 2 * 60 * 1000;
 
 /// Emitted by `WindowEvent::Focused` in `tt-app/src/lib.rs`.
-const FOCUS_EVENT: &str = "window.focus_changed";
+pub(crate) const FOCUS_EVENT: &str = "window.focus_changed";
 
 /// The frontend's one gesture seam (`ui_action` in `tt-app/src/lib.rs`).
-const ACTION_EVENT: &str = "ui.action";
+pub(crate) const ACTION_EVENT: &str = "ui.action";
 
 /// Needs-you notification events are `notify_needs_you: fired` /
 /// `notify_needs_you: skipped, <reason>`, so they're matched by prefix.
@@ -199,12 +199,15 @@ pub(crate) struct FocusPairing {
 /// Pair `window.focus_changed` events into stretches — one state machine over
 /// the whole run, not one per process: each restart's first event is a
 /// `focused: true` the previous process never blurred.
-pub(crate) fn pair_focus(records: &[TelemetryRecord], last_ts: Option<&str>) -> FocusPairing {
+pub(crate) fn pair_focus<'a>(
+    records: impl IntoIterator<Item = &'a TelemetryRecord>,
+    last_ts: Option<&str>,
+) -> FocusPairing {
     let mut sessions: Vec<FocusSession> = Vec::new();
     let mut open: Option<DateTime<FixedOffset>> = None;
     let mut departures = 0usize;
 
-    for record in records.iter().filter(|r| event_name(r) == FOCUS_EVENT) {
+    for record in records.into_iter().filter(|r| event_name(r) == FOCUS_EVENT) {
         let Some(focused) = record.fields.get("focused").and_then(Value::as_bool) else {
             continue;
         };
@@ -326,7 +329,9 @@ fn summarize_actions(records: &[TelemetryRecord], hours: &mut [HourBucket]) -> A
     ActionSummary { total, screen_switches, by_screen: top(by_screen), by_action: top(by_action) }
 }
 
-pub(crate) fn summarize_notifications(records: &[TelemetryRecord]) -> NotificationSummary {
+pub(crate) fn summarize_notifications<'a>(
+    records: impl IntoIterator<Item = &'a TelemetryRecord>,
+) -> NotificationSummary {
     let mut fired = 0usize;
     let mut skipped = 0usize;
     for record in records {

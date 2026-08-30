@@ -173,3 +173,51 @@ export type DashboardSummary = {
 
 export const telemetryDashboard = (days: DashboardRange, groupBy: DashboardGroupBy) =>
   invoke<DashboardSummary>("telemetry_dashboard", { days, groupBy });
+
+/** The Builds tab: one snapshot per build × day, compared in Rust
+ * (`crates/tt-telemetry/src/builds.rs`). A `perHour` of `null` means the measure
+ * is already a rate; `perHour` with null sides means too little focused time. */
+export type BuildKey = { sha: string; day: string };
+
+export type BuildMeasures = {
+  ghCalls: number;
+  gitCalls: number;
+  claudeCalls: number;
+  ghFailurePct: number | null;
+  gitFailurePct: number | null;
+  subprocessWaitMs: number;
+  p95SpawnMs: number;
+  focusFlips: number;
+  needsYouFired: number;
+  needsYouSkipped: number;
+  uiActions: number;
+  warnErrorRecords: number;
+  focusedMs: number;
+};
+
+export type BuildSnapshot = {
+  sha: string;
+  day: string;
+  recordCount: number;
+  measures: BuildMeasures;
+};
+
+export type DeltaDirection = "lowerIsBetter" | "higherIsBetter" | "neutral";
+export type DeltaUnit = "count" | "percent" | "ms" | "minutes";
+
+export type BuildDelta = {
+  measure: string;
+  label: string;
+  base: number | null;
+  other: number | null;
+  delta: number | null;
+  direction: DeltaDirection;
+  unit: DeltaUnit;
+  perHour: { base: number | null; other: number | null; delta: number | null } | null;
+};
+
+export const telemetryBuilds = (days: number) =>
+  invoke<BuildSnapshot[]>("telemetry_builds", { days });
+
+export const telemetryBuildCompare = (base: BuildKey, other: BuildKey) =>
+  invoke<BuildDelta[]>("telemetry_build_compare", { base, other });

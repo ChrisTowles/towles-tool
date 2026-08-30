@@ -14,6 +14,7 @@
 //!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records.
 
 mod attention;
+mod builds;
 mod dashboard;
 mod event_log;
 mod keyboard;
@@ -36,6 +37,10 @@ pub(crate) fn serialize_subscriber_tests() -> std::sync::MutexGuard<'static, ()>
 pub use attention::{
     ActionSummary, AttentionSummary, Count, ExecutableStat, FocusSession, FocusSummary, HourBucket,
     MachineSummary, NotificationSummary, summarize,
+};
+pub use builds::{
+    BuildKey, BuildSnapshot, Delta, Direction, MIN_FOCUS_MS, Measures, PerHour, Unit, compare,
+    snapshots,
 };
 pub use dashboard::{
     Bucket, BucketRow, DashboardFocus, DashboardSummary, DayWait, ExecutableProfile, GroupBy,

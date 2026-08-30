@@ -13,8 +13,8 @@ use std::sync::Mutex;
 
 use chrono::{Duration, Utc};
 use tt_telemetry::{
-    AttentionSummary, Bucket, DashboardSummary, GroupBy, KeyboardDay, KeyboardScore,
-    TelemetryRecord,
+    AttentionSummary, Bucket, BuildKey, BuildSnapshot, DashboardSummary, Delta, GroupBy,
+    KeyboardDay, KeyboardScore, TelemetryRecord,
 };
 
 fn telemetry_dir() -> Result<PathBuf, String> {
@@ -135,4 +135,44 @@ pub async fn telemetry_dashboard(days: u32, group_by: String) -> Result<Dashboar
     })
     .await
     .map_err(|e| format!("telemetry dashboard task panicked: {e}"))?
+}
+
+/// One snapshot per build × day over the newest `days` files on disk — the
+/// Builds tab's experiment list. Reads whole days, so the same 75,000-record
+/// caveat as the dashboard applies.
+#[tauri::command]
+pub async fn telemetry_builds(days: u32) -> Result<Vec<BuildSnapshot>, String> {
+    let dir = telemetry_dir()?;
+    let days = (days as usize).clamp(1, KEYBOARD_WINDOW_DAYS as usize);
+    tauri::async_runtime::spawn_blocking(move || {
+        let dates = tt_telemetry::recent_days(&dir, days).map_err(|e| e.to_string())?;
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::snapshots(&records))
+    })
+    .await
+    .map_err(|e| format!("telemetry builds task panicked: {e}"))?
+}
+
+/// `other` measured against `base`. Only the two days named are read, so a
+/// re-compare after a chip change costs two files, not the fortnight.
+#[tauri::command]
+pub async fn telemetry_build_compare(
+    base: BuildKey,
+    other: BuildKey,
+) -> Result<Vec<Delta>, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dates = vec![base.day.clone(), other.day.clone()];
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        let snapshots = tt_telemetry::snapshots(&records);
+        let find = |key: &BuildKey| {
+            snapshots
+                .iter()
+                .find(|s| s.key() == *key)
+                .ok_or_else(|| format!("no telemetry for build {} on {}", key.sha, key.day))
+        };
+        Ok(tt_telemetry::compare(find(&base)?, find(&other)?))
+    })
+    .await
+    .map_err(|e| format!("telemetry build compare task panicked: {e}"))?
 }

@@ -136,13 +136,13 @@ pub struct DashboardFocus {
 
 /// One subprocess record: a finished `process.spawn` span, or the single event a
 /// detached launch (PTY, code-server, editor) emits in its place.
-struct Spawn<'a> {
-    record: &'a TelemetryRecord,
-    duration_ms: Option<i64>,
-    failed: bool,
+pub(crate) struct Spawn<'a> {
+    pub(crate) record: &'a TelemetryRecord,
+    pub(crate) duration_ms: Option<i64>,
+    pub(crate) failed: bool,
 }
 
-fn spawn_of(record: &TelemetryRecord) -> Option<Spawn<'_>> {
+pub(crate) fn spawn_of(record: &TelemetryRecord) -> Option<Spawn<'_>> {
     let outcome = field_str(record, "outcome");
     let detached = record.kind == "event" && outcome == Some("detached");
     if !(detached || (record.kind == "span" && record.name == SPAWN_SPAN)) {
@@ -156,7 +156,7 @@ fn spawn_of(record: &TelemetryRecord) -> Option<Spawn<'_>> {
 }
 
 /// `/usr/bin/zsh` and `zsh` are the same tool; a detached PTY records the full path.
-fn executable_name(record: &TelemetryRecord) -> &str {
+pub(crate) fn executable_name(record: &TelemetryRecord) -> &str {
     field_str(record, "process.executable.name")
         .map(|name| name.rsplit('/').next().unwrap_or(name))
         .filter(|name| !name.is_empty())
@@ -310,7 +310,7 @@ pub fn summarize_dashboard(
 }
 
 /// Nearest-rank percentile of an ascending slice; see the module docs.
-fn percentile(sorted: &[i64], p: f64) -> i64 {
+pub(crate) fn percentile(sorted: &[i64], p: f64) -> i64 {
     if sorted.is_empty() {
         return 0;
     }
