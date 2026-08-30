@@ -29,3 +29,12 @@ pub struct TelemetryRecord {
     pub fields: Value,
     pub raw: String,
 }
+
+impl TelemetryRecord {
+    /// The UTC calendar day this record was written on (`YYYY-MM-DD`), which is
+    /// also the log file it came from. Taken from `ts`, which is RFC 3339 and
+    /// always in UTC, so the first ten bytes are the date.
+    pub fn day(&self) -> &str {
+        self.ts.get(..10).unwrap_or(&self.ts)
+    }
+}

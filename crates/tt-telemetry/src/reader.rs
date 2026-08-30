@@ -42,6 +42,30 @@ pub fn read_day(dir: &Path, date: &str) -> Result<Vec<TelemetryRecord>> {
     Ok(content.lines().filter_map(parse_line).collect())
 }
 
+/// The records of every listed day, concatenated oldest day first — the
+/// multi-day read the dashboard, build comparison and query views share, so a
+/// fortnight is one call rather than fourteen. Dates are read in the order
+/// given after sorting ascending; a date with no file contributes nothing.
+pub fn read_days(dir: &Path, dates: &[String]) -> Result<Vec<TelemetryRecord>> {
+    let mut sorted: Vec<&String> = dates.iter().collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut out = Vec::new();
+    for date in sorted {
+        out.extend(read_day(dir, date)?);
+    }
+    Ok(out)
+}
+
+/// The newest `n` days that have a file, oldest first — the argument
+/// [`read_days`] wants for "the last fortnight".
+pub fn recent_days(dir: &Path, n: usize) -> Result<Vec<String>> {
+    let mut days = list_days(dir)?;
+    days.truncate(n);
+    days.reverse();
+    Ok(days)
+}
+
 fn take_string(obj: &mut Map<String, Value>, key: &str) -> Option<String> {
     match obj.remove(key)? {
         Value::String(s) => Some(s),
@@ -140,6 +164,34 @@ mod tests {
     fn list_days_on_missing_dir_is_empty() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(list_days(&dir.path().join("nope")).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn read_days_concatenates_oldest_first_and_skips_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let line = |d: &str| {
+            format!(
+                r#"{{"ts":"{d}T00:00:00+00:00","kind":"event","level":"INFO","target":"t","name":"n"}}"#
+            )
+        };
+        write_day(dir.path(), "2026-07-22", &[&line("2026-07-22")]);
+        write_day(dir.path(), "2026-07-20", &[&line("2026-07-20")]);
+
+        let dates =
+            ["2026-07-22", "2026-07-21", "2026-07-20", "2026-07-22"].map(String::from).to_vec();
+        let records = read_days(dir.path(), &dates).unwrap();
+        let days: Vec<&str> = records.iter().map(|r| r.day()).collect();
+        assert_eq!(days, vec!["2026-07-20", "2026-07-22"]);
+    }
+
+    #[test]
+    fn recent_days_caps_and_orders_oldest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        for d in ["2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22"] {
+            write_day(dir.path(), d, &["{}"]);
+        }
+        assert_eq!(recent_days(dir.path(), 2).unwrap(), vec!["2026-07-21", "2026-07-22"]);
+        assert_eq!(recent_days(dir.path(), 9).unwrap().len(), 4);
     }
 
     #[test]

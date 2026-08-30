@@ -10,7 +10,7 @@
 //!   *scoped* directory; the bare `~/.local/share/towles-tool/telemetry/` exists but
 //!   stays empty, so checking it by eye reads as "telemetry is broken". Use
 //!   `telemetry_dir()`.
-//! - [`list_days`]/[`read_day`] read them back uncached; [`summarize`] and
+//! - [`list_days`]/[`read_day`]/[`read_days`] read them back uncached; [`summarize`] and
 //!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records.
 
 mod attention;
@@ -42,7 +42,7 @@ pub use keyboard::{
     summarize_keyboard,
 };
 pub use layer::EventLogLayer;
-pub use reader::{list_days, read_day};
+pub use reader::{list_days, read_day, read_days, recent_days};
 pub use types::TelemetryRecord;
 
 use serde_json::{Map, Value};
