@@ -85,7 +85,7 @@ binding's job, and `tt_telemetry::keyboard_score`
 into a daily share and a streak. **A click target that is a genuine twin
 of a shortcut must call `mouseAction(id, screen)`
 (`apps/client/src/lib/shortcut-coach.ts`) instead of `uiAction` directly**
-— it emits that record and, at most a few times a day, the toast naming
+— it emits that record and, until the binding is a habit, the toast naming
 the keys. A twin that emits a plain `uiAction` silently flatters the
 score; conversely a *near*-twin (a per-row ✕ against "close the selected
 session") must **not** call it, because it wasn't a keystroke the user
