@@ -141,6 +141,16 @@ export function FolderHeader({
     isMainWorktreeSubrow || Boolean(humanTitle) || !branchRedundant(folder.name, folder.branch);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  // PR and issue chips sit on the git line, not the title's: at rail widths the
+  // title line is what a long task name needs most.
+  const links = (
+    <>
+      {pr && <PrChip pr={pr} stats={folder} />}
+      {task?.issues.map((issue) => (
+        <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
+      ))}
+    </>
+  );
 
   function startRename() {
     if (!task) return;
@@ -182,11 +192,11 @@ export function FolderHeader({
         active && "border-l-violet-500",
       )}
     >
-      {/* Three blocks: who this is (title, GitHub links), what git says
-          (branch, counts), what you can do (toolbar). Wide enough to hold all
+      {/* Three blocks: who this is (title), what git and GitHub say (branch,
+          PR, counts), what you can do (toolbar). Wide enough to hold all
           three and they sit on one line; below 34rem the git block wraps to a
-          line of its own, right-aligned under the toolbar, because the
-          alternative at that width is a title truncated to two words. The
+          line of its own, right-aligned under the toolbar, and the title gets
+          two lines before it clips. The
           `order` swap is what keeps the toolbar on the *name's* line in both
           layouts while the counts move. `@container/row` asks the question
           that actually matters — does this row have room — rather than
@@ -252,7 +262,7 @@ export function FolderHeader({
                       : undefined
                   }
                   className={cn(
-                    "min-w-0 flex-1 cursor-pointer truncate",
+                    "min-w-0 flex-1 cursor-pointer break-words line-clamp-2 leading-snug",
                     scope === "repo"
                       ? "text-sm font-semibold"
                       : "text-sm font-medium text-muted-foreground",
@@ -266,13 +276,6 @@ export function FolderHeader({
             {missing && <GhostBadge />}
             {quiet && !missing && <QuietBadge />}
           </div>
-          {/* The GitHub links belong to identity — they are what the row is
-              *about* (which PR, which issue), where the git block beside them
-              is state. */}
-          {pr && <PrChip pr={pr} stats={folder} />}
-          {task?.issues.map((issue) => (
-            <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
-          ))}
           {collapsed && !missing && <CollapsedLive sessions={folder.sessions} />}
           {needs > 0 && <NeedsBadge n={needs} />}
         </div>
@@ -284,6 +287,7 @@ export function FolderHeader({
             <span className="mr-auto min-w-0 truncate text-[11px] text-muted-foreground/70 italic">
               directory missing — moved or deleted
             </span>
+            {links}
             {/* Untrack is a repos.json operation, so it only makes sense on a
                 tracked checkout; a task row with a gone directory is detached,
                 and its remedies live on the task itself. */}
@@ -311,23 +315,24 @@ export function FolderHeader({
           </div>
         ) : (
           <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 pl-11 @[34rem]/row:order-2 @[34rem]/row:basis-auto @[34rem]/row:pl-0">
-            {/* `mr-auto` so the branch hugs the left of its own line in the
-                wrapped layout, and does nothing in the inline one. A real task
-                title and the branch are two different pieces of information,
-                so the branch stays visible whenever one exists. Falling back to
-                the de-slugified folder name is still the same information
-                reformatted, so that case keeps the old redundancy check (a
-                worktree task's folder name IS its slugged branch; the main
-                checkout, "towles-tool" on `main`, is never redundant). */}
-            {showBranchLabel && (
-              <span className="mr-auto flex min-w-0 items-center">
+            {/* `mr-auto` so the branch and links hug the left of their own
+                line in the wrapped layout, and do nothing in the inline one. A
+                real task title and the branch are two different pieces of
+                information, so the branch stays visible whenever one exists.
+                Falling back to the de-slugified folder name is still the same
+                information reformatted, so that case keeps the old redundancy
+                check (a worktree task's folder name IS its slugged branch; the
+                main checkout, "towles-tool" on `main`, is never redundant). */}
+            <span className="mr-auto flex min-w-0 items-center gap-x-1.5">
+              {showBranchLabel && (
                 <BranchLabel
                   branch={folder.branch}
                   isWorktree={folder.isWorktree}
                   onClick={onToggle}
                 />
-              </span>
-            )}
+              )}
+              {links}
+            </span>
             {folderRemoving(folder) && <DeletingBadge label={deletingLabel} />}
             {folderCreating(folder) && <CreatingBadge label={deletingLabel} />}
             {folderIsUnclaimed(folder) && <NoTaskBadge onAdopt={onAdoptWorktree} />}

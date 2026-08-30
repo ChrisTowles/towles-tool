@@ -1239,7 +1239,7 @@ const MODEL_TONE: Record<string, string> = {
 };
 
 /** Nothing when the family is unrecognized. */
-export function ModelBadge({ session }: { session: SessionData }) {
+export function ModelBadge({ session, className }: { session: SessionData; className?: string }) {
   const d = session.agentState?.details;
   const letter = modelLetter(d?.model);
   if (!session.live || !letter) return null;
@@ -1249,6 +1249,7 @@ export function ModelBadge({ session }: { session: SessionData }) {
         className={cn(
           "flex h-4 shrink-0 items-center rounded-md border px-1 font-mono text-[10px] font-medium",
           MODEL_TONE[letter] ?? "border-border bg-muted/30 text-muted-foreground",
+          className,
         )}
       >
         {letter}

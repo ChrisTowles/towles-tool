@@ -82,11 +82,17 @@ export function SessionRow({
   // Live only: a stopped PTY's last title lingers in the caller's `titles` map
   // and would label a dead shell as a running Claude.
   const label = (eff.live ? claudeTitleName(title) : null) ?? sessionLabel(eff);
+  // The session's own name rides in the tooltip once a Claude title replaces
+  // it on the row, so the title keeps that width.
+  const hint = [eff.purpose && `✦ ${eff.purpose}`, label !== session.name && session.name]
+    .filter(Boolean)
+    .join(" · ");
+  const age = fmtWaitingAge(eff.needsSinceMs, now);
   // JS state, not CSS `:hover` — WebKitGTK doesn't reliably update `:hover` on
   // real pointer movement, so `group-hover` never fires.
   const [hovered, setHovered] = useState(false);
   return (
-    <Hint label={eff.purpose ? `✦ ${eff.purpose}` : undefined} side="right">
+    <Hint label={hint || undefined} side="right">
       <div
         role="button"
         tabIndex={0}
@@ -97,7 +103,7 @@ export function SessionRow({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={cn(
-          "relative ml-1.5 flex cursor-pointer items-center gap-2.5 border-l-2 border-transparent py-1.5 pr-3 pl-9",
+          "relative ml-1.5 flex cursor-pointer items-center gap-2 border-l-2 border-transparent py-1 pr-3 pl-9",
           hovered && !needs && "bg-accent",
           active && !needs && "border-l-violet-500 bg-accent",
           // Needs-you wins over hover/active for both the edge and the fill —
@@ -132,69 +138,48 @@ export function SessionRow({
             >
               {label}
             </span>
-            {label !== session.name && (
-              <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
-                {session.name}
-              </span>
-            )}
-            {!agent && eff.shellKind && (
-              <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/50">
-                {eff.shellKind}
-              </span>
-            )}
-            {/* Window membership is shown by the WindowLabel grouping above, so
-              no per-row window chip here. */}
-            {/* Meta cluster stays in the flow permanently — the lifecycle
-              controls overlay it (absolute, opaque accent) instead of
-              swapping it out, so hovering never reflows the row. */}
-            <span className="ml-auto flex min-w-0 shrink items-center gap-2">
-              {eff.live && <PortDriftBadge drift={eff.portDrift ?? []} />}
-              {/* Fixed 11ch slot, right-aligned: a session with no context
-                usage reported yet (agent just started) renders neither
-                badge at all, so without a reserved width everything after
-                it — elapsed, status — drifts left on those rows. */}
-              <span className="flex w-[11ch] shrink-0 items-center justify-end gap-1">
-                <ModelBadge session={eff} />
+            {/* Meta stacks into two short lines inside the row's own height,
+              so the title keeps the width a single trailing line would take.
+              Both lines always render (`h-3` each) so every row is the same
+              height and the status column sits at one vertical offset. The
+              lifecycle controls overlay it (absolute, opaque accent) instead
+              of swapping it out, so hovering never reflows the row. */}
+            <span className="ml-auto flex shrink-0 flex-col items-end gap-px font-mono text-[10.5px] leading-none">
+              <span className="flex h-3 items-center gap-1.5">
+                {eff.live && <PortDriftBadge drift={eff.portDrift ?? []} />}
+                {!agent && eff.shellKind && (
+                  <span className="text-muted-foreground/50">{eff.shellKind}</span>
+                )}
+                <ModelBadge session={eff} className="h-3" />
                 <CacheBadge
                   session={eff}
                   now={now}
                   compactPct={compactPct}
                   onCompact={() => actions.compactClaude(eff)}
                 />
+                {age && (
+                  <Hint label="how long this has been needing you">
+                    <span className="text-amber-500/80">{age}</span>
+                  </Hint>
+                )}
               </span>
-              {eff.live && (
-                <Hint label="running for">
-                  <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
-                    {/* Fixed 6ch slot, right-aligned: elapsed time is 4–7 chars
-                    ("0:04" .. "1:02:30"), and without a reserved width the
-                    status word after it drifts per row. */}
-                    <span className="inline-block w-[6ch] text-right">
+              <span className="flex h-3 items-center gap-1.5">
+                {eff.live && (
+                  <Hint label="running for">
+                    {/* Fixed 6ch slot: elapsed is 4–7 chars ("0:04" ..
+                      "1:02:30"); without a reserved width the status word
+                      after it drifts per row. */}
+                    <span className="inline-block w-[6ch] text-right text-muted-foreground/70">
                       {fmtElapsed(now - eff.createdAt)}
                     </span>
-                  </span>
-                </Hint>
-              )}
-              {/* Fixed 7ch slot, left-aligned: sessionStatusText is a short,
-                uniform-width word ("Waiting", "Working", "Done", …), so a
-                reserved slot keeps this aligned across rows instead of
-                drifting per the old variable-length prose. Comes before the
-                waiting-age badge (not after) so that badge's rare, highly
-                variable-width presence — only on rows currently needing
-                you — never shifts this or anything else; it just trails off
-                the end of the already right-flushed cluster. */}
-              <span className="inline-block w-[7ch] shrink-0 truncate text-[11px] text-muted-foreground">
-                {sessionStatusText(eff)}
-              </span>
-              {(() => {
-                const age = fmtWaitingAge(eff.needsSinceMs, now);
-                return age ? (
-                  <Hint label="how long this has been needing you">
-                    <span className="shrink-0 font-mono text-[10.5px] text-amber-500/80">
-                      {age}
-                    </span>
                   </Hint>
-                ) : null;
-              })()}
+                )}
+                {/* Fixed 7ch slot: the status word is short and uniform
+                  ("Waiting", "Working", "Done"), so it lines up across rows. */}
+                <span className="inline-block w-[7ch] truncate font-sans text-[11px] text-muted-foreground">
+                  {sessionStatusText(eff)}
+                </span>
+              </span>
             </span>
             {/* Hover-only, not hover-or-active: the selected row otherwise
               carries a resting ✕/menu forever, hiding the meta it overlays. */}
