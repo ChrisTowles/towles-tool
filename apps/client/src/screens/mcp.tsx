@@ -796,6 +796,7 @@ function ToolTesterDialog({
   }
 
   const mutating = isMutating(tool);
+  const destructive = tool.annotations?.destructiveHint === true;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -808,7 +809,11 @@ function ToolTesterDialog({
         {mutating && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span>This tool writes real data. Running it changes your board or calendar.</span>
+            <span>
+              {destructive
+                ? "This tool deletes real data — the task's panes and its worktree — and cannot be undone."
+                : "This tool writes real data. Running it changes your board or calendar."}
+            </span>
           </div>
         )}
 
@@ -909,14 +914,15 @@ function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/** `Content-Type: application/json` is an admission requirement, not a
- * nicety, and the `Mcp-*` headers must mirror the body or the server refuses
- * the request; every part is shell-quoted so this pastes in verbatim. */
+/** `Content-Type: application/json` is an admission requirement, the `Mcp-*`
+ * headers must mirror the body, and `Accept` is the spec's rule for every
+ * client; every part is shell-quoted so this pastes in verbatim. */
 function curlCommand(endpoint: string, name: string, body: string, wire: McpWire): string {
   return [
     "curl -X POST",
     shellSingleQuote(endpoint),
     "-H 'Content-Type: application/json'",
+    "-H 'Accept: application/json, text/event-stream'",
     `-H ${shellSingleQuote(`MCP-Protocol-Version: ${wire.protocolVersion}`)}`,
     "-H 'Mcp-Method: tools/call'",
     `-H ${shellSingleQuote(`Mcp-Name: ${name}`)}`,
@@ -954,7 +960,10 @@ function ToolRow({ tool, actions }: { tool: McpToolDoc; actions?: React.ReactNod
   return (
     <div className="flex items-start gap-2 rounded-md px-3 py-2.5 hover:bg-accent/50">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="font-mono text-xs text-foreground">{tool.name}</span>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-xs text-foreground">{tool.name}</span>
+          {tool.title && <span className="text-xs text-muted-foreground">{tool.title}</span>}
+        </div>
         <p className="text-xs text-muted-foreground">{tool.description}</p>
         {params.length > 0 && (
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-0.5">

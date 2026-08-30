@@ -19,12 +19,23 @@ identity for the call log comes from each request's own `clientInfo`, and
 every result carries `resultType` plus `_meta.serverInfo`. A client that
 opens with `initialize` — an older Claude Code, or Cursor as of 2026-07 —
 gets a 400 whose message names the version, which is all the spec asks of a
-modern-only server; there is no dual-era fallback. `tt open` and the MCP
+modern-only server; there is no dual-era fallback. `_meta.clientCapabilities`
+is required too (missing → `-32602`, 400). `tt open` and the MCP
 screen's tool tester are the in-repo clients, and `tt_mcp` exports the
 version, `_meta` keys and header names so they cannot drift. Statuses follow
-the spec: an unknown method is a 404, a header mismatch or unsupported
-version a 400 (`-32020`/`-32022`), and a tool's own `isError` answer a 200
-(`mcp_http::status_for`). Tools: `task_list`, `task_status`, `task_create`
+the spec: an unknown method is a 404, a header mismatch, unsupported version
+or missing `_meta` field a 400 (`-32020`/`-32022`/`-32602`), and a tool's own
+`isError` answer a 200 (`mcp_http::status_for`); an unknown *tool* is the
+spec's `-32602` protocol error, not an `isError` result. Every tool states
+all four annotation hints plus a `title` from one table (`TOOL_HINTS`),
+because the spec reads an omitted hint as the risky answer and Claude Code
+keys its permission prompt on them — so `task_start` is not read-only even
+though the transport never repaints for it. Every result carries
+`structuredContent` beside its text block, and every tool an `outputSchema`
+derived (`output.rs`) from the same serde types, which the test helpers
+validate every result against. The app stamps `MCP_PROTOCOL_NEGOTIATION=auto`
+into its terminals beside `TT_MCP_PORT`: Claude Code otherwise probes
+`server/discover` on HTTP only behind a remote feature flag. Tools: `task_list`, `task_status`, `task_create`
 (a #339 board task in a tracked repo's swimlane, same store path as the
 app's `store_add_task`), `task_summary`, `task_start`, `task_delete`,
 `preview_file`, plus the calendar family `calendar_today`, `calendar_next`

@@ -18,9 +18,18 @@ export const McpToolDocSchema = z.object({
     properties: z.record(z.string(), McpToolParamSchema).default({}),
     required: z.array(z.string()).default([]),
   }),
-  /** MCP's own tool annotations. The server stamps `readOnlyHint` on every
-   * tool from its writing-tools list, so it is never absent in practice. */
-  annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
+  title: z.string().optional(),
+  /** MCP's own tool annotations. The server states every hint on every tool,
+   * since the spec reads an omitted one as the risky answer. */
+  annotations: z
+    .object({
+      title: z.string().optional(),
+      readOnlyHint: z.boolean().optional(),
+      destructiveHint: z.boolean().optional(),
+      idempotentHint: z.boolean().optional(),
+      openWorldHint: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const McpToolDocsSchema = z.array(McpToolDocSchema);

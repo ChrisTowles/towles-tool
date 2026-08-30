@@ -10,6 +10,8 @@ publish = false
 # it identically; see that function's doc.
 chrono = { workspace = true }
 rusqlite = { workspace = true }
+# The MCP `outputSchema` of every board/calendar tool derives from these types.
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

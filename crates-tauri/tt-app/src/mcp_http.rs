@@ -239,7 +239,7 @@ pub fn spawn(app: AppHandle, port: u16) {
     let _ = store.sweep_old_events(crate::store::now_ms());
 
     let dispatcher = Arc::new(Mutex::new(
-        Dispatcher::new(store)
+        Dispatcher::new(store, env!("CARGO_PKG_VERSION"))
             .with_task_host(Box::new(AppTaskHost { app: app.clone() }))
             .with_preview_host(Box::new(AppPreviewHost { app: app.clone() }))
             .with_editor_host(Box::new(AppEditorHost { app: app.clone() })),
@@ -572,14 +572,16 @@ fn status_response(status: hyper::StatusCode, body: String) -> hyper::Response<S
     response
 }
 
-/// 2026-07-28 gives the refusals a client keys its fallback on a status of their own;
-/// everything else, a tool's `isError` answer included, is a 200 with a JSON-RPC body.
+/// 2026-07-28 gives the refusals a client keys its fallback on a status of their own, a
+/// request missing its required `_meta` included; everything else — a tool's `isError`
+/// answer, the `-32602` for an unknown tool, which carries no code — is a 200 with a JSON-RPC body.
 fn status_for(error_code: Option<i64>) -> hyper::StatusCode {
     match error_code {
         Some(tt_mcp::METHOD_NOT_FOUND) => hyper::StatusCode::NOT_FOUND,
         Some(
             tt_mcp::HEADER_MISMATCH
             | tt_mcp::UNSUPPORTED_PROTOCOL_VERSION
+            | tt_mcp::INVALID_PARAMS
             | tt_mcp::INVALID_REQUEST
             | tt_mcp::PARSE_ERROR,
         ) => hyper::StatusCode::BAD_REQUEST,
@@ -731,6 +733,7 @@ mod tests {
         assert_eq!(status_for(Some(tt_mcp::HEADER_MISMATCH)), StatusCode::BAD_REQUEST);
         assert_eq!(status_for(Some(tt_mcp::UNSUPPORTED_PROTOCOL_VERSION)), StatusCode::BAD_REQUEST);
         assert_eq!(status_for(Some(tt_mcp::PARSE_ERROR)), StatusCode::BAD_REQUEST);
+        assert_eq!(status_for(Some(tt_mcp::INVALID_PARAMS)), StatusCode::BAD_REQUEST);
         assert_eq!(status_for(Some(-32603)), StatusCode::OK);
     }
 

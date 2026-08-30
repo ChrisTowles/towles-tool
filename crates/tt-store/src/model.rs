@@ -4,6 +4,7 @@
 //! close/reopen targeting) that need no database handle.
 
 use chrono::{DateTime, FixedOffset};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// UTC, fixed width, matching the generated columns' `strftime` shape exactly: they compare
@@ -66,7 +67,7 @@ impl TaskOutcome {
 
 /// A `Task` is the user's work and nothing on the filesystem may retire it; a `Detected` row is
 /// a worktree found with no task, retired when its directory goes. Adoption changes kind in place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskKind {
     Task,
@@ -139,7 +140,7 @@ ORDER BY CASE status
     WHEN 'backlog' THEN 0 WHEN 'doing' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
   position ASC, created_at ASC";
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CalEvent {
     pub id: i64,
@@ -172,7 +173,7 @@ fn default_task_kind() -> TaskKind {
     TaskKind::Task
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskItem {
     pub id: i64,
@@ -236,7 +237,7 @@ impl TaskItem {
 
 /// `repo_root` is required even for a "task only" submit — it puts every task in a repo swimlane.
 /// It and `branch` survive worktree removal as history; `dir` is cleared with the worktree.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskWorktree {
     pub repo_root: String,
@@ -248,7 +249,7 @@ pub struct TaskWorktree {
     pub dir: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskIssueLink {
     pub repo: String,
@@ -281,7 +282,7 @@ pub fn gh_close_reopen_targets(
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskPrLink {
     pub repo: String,
