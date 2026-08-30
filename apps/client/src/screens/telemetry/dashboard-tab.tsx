@@ -8,13 +8,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Card, Empty, StatTile } from "@/components/store-bits";
+import { Chip, ChipMenu } from "@/screens/telemetry/chips";
 import { cn } from "@/lib/utils";
 import { uiAction } from "@/lib/ui-action";
 import {
@@ -240,44 +235,5 @@ function ChartCard({
       </div>
       {children}
     </div>
-  );
-}
-
-const CHIP =
-  "inline-flex h-6 items-center gap-1 rounded-full border border-border bg-card px-2.5 font-mono text-[11px] text-muted-foreground";
-
-function Chip({ children }: { children: React.ReactNode }) {
-  return <span className={CHIP}>{children}</span>;
-}
-
-function ChipMenu({
-  label,
-  active,
-  items,
-}: {
-  label: string;
-  active: boolean;
-  items: { key: string; label: string; onSelect: () => void }[];
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className={cn(
-          CHIP,
-          "hover:bg-accent/50 data-[state=open]:border-violet-500/40 data-[state=open]:bg-violet-500/10 data-[state=open]:text-violet-700 dark:data-[state=open]:text-violet-300",
-          active && "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300",
-        )}
-      >
-        {label}
-        <ChevronDown className="size-3 opacity-50" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        {items.map((it) => (
-          <DropdownMenuItem key={it.key} onSelect={it.onSelect} className="font-mono text-xs">
-            {it.label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
