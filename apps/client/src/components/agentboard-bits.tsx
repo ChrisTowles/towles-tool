@@ -303,10 +303,14 @@ export function GhostBadge() {
 export function BranchLabel({
   branch,
   isWorktree,
+  diverged = false,
   onClick,
 }: {
   branch: string;
   isWorktree: boolean;
+  /** The row's title doesn't already say this branch — set on the rail, which
+   * renders the label only then. The working-context band always shows it. */
+  diverged?: boolean;
   onClick?: () => void;
 }) {
   return (
@@ -314,15 +318,19 @@ export function BranchLabel({
     // place a long branch is readable.
     <Hint
       label={
-        isWorktree
-          ? branch
-          : `${branch} — primary checkout, the main clone; its .git is load-bearing for every worktree`
+        !isWorktree
+          ? `${branch} — primary checkout, the main clone; its .git is load-bearing for every worktree`
+          : diverged
+            ? `${branch} — not what this task's title says; renamed, or switched by hand`
+            : branch
       }
     >
       <span
         className={cn(
+          // Undimmed when diverged: it earned the line. No hue — a fact, and
+          // the color budget is status/attention/identity.
           "min-w-0 truncate font-mono text-[11px]",
-          isWorktree ? "text-muted-foreground" : "text-sky-500",
+          !isWorktree ? "text-sky-500" : diverged ? "text-foreground" : "text-muted-foreground",
         )}
         onClick={onClick}
       >

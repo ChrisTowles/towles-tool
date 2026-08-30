@@ -136,9 +136,11 @@ export function FolderHeader({
   const displayTitle =
     humanTitle ||
     (folder.isWorktree ? humanizeFolderName(title) : isMainWorktreeSubrow ? "Root" : title);
-  // A real title doesn't restate the branch; the de-slugified fallback does.
-  const showBranchLabel =
-    isMainWorktreeSubrow || Boolean(humanTitle) || !branchRedundant(folder.name, folder.branch);
+  // Asked of the title actually rendered, human or de-slugified — the branch
+  // was minted from it either way. The hidden branch moves to the tooltip.
+  const showBranchLabel = !branchRedundant(displayTitle, folder.branch);
+  const titleHint =
+    !showBranchLabel && folder.branch ? folder.branch : humanTitle ? folder.name : undefined;
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   // PR and issue chips sit on the git line, not the title's: at rail widths the
@@ -250,7 +252,7 @@ export function FolderHeader({
                 aria-label="Rename task"
               />
             ) : (
-              <Hint label={humanTitle ? folder.name : undefined} side="right">
+              <Hint label={titleHint} side="right">
                 <span
                   onClick={onToggle}
                   onDoubleClick={
@@ -316,18 +318,13 @@ export function FolderHeader({
         ) : (
           <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 pl-11 @[34rem]/row:order-2 @[34rem]/row:basis-auto @[34rem]/row:pl-0">
             {/* `mr-auto` so the branch and links hug the left of their own
-                line in the wrapped layout, and do nothing in the inline one. A
-                real task title and the branch are two different pieces of
-                information, so the branch stays visible whenever one exists.
-                Falling back to the de-slugified folder name is still the same
-                information reformatted, so that case keeps the old redundancy
-                check (a worktree task's folder name IS its slugged branch; the
-                main checkout, "towles-tool" on `main`, is never redundant). */}
+                line in the wrapped layout, and do nothing in the inline one. */}
             <span className="mr-auto flex min-w-0 items-center gap-x-1.5">
               {showBranchLabel && (
                 <BranchLabel
                   branch={folder.branch}
                   isWorktree={folder.isWorktree}
+                  diverged
                   onClick={onToggle}
                 />
               )}
