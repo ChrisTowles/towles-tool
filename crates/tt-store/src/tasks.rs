@@ -280,13 +280,13 @@ impl Store {
         )
     }
 
-    /// PR refs cached `open` but missing from the `pr_status` snapshot. See
-    /// [`Store::open_issue_refs_missing_from_cache`].
-    pub fn open_pr_refs_missing_from_cache(&self) -> Result<Vec<(String, i64)>> {
+    /// PR refs missing from the `pr_status` snapshot, whatever the link says —
+    /// unlike [`Store::open_issue_refs_missing_from_cache`], a terminal link counts
+    /// too, since the rail's badge needs the row a closed PR's sweep never carries.
+    pub fn pr_refs_missing_from_cache(&self) -> Result<Vec<(String, i64)>> {
         self.query_refs(
             "SELECT DISTINCT tp.repo, tp.number FROM task_prs tp
-             WHERE tp.state = 'open'
-               AND NOT EXISTS (SELECT 1 FROM pr_status p
+             WHERE NOT EXISTS (SELECT 1 FROM pr_status p
                                WHERE p.repo = tp.repo AND p.number = tp.number)
              ORDER BY tp.repo, tp.number",
         )
@@ -304,23 +304,6 @@ impl Store {
             "UPDATE task_issues SET state = ?3, state_ts = ?4
              WHERE repo = ?1 AND number = ?2",
             params![repo, number, state, now_ms],
-        )?)
-    }
-
-    /// Stamp the observed state onto every link row for one PR ref. `None` checks
-    /// keeps the cached value — the targeted fetch only learns the state.
-    pub fn set_pr_link_state(
-        &self,
-        repo: &str,
-        number: i64,
-        state: &str,
-        checks: Option<&str>,
-        now_ms: i64,
-    ) -> Result<usize> {
-        Ok(self.conn.execute(
-            "UPDATE task_prs SET state = ?3, checks = COALESCE(?4, checks), state_ts = ?5
-             WHERE repo = ?1 AND number = ?2",
-            params![repo, number, state, checks, now_ms],
         )?)
     }
 

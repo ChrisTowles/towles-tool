@@ -6,11 +6,12 @@ use rusqlite::params;
 use crate::model::*;
 use crate::{Error, Result, Store};
 
-/// Insert every PR row. The insert half is identical across all four
-/// `replace_*_prs*` paths; only the preceding delete differs.
+/// Insert every PR row — identical across all four `replace_*_prs*` paths; only
+/// the preceding delete differs. `OR REPLACE` because those deletes don't
+/// partition the table: a PR that reopened between sweeps survives both.
 fn insert_prs(tx: &rusqlite::Transaction<'_>, prs: &[PrInput]) -> Result<()> {
     let mut stmt = tx.prepare(
-        "INSERT INTO pr_status
+        "INSERT OR REPLACE INTO pr_status
            (repo, number, title, branch, state, checks, review_state, url, updated_ts)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
     )?;
@@ -162,18 +163,16 @@ impl Store {
         self.replace_prs_where(prs, None)
     }
 
-    /// Replace only the non-merged PR rows for `repos`, leaving each repo's
-    /// merged rows and every other repo's rows intact. Used by the fast,
-    /// frequent open-PR sweep so it never has to re-fetch (and thus never
-    /// clobbers) the separately-cadenced merged-PR rows — see
-    /// [`Store::replace_merged_prs_for_repos`].
+    /// Replace only the *open* rows for `repos` — the frequent open-PR sweep never
+    /// re-fetches, so must never clobber, the rows it didn't ask about: the
+    /// separately-cadenced merged ones, and the one row a closed PR ever gets.
     pub fn replace_open_prs_for_repos(&self, repos: &[String], prs: &[PrInput]) -> Result<usize> {
-        self.replace_prs_for_repos_where(repos, prs, Some("state != 'merged'"))
+        self.replace_prs_for_repos_where(repos, prs, Some("state = 'open'"))
     }
 
-    /// Full-snapshot replace of the non-merged PR rows, preserving merged rows.
+    /// Full-snapshot replace of the open PR rows, preserving settled rows.
     pub fn replace_open_prs(&self, prs: &[PrInput]) -> Result<usize> {
-        self.replace_prs_where(prs, Some("state != 'merged'"))
+        self.replace_prs_where(prs, Some("state = 'open'"))
     }
 
     /// Replace only the merged PR rows for `repos`, leaving each repo's open
@@ -187,9 +186,8 @@ impl Store {
         self.replace_prs_where(prs, Some("state = 'merged'"))
     }
 
-    /// Insert PR rows outside any sweep, replacing a row already there. For the
-    /// targeted per-branch lookup, whose whole point is a PR the sweeps' bounded
-    /// lists never carried; every other write here deletes before it inserts.
+    /// Insert PR rows outside any sweep — for the targeted lookups, whose whole
+    /// point is a PR the sweeps' bounded lists never carried.
     pub fn upsert_prs(&self, prs: &[PrInput]) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
         {

@@ -213,8 +213,10 @@ pub fn collect_issues(
 }
 
 /// The Board↔GitHub read half for tasks: a targeted `gh <issue|pr> view` for every
-/// still-`open` link *missing* from the snapshot, since absence is ambiguous and
-/// state is never inferred, then [`link_task_prs`]. Each stage logs and moves on.
+/// link *missing* from the snapshot, since absence is ambiguous and state is never
+/// inferred, then [`link_task_prs`]. Each stage logs and moves on. The PR half
+/// writes the whole row back, not just the state — the rail draws its badge from
+/// `pr_status`, so a PR no sweep carries would be a link with no badge.
 fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
     let dir_by_repo = repo_dir_index(repo_dirs);
     match store.open_issue_refs_missing_from_cache() {
@@ -235,24 +237,24 @@ fn sync_task_links(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) {
         }
         Err(e) => log::warn!("open_issue_refs_missing_from_cache failed: {e}"),
     }
-    match store.open_pr_refs_missing_from_cache() {
+    match store.pr_refs_missing_from_cache() {
         Ok(refs) => {
             for (repo, number) in refs {
                 let Some(dir) = dir_by_repo.get(&repo) else {
                     continue;
                 };
-                match prs::fetch_pr_state(dir, number) {
-                    Ok(state) => {
-                        if let Err(e) = store.set_pr_link_state(&repo, number, &state, None, now_ms)
-                        {
-                            log::warn!("set_pr_link_state {repo}#{number} failed: {e}");
+                match prs::fetch_pr(dir, &repo, number) {
+                    Ok(Some(pr)) => {
+                        if let Err(e) = store.upsert_prs(std::slice::from_ref(&pr)) {
+                            log::warn!("upsert_prs {repo}#{number} failed: {e}");
                         }
                     }
-                    Err(e) => log::warn!("pr state fetch {repo}#{number} failed: {e}"),
+                    Ok(None) => log::warn!("gh pr view {repo}#{number}: no PR in JSON"),
+                    Err(e) => log::warn!("pr fetch {repo}#{number} failed: {e}"),
                 }
             }
         }
-        Err(e) => log::warn!("open_pr_refs_missing_from_cache failed: {e}"),
+        Err(e) => log::warn!("pr_refs_missing_from_cache failed: {e}"),
     }
     link_task_prs(store, &dir_by_repo, now_ms);
 }
@@ -1010,8 +1012,9 @@ mod tests {
         assert_eq!(rollup_task_statuses(&store, 3).unwrap(), 0);
         assert_eq!(store.get_task(task.id).unwrap().unwrap().status, "backlog");
 
-        // PR merges too (learned via targeted fetch) → all resolved → done.
-        store.set_pr_link_state("o/r", 10, "merged", None, 4).unwrap();
+        // PR merges too (its targeted fetch writes the row) → all resolved → done.
+        store.upsert_prs(&[pr("o/r", 10, "merged")]).unwrap();
+        store.refresh_link_states_from_cache(4).unwrap();
         assert_eq!(rollup_task_statuses(&store, 4).unwrap(), 1);
         assert_eq!(store.get_task(task.id).unwrap().unwrap().status, "done");
 
@@ -1029,7 +1032,8 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let task = store.add_task("closed", "doing", None, None, 1).unwrap();
         store.attach_task_pr(task.id, "o/r", 10, "u").unwrap();
-        store.set_pr_link_state("o/r", 10, "merged", None, 2).unwrap();
+        store.upsert_prs(&[pr("o/r", 10, "merged")]).unwrap();
+        store.refresh_link_states_from_cache(2).unwrap();
         store.close_task(task.id, TaskOutcome::Abandoned, 3).unwrap();
 
         assert_eq!(rollup_task_statuses(&store, 4).unwrap(), 0);
@@ -1263,13 +1267,13 @@ mod tests {
         }
     }
 
-    fn pr(repo: &str, number: i64) -> tt_store::PrInput {
+    fn pr(repo: &str, number: i64, state: &str) -> tt_store::PrInput {
         tt_store::PrInput {
             repo: repo.to_string(),
             number,
             title: format!("pr {number}"),
             branch: format!("branch-{number}"),
-            state: "open".to_string(),
+            state: state.to_string(),
             checks: "none".to_string(),
             review_state: String::new(),
             url: format!("https://github.com/{repo}/pull/{number}"),
@@ -1310,9 +1314,10 @@ mod tests {
     #[test]
     fn write_repo_prs_now_only_replaces_the_synced_repo() {
         let store = Store::open_in_memory().unwrap();
-        store.replace_prs(&[pr("o/a", 1), pr("o/b", 2)]).unwrap();
+        store.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "open")]).unwrap();
 
-        let summary = write_repo_prs_now(&store, Ok(("o/a".to_string(), vec![pr("o/a", 9)])), 5);
+        let summary =
+            write_repo_prs_now(&store, Ok(("o/a".to_string(), vec![pr("o/a", 9, "open")])), 5);
 
         assert!(summary.ok);
         assert_eq!(summary.count, 1);
@@ -1326,7 +1331,7 @@ mod tests {
     fn collect_repo_now_records_a_failure_for_a_missing_dir_without_touching_other_rows() {
         let store = Store::open_in_memory().unwrap();
         store.replace_issues(&[issue("o/a", 1)]).unwrap();
-        store.replace_prs(&[pr("o/a", 1)]).unwrap();
+        store.replace_prs(&[pr("o/a", 1, "open")]).unwrap();
 
         let root = tempfile::tempdir().unwrap();
         let missing = root.path().join("gone");

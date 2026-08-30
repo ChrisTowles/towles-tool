@@ -1,16 +1,9 @@
 //! Edge detection for day-model attention notifications: four watchers turn successive
 //! store reads into *edges* — the moment something newly deserves attention — so the
 //! host notifies once per event, not every tick. Pure state diffing, with the
-//! fire/suppress policy left to the host (`run_notify_check`, a 15s tick).
-//!
-//! - [`MeetingStartWatch`] — the countdown reaching zero, only for a meeting it saw
-//!   *before* it started, so one underway at launch never fires "starting now".
-//! - [`ReviewRequestedWatch`] — a PR newly entering the set; the first observation
-//!   only primes the baseline, so PRs already awaiting review don't spam.
-//! - [`ChecksFailedWatch`] — one of *your* PRs flipping to failing CI, per
-//!   `repo#number`; recovery clears it so a later fix→break re-fires.
-//! - [`StaleCollectorWatch`] — a collector silently stopping: its last healthy run
-//!   ageing past a threshold, or [`FAIL_STREAK`] failures running.
+//! fire/suppress policy left to the host (`run_notify_check`, a 15s tick). Each
+//! watch primes silently on its first observation, so a condition already true at
+//! launch is a level rather than an edge and never spams.
 
 use std::collections::{HashMap, HashSet};
 
@@ -21,6 +14,10 @@ const REVIEW_REQUESTED: &str = "review_requested";
 
 /// The `checks` value written when at least one CI check has a failing conclusion.
 const CHECKS_FAILING: &str = "failing";
+
+/// The only `state` either PR watch acts on: the cache also carries merged and
+/// closed rows, whose last red run is history rather than something to fix.
+const STATE_OPEN: &str = "open";
 
 /// The next meeting just started — its countdown reached zero.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,14 +84,12 @@ pub struct ReviewRequestedEdge {
     pub url: String,
 }
 
-/// Tracks which PRs sit in the review-requested set across snapshots and yields
-/// the ones that just entered it. A PR that stays requested never repeats; one
-/// that leaves and re-enters fires again.
+/// Tracks which PRs sit in the review-requested set and yields the ones that just
+/// entered it; leaving and re-entering fires again.
 #[derive(Debug, Default)]
 pub struct ReviewRequestedWatch {
     /// `repo#number` keys that were review-requested in the previous snapshot.
     prev: HashSet<String>,
-    /// False until the first observation has primed the baseline.
     primed: bool,
 }
 
@@ -109,7 +104,7 @@ impl ReviewRequestedWatch {
         let mut current = HashSet::with_capacity(self.prev.len());
 
         for pr in prs {
-            if pr.review_state != REVIEW_REQUESTED {
+            if pr.state != STATE_OPEN || pr.review_state != REVIEW_REQUESTED {
                 continue;
             }
             let key = format!("{}#{}", pr.repo, pr.number);
@@ -140,15 +135,12 @@ pub struct ChecksFailedEdge {
     pub url: String,
 }
 
-/// Tracks which of *your* authored PRs are in the failing-checks state across
-/// snapshots and yields the ones that just flipped into it. A PR that stays red
-/// never repeats; one that recovers and breaks again fires a second time.
-/// Review-requested PRs belong to [`ReviewRequestedWatch`] instead.
+/// Tracks which of *your* authored PRs have failing checks and yields the ones
+/// that just flipped into it; a review-requested PR belongs to the watch above.
 #[derive(Debug, Default)]
 pub struct ChecksFailedWatch {
     /// `repo#number` keys that had failing checks in the previous snapshot.
     prev: HashSet<String>,
-    /// False until the first observation has primed the baseline.
     primed: bool,
 }
 
@@ -164,7 +156,10 @@ impl ChecksFailedWatch {
 
         for pr in prs {
             // Only your authored PRs: a review-requested row isn't your CI to fix.
-            if pr.review_state == REVIEW_REQUESTED || pr.checks != CHECKS_FAILING {
+            if pr.state != STATE_OPEN
+                || pr.review_state == REVIEW_REQUESTED
+                || pr.checks != CHECKS_FAILING
+            {
                 continue;
             }
             let key = format!("{}#{}", pr.repo, pr.number);
@@ -330,20 +325,15 @@ mod tests {
         }
     }
 
-    // MeetingStartWatch
-
     #[test]
     fn meeting_fires_once_when_start_arrives() {
         let mut w = MeetingStartWatch::new();
         let ev = event("a", 1000);
-        // Seen while still in the future: no fire yet.
         assert_eq!(w.observe(500, Some(&ev)), None);
         assert_eq!(w.observe(900, Some(&ev)), None);
-        // Start arrives: one edge.
         let edge = w.observe(1000, Some(&ev)).expect("start edge");
         assert_eq!(edge.external_id, "a");
         assert_eq!(edge.start_ts, 1000);
-        // Still in progress next ticks: no repeat.
         assert_eq!(w.observe(1200, Some(&ev)), None);
         assert_eq!(w.observe(1500, Some(&ev)), None);
     }
@@ -351,8 +341,7 @@ mod tests {
     #[test]
     fn meeting_in_progress_at_launch_never_fires() {
         let mut w = MeetingStartWatch::new();
-        // First observation already started (launched mid-meeting): a level,
-        // not a countdown reaching zero on our watch.
+        // Launched mid-meeting: a level, not a countdown reaching zero on our watch.
         let ev = event("a", 1000);
         assert_eq!(w.observe(1500, Some(&ev)), None);
         assert_eq!(w.observe(2000, Some(&ev)), None);
@@ -360,8 +349,6 @@ mod tests {
 
     #[test]
     fn meeting_arriving_already_started_never_fires() {
-        // Calendar collector delivers a meeting that is already underway (we
-        // never saw it in the future) — no bogus "starting now".
         let mut w = MeetingStartWatch::new();
         assert_eq!(w.observe(500, None), None); // no data yet
         let ev = event("a", 100); // started at 100, now 500
@@ -375,7 +362,6 @@ mod tests {
         assert_eq!(w.observe(900, Some(&a)), None);
         assert!(w.observe(1000, Some(&a)).is_some()); // a starts
 
-        // `a` ended; current-or-next is now `b`, seen in the future first.
         let b = event("b", 3000);
         assert_eq!(w.observe(2000, Some(&b)), None);
         let edge = w.observe(3000, Some(&b)).expect("b start edge");
@@ -384,7 +370,6 @@ mod tests {
 
     #[test]
     fn meeting_collector_refresh_does_not_refire() {
-        // Same external_id, refreshed title/end after firing: no repeat.
         let mut w = MeetingStartWatch::new();
         let ev = event("a", 1000);
         assert_eq!(w.observe(900, Some(&ev)), None);
@@ -397,15 +382,12 @@ mod tests {
         assert_eq!(w.observe(1100, Some(&refreshed)), None);
     }
 
-    // ReviewRequestedWatch
-
     #[test]
     fn review_first_observation_primes_without_firing() {
         let mut w = ReviewRequestedWatch::new();
         let prs = vec![pr("me/repo", 1, REVIEW_REQUESTED)];
         // Already requested at launch: a level, not a flip.
         assert!(w.observe(&prs).is_empty());
-        // Stays quiet while it holds.
         assert!(w.observe(&prs).is_empty());
     }
 
@@ -419,7 +401,6 @@ mod tests {
         assert_eq!(edges[0].repo, "me/repo");
         assert_eq!(edges[0].number, 1);
 
-        // Still requested next snapshot: no repeat.
         assert!(w.observe(&[pr("me/repo", 1, REVIEW_REQUESTED)]).is_empty());
     }
 
@@ -428,9 +409,7 @@ mod tests {
         let mut w = ReviewRequestedWatch::new();
         w.observe(&[pr("me/repo", 1, "approved")]);
         assert_eq!(w.observe(&[pr("me/repo", 1, REVIEW_REQUESTED)]).len(), 1);
-        // Review submitted → leaves the set.
         assert!(w.observe(&[pr("me/repo", 1, "approved")]).is_empty());
-        // Requested again → new edge.
         assert_eq!(w.observe(&[pr("me/repo", 1, REVIEW_REQUESTED)]).len(), 1);
     }
 
@@ -449,8 +428,7 @@ mod tests {
 
     #[test]
     fn review_edge_survives_collector_refresh_without_refiring() {
-        // The PRs collector replaces every row each tick; a still-requested PR
-        // with an updated title must not re-fire.
+        // Every row is replaced each tick; a refreshed title must not re-fire.
         let mut w = ReviewRequestedWatch::new();
         w.observe(&[]);
         assert_eq!(w.observe(&[pr("me/repo", 7, REVIEW_REQUESTED)]).len(), 1);
@@ -460,8 +438,6 @@ mod tests {
         refreshed.updated_ts = 5000;
         assert!(w.observe(&[refreshed]).is_empty());
     }
-
-    // ChecksFailedWatch
 
     /// An authored PR (empty `review_state`) with the given checks state.
     fn pr_checks(repo: &str, number: i64, checks: &str) -> PrItem {
@@ -476,7 +452,6 @@ mod tests {
         let prs = vec![pr_checks("me/repo", 1, CHECKS_FAILING)];
         // Already red at launch: a level, not a flip.
         assert!(w.observe(&prs).is_empty());
-        // Stays quiet while it holds.
         assert!(w.observe(&prs).is_empty());
     }
 
@@ -490,8 +465,28 @@ mod tests {
         assert_eq!(edges[0].repo, "me/repo");
         assert_eq!(edges[0].number, 1);
 
-        // Still failing next snapshot: no repeat.
         assert!(w.observe(&[pr_checks("me/repo", 1, CHECKS_FAILING)]).is_empty());
+    }
+
+    /// The cache carries settled PRs so the rail can badge one — a closed PR's
+    /// last red run is not a new thing to act on.
+    #[test]
+    fn a_settled_pr_never_fires_either_watch() {
+        let settled = |state: &str| {
+            let mut red = pr_checks("me/repo", 1, CHECKS_FAILING);
+            let mut wanted = pr("me/repo", 2, REVIEW_REQUESTED);
+            red.state = state.to_string();
+            wanted.state = state.to_string();
+            vec![red, wanted]
+        };
+        for state in ["closed", "merged"] {
+            let mut checks = ChecksFailedWatch::new();
+            let mut review = ReviewRequestedWatch::new();
+            checks.observe(&[pr_checks("me/repo", 1, "passing")]);
+            review.observe(&[pr("me/repo", 2, "approved")]);
+            assert!(checks.observe(&settled(state)).is_empty(), "{state} checks");
+            assert!(review.observe(&settled(state)).is_empty(), "{state} review");
+        }
     }
 
     #[test]
@@ -499,9 +494,7 @@ mod tests {
         let mut w = ChecksFailedWatch::new();
         w.observe(&[pr_checks("me/repo", 1, "passing")]);
         assert_eq!(w.observe(&[pr_checks("me/repo", 1, CHECKS_FAILING)]).len(), 1);
-        // Fix pushed → checks pass again, leaves the failing set.
         assert!(w.observe(&[pr_checks("me/repo", 1, "passing")]).is_empty());
-        // Breaks again → new edge.
         assert_eq!(w.observe(&[pr_checks("me/repo", 1, CHECKS_FAILING)]).len(), 1);
     }
 
@@ -521,8 +514,7 @@ mod tests {
 
     #[test]
     fn checks_ignores_review_requested_prs() {
-        // A failing PR that is *someone else's* (awaiting your review) is not your
-        // CI to fix — ReviewRequestedWatch owns that surface.
+        // Someone else's failing PR is not your CI to fix.
         let mut w = ChecksFailedWatch::new();
         w.observe(&[]); // prime empty
         let mut others = pr("me/repo", 9, REVIEW_REQUESTED);
@@ -532,8 +524,7 @@ mod tests {
 
     #[test]
     fn checks_edge_survives_collector_refresh_without_refiring() {
-        // The PRs collector replaces every row each tick; a still-failing PR with
-        // an updated title must not re-fire.
+        // Every row is replaced each tick; a refreshed title must not re-fire.
         let mut w = ChecksFailedWatch::new();
         w.observe(&[]);
         assert_eq!(w.observe(&[pr_checks("me/repo", 7, CHECKS_FAILING)]).len(), 1);
@@ -543,8 +534,6 @@ mod tests {
         refreshed.updated_ts = 5000;
         assert!(w.observe(&[refreshed]).is_empty());
     }
-
-    // StaleCollectorWatch
 
     fn run(collector: &str, ok: bool, ran_at: i64, message: Option<&str>) -> CollectRun {
         CollectRun {
@@ -570,25 +559,20 @@ mod tests {
         // Healthy at launch: primes the baseline, no edge.
         let healthy = [run("issues", true, 0, None)];
         assert!(w.observe(0, &cfg, &healthy).is_empty());
-        // Still fresh a bit later: quiet.
         assert!(w.observe(20 * MIN, &cfg, &healthy).is_empty());
 
-        // Last healthy run has now aged past 30m with no refresh: one edge.
         let edges = w.observe(32 * MIN, &cfg, &healthy);
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].key, "issues");
         assert_eq!(edges[0].stale_for_ms, 32 * MIN);
         assert!(edges[0].last_message.is_none());
 
-        // Stays stale on later ticks: no repeat.
         assert!(w.observe(40 * MIN, &cfg, &healthy).is_empty());
         assert!(w.observe(90 * MIN, &cfg, &healthy).is_empty());
 
-        // A fresh healthy run recovers it (clears stale) without firing.
         let recovered = [run("issues", true, 95 * MIN, None)];
         assert!(w.observe(95 * MIN, &cfg, &recovered).is_empty());
 
-        // Going stale again fires a second edge.
         let edges = w.observe(130 * MIN, &cfg, &recovered);
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].stale_for_ms, 35 * MIN);
@@ -599,11 +583,9 @@ mod tests {
         let mut w = StaleCollectorWatch::new();
         let cfg = watched("prs", 30 * MIN);
 
-        // Prime healthy.
         assert!(w.observe(0, &cfg, &[run("prs", true, 0, None)]).is_empty());
 
-        // Distinct failing runs (each a new `ran_at`) build the streak. The
-        // threshold is FAIL_STREAK = 3; the first two stay quiet.
+        // Distinct `ran_at`s build the streak; FAIL_STREAK is 3, so two stay quiet.
         assert!(
             w.observe(MIN, &cfg, &[run("prs", false, MIN, Some("gh auth expired"))]).is_empty()
         );
@@ -617,20 +599,17 @@ mod tests {
         assert_eq!(edges[0].key, "prs");
         assert_eq!(edges[0].last_message.as_deref(), Some("gh auth expired"));
 
-        // Still failing: no repeat.
         assert!(
             w.observe(4 * MIN, &cfg, &[run("prs", false, 4 * MIN, Some("gh auth expired"))])
                 .is_empty()
         );
 
-        // Recovery clears the streak.
         assert!(w.observe(5 * MIN, &cfg, &[run("prs", true, 5 * MIN, None)]).is_empty());
     }
 
     #[test]
     fn repeated_ticks_on_the_same_failing_run_do_not_advance_the_streak() {
-        // The notify loop ticks faster than the collector runs, so the same
-        // failing row is observed many times. Only *distinct* runs count.
+        // The notify loop out-ticks the collector: only *distinct* runs count.
         let mut w = StaleCollectorWatch::new();
         let cfg = watched("slack:dm", 30 * MIN);
         assert!(w.observe(0, &cfg, &[run("slack:dm", true, 0, None)]).is_empty());
@@ -646,17 +625,12 @@ mod tests {
 
     #[test]
     fn already_stale_at_launch_does_not_fire_until_it_recovers_and_breaks_again() {
-        // First observation only primes: a collector broken before we started
-        // watching shouldn't spam on launch.
+        // A collector broken before we started watching shouldn't spam on launch.
         let mut w = StaleCollectorWatch::new();
         let cfg = watched("issues", 30 * MIN);
-        // Last healthy run is 2h old at first sight — already stale, but primed
-        // silently.
         let stale_row = [run("issues", true, 0, None)];
         assert!(w.observe(120 * MIN, &cfg, &stale_row).is_empty());
-        // Stays quiet while stale.
         assert!(w.observe(130 * MIN, &cfg, &stale_row).is_empty());
-        // Recovers, then breaks again → now it fires.
         let recovered = [run("issues", true, 130 * MIN, None)];
         assert!(w.observe(130 * MIN, &cfg, &recovered).is_empty());
         assert_eq!(w.observe(165 * MIN, &cfg, &recovered).len(), 1);
@@ -667,14 +641,12 @@ mod tests {
         let mut w = StaleCollectorWatch::new();
         let runs = [run("issues", true, 0, None)];
 
-        // `issues` is not in the watched list (disabled): even a long-stale run
-        // yields no edge.
+        // `issues` is disabled: even a long-stale run yields no edge.
         let none: Vec<WatchedCollector> = vec![];
         assert!(w.observe(200 * MIN, &none, &runs).is_empty());
         assert!(w.observe(400 * MIN, &none, &runs).is_empty());
 
-        // Enable it now: the first observation re-primes (no launch spam) even
-        // though the run is already ancient.
+        // Enabling it re-primes rather than replaying the ancient run.
         let cfg = watched("issues", 30 * MIN);
         assert!(w.observe(400 * MIN, &cfg, &runs).is_empty());
     }
@@ -697,15 +669,12 @@ mod tests {
 
     #[test]
     fn no_run_row_yet_stays_quiet() {
-        // A watched collector that has never posted a run must not fire (nothing
-        // to age, no failure to count).
+        // Never posted a run: nothing to age, no failure to count.
         let mut w = StaleCollectorWatch::new();
         let cfg = watched("issues", 30 * MIN);
         assert!(w.observe(0, &cfg, &[]).is_empty());
         assert!(w.observe(500 * MIN, &cfg, &[]).is_empty());
     }
-
-    // Boundary conditions
 
     #[test]
     fn meeting_seen_exactly_at_start_never_fires() {
