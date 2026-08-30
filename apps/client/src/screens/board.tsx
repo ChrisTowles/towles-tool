@@ -156,6 +156,10 @@ export function BoardScreen() {
     return m;
   }, [agentState.repos]);
 
+  // The cache carries settled PRs too, so the rail can badge one; "Attach PR…"
+  // only ever offers a PR still worth attaching.
+  const openPrs = useMemo(() => snapshot.prs.filter((p) => p.state === "open"), [snapshot.prs]);
+
   // The promote-to-issue targets.
   const repos = useMemo(() => {
     const set = new Set<string>();
@@ -538,7 +542,7 @@ export function BoardScreen() {
                                   railKey ? () => openOnAgentboard(railKey) : undefined
                                 }
                                 openIssues={snapshot.issues}
-                                openPrs={snapshot.prs}
+                                openPrs={openPrs}
                                 onReopen={reopen}
                                 onPromote={promote}
                                 onAttachIssue={attachIssue}

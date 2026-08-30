@@ -79,15 +79,13 @@ fn open_prs_by_number(dir: &Path, repo: &str) -> Result<HashMap<i64, PrInput>, S
     Ok(by_number)
 }
 
-/// Run `gh pr list` in `dir` for the given `--state`/`--limit` plus `extra` filters.
-/// Targeted state fetch for one PR: the sweep only stores open PRs plus a
-/// bounded recently-merged list, so a task-linked PR absent from that
-/// snapshot needs an explicit `gh pr view` to learn whether it merged or
-/// closed. Returns the lowercased state (`open` | `merged` | `closed`).
-pub(crate) fn fetch_pr_state(dir: &Path, number: i64) -> Result<String, String> {
-    let value = gh::run_json(dir, &["pr", "view", &number.to_string(), "--json", "state"])?;
-    crate::issues::parse_state_field(&value)
-        .ok_or_else(|| format!("gh pr view {number}: no state in JSON"))
+/// Targeted fetch of one PR by number: the sweeps carry open PRs plus a bounded
+/// recently-merged list, so one that is closed unmerged or long merged needs an
+/// explicit ask. The whole row, since the rail's badge is drawn from the row.
+pub(crate) fn fetch_pr(dir: &Path, repo: &str, number: i64) -> Result<Option<PrInput>, String> {
+    let value = gh::run_json(dir, &["pr", "view", &number.to_string(), "--json", PR_LIST_FIELDS])?;
+    // `gh pr view` answers with the object `gh pr list` would wrap in an array.
+    Ok(map_pr_list(&serde_json::Value::Array(vec![value]), repo, false).into_iter().next())
 }
 
 /// The PR for one branch, whatever state it is in — what a task asks about its
@@ -119,6 +117,7 @@ pub(crate) fn fetch_branch_pr(
     Ok(map_pr_list(&value, repo, false).into_iter().next())
 }
 
+/// Run `gh pr list` in `dir` for the given `--state`/`--limit` plus `extra` filters.
 fn gh_pr_list(
     dir: &Path,
     state: &str,

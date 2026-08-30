@@ -999,14 +999,19 @@ export function PrChip({
   const tone = hasLocalWork
     ? "border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
     : PR_TONE[prTone(pr)].chip;
+  // Checks are what an *open* PR is judged on; a settled one is judged on how it
+  // settled, and a closed PR's last red run is history rather than a task.
+  const standing = merged
+    ? "merged"
+    : pr.state === "closed"
+      ? "closed without merging"
+      : `checks ${pr.checks}${pr.reviewState === "review_requested" ? ", review requested" : ""}`;
   return (
     <Hint
       label={
         hasLocalWork
           ? `${pr.title} — ${merged ? "merged" : stats.landed}, but this checkout still has ${unsafeToDeleteReason(stats, base)}. Commit or push before removing the task. Open on GitHub.`
-          : merged
-            ? `${pr.title} — merged. Open on GitHub.`
-            : `${pr.title} — checks ${pr.checks}${pr.reviewState === "review_requested" ? ", review requested" : ""}. Open on GitHub.`
+          : `${pr.title} — ${standing}. Open on GitHub.`
       }
     >
       <button

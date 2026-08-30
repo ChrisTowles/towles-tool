@@ -204,6 +204,20 @@ mod tests {
         }
     }
 
+    fn pr(repo: &str, number: i64, state: &str) -> PrInput {
+        PrInput {
+            repo: repo.to_string(),
+            number,
+            title: "t".to_string(),
+            branch: "b".to_string(),
+            state: state.to_string(),
+            checks: "passing".to_string(),
+            review_state: String::new(),
+            url: "https://x".to_string(),
+            updated_ts: 1,
+        }
+    }
+
     #[test]
     fn migrations_are_idempotent() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -742,17 +756,35 @@ mod tests {
         s.refresh_link_states_from_cache(50).unwrap();
 
         assert_eq!(s.open_issue_refs_missing_from_cache().unwrap(), vec![("o/r".to_string(), 2)]);
-        assert_eq!(s.open_pr_refs_missing_from_cache().unwrap(), vec![("o/r".to_string(), 10)]);
+        assert_eq!(s.pr_refs_missing_from_cache().unwrap(), vec![("o/r".to_string(), 10)]);
 
-        // A targeted fetch resolves the misses; terminal states stop being
-        // reported even though they remain absent from the snapshot.
+        // A terminal issue link stops being reported though it stays absent; the
+        // PR half is answered with a row instead, and the link reads its state off.
         s.set_issue_link_state("o/r", 2, "closed", 60).unwrap();
-        s.set_pr_link_state("o/r", 10, "merged", None, 60).unwrap();
         assert!(s.open_issue_refs_missing_from_cache().unwrap().is_empty());
-        assert!(s.open_pr_refs_missing_from_cache().unwrap().is_empty());
+        s.upsert_prs(&[pr("o/r", 10, "closed")]).unwrap();
+        assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+        s.refresh_link_states_from_cache(60).unwrap();
         let got = s.get_task(t.id).unwrap().unwrap();
         assert_eq!(got.issues.iter().find(|l| l.number == 2).unwrap().state, "closed");
-        assert_eq!(got.prs[0].state, "merged");
+        assert_eq!(got.prs[0].state, "closed");
+    }
+
+    /// The rail's badge vanished because the open sweep purged the closed row.
+    #[test]
+    fn a_closed_pr_row_survives_the_open_sweep() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "closed")]).unwrap();
+        s.replace_open_prs_for_repos(&["o/a".to_string()], &[]).unwrap();
+        let rows = s.prs().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0].number, rows[0].state.as_str()), (2, "closed"));
+
+        // …and reopening replaces that row rather than colliding with it.
+        s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 2, "open")]).unwrap();
+        let rows = s.prs().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!((rows[0].number, rows[0].state.as_str()), (2, "open"));
     }
 
     #[test]
@@ -856,20 +888,9 @@ mod tests {
 
     #[test]
     fn replace_prs_for_repos_preserves_other_repos_rows() {
-        let pr = |repo: &str, number: i64| PrInput {
-            repo: repo.to_string(),
-            number,
-            title: "t".to_string(),
-            branch: "b".to_string(),
-            state: "open".to_string(),
-            checks: "passing".to_string(),
-            review_state: String::new(),
-            url: "https://x".to_string(),
-            updated_ts: 1,
-        };
         let s = Store::open_in_memory().unwrap();
-        s.replace_prs(&[pr("o/a", 1), pr("o/b", 2)]).unwrap();
-        s.replace_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3)]).unwrap();
+        s.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "open")]).unwrap();
+        s.replace_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, "open")]).unwrap();
         let prs = s.prs().unwrap();
         assert_eq!(prs.len(), 2);
         assert!(prs.iter().any(|p| p.repo == "o/b" && p.number == 2));
@@ -878,20 +899,8 @@ mod tests {
 
     #[test]
     fn replace_open_prs_for_repos_preserves_merged_rows() {
-        let pr = |repo: &str, number: i64, state: &str| PrInput {
-            repo: repo.to_string(),
-            number,
-            title: "t".to_string(),
-            branch: "b".to_string(),
-            state: state.to_string(),
-            checks: "passing".to_string(),
-            review_state: String::new(),
-            url: "https://x".to_string(),
-            updated_ts: 1,
-        };
         let s = Store::open_in_memory().unwrap();
         s.replace_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "merged")]).unwrap();
-        // A fresh open-only sweep must not delete the merged row it never fetched.
         s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, "open")]).unwrap();
         let prs = s.prs().unwrap();
         assert_eq!(prs.len(), 2);
@@ -902,20 +911,8 @@ mod tests {
 
     #[test]
     fn replace_merged_prs_for_repos_preserves_open_rows() {
-        let pr = |repo: &str, number: i64, state: &str| PrInput {
-            repo: repo.to_string(),
-            number,
-            title: "t".to_string(),
-            branch: "b".to_string(),
-            state: state.to_string(),
-            checks: "passing".to_string(),
-            review_state: String::new(),
-            url: "https://x".to_string(),
-            updated_ts: 1,
-        };
         let s = Store::open_in_memory().unwrap();
         s.replace_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "merged")]).unwrap();
-        // A merged-only sweep must not delete the open row it never fetched.
         s.replace_merged_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 4, "merged")]).unwrap();
         let prs = s.prs().unwrap();
         assert_eq!(prs.len(), 2);
@@ -926,23 +923,10 @@ mod tests {
 
     #[test]
     fn replace_open_prs_and_replace_merged_prs_are_full_snapshots_scoped_by_state() {
-        let pr = |repo: &str, number: i64, state: &str| PrInput {
-            repo: repo.to_string(),
-            number,
-            title: "t".to_string(),
-            branch: "b".to_string(),
-            state: state.to_string(),
-            checks: "passing".to_string(),
-            review_state: String::new(),
-            url: "https://x".to_string(),
-            updated_ts: 1,
-        };
         let s = Store::open_in_memory().unwrap();
         s.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "merged")]).unwrap();
         s.replace_open_prs(&[pr("o/a", 3, "open")]).unwrap();
         let prs = s.prs().unwrap();
-        // The other repo's open row (none here) would be purged, but its merged
-        // row survives; repo o/a's stale open row 1 is gone, replaced by 3.
         assert_eq!(prs.len(), 2);
         assert!(prs.iter().any(|p| p.number == 3 && p.state == "open"));
         assert!(prs.iter().any(|p| p.number == 2 && p.state == "merged"));
