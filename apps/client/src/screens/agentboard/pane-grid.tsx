@@ -1,6 +1,7 @@
 import { PanePlaceholder } from "@/components/agentboard-bits";
 import { AgentboardStandby, Centered } from "@/components/agentboard-standby";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
+import { JumpRecallCard } from "@/components/agentboard-jump-recall";
 import { BrowserPane } from "@/components/browser-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
 import { JarvisPane } from "@/components/jarvis-pane";
@@ -24,6 +25,7 @@ import {
   browserPaneDir,
   isBrowserPane,
 } from "@/lib/agentboard";
+import type { JumpRecall } from "@/lib/jump-recall";
 import type { PreviewRequest } from "@/lib/preview-artifact";
 import type { TermExit } from "@/lib/term-protocol";
 import { cn } from "@/lib/utils";
@@ -76,6 +78,9 @@ export function PaneGrid(props: {
   ) => Promise<void>;
   onRemovePane: (paneId: string) => void;
   onSelectFolder: (dir: string) => void;
+  /** Set by a keyboard jump only; null once dismissed or aged out. */
+  jumpRecall: JumpRecall | null;
+  onDismissJumpRecall: () => void;
   columns: ColumnDrag;
 }) {
   const {
@@ -104,6 +109,8 @@ export function PaneGrid(props: {
     onOpenTerminalPath,
     onRemovePane,
     onSelectFolder,
+    jumpRecall,
+    onDismissJumpRecall,
     columns,
   } = props;
   const { paneAreaRef, colDrag, startColDrag, resetCols } = columns;
@@ -150,6 +157,9 @@ export function PaneGrid(props: {
                 // rule; order matters, tailwind-merge keeps the last border-color.
                 focusedPaneId === id && "border-violet-500/60",
                 termAttention[id] && "border-amber-500/70",
+                // Same trade as the rail row: amber keeps the border, so focus
+                // becomes a ring rather than disappearing under it.
+                focusedPaneId === id && termAttention[id] && "ring-1 ring-inset ring-violet-500/70",
               )}
             >
               {s && (
@@ -186,6 +196,13 @@ export function PaneGrid(props: {
                     session={s}
                     now={now}
                     onCompact={() => actions.compactClaude(s)}
+                  />
+                )}
+                {jumpRecall?.sessionId === id && (
+                  <JumpRecallCard
+                    key={jumpRecall.nonce}
+                    recall={jumpRecall}
+                    onDismiss={onDismissJumpRecall}
                   />
                 )}
               </div>

@@ -83,6 +83,7 @@ import {
 } from "@/lib/agentboard";
 import { errorMessage } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
+import { buildJumpRecall, type JumpRecall } from "@/lib/jump-recall";
 import type { PreviewRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { invoke } from "@/lib/tauri";
@@ -121,6 +122,9 @@ export function AgentboardScreen() {
   const repos = state.repos;
 
   const [selected, setSelected] = useState<Selected>(null);
+  const [jumpRecall, setJumpRecall] = useState<JumpRecall | null>(null);
+  // A ref, not previous state: `selectSession` clears the card in the same batch that sets it.
+  const jumpNonce = useRef(0);
   // The tile that last claimed a click — the sole driver of the violet ring.
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
   const [focusLevel, setFocusLevel] = useState<FocusLevel>("rail");
@@ -503,6 +507,7 @@ export function AgentboardScreen() {
   }
 
   function selectSession(folderDir: string, sessionId: string) {
+    setJumpRecall(null);
     mountSession(folderDir, sessionId);
     setSelected({ folderDir, sessionId });
     setFocusedPaneId(sessionId);
@@ -544,9 +549,12 @@ export function AgentboardScreen() {
       toast(nothing);
       return;
     }
-    const folderDir = folderOf.get(target.id)?.dir;
-    if (!folderDir) return;
-    selectSession(folderDir, target.id);
+    const folder = folderOf.get(target.id);
+    if (!folder) return;
+    selectSession(folder.dir, target.id);
+    // A keyboard jump is the one arrival with no click to remember it by.
+    jumpNonce.current += 1;
+    setJumpRecall(buildJumpRecall(shownRepos, folder, target, now, jumpNonce.current));
   }
 
   function jumpToNeedsYou(direction: "next" | "prev") {
@@ -1307,6 +1315,8 @@ export function AgentboardScreen() {
                   setFocusLevel("pane");
                 }}
                 onSelectFolder={selectFolder}
+                jumpRecall={jumpRecall}
+                onDismissJumpRecall={() => setJumpRecall(null)}
                 termAttention={termAttention}
                 exitLabels={exitLabels}
                 filesOpenRequests={filesOpenRequests}
