@@ -447,6 +447,100 @@ where n.message = 'notify_needs_you: fired'
        order by f.ts desc limit 1) = 1
 order by n.ts desc limit 100";
 
+/// `Share`: the percentage of `select` matches also matching `pass`, failing
+/// *below* `threshold`. `Count`: the number of matches, failing *above* it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum RuleKind {
+    #[default]
+    Share,
+    Count,
+}
+
+/// A deterministic scorer over the event log (`tt-telemetry`'s `rules.rs`),
+/// persisted beside [`SavedView`] for the same reason: it is settings.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct TelemetryRule {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+    pub kind: RuleKind,
+    pub select: Vec<TelemetryFilter>,
+    pub pass: Vec<TelemetryFilter>,
+    /// A percentage for `Share`, a count for `Count`; the edge is inclusive.
+    pub threshold: f64,
+    pub days: u32,
+}
+
+impl TelemetryRule {
+    /// `gh` exiting clean, no spawn hanging half a minute, and the noise floor.
+    pub fn defaults() -> Vec<Self> {
+        let spawn = TelemetryFilter::new("name", FilterOp::Eq, "process.spawn");
+        vec![
+            Self {
+                id: "gh-exits-clean".to_string(),
+                label: "gh exits clean".to_string(),
+                enabled: true,
+                kind: RuleKind::Share,
+                select: vec![
+                    spawn.clone(),
+                    TelemetryFilter::new("process.executable.name", FilterOp::Eq, "gh"),
+                ],
+                pass: vec![TelemetryFilter::new("outcome", FilterOp::Eq, "ok")],
+                threshold: 95.0,
+                days: 1,
+            },
+            Self {
+                id: "no-spawn-over-30s".to_string(),
+                label: "No spawn over 30 s".to_string(),
+                enabled: true,
+                kind: RuleKind::Share,
+                select: vec![spawn],
+                pass: vec![TelemetryFilter::new("durationMs", FilterOp::Lt, "30000")],
+                threshold: 100.0,
+                days: 1,
+            },
+            Self {
+                id: "needs-you-not-spammed".to_string(),
+                label: "Needs-you not spammed".to_string(),
+                enabled: true,
+                kind: RuleKind::Count,
+                select: vec![TelemetryFilter::new(
+                    "message",
+                    FilterOp::Eq,
+                    "notify_needs_you: fired",
+                )],
+                pass: Vec::new(),
+                threshold: 30.0,
+                days: 1,
+            },
+            Self {
+                id: "zero-warn".to_string(),
+                label: "Zero WARN".to_string(),
+                enabled: true,
+                kind: RuleKind::Count,
+                select: vec![TelemetryFilter::new("level", FilterOp::Eq, "WARN")],
+                pass: Vec::new(),
+                threshold: 0.0,
+                days: 1,
+            },
+            Self {
+                id: "zero-error".to_string(),
+                label: "Zero ERROR".to_string(),
+                enabled: true,
+                kind: RuleKind::Count,
+                select: vec![TelemetryFilter::new("level", FilterOp::Eq, "ERROR")],
+                pass: Vec::new(),
+                threshold: 0.0,
+                days: 1,
+            },
+        ]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -653,6 +747,9 @@ pub struct UserSettings {
     pub saved_views: Vec<SavedView>,
     pub saved_queries: Vec<SavedQuery>,
 
+    /// The Telemetry Rules tab's scorers; see [`TelemetryRule::defaults`].
+    pub telemetry_rules: Vec<TelemetryRule>,
+
     pub collectors: CollectorsSettings,
 
     /// Lenient on purpose: the docs invite hand-editing, and a slip
@@ -683,6 +780,7 @@ impl Default for UserSettings {
             prompt_improvers: PromptImprover::defaults(),
             saved_views: SavedView::defaults(),
             saved_queries: SavedQuery::defaults(),
+            telemetry_rules: TelemetryRule::defaults(),
             collectors: CollectorsSettings::default(),
             mcp: McpSettings::default(),
         }
@@ -1366,6 +1464,33 @@ mod tests {
         assert!(s.saved_queries.iter().all(|q| !q.sql.contains(';')));
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"savedQueries\""));
+    }
+
+    #[test]
+    fn telemetry_rule_defaults() {
+        let s = UserSettings::default();
+        let ids: Vec<&str> = s.telemetry_rules.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "gh-exits-clean",
+                "no-spawn-over-30s",
+                "needs-you-not-spammed",
+                "zero-warn",
+                "zero-error"
+            ]
+        );
+        assert!(s.telemetry_rules.iter().all(|r| r.enabled && r.days >= 1 && !r.select.is_empty()));
+        for rule in &s.telemetry_rules {
+            match rule.kind {
+                RuleKind::Share => assert!(!rule.pass.is_empty(), "{}", rule.id),
+                RuleKind::Count => assert!(rule.pass.is_empty(), "{}", rule.id),
+            }
+        }
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"telemetryRules\""));
+        assert!(json.contains("\"kind\":\"share\""));
+        assert!(json.contains("\"kind\":\"count\""));
     }
 
     #[test]

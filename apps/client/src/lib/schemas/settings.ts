@@ -61,6 +61,19 @@ const SavedViewSchema = z
   })
   .passthrough();
 
+const TelemetryRuleSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    enabled: z.boolean(),
+    kind: z.enum(["share", "count"]),
+    select: z.array(TelemetryFilterSchema),
+    pass: z.array(TelemetryFilterSchema),
+    threshold: z.number(),
+    days: z.number(),
+  })
+  .passthrough();
+
 /** `settings_default_prompt_improvers` answers with a bare array. */
 export const PromptImproverListSchema = z.array(PromptImproverSchema);
 
@@ -71,6 +84,8 @@ const SavedQuerySchema = z
     sql: z.string(),
   })
   .passthrough();
+/** So does `settings_default_telemetry_rules`. */
+export const TelemetryRuleListSchema = z.array(TelemetryRuleSchema);
 
 const CalendarCollectorSchema = z
   .object({
@@ -159,6 +174,7 @@ export const UserSettingsSchema = z
     promptImprovers: z.array(PromptImproverSchema),
     savedViews: z.array(SavedViewSchema),
     savedQueries: z.array(SavedQuerySchema),
+    telemetryRules: z.array(TelemetryRuleSchema),
     collectors: CollectorsSettingsSchema,
     agentboard: AgentboardBlockSchema.optional(),
   })

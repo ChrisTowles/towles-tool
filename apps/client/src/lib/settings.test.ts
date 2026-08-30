@@ -74,6 +74,7 @@ function base(): UserSettings {
     promptImprovers: [],
     savedViews: [],
     savedQueries: [],
+    telemetryRules: [],
     collectors: {
       calendar: {
         enabled: false,

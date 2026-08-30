@@ -26,6 +26,7 @@ mod keyboard;
 mod layer;
 pub mod query;
 mod reader;
+mod rules;
 mod schema;
 mod trace;
 mod types;
@@ -61,6 +62,7 @@ pub use keyboard::{
 };
 pub use layer::EventLogLayer;
 pub use reader::{list_days, read_day, read_days, recent_days};
+pub use rules::{DayScore, Rule, RuleKind, RuleScore, score};
 pub use trace::children_of;
 pub use types::TelemetryRecord;
 

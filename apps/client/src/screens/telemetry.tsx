@@ -10,6 +10,7 @@ import {
   Lightbulb,
   RefreshCw,
   ScrollText,
+  ShieldCheck,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -46,6 +47,7 @@ import {
   telemetryDays,
   telemetryEvents,
   telemetryRecords,
+  telemetryRules,
   telemetryTrace,
   type AttentionSummary,
   type BuildSnapshot,
@@ -57,6 +59,7 @@ import {
   type LogPreset,
   type RangeDays,
   type RecordPage,
+  type RuleScore,
   type TelemetryRecord,
 } from "@/lib/telemetry";
 import {
@@ -73,6 +76,7 @@ import { DEFAULT_GROUP, DEFAULT_RANGE, DashboardTab } from "@/screens/telemetry/
 import type { LogPoint } from "@/screens/telemetry/dashboard-charts";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { LogFilterBar } from "@/screens/telemetry/log-filter-bar";
+import { DEFAULT_RULES_RANGE, RulesTab, type RulesRange } from "@/screens/telemetry/rules-tab";
 import { TraceTree } from "@/screens/telemetry/trace-tree";
 import { QueryTab } from "@/screens/telemetry/query-tab";
 import { useWorkspace } from "@/lib/workspace";
@@ -113,7 +117,7 @@ function countBy<T>(items: T[], key: (item: T) => string): { key: string; count:
 }
 
 export function TelemetryScreen() {
-  const { activeTab } = useWorkspace();
+  const { activeTab, openSettingsTab } = useWorkspace();
   const [tab, setTab] = useState("overview");
   const [days, setDays] = useState<string[] | null>(null);
   const [day, setDay] = useState<string | null>(null);
@@ -138,6 +142,10 @@ export function TelemetryScreen() {
   const [dashboardGroup, setDashboardGroup] = useState<DashboardGroupBy>(DEFAULT_GROUP);
   const [builds, setBuilds] = useState<BuildSnapshot[] | null>(null);
   const [buildsLoading, setBuildsLoading] = useState(false);
+  const [rules, setRules] = useState<RuleScore[] | null>(null);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [rulesRange, setRulesRange] = useState<RulesRange>(DEFAULT_RULES_RANGE);
+  const [rulesOnlyFailing, setRulesOnlyFailing] = useState(false);
 
   useEffect(() => {
     saveTelemetryFilters({ kind, days: logDays, filters, query });
@@ -235,6 +243,21 @@ export function TelemetryScreen() {
     setBuildsLoading(false);
   }
 
+  /** Range-scoped like the dashboard; the rules come from settings, so a save
+   * there is picked up on the next load. */
+  async function loadRules() {
+    setRulesLoading(true);
+    const r = await telemetryRules(rulesRange);
+    r.match({
+      ok: setRules,
+      err: (e) => {
+        setRules(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not score rules: ${errorMessage(e)}`);
+      },
+    });
+    setRulesLoading(false);
+  }
+
   /** Re-lists the available days and resolves the selected one if unset. */
   async function refreshDays() {
     const daysResult = await telemetryDays();
@@ -259,6 +282,7 @@ export function TelemetryScreen() {
     if (tab === "keyboard") void loadKeyboard();
     if (tab === "dashboard") void loadDashboard();
     if (tab === "builds") void loadBuilds();
+    if (tab === "rules") void loadRules();
     if (tab === "log") void loadLog();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only on focus/mount; refreshDays/loadEvents/day are read fresh, not tracked (a changed day reloads via the effect below)
   }, [activeTab]);
@@ -298,6 +322,11 @@ export function TelemetryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadBuilds is read fresh, not tracked
   }, [tab]);
 
+  useEffect(() => {
+    if (tab === "rules") void loadRules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadRules is read fresh, not tracked
+  }, [tab, rulesRange]);
+
   function manualRefresh() {
     uiAction("telemetry.refresh", "telemetry");
     void refreshDays();
@@ -306,6 +335,15 @@ export function TelemetryScreen() {
     if (tab === "keyboard") void loadKeyboard();
     if (tab === "dashboard") void loadDashboard();
     if (tab === "builds") void loadBuilds();
+    if (tab === "rules") void loadRules();
+  }
+
+  /** A rule card becomes a Log view of its population — the `select` filters,
+   * read from settings since the score carries only the id. */
+  function openRule(score: RuleScore) {
+    uiAction("telemetry.rule_opened", "telemetry", score.id);
+    const rule = settings?.telemetryRules.find((r) => r.id === score.id);
+    applyLogFilters({ days: rule?.days ?? 1, filters: rule?.select ?? [], query: "" });
   }
 
   /** A chart point becomes a Log view: the series as a structured filter on the
@@ -501,6 +539,10 @@ export function TelemetryScreen() {
             <GitCompare className="size-4" />
             Builds
           </TabsTrigger>
+          <TabsTrigger value="rules" className="justify-start gap-2 px-2 py-1.5">
+            <ShieldCheck className="size-4" />
+            Rules
+          </TabsTrigger>
           <TabsTrigger value="attention" className="justify-start gap-2 px-2 py-1.5">
             <Gauge className="size-4" />
             Attention
@@ -556,6 +598,20 @@ export function TelemetryScreen() {
               snapshots={builds}
               loading={buildsLoading}
               onRefresh={() => void loadBuilds()}
+            />
+          </TabsContent>
+
+          <TabsContent value="rules" className="p-4">
+            <RulesTab
+              scores={rules}
+              loading={rulesLoading}
+              range={rulesRange}
+              onlyFailing={rulesOnlyFailing}
+              onRange={setRulesRange}
+              onOnlyFailing={setRulesOnlyFailing}
+              onRefresh={() => void loadRules()}
+              onOpenRule={openRule}
+              onAddRule={() => openSettingsTab({ tab: "collectors", filter: "Telemetry rules" })}
             />
           </TabsContent>
 

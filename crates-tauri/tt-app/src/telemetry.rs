@@ -15,7 +15,7 @@ use chrono::{Duration, Utc};
 use tt_telemetry::query::{EventDb, QueryResult};
 use tt_telemetry::{
     AttentionSummary, Bucket, BuildKey, BuildSnapshot, DashboardSummary, Delta, GroupBy,
-    KeyboardDay, KeyboardScore, TelemetryRecord,
+    KeyboardDay, KeyboardScore, Rule, RuleScore, TelemetryRecord,
 };
 
 fn telemetry_dir() -> Result<PathBuf, String> {
@@ -300,4 +300,50 @@ pub async fn telemetry_query_reload() -> Result<(), String> {
     })
     .await
     .map_err(|e| format!("telemetry query reload task panicked: {e}"))?
+}
+
+/// The rules in settings, in the crate's scoring shape.
+fn load_rules() -> Result<Vec<Rule>, String> {
+    let settings = tt_config::load().map_err(|e| e.to_string())?;
+    Ok(settings.telemetry_rules.into_iter().map(Rule::from).collect())
+}
+
+/// The last `n` UTC calendar days, today last — calendar days rather than the
+/// files on disk, so a silent day is a gap in the sparkline and "today" is
+/// always the real today, not the newest file.
+fn utc_days_back(n: i64) -> Vec<String> {
+    let today = Utc::now().date_naive();
+    (0..n).rev().map(|back| (today - Duration::days(back)).format("%Y-%m-%d").to_string()).collect()
+}
+
+/// Every enabled rule scored per day over the last `days` days: the Rules tab.
+#[tauri::command]
+pub async fn telemetry_rules(days: u32) -> Result<Vec<RuleScore>, String> {
+    let dir = telemetry_dir()?;
+    let days = i64::from(days).clamp(1, KEYBOARD_WINDOW_DAYS);
+    tauri::async_runtime::spawn_blocking(move || {
+        let rules = load_rules()?;
+        let dates = utc_days_back(days);
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::score(&rules, &records, &dates))
+    })
+    .await
+    .map_err(|e| format!("telemetry rules task panicked: {e}"))?
+}
+
+/// How many enabled rules are failing right now — the status-bar pill. Polled,
+/// so it reads only as far back as the widest enabled rule's window: with the
+/// shipped rules that is today's file alone.
+#[tauri::command]
+pub async fn telemetry_rules_failing() -> Result<usize, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let rules = load_rules()?;
+        let window = rules.iter().filter(|r| r.enabled).map(|r| r.days).max().unwrap_or(1);
+        let dates = utc_days_back(i64::from(window).clamp(1, KEYBOARD_WINDOW_DAYS));
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::score(&rules, &records, &dates).iter().filter(|s| s.failing).count())
+    })
+    .await
+    .map_err(|e| format!("telemetry rules task panicked: {e}"))?
 }

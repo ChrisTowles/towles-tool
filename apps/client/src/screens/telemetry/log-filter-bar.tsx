@@ -82,20 +82,11 @@ export function LogFilterBar(props: LogFilterBarProps) {
       </DropdownMenu>
 
       {filters.map((f, i) => (
-        <span
+        <FilterChip
           key={`${f.field}-${f.op}-${f.value}-${i}`}
-          className={cn(chip, "gap-1.5 pr-1 font-mono")}
-        >
-          {filterLabel(f)}
-          <button
-            type="button"
-            aria-label={`Remove filter ${filterLabel(f)}`}
-            onClick={() => onRemoveFilter(i)}
-            className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <X className="size-3" />
-          </button>
-        </span>
+          filter={f}
+          onRemove={() => onRemoveFilter(i)}
+        />
       ))}
 
       <DropdownMenu>
@@ -214,7 +205,24 @@ function ViewChip({
   );
 }
 
-function AddFilterChip({ onAdd }: { onAdd: (filter: Filter) => void }) {
+/** One predicate as a removable chip; the Rules editor in Settings shares it. */
+export function FilterChip({ filter, onRemove }: { filter: Filter; onRemove: () => void }) {
+  return (
+    <span className={cn(chip, "gap-1.5 pr-1 font-mono")}>
+      {filterLabel(filter)}
+      <button
+        type="button"
+        aria-label={`Remove filter ${filterLabel(filter)}`}
+        onClick={onRemove}
+        className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <X className="size-3" />
+      </button>
+    </span>
+  );
+}
+
+export function AddFilterChip({ onAdd }: { onAdd: (filter: Filter) => void }) {
   const [open, setOpen] = useState(false);
   const [field, setField] = useState("");
   const [op, setOp] = useState<FilterOp>("eq");

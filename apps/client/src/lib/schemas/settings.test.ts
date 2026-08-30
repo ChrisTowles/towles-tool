@@ -23,6 +23,18 @@ const valid = {
     },
   ],
   savedQueries: [{ id: "slow-spawns", label: "slow spawns", sql: "select 1" }],
+  telemetryRules: [
+    {
+      id: "zero-error",
+      label: "Zero ERROR",
+      enabled: true,
+      kind: "count",
+      select: [{ field: "level", op: "eq", value: "ERROR" }],
+      pass: [],
+      threshold: 0,
+      days: 1,
+    },
+  ],
   collectors: {
     calendar: {
       enabled: false,

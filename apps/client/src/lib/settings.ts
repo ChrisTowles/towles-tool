@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { PromptImproverListSchema, UserSettingsSchema } from "./schemas/settings";
+import {
+  PromptImproverListSchema,
+  TelemetryRuleListSchema,
+  UserSettingsSchema,
+} from "./schemas/settings";
 import { invoke } from "./tauri";
 import { slugify } from "./slug";
-import type { Filter } from "./telemetry";
+import type { Filter, RuleKind } from "./telemetry";
 
 /** Client-side view of the shared user settings (`crates/tt-config`), co-owned
  * by the TS CLI — so a save carries the whole object forward. */
@@ -151,6 +155,53 @@ export function nextSavedQueryId(queries: SavedQuery[], label: string): string {
   }
 }
 
+/** A Rules-tab scorer — `tt_config::TelemetryRule`. `pass` is only read for a
+ * `share` rule; `threshold` is a percentage for `share`, a count for `count`. */
+export type TelemetryRule = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  kind: RuleKind;
+  select: Filter[];
+  pass: Filter[];
+  threshold: number;
+  days: number;
+};
+
+/** Permanent key, as {@link nextCalendarSourceId}. */
+export function nextTelemetryRuleId(rules: TelemetryRule[], label: string): string {
+  const taken = new Set(rules.map((r) => r.id));
+  const base = slugify(label) || "rule";
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/** Read from `tt_config`, like {@link defaultPromptImprovers}. */
+export function defaultTelemetryRules() {
+  return invoke<TelemetryRule[]>(
+    "settings_default_telemetry_rules",
+    {},
+    { schema: TelemetryRuleListSchema },
+  );
+}
+
+/** Restores the built-ins in place and appends missing ones; user-added rules
+ * are untouched — the same rule as {@link withDefaultPromptImprovers}. */
+export function withDefaultTelemetryRules(
+  current: TelemetryRule[],
+  defaults: TelemetryRule[],
+): TelemetryRule[] {
+  const byId = new Map(defaults.map((d) => [d.id, d]));
+  const present = new Set(current.map((r) => r.id));
+  return [
+    ...current.map((r) => byId.get(r.id) ?? r),
+    ...defaults.filter((d) => !present.has(d.id)),
+  ];
+}
+
 export type CalendarCollector = {
   enabled: boolean;
   refreshMinutes: number;
@@ -192,6 +243,7 @@ export type UserSettings = {
   promptImprovers: PromptImprover[];
   savedViews: SavedView[];
   savedQueries: SavedQuery[];
+  telemetryRules: TelemetryRule[];
   collectors: CollectorsSettings;
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through
