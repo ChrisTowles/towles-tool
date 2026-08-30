@@ -19,18 +19,14 @@ use serde_json::Value;
 
 use crate::TelemetryRecord;
 
-/// A focus session shorter than this counts as fragmented — a glance at the
-/// app rather than a stretch of work in it. Two minutes is deliberately
-/// generous: checking a PR's checks or a running agent's last line is a real
-/// use of the app, and shouldn't read as thrash below it.
+/// Below this a focus session is a glance, not work. Two minutes is generous
+/// on purpose: checking a PR's checks is a real use of the app, not thrash.
 const FRAGMENT_MS: i64 = 2 * 60 * 1000;
 
-/// The message of the event that records the window gaining/losing OS focus
-/// (`crates-tauri/tt-app/src/lib.rs`'s `WindowEvent::Focused`).
+/// `WindowEvent::Focused` in `tt-app`'s `lib.rs`.
 const FOCUS_EVENT: &str = "window.focus_changed";
 
-/// The message of the frontend's one telemetry seam for user gestures
-/// (`ui_action` in `crates-tauri/tt-app/src/lib.rs`).
+/// The frontend's one gesture seam (`ui_action` in `tt-app`'s `lib.rs`).
 const ACTION_EVENT: &str = "ui.action";
 
 /// Needs-you notification events are `notify_needs_you: fired` /
@@ -40,22 +36,16 @@ const NOTIFY_PREFIX: &str = "notify_needs_you";
 /// The span every subprocess opens (`tt-exec`'s run paths).
 const SPAWN_SPAN: &str = "process.spawn";
 
-/// Longest breakdown list returned for any category. The frontend renders a
-/// bar chart per category; beyond this the bars are unreadable and the tail
-/// is better answered by the Log tab's search.
+/// Beyond this a breakdown's bars are unreadable; the tail is the Log tab's job.
 const TOP_N: usize = 10;
 
 /// One day's attention picture, derived from that day's event-log records.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttentionSummary {
-    /// The log day this summarizes, echoed back so a stale response is
-    /// recognisable as one.
+    /// Echoed back so a stale response is recognisable as one.
     pub date: String,
-    /// Records the day held, including the ones no section below counts.
     pub record_count: usize,
-    /// First and last record timestamps — the outer bounds of the day's
-    /// activity, which is not the same as the day's focused time.
     pub first_ts: Option<String>,
     pub last_ts: Option<String>,
     /// `last_ts - first_ts`: how long the app was *up*, the denominator
@@ -75,18 +65,13 @@ pub struct AttentionSummary {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FocusSummary {
-    /// Total time the window held OS focus.
     pub focused_ms: i64,
-    /// Number of separate focused stretches.
     pub session_count: usize,
-    /// The longest unbroken one — the day's best shot at deep work.
     pub longest_ms: i64,
-    /// Sessions shorter than [`FRAGMENT_MS`]: glances, not work.
+    /// Sessions shorter than [`FRAGMENT_MS`].
     pub fragment_count: usize,
-    /// Times focus left the window. Each one is a context switch *away* from
-    /// this app, whatever it switched to.
+    /// Times focus left the window: context switches *away* from this app.
     pub departures: usize,
-    /// Every session, in order, for the timeline strip.
     pub sessions: Vec<FocusSession>,
 }
 
@@ -96,9 +81,8 @@ pub struct FocusSession {
     pub start: String,
     pub end: String,
     pub duration_ms: i64,
-    /// True when the day ended (or the app exited) with the window still
-    /// focused, so `end` is the last record's timestamp rather than an
-    /// observed blur. The stretch is a lower bound, not a measurement.
+    /// Still focused at the day's last record, so `end` is a lower bound,
+    /// not an observed blur.
     pub open_ended: bool,
 }
 
@@ -107,10 +91,8 @@ pub struct FocusSession {
 #[serde(rename_all = "camelCase")]
 pub struct ActionSummary {
     pub total: usize,
-    /// Consecutive actions landing on a different screen than the one before.
-    /// A cheap proxy for in-app context switching, and deliberately *not* the
-    /// same number as [`FocusSummary::departures`] — this counts moving around
-    /// inside the app, that counts leaving it.
+    /// Consecutive actions on different screens — moving around *inside* the
+    /// app, where [`FocusSummary::departures`] counts leaving it.
     pub screen_switches: usize,
     pub by_screen: Vec<Count>,
     pub by_action: Vec<Count>,
@@ -120,11 +102,9 @@ pub struct ActionSummary {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationSummary {
-    /// Notifications that actually reached the OS.
     pub fired: usize,
-    /// Ones suppressed (window already focused, notifications off). Kept
-    /// separate because a high skip count is a healthy signal, not an
-    /// interruption.
+    /// Suppressed (window already focused, notifications off) — a healthy
+    /// signal, not an interruption, hence counted apart.
     pub skipped: usize,
 }
 
@@ -133,10 +113,9 @@ pub struct NotificationSummary {
 #[serde(rename_all = "camelCase")]
 pub struct MachineSummary {
     pub spawn_count: usize,
-    /// Summed span durations. Wall-clock *inside* spans, not of the day —
-    /// concurrent spawns overlap, so this can exceed `elapsed_ms`.
+    /// Summed span durations; concurrent spawns overlap, so this can exceed
+    /// `elapsed_ms`.
     pub total_ms: i64,
-    /// Spawns whose `outcome` field was anything but `ok`.
     pub failures: usize,
     pub by_executable: Vec<ExecutableStat>,
 }
@@ -152,7 +131,6 @@ pub struct ExecutableStat {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HourBucket {
-    /// Local-time hour, `0..=23`.
     pub hour: u32,
     pub focused_ms: i64,
     pub actions: usize,
@@ -444,6 +422,7 @@ mod tests {
             tt_task: None,
             tt_build_sha: None,
             duration_ms: None,
+            pid: None,
             fields: Value::Object(object),
             raw: String::new(),
         }
@@ -459,6 +438,7 @@ mod tests {
             tt_task: None,
             tt_build_sha: None,
             duration_ms: Some(duration_ms),
+            pid: None,
             fields: json!({ "process.executable.name": executable, "outcome": outcome }),
             raw: String::new(),
         }

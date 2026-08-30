@@ -111,3 +111,55 @@ fn keyboard_day(dir: &Path, date: &str, is_today: bool) -> Result<KeyboardDay, S
     }
     Ok(day)
 }
+
+/// The newest `limit` matches plus the full count, so the bar can say "684
+/// rows" while the DOM holds a few hundred.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordPage {
+    pub records: Vec<TelemetryRecord>,
+    pub total: usize,
+}
+
+/// The Log tab's query over the last `days` files, filtered here because a
+/// fortnight can be a million records and only the page should cross IPC.
+#[tauri::command]
+pub async fn telemetry_records(
+    days: u32,
+    filters: Vec<tt_telemetry::Filter>,
+    query: String,
+    limit: usize,
+) -> Result<RecordPage, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dates =
+            tt_telemetry::recent_days(&dir, days.max(1) as usize).map_err(|e| e.to_string())?;
+        let all = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        let hits = tt_telemetry::apply(&all, &filters, &query);
+        let total = hits.len();
+        let records = hits.iter().rev().take(limit).map(|r| (*r).clone()).collect();
+        Ok(RecordPage { records, total })
+    })
+    .await
+    .map_err(|e| format!("telemetry records task panicked: {e}"))?
+}
+
+/// The records written inside the span that closed at `ts` on `day`. Several
+/// spans can close in one millisecond; the longest wins, its tree holds the rest.
+#[tauri::command]
+pub async fn telemetry_trace(ts: String, day: String) -> Result<Vec<TelemetryRecord>, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let records = tt_telemetry::read_day(&dir, &day).map_err(|e| e.to_string())?;
+        let Some(parent) = records
+            .iter()
+            .filter(|r| r.ts == ts && r.duration_ms.is_some())
+            .max_by_key(|r| r.duration_ms)
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(tt_telemetry::children_of(parent, &records).into_iter().cloned().collect())
+    })
+    .await
+    .map_err(|e| format!("telemetry trace task panicked: {e}"))?
+}

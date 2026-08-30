@@ -11,6 +11,8 @@ export type TelemetryRecord = {
   ttTask: string | null;
   ttBuildSha: string | null;
   durationMs: number | null;
+  /** `process.pid`, kept so a span can be grouped with what it wrote. */
+  pid: number | null;
   fields: Record<string, unknown>;
   raw: string;
 };
@@ -90,33 +92,101 @@ export function focusShare(summary: AttentionSummary): number | null {
 }
 
 export const LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"] as const;
-export type LevelFilter = "all" | (typeof LEVELS)[number];
 export type KindFilter = "all" | "event" | "span";
 
-/** Persisted across screen switches and restarts. The day picker is deliberately
- * *not* here — a stale date confuses, so it resets to the newest day each visit. */
+/** Mirrors Rust's `tt_config::FilterOp`; the spelling is the wire format. */
+export const FILTER_OPS = ["eq", "neq", "contains", "gt", "lt"] as const;
+export type FilterOp = (typeof FILTER_OPS)[number];
+
+/** One structured predicate — `tt_config::TelemetryFilter`. `field` is a base
+ * column (`kind`, `level`, `target`, `name`, `ttTask`, `ttBuildSha`,
+ * `durationMs`) or any key in `fields`. */
+export type Filter = { field: string; op: FilterOp; value: string };
+
+export const OP_GLYPH: Record<FilterOp, string> = {
+  eq: "=",
+  neq: "≠",
+  contains: "contains",
+  gt: ">",
+  lt: "<",
+};
+
+/** `field op value`, as the chip prints it. */
+export function filterLabel(f: Filter): string {
+  return `${f.field} ${OP_GLYPH[f.op]} ${f.value}`;
+}
+
+/** Fields the Add-filter popover suggests; any key typed by hand works too. */
+export const FILTER_FIELD_SUGGESTIONS = [
+  "level",
+  "target",
+  "name",
+  "message",
+  "kind",
+  "ttTask",
+  "ttBuildSha",
+  "durationMs",
+  "process.executable.name",
+  "outcome",
+  "exit_code",
+  "action",
+  "screen",
+] as const;
+
+export const RANGE_DAYS = [1, 3, 7, 14] as const;
+export type RangeDays = (typeof RANGE_DAYS)[number];
+
+export type RecordPage = { records: TelemetryRecord[]; total: number };
+
+/** The newest `limit` matches of the last `days` log files, filtered in Rust. */
+export const telemetryRecords = (days: number, filters: Filter[], query: string, limit: number) =>
+  invoke<RecordPage>("telemetry_records", { days, filters, query, limit });
+
+/** The records written during the span that closed at `ts`, oldest first. */
+export const telemetryTrace = (ts: string, day: string) =>
+  invoke<TelemetryRecord[]>("telemetry_trace", { ts, day });
+
+/** What a sibling tab hands the Log tab to pre-fill it. */
+export type LogPreset = { days: number; filters: Filter[]; query?: string };
+
+/** Persisted across screen switches and restarts. */
 export type TelemetryFilters = {
-  level: LevelFilter;
   kind: KindFilter;
-  target: string;
+  days: RangeDays;
+  filters: Filter[];
   query: string;
 };
 
 export const DEFAULT_TELEMETRY_FILTERS: TelemetryFilters = {
-  level: "all",
   kind: "all",
-  target: "all",
+  days: 1,
+  filters: [],
   query: "",
 };
 
 export const TELEMETRY_FILTERS_KEY = "tt-telemetry-filters";
 
-const LEVEL_VALUES = new Set<string>(["all", ...LEVELS]);
 const KIND_VALUES = new Set<string>(["all", "event", "span"]);
+const OP_VALUES = new Set<string>(FILTER_OPS);
+
+export function isFilter(value: unknown): value is Filter {
+  if (typeof value !== "object" || value === null) return false;
+  const f = value as Record<string, unknown>;
+  return (
+    typeof f.field === "string" &&
+    f.field.length > 0 &&
+    typeof f.op === "string" &&
+    OP_VALUES.has(f.op) &&
+    typeof f.value === "string"
+  );
+}
+
+export function isRangeDays(value: unknown): value is RangeDays {
+  return typeof value === "number" && (RANGE_DAYS as readonly number[]).includes(value);
+}
 
 /** Every malformed field degrades to its default, so a corrupt value can never
- * break the screen. `target` is kept verbatim — valid targets vary by day, and
- * the screen falls back to "all" when the loaded day has no such target. */
+ * break the screen; a malformed filter is dropped, the rest kept. */
 export function loadTelemetryFilters(raw: string | null): TelemetryFilters {
   if (raw === null) return DEFAULT_TELEMETRY_FILTERS;
   let parsed: unknown;
@@ -128,14 +198,23 @@ export function loadTelemetryFilters(raw: string | null): TelemetryFilters {
   if (typeof parsed !== "object" || parsed === null) return DEFAULT_TELEMETRY_FILTERS;
   const p = parsed as Record<string, unknown>;
   return {
-    level:
-      typeof p.level === "string" && LEVEL_VALUES.has(p.level) ? (p.level as LevelFilter) : "all",
     kind: typeof p.kind === "string" && KIND_VALUES.has(p.kind) ? (p.kind as KindFilter) : "all",
-    target: typeof p.target === "string" ? p.target : "all",
+    days: isRangeDays(p.days) ? p.days : 1,
+    filters: Array.isArray(p.filters) ? p.filters.filter(isFilter) : [],
     query: typeof p.query === "string" ? p.query : "",
   };
 }
 
 export function saveTelemetryFilters(filters: TelemetryFilters): void {
   localStorage.setItem(TELEMETRY_FILTERS_KEY, JSON.stringify(filters));
+}
+
+/** The filters the backend runs: the kind chip is one more `eq` predicate. */
+export function effectiveFilters(kind: KindFilter, filters: Filter[]): Filter[] {
+  return kind === "all" ? filters : [{ field: "kind", op: "eq", value: kind }, ...filters];
+}
+
+/** Snaps an arbitrary day count (a saved view's, a preset's) to the range chip. */
+export function nearestRange(days: number): RangeDays {
+  return RANGE_DAYS.find((d) => d >= days) ?? 14;
 }

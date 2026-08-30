@@ -43,6 +43,24 @@ const PromptImproverSchema = z
   })
   .passthrough();
 
+const TelemetryFilterSchema = z
+  .object({
+    field: z.string(),
+    op: z.enum(["eq", "neq", "contains", "gt", "lt"]),
+    value: z.string(),
+  })
+  .passthrough();
+
+const SavedViewSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    filters: z.array(TelemetryFilterSchema),
+    days: z.number(),
+    query: z.string(),
+  })
+  .passthrough();
+
 /** `settings_default_prompt_improvers` answers with a bare array. */
 export const PromptImproverListSchema = z.array(PromptImproverSchema);
 
@@ -131,6 +149,7 @@ export const UserSettingsSchema = z
     preferredEditor: z.string(),
     journalSettings: JournalSettingsSchema,
     promptImprovers: z.array(PromptImproverSchema),
+    savedViews: z.array(SavedViewSchema),
     collectors: CollectorsSettingsSchema,
     agentboard: AgentboardBlockSchema.optional(),
   })

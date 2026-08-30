@@ -245,6 +245,7 @@ mod tests {
             tt_task: None,
             tt_build_sha: None,
             duration_ms: None,
+            pid: None,
             fields: json!({ "message": ACTION_EVENT, "action": id, "screen": "agentboard" }),
             raw: String::new(),
         }

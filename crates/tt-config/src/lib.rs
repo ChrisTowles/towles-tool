@@ -291,6 +291,94 @@ pub const DEFAULT_IMPROVER_INTERVIEW: &str = "Rewrite the task as a request to r
 codebase first and then interview me one question at a time about what is still ambiguous, \
 prioritizing questions where my answer would change the architecture.";
 
+/// How a [`TelemetryFilter`] compares a record's value with its own.
+/// `Gt`/`Lt` compare numerically when both sides parse as numbers and
+/// lexically otherwise; `Contains` is a case-insensitive substring.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum FilterOp {
+    #[default]
+    Eq,
+    Neq,
+    Contains,
+    Gt,
+    Lt,
+}
+
+/// One structured predicate on the Telemetry screen's Log tab. `field` is a
+/// base column of a record (`kind`, `level`, `target`, `name`, `ttTask`,
+/// `ttBuildSha`, `durationMs`) or any key in its `fields`
+/// (`process.executable.name`, `outcome`, `message`). Lives here rather than
+/// in `tt-telemetry` because saved views persist it in the settings file.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct TelemetryFilter {
+    pub field: String,
+    pub op: FilterOp,
+    pub value: String,
+}
+
+impl TelemetryFilter {
+    pub fn new(field: &str, op: FilterOp, value: &str) -> Self {
+        Self { field: field.to_string(), op, value: value.to_string() }
+    }
+}
+
+/// A named Log-tab query: its filters, how many days back it reads, and its
+/// free-text search. Shared across instances like every other setting.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct SavedView {
+    pub id: String,
+    pub label: String,
+    pub filters: Vec<TelemetryFilter>,
+    pub days: u32,
+    pub query: String,
+}
+
+impl SavedView {
+    /// The questions the log has actually been asked, as views: which `gh`
+    /// calls failed, which spawns were slow, and when a notification fired.
+    pub fn defaults() -> Vec<Self> {
+        vec![
+            Self {
+                id: "gh-failures".to_string(),
+                label: "gh failures".to_string(),
+                filters: vec![
+                    TelemetryFilter::new("process.executable.name", FilterOp::Eq, "gh"),
+                    TelemetryFilter::new("outcome", FilterOp::Neq, "ok"),
+                ],
+                days: 1,
+                query: String::new(),
+            },
+            Self {
+                id: "slow-spawns".to_string(),
+                label: "spawns > 2 s".to_string(),
+                filters: vec![
+                    TelemetryFilter::new("name", FilterOp::Eq, "process.spawn"),
+                    TelemetryFilter::new("durationMs", FilterOp::Gt, "2000"),
+                ],
+                days: 7,
+                query: String::new(),
+            },
+            Self {
+                id: "interruptions".to_string(),
+                label: "interruptions".to_string(),
+                filters: vec![TelemetryFilter::new(
+                    "message",
+                    FilterOp::Contains,
+                    "notify_needs_you",
+                )],
+                days: 7,
+                query: String::new(),
+            },
+        ]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -493,6 +581,9 @@ pub struct UserSettings {
 
     pub prompt_improvers: Vec<PromptImprover>,
 
+    /// The Telemetry Log tab's saved views; see [`SavedView::defaults`].
+    pub saved_views: Vec<SavedView>,
+
     pub collectors: CollectorsSettings,
 
     /// Lenient on purpose: the docs invite hand-editing, and a slip
@@ -521,6 +612,7 @@ impl Default for UserSettings {
             journal_settings: JournalSettings::default(),
             agentboard: AgentboardSettings::default(),
             prompt_improvers: PromptImprover::defaults(),
+            saved_views: SavedView::defaults(),
             collectors: CollectorsSettings::default(),
             mcp: McpSettings::default(),
         }
@@ -1173,12 +1265,26 @@ mod tests {
     }
 
     #[test]
+    fn saved_view_defaults() {
+        let s = UserSettings::default();
+        let ids: Vec<&str> = s.saved_views.iter().map(|v| v.id.as_str()).collect();
+        assert_eq!(ids, vec!["gh-failures", "slow-spawns", "interruptions"]);
+        assert!(s.saved_views.iter().all(|v| v.days >= 1 && !v.filters.is_empty()));
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"savedViews\""));
+        // The op spelling is the frontend's contract; a rename breaks every stored view.
+        assert!(json.contains("\"op\":\"neq\""));
+        assert!(json.contains("\"op\":\"contains\""));
+    }
+
+    #[test]
     fn notify_defaults_unset_and_everything_on() {
         let s = UserSettings::default();
         assert!(s.agentboard.notify.is_none());
         assert!(s.agentboard.notify_threshold.is_none());
         let json = serde_json::to_string(&s).unwrap();
-        assert!(!json.contains("notify"));
+        assert!(!json.contains("\"notify\""));
+        assert!(!json.contains("\"notifyThreshold\""));
         assert!(
             [
                 NotifyKind::NeedsYou,
