@@ -593,9 +593,7 @@ export function collectorsSections(
           node: (
             <TelemetryRulesEditor
               rules={settings.telemetryRules}
-              onChange={(telemetryRules, opts) =>
-                update((s) => ({ ...s, telemetryRules }), opts)
-              }
+              onChange={(telemetryRules, opts) => update((s) => ({ ...s, telemetryRules }), opts)}
               onCommit={() => void flush()}
             />
           ),

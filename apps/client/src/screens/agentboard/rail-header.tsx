@@ -326,8 +326,8 @@ export function RailHeader(props: {
           <Hint
             label={
               showUnmanagedWorktrees
-                ? "Showing every git worktree, including ones Claude Code made for its own agents — click to show only the tasks you asked for"
-                : "Showing only the tasks you asked for — click to also show worktrees Claude Code made for its own agents, or ones added by hand"
+                ? 'Showing every git worktree — the ones agents made for themselves fold into a per-repo "N unmanaged" row you can open. Click to drop them entirely.'
+                : "Showing only the tasks you asked for — click to also find worktrees agents made for themselves, or ones added by hand"
             }
           >
             <button

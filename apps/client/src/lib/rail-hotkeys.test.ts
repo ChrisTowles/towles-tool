@@ -24,6 +24,8 @@ function targets(args: Partial<Parameters<typeof railHotkeyTargets>[0]> = {}) {
     repos: [SOLO, MULTI],
     idleDirs: new Map(),
     idleRevealed: new Set(),
+    unmanagedDirs: new Map(),
+    unmanagedRevealed: new Set(),
     collapsed: {},
     wins: null,
     ...args,
@@ -40,6 +42,8 @@ describe("railHotkeyTargets", () => {
       repos: [MULTI],
       idleDirs: new Map(),
       idleRevealed: new Set(),
+      unmanagedDirs: new Map(),
+      unmanagedRevealed: new Set(),
       collapsed: {},
       wins: null,
     });

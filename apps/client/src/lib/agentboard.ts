@@ -833,6 +833,29 @@ export function isFolderStale(f: FolderData, now: number, hours: number): boolea
   return now - folderLastWorkedAt(f) >= hours * 3_600_000;
 }
 
+/** Whether this folder demotes to the per-repo "N unmanaged" stub row. Agents
+ * mint worktrees of their own, so a busy fleet buries the rail under folders
+ * nobody asked for — but a live session, something waiting on you or a
+ * create/remove in flight outranks the stub, so no worktree that wants a person
+ * is folded away. */
+export function isFolderUnmanaged(f: FolderData): boolean {
+  if (!folderIsUnclaimed(f) || folderBusy(f)) return false;
+  return (
+    liveSessions(f).length === 0 && f.needs === 0 && f.sessions.every((s) => !sessionCatchesEye(s))
+  );
+}
+
+/** A stub row's contents leave the list until the stub is peeked open — the one
+ * answer for the tree walk (`railNodes`) and the render (`RepoGroup`) alike. */
+export function withoutFolded(
+  folders: FolderData[],
+  folded: Set<string> | undefined,
+  revealed: boolean,
+): FolderData[] {
+  if (!folded || revealed) return folders;
+  return folders.filter((f) => !folded.has(f.dir));
+}
+
 /** Whether `filter` demotes this folder to the per-repo "N idle" stub row. */
 export function isFolderFiltered(
   f: FolderData,

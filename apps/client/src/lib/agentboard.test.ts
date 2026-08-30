@@ -53,6 +53,7 @@ import {
   isFolderFiltered,
   isFolderIdle,
   isFolderStale,
+  isFolderUnmanaged,
   folderLastWorkedAt,
   isPasteableImage,
   issuesForFolder,
@@ -74,6 +75,7 @@ import {
   sessionNeeds,
   sessionNotBusy,
   waitForFirstFrame,
+  withoutFolded,
   type AgentStatus,
   type FolderData,
   type Panes,
@@ -84,6 +86,7 @@ import {
   nextOpenFileNonce,
   nextWindowId,
 } from "./agentboard";
+import { foldedRepoLabel } from "@/components/agentboard-fold-rows";
 import type { PrItem, TaskItem } from "./data";
 
 describe("nextWindowId", () => {
@@ -1284,6 +1287,63 @@ function folder(overrides: Partial<FolderData>): FolderData {
     ...overrides,
   };
 }
+
+describe("isFolderUnmanaged", () => {
+  const detected = (o: Partial<FolderData> = {}) =>
+    folder({ record: { origin: "detected", task: { id: 7, status: "backlog" } }, ...o });
+
+  it("folds a worktree no task of yours claims, however much git churn it holds", () => {
+    expect(isFolderUnmanaged(detected({ commitsAhead: 12, uncommittedFiles: 4 }))).toBe(true);
+  });
+
+  it("leaves your own task rows alone — the stub is about who made the worktree", () => {
+    expect(
+      isFolderUnmanaged(folder({ record: { origin: "task", task: { id: 7, status: "doing" } } })),
+    ).toBe(false);
+    expect(isFolderUnmanaged(folder({}))).toBe(false);
+  });
+
+  it("keeps its row while an agent is live there — hiding one would lose it", () => {
+    expect(isFolderUnmanaged(detected({ sessions: [session({ live: true })] }))).toBe(false);
+  });
+
+  it("keeps its row when something there wants you", () => {
+    expect(isFolderUnmanaged(detected({ needs: 1 }))).toBe(false);
+    expect(isFolderUnmanaged(detected({ sessions: [session({ unseen: true })] }))).toBe(false);
+  });
+
+  it("keeps its row while being created or removed — the phase is the point", () => {
+    expect(isFolderUnmanaged(detected({ phase: { state: "removing", label: "removing" } }))).toBe(
+      false,
+    );
+  });
+});
+
+describe("foldedRepoLabel", () => {
+  it("names the fold that emptied the repo, and both when it was both", () => {
+    expect(foldedRepoLabel(1, 0)).toBe("idle");
+    expect(foldedRepoLabel(3, 0)).toBe("3 idle");
+    expect(foldedRepoLabel(0, 6)).toBe("6 unmanaged");
+    expect(foldedRepoLabel(1, 7)).toBe("8 hidden");
+  });
+});
+
+describe("withoutFolded", () => {
+  const a = folder({ dir: "/a" });
+  const b = folder({ dir: "/b" });
+
+  it("drops the folded dirs", () => {
+    expect(withoutFolded([a, b], new Set(["/b"]), false)).toEqual([a]);
+  });
+
+  it("puts them back once the stub is peeked open", () => {
+    expect(withoutFolded([a, b], new Set(["/b"]), true)).toEqual([a, b]);
+  });
+
+  it("passes the list through when nothing is folded", () => {
+    expect(withoutFolded([a, b], undefined, false)).toEqual([a, b]);
+  });
+});
 
 describe("isFolderIdle", () => {
   // Far enough past the ts:1 the `agent()` helper stamps that the grace

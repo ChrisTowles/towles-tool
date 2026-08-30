@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 import {
   isFolderFiltered,
+  isFolderUnmanaged,
   partitionQuiet,
   searchRepos,
+  withoutFolded,
   type FolderData,
   type RepoData,
   type SessionData,
@@ -24,6 +26,9 @@ export type RailIndex = {
   quietCount: number;
   /** Filtered-out checkout dirs per repo key, when the rail filter is not "all". */
   idleDirs: Map<string, Set<string>>;
+  /** Unclaimed checkout dirs per repo key — what the "N unmanaged" stub holds.
+   * Disjoint from {@link idleDirs}: a folder answers to one stub or the other. */
+  unmanagedDirs: Map<string, Set<string>>;
   /** `railRepos` minus the filtered folders — the collapsed icon strip only. */
   visibleRepos: RepoData[];
   /** Ghost checkouts (dir gone from disk) — drives the one-click cleanup. */
@@ -51,6 +56,8 @@ export function useRailIndex(args: {
   recentHours: number;
   /** Repo keys whose "N idle" filter stub is peeked open right now. */
   idleRevealed: Set<string>;
+  /** Repo keys whose "N unmanaged" stub is peeked open right now. */
+  unmanagedRevealed: Set<string>;
   /** `agentboard.showQuiet` — the rail header's toggle. */
   showQuiet: boolean;
   /** The header's free-text repo filter; empty matches everything. */
@@ -59,7 +66,17 @@ export function useRailIndex(args: {
   /** Ticks every 30s — plenty for the 45-minute idle grace window. */
   now: number;
 }): RailIndex {
-  const { repos, filter, recentHours, idleRevealed, showQuiet, query, activeFolderDir, now } = args;
+  const {
+    repos,
+    filter,
+    recentHours,
+    idleRevealed,
+    unmanagedRevealed,
+    showQuiet,
+    query,
+    activeFolderDir,
+    now,
+  } = args;
 
   // The mark comes off first: everything below — filter, stubs, icon strip —
   // reasons about a rail those checkouts are already gone from.
@@ -75,6 +92,22 @@ export function useRailIndex(args: {
   const shownRepos = useMemo(() => searchRepos(railRepos, query), [railRepos, query]);
   const queryHidden = railRepos.length - shownRepos.length;
 
+  // Agents' own worktrees fold first and whatever the filter says: that one asks
+  // about *your* work, and these were never that. The checkout you are working
+  // in stays put, however it got here.
+  const unmanagedDirs = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const r of shownRepos) {
+      const q = new Set(
+        r.folders
+          .filter((f) => isFolderUnmanaged(f) && f.dir !== activeFolderDir)
+          .map((f) => f.dir),
+      );
+      if (q.size > 0) m.set(r.key, q);
+    }
+    return m;
+  }, [shownRepos, activeFolderDir]);
+
   // A quiet checkout on screen is one you asked to see — the filter doesn't get
   // to fold it into a stub on top of that.
   const idleDirs = useMemo(() => {
@@ -82,33 +115,39 @@ export function useRailIndex(args: {
     if (filter === "all") return m;
     for (const r of shownRepos) {
       const marked = quietDirs.get(r.key);
+      const unmanaged = unmanagedDirs.get(r.key);
       const q = new Set(
         r.folders
           .filter(
             (f) =>
               isFolderFiltered(f, filter, now, recentHours) &&
               f.dir !== activeFolderDir &&
-              !marked?.has(f.dir),
+              !marked?.has(f.dir) &&
+              !unmanaged?.has(f.dir),
           )
           .map((f) => f.dir),
       );
       if (q.size > 0) m.set(r.key, q);
     }
     return m;
-  }, [shownRepos, quietDirs, filter, recentHours, activeFolderDir, now]);
+  }, [shownRepos, quietDirs, unmanagedDirs, filter, recentHours, activeFolderDir, now]);
 
-  // The collapsed icon strip has no room for stub rows, so there the filter
-  // still just drops idle (un-revealed) folders and any repo left empty.
-  const visibleRepos = useMemo(() => {
-    if (filter === "all") return shownRepos;
-    return shownRepos
-      .map((r) => {
-        const q = idleDirs.get(r.key);
-        if (!q || idleRevealed.has(r.key)) return r;
-        return { ...r, folders: r.folders.filter((f) => !q.has(f.dir)) };
-      })
-      .filter((r) => r.folders.length > 0);
-  }, [shownRepos, filter, idleDirs, idleRevealed]);
+  // The collapsed icon strip has no room for stub rows, so there a folded
+  // folder — idle or unmanaged — is simply dropped, with it any repo left empty.
+  const visibleRepos = useMemo(
+    () =>
+      shownRepos
+        .map((r) => ({
+          ...r,
+          folders: withoutFolded(
+            withoutFolded(r.folders, unmanagedDirs.get(r.key), unmanagedRevealed.has(r.key)),
+            filter === "all" ? undefined : idleDirs.get(r.key),
+            idleRevealed.has(r.key),
+          ),
+        }))
+        .filter((r) => r.folders.length > 0),
+    [shownRepos, filter, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed],
+  );
 
   const missingRepoCount = useMemo(
     () => repos.flatMap((r) => r.folders).filter((f) => f.dirMissing).length,
@@ -158,6 +197,7 @@ export function useRailIndex(args: {
     quietDirs,
     quietCount,
     idleDirs,
+    unmanagedDirs,
     visibleRepos,
     missingRepoCount,
     folderOf,

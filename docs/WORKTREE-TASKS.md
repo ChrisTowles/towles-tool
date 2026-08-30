@@ -41,7 +41,10 @@ record says so, never because the filesystem does**: the main checkout plus one
 row per board task, pushed in each scan tick (`Engine::set_task_worktrees`).
 Anything else — a Claude Code agent's worktree, a hand-added one — is minted a
 `detected` record and reaches the rail only when the rail header's toggle
-(`agentboard.showUnmanagedWorktrees`) is on. **Don't decide *managed-ness* from
+(`agentboard.showUnmanagedWorktrees`) is on, and even then as **one folded stub
+row per repo** ("6 unmanaged", peeked open on click), never a folder apiece: a
+fleet of agents each minting a worktree would otherwise bury the work you asked
+for. One holding a live session, or anything waiting on you, keeps its own row. **Don't decide *managed-ness* from
 the filesystem.** That's what it used to be, and worktrees made by the retired
 worktree hooks carried `.tt-task` markers, so `is_managed_task` was true and the
 toggle hid nothing. Finding *candidates* is the other question, and there the

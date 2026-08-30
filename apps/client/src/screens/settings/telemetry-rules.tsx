@@ -147,7 +147,11 @@ export function TelemetryRulesEditor({
                 max={rule.kind === "share" ? 100 : undefined}
                 value={rule.threshold}
                 onChange={(e) =>
-                  patch(index, { threshold: clampThreshold(e.target.value, rule.kind) }, { defer: true })
+                  patch(
+                    index,
+                    { threshold: clampThreshold(e.target.value, rule.kind) },
+                    { defer: true },
+                  )
                 }
                 onBlur={onCommit}
                 aria-label="Threshold"
