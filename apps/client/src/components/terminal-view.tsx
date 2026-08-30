@@ -408,7 +408,7 @@ export function TerminalView({
         link?.kind === "path"
           ? onOpenPathRef.current
             ? "open in files"
-            : "open in editor"
+            : "open in external editor"
           : "open";
       canvas.title = link ? `${linkLabel(link)}\nCtrl+Click (⌘+Click) to ${openHint}` : "";
       const rows = new Set([...(prev?.segments ?? []), ...(link?.segments ?? [])].map((s) => s.y));
@@ -1044,11 +1044,11 @@ export function TerminalView({
                   ? "Open link"
                   : onOpenPath
                     ? "Open in files"
-                    : "Open in editor"}
+                    : "Open in external editor"}
               </ContextMenuItem>
               {menuLink.kind === "path" && onOpenPath && (
                 <ContextMenuItem onSelect={() => openPathInEditor(menuLink)}>
-                  Open in editor
+                  Open in external editor
                 </ContextMenuItem>
               )}
               <ContextMenuSeparator />

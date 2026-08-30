@@ -47,7 +47,7 @@ import {
   jarvisPaneId,
   filesPaneDir,
   filesPaneId,
-  filesPanePathFor,
+  filesPaneTarget,
   folderPaneDir,
   isCacheExpiring,
   claudeCommand,
@@ -148,28 +148,33 @@ function pr(overrides: Partial<PrItem>): PrItem {
   };
 }
 
-describe("filesPanePathFor", () => {
+describe("filesPaneTarget", () => {
   const dir = "/home/u/code/repo";
 
   it("keeps checkout-relative paths as-is", () => {
-    expect(filesPanePathFor(dir, "crates/tt-vt/src/lib.rs")).toBe("crates/tt-vt/src/lib.rs");
+    expect(filesPaneTarget(dir, "crates/tt-vt/src/lib.rs")).toBe("crates/tt-vt/src/lib.rs");
   });
 
   it("strips a ./ prefix", () => {
-    expect(filesPanePathFor(dir, "./src/main.rs")).toBe("src/main.rs");
-    expect(filesPanePathFor(dir, "././src/main.rs")).toBe("src/main.rs");
+    expect(filesPaneTarget(dir, "./src/main.rs")).toBe("src/main.rs");
+    expect(filesPaneTarget(dir, "././src/main.rs")).toBe("src/main.rs");
   });
 
   it("relativizes an absolute path inside the checkout", () => {
-    expect(filesPanePathFor(dir, `${dir}/apps/client/src/App.tsx`)).toBe("apps/client/src/App.tsx");
+    expect(filesPaneTarget(dir, `${dir}/apps/client/src/App.tsx`)).toBe("apps/client/src/App.tsx");
   });
 
-  it("rejects paths outside the checkout", () => {
-    expect(filesPanePathFor(dir, "/etc/hosts.conf")).toBeNull();
-    expect(filesPanePathFor(dir, "/home/u/code/other-repo/src/main.rs")).toBeNull();
-    expect(filesPanePathFor(dir, "~/notes/todo.md")).toBeNull();
-    expect(filesPanePathFor(dir, "../sibling/file.rs")).toBeNull();
-    expect(filesPanePathFor(dir, "./../file.rs")).toBeNull();
+  it("keeps an absolute path outside the checkout, for the same workbench", () => {
+    expect(filesPaneTarget(dir, "/etc/hosts.conf")).toBe("/etc/hosts.conf");
+    expect(filesPaneTarget(dir, "/home/u/code/other-repo/src/main.rs")).toBe(
+      "/home/u/code/other-repo/src/main.rs",
+    );
+  });
+
+  it("rejects a path no base here can anchor", () => {
+    expect(filesPaneTarget(dir, "~/notes/todo.md")).toBeNull();
+    expect(filesPaneTarget(dir, "../sibling/file.rs")).toBeNull();
+    expect(filesPaneTarget(dir, "./../file.rs")).toBeNull();
   });
 });
 

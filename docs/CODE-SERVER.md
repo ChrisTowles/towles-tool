@@ -45,7 +45,11 @@ WebSocket is same-origin to the frame. No headless browser needed.
 ## Opening a file from outside the pane
 
 `tt open src/main.rs:42`, a `path:line` link in a terminal and Claude Code's
-`openFile` all end in `filesOpenRequests` on the Agentboard screen. From there
+`openFile` all end in `filesOpenRequests` on the Agentboard screen — **this is
+where a clicked file goes**, the external editor being what's left for a link
+that resolves to no file at all. The path need not be inside the checkout: a
+workbench opens a file from anywhere, so `filesPaneTarget` hands the pane a
+checkout-relative path when it can and an absolute one when it can't. From there
 the pane has two ways in, since the iframe is cross-origin and the page cannot
 reach the workbench:
 
@@ -55,10 +59,12 @@ reach the workbench:
 - **A running workbench** is told over code-server's own session socket
   (`tt_codeserver::reveal`) — the route `code -r` takes from an integrated
   terminal. `GET /session?filePath=` on the registry socket names the VS Code
-  IPC socket of the window whose folder contains the file, and
-  that socket takes the same `{"type":"open"}` request the `code` CLI sends.
-  Both are HTTP/1.0 over Unix sockets, ~60 lines, pinned by a test with fake
-  sockets at both ends.
+  IPC socket of the window whose folder contains that path, and that socket takes
+  the same `{"type":"open"}` request the `code` CLI sends. We ask by the
+  *checkout*, not by the file — the file may live outside it, and only the
+  checkout names the pane the click came from; code-server matches on
+  `startsWith(folder + "/")`, hence the `<dir>/.` probe. Both are HTTP/1.0 over
+  Unix sockets, ~60 lines, pinned by a test with fake sockets at both ends.
 - **A diff** goes neither way: the CLI's `open` does file-vs-file only and the
   web payload has no command lever, so VS Code's *git* diff — `git:` URIs,
   staging gutters, decorations — can only be asked for from inside the workbench.

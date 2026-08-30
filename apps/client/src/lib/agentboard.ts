@@ -287,11 +287,15 @@ export function filesPaneDir(paneId: string): string | null {
   return isFilesPane(paneId) ? paneId.slice(FILES_PANE_PREFIX.length) : null;
 }
 
-/** Null when the file lives outside the checkout — the files pane can only
- * browse it, so outside paths stay external-editor territory. */
-export function filesPanePathFor(folderDir: string, path: string): string | null {
+/** What the files pane rooted at `folderDir` opens for `path`: checkout-relative
+ * when the file is inside it, absolute when it isn't — the workbench opens a
+ * file from anywhere, so an out-of-tree click is no reason to leave the app.
+ * Null only for a path nothing here can anchor: a `~` the backend didn't expand,
+ * or a relative one that escapes. */
+export function filesPaneTarget(folderDir: string, path: string): string | null {
   if (path.startsWith(`${folderDir}/`)) return path.slice(folderDir.length + 1);
-  if (path.startsWith("/") || path.startsWith("~")) return null;
+  if (path.startsWith("/")) return path;
+  if (path.startsWith("~")) return null;
   let rel = path;
   while (rel.startsWith("./")) rel = rel.slice(2);
   if (rel === "" || rel.startsWith("../")) return null;

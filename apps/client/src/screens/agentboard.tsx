@@ -41,7 +41,7 @@ import {
   cycleSession,
   exitPaneId,
   filesPaneId,
-  filesPanePathFor,
+  filesPaneTarget,
   folderBusy,
   folderRecreateBranch,
   folderRemovableTask,
@@ -332,7 +332,8 @@ export function AgentboardScreen() {
   }
 
   // The MCP `file_open` tool / `tt open`. Shares `showPreviewFile`'s fallback
-  // folder, but refuses a file outside it — the pane browses one checkout.
+  // folder; a file outside it still opens in that folder's workbench, which is
+  // not confined to the tree it has open.
   function openFileFromRequest(req: {
     folderDir: string | null;
     path: string;
@@ -348,14 +349,14 @@ export function AgentboardScreen() {
     }
     // A directory: the tree is already rooted there, nothing to select.
     if (!req.isDir) {
-      const rel = filesPanePathFor(dir, req.path);
-      if (rel == null) {
-        toast.error(`Couldn't open ${req.path} — it isn't inside ${dir}`);
+      const target = filesPaneTarget(dir, req.path);
+      if (target == null) {
+        toast.error(`Couldn't open ${req.path} — it names no file this app can reach`);
         return;
       }
       setFilesOpenRequests((prev) => ({
         ...prev,
-        [dir]: { path: rel, line: req.line, nonce: req.nonce },
+        [dir]: { path: target, line: req.line, nonce: req.nonce },
       }));
     }
     setActiveFolderDir(dir);
@@ -374,30 +375,33 @@ export function AgentboardScreen() {
   useTauriEvent<OpenFileRequest>("ide://open-file", (p) => {
     const dir = p.dir;
     if (!folderByDir.has(dir)) return;
-    const path = p.filePath.startsWith(`${dir}/`) ? p.filePath.slice(dir.length + 1) : p.filePath;
+    const target = filesPaneTarget(dir, p.filePath);
+    if (target == null) return;
     setFilesOpenRequests((prev) => ({
       ...prev,
-      [dir]: { path, line: null, nonce: nextOpenFileNonce() },
+      [dir]: { path: target, line: null, nonce: nextOpenFileNonce() },
     }));
     openFiles(dir);
   });
 
-  // A terminal file link takes the same files-pane route. The backend resolves
-  // first (`term_resolve_path`) because a relative link is only folder-relative
-  // until the pane's shell `cd`s elsewhere.
+  // A terminal file link takes the same files-pane route, wherever on disk it
+  // points. The backend resolves first (`term_resolve_path`) because a relative
+  // link is only folder-relative until the pane's shell `cd`s elsewhere, and
+  // because it is what expands a `~`. Only a link that resolves to nothing at
+  // all falls through to the external editor.
   async function openTerminalPath(dir: string, termId: string, path: string, line: number | null) {
     uiAction("terminal.link_open_file", "agentboard");
     const resolved = (
       await invoke<string | null>("term_resolve_path", { path, cwd: dir, termId })
     ).unwrapOr(null);
-    const rel = filesPanePathFor(dir, resolved ?? path);
-    if (rel == null) {
+    const target = filesPaneTarget(dir, resolved ?? path);
+    if (target == null) {
       void invoke("term_open_path", { path, cwd: dir, line, termId });
       return;
     }
     setFilesOpenRequests((prev) => ({
       ...prev,
-      [dir]: { path: rel, line, nonce: nextOpenFileNonce() },
+      [dir]: { path: target, line, nonce: nextOpenFileNonce() },
     }));
     openFiles(dir);
   }

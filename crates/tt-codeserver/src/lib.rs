@@ -184,21 +184,26 @@ fn encode_query(raw: &str) -> String {
     out
 }
 
-/// Open `file` in the workbench already serving it — the route `code -r` takes.
-/// code-server registers every workbench window on `session_socket`: `GET
-/// /session?filePath=` answers with the VS Code IPC socket of the window whose
-/// folder contains the file (else the most recent window, as `code -r`), and
-/// that socket takes the `open` request the `code` CLI sends. HTTP/1.0 on both,
-/// so a reply ends at EOF. Polls while the registry is empty: a pane created
-/// moments ago is still booting its workbench.
+/// Open `file` in `folder`'s workbench — the route `code -r` takes. code-server
+/// registers every workbench window on `session_socket`: `GET /session?filePath=`
+/// answers with the VS Code IPC socket of the window whose folder contains that
+/// path (else the most recent window, as `code -r`), and that socket takes the
+/// `open` request the `code` CLI sends. HTTP/1.0 on both, so a reply ends at EOF.
+/// Polls while the registry is empty: a pane created moments ago is still booting
+/// its workbench.
+/// The window is asked for by `folder`, not `file`: a clicked file may sit
+/// outside the checkout, and only the folder names the *pane* it was clicked in.
+/// code-server matches on `startsWith(folder + "/")`, hence the `/.` probe.
 pub fn reveal(
     session_socket: &Path,
     port: u16,
+    folder: &Path,
     file: &Path,
     line: Option<u32>,
 ) -> Result<(), CodeServerError> {
     let registry = session_socket;
-    let query = format!("/session?filePath={}", encode_query(&file.to_string_lossy()));
+    let probe = folder.join(".");
+    let query = format!("/session?filePath={}", encode_query(&probe.to_string_lossy()));
     let request = format!("GET {query} HTTP/1.0\r\nHost: localhost\r\n\r\n");
     let deadline = Instant::now() + REVEAL_DEADLINE;
     let socket = loop {
@@ -595,21 +600,23 @@ mod tests {
             request
         });
 
-        reveal(&registry_sock, 4200, Path::new("/home/me/repo/src/lib.rs"), Some(12)).unwrap();
+        reveal(
+            &registry_sock,
+            4200,
+            Path::new("/home/me/repo"),
+            Path::new("/home/me/notes/todo.md"),
+            Some(12),
+        )
+        .unwrap();
 
+        // The window is chosen by the checkout, the file opened wherever it is.
         let asked = registry_thread.join().unwrap();
-        assert!(
-            asked.starts_with("GET /session?filePath=/home/me/repo/src/lib.rs HTTP/1.0"),
-            "{asked}"
-        );
+        assert!(asked.starts_with("GET /session?filePath=/home/me/repo/. HTTP/1.0"), "{asked}");
         let opened = window_thread.join().unwrap();
         let body = opened.split("\r\n\r\n").nth(1).unwrap();
         let open: serde_json::Value = serde_json::from_str(body).unwrap();
         assert_eq!(open["type"], "open");
-        assert_eq!(
-            open["fileURIs"][0],
-            "vscode-remote://127.0.0.1:4200/home/me/repo/src/lib.rs:12"
-        );
+        assert_eq!(open["fileURIs"][0], "vscode-remote://127.0.0.1:4200/home/me/notes/todo.md:12");
         assert_eq!(open["forceReuseWindow"], true);
         assert_eq!(open["gotoLineMode"], true);
     }
