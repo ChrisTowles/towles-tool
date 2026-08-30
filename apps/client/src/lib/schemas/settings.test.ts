@@ -13,6 +13,7 @@ const valid = {
   promptImprovers: [
     { id: "direct", label: "Direct", enabled: true, preferred: true, prompt: "Restate it." },
   ],
+  savedQueries: [{ id: "slow-spawns", label: "slow spawns", sql: "select 1" }],
   collectors: {
     calendar: {
       enabled: false,

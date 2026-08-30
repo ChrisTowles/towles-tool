@@ -11,12 +11,14 @@
 //!   stays empty, so checking it by eye reads as "telemetry is broken". Use
 //!   `telemetry_dir()`.
 //! - [`list_days`]/[`read_day`]/[`read_days`] read them back uncached; [`summarize`] and
-//!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records.
+//!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records, and
+//!   [`query`] answers ad-hoc SQL over a fortnight of them.
 
 mod attention;
 mod event_log;
 mod keyboard;
 mod layer;
+pub mod query;
 mod reader;
 mod schema;
 mod types;

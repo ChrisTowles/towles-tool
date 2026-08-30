@@ -72,6 +72,7 @@ function base(): UserSettings {
       templateDir: "",
     },
     promptImprovers: [],
+    savedQueries: [],
     collectors: {
       calendar: {
         enabled: false,

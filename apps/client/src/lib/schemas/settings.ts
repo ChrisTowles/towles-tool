@@ -46,6 +46,14 @@ const PromptImproverSchema = z
 /** `settings_default_prompt_improvers` answers with a bare array. */
 export const PromptImproverListSchema = z.array(PromptImproverSchema);
 
+const SavedQuerySchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    sql: z.string(),
+  })
+  .passthrough();
+
 const CalendarCollectorSchema = z
   .object({
     enabled: z.boolean(),
@@ -131,6 +139,7 @@ export const UserSettingsSchema = z
     preferredEditor: z.string(),
     journalSettings: JournalSettingsSchema,
     promptImprovers: z.array(PromptImproverSchema),
+    savedQueries: z.array(SavedQuerySchema),
     collectors: CollectorsSettingsSchema,
     agentboard: AgentboardBlockSchema.optional(),
   })

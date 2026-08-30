@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CircleAlert,
+  Database,
   Gauge,
   Keyboard,
   LayoutDashboard,
@@ -47,6 +48,7 @@ import {
 } from "@/lib/telemetry";
 import { AttentionTab } from "@/screens/telemetry/attention-tab";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
+import { QueryTab } from "@/screens/telemetry/query-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
@@ -330,6 +332,10 @@ export function TelemetryScreen() {
             <Keyboard className="size-4" />
             Keyboard
           </TabsTrigger>
+          <TabsTrigger value="query" className="justify-start gap-2 px-2 py-1.5">
+            <Database className="size-4" />
+            Query
+          </TabsTrigger>
           <TabsTrigger value="log" className="justify-start gap-2 px-2 py-1.5">
             <ScrollText className="size-4" />
             Log
@@ -356,6 +362,10 @@ export function TelemetryScreen() {
 
           <TabsContent value="keyboard" className="p-4">
             <KeyboardTab score={keyboard} loading={keyboardLoading} />
+          </TabsContent>
+
+          <TabsContent value="query" className="flex h-full min-h-0 flex-col p-4">
+            <QueryTab />
           </TabsContent>
 
           <TabsContent value="log" className="p-4">

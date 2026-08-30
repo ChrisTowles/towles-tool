@@ -291,6 +291,75 @@ pub const DEFAULT_IMPROVER_INTERVIEW: &str = "Rewrite the task as a request to r
 codebase first and then interview me one question at a time about what is still ambiguous, \
 prioritizing questions where my answer would change the architecture.";
 
+/// One row in the Telemetry screen's Query tab: a name and the SQL it runs
+/// over the event log (`tt_telemetry::query`'s `records`/`spans` schema).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct SavedQuery {
+    pub id: String,
+    pub label: String,
+    pub sql: String,
+}
+
+impl SavedQuery {
+    /// Four questions the log exists to answer, each a working example of the
+    /// schema: spans by outcome, the slow tail, focus churn, and the
+    /// notifications that landed while the window had focus.
+    pub fn defaults() -> Vec<Self> {
+        vec![
+            Self {
+                id: "gh-failures-by-cwd".to_string(),
+                label: "gh failures by cwd".to_string(),
+                sql: DEFAULT_QUERY_GH_FAILURES.to_string(),
+            },
+            Self {
+                id: "slow-spawns".to_string(),
+                label: "slow spawns > 2 s".to_string(),
+                sql: DEFAULT_QUERY_SLOW_SPAWNS.to_string(),
+            },
+            Self {
+                id: "focus-flips-per-hour".to_string(),
+                label: "focus flips per hour".to_string(),
+                sql: DEFAULT_QUERY_FOCUS_FLIPS.to_string(),
+            },
+            Self {
+                id: "interruptions-while-focused".to_string(),
+                label: "interruptions while focused".to_string(),
+                sql: DEFAULT_QUERY_INTERRUPTIONS.to_string(),
+            },
+        ]
+    }
+}
+
+pub const DEFAULT_QUERY_GH_FAILURES: &str = "\
+select executable, working_directory as cwd, count(*) as n,
+       sum(outcome != 'ok') as fails, round(avg(duration_ms)) as avg_ms
+from spans where name = 'process.spawn' and day = date('now')
+group by 1, 2 order by fails desc limit 20";
+
+pub const DEFAULT_QUERY_SLOW_SPAWNS: &str = "\
+select ts, executable, command_args, duration_ms, outcome, working_directory as cwd
+from spans where name = 'process.spawn' and duration_ms > 2000
+order by duration_ms desc limit 50";
+
+pub const DEFAULT_QUERY_FOCUS_FLIPS: &str = "\
+select strftime('%Y-%m-%d %H:00', ts, 'localtime') as hour,
+       count(*) as flips, sum(json_extract(fields, '$.focused') = 1) as gained
+from records where message = 'window.focus_changed'
+group by 1 order by 1 desc limit 48";
+
+pub const DEFAULT_QUERY_INTERRUPTIONS: &str = "\
+select n.ts, json_extract(n.fields, '$.repo') as repo,
+       json_extract(n.fields, '$.session') as session,
+       json_extract(n.fields, '$.reason') as reason
+from records n
+where n.message = 'notify_needs_you: fired'
+  and (select json_extract(f.fields, '$.focused') from records f
+       where f.message = 'window.focus_changed' and f.ts < n.ts
+       order by f.ts desc limit 1) = 1
+order by n.ts desc limit 100";
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -493,6 +562,8 @@ pub struct UserSettings {
 
     pub prompt_improvers: Vec<PromptImprover>,
 
+    pub saved_queries: Vec<SavedQuery>,
+
     pub collectors: CollectorsSettings,
 
     /// Lenient on purpose: the docs invite hand-editing, and a slip
@@ -521,6 +592,7 @@ impl Default for UserSettings {
             journal_settings: JournalSettings::default(),
             agentboard: AgentboardSettings::default(),
             prompt_improvers: PromptImprover::defaults(),
+            saved_queries: SavedQuery::defaults(),
             collectors: CollectorsSettings::default(),
             mcp: McpSettings::default(),
         }
@@ -1173,12 +1245,35 @@ mod tests {
     }
 
     #[test]
+    fn saved_query_defaults() {
+        let s = UserSettings::default();
+        let ids: Vec<&str> = s.saved_queries.iter().map(|q| q.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "gh-failures-by-cwd",
+                "slow-spawns",
+                "focus-flips-per-hour",
+                "interruptions-while-focused"
+            ]
+        );
+        assert!(s.saved_queries.iter().all(|q| !q.label.trim().is_empty()));
+        // One read-only statement each; `tt-telemetry`'s tests prove they run.
+        assert!(s.saved_queries.iter().all(|q| q.sql.trim_start().starts_with("select")));
+        assert!(s.saved_queries.iter().all(|q| !q.sql.contains(';')));
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"savedQueries\""));
+    }
+
+    #[test]
     fn notify_defaults_unset_and_everything_on() {
         let s = UserSettings::default();
         assert!(s.agentboard.notify.is_none());
         assert!(s.agentboard.notify_threshold.is_none());
+        // The keys, not the word: a default saved query mentions `notify_needs_you`.
         let json = serde_json::to_string(&s).unwrap();
-        assert!(!json.contains("notify"));
+        assert!(!json.contains("\"notify\""));
+        assert!(!json.contains("\"notifyThreshold\""));
         assert!(
             [
                 NotifyKind::NeedsYou,
