@@ -56,6 +56,11 @@ const DEFAULT_MCP_PORT = 8787;
 
 const endpointFor = (port: number) => `http://127.0.0.1:${port}/mcp`;
 
+/** What a request must say about itself (MCP 2026-07-28 has no handshake):
+ * the protocol version, from the backend so it can never drift, and this
+ * app's version as the tester's own identity. */
+type McpWire = { protocolVersion: string; version: string };
+
 /** The real bind outcome, not an inference from call recency: an instance
  * whose port was already taken serves nothing while still showing its own
  * past calls, and only the backend knows which. */
@@ -96,6 +101,10 @@ export function McpScreen() {
   const status = useMcpStatus();
   const port = status?.port ?? DEFAULT_MCP_PORT;
   const endpoint = endpointFor(port);
+  const wire: McpWire = {
+    protocolVersion: status?.protocolVersion ?? "",
+    version: status?.version ?? "",
+  };
 
   const calls = snapshot.mcpCalls;
   const failed = useMemo(() => calls.filter((c) => !c.ok).length, [calls]);
@@ -146,7 +155,9 @@ export function McpScreen() {
           detail={
             status && !status.serving
               ? `port ${port} taken — this app serves no MCP`
-              : `127.0.0.1:${port}`
+              : status
+                ? `127.0.0.1:${port} · MCP ${status.protocolVersion}`
+                : `127.0.0.1:${port}`
           }
         />
         <StatTile
@@ -209,7 +220,7 @@ export function McpScreen() {
           </TabsContent>
 
           <TabsContent value="tools" className="p-4">
-            <ToolsTab tools={tools} endpoint={endpoint} />
+            <ToolsTab tools={tools} endpoint={endpoint} wire={wire} />
           </TabsContent>
 
           <TabsContent value="setup" className="p-4">
@@ -248,7 +259,7 @@ function useSearchTelemetry(query: string, action: string) {
   }, [query, action]);
 }
 
-/** Distinct clients that identified themselves on `initialize`. */
+/** Distinct clients that identified themselves (`clientInfo` rides on every request). */
 function clientNames(calls: McpCall[]): string[] {
   return [...new Set(calls.map((c) => c.client).filter((c): c is string => !!c))];
 }
@@ -329,7 +340,7 @@ function OverviewTab({
 
         <Card title="Callers" note={`${clients.length}`}>
           {clients.length === 0 ? (
-            <Empty inline>No client identified itself on initialize.</Empty>
+            <Empty inline>No client has identified itself yet.</Empty>
           ) : (
             <div className="flex flex-col gap-1.5">
               {clients.map((c) => (
@@ -607,7 +618,15 @@ function groupTools(tools: McpToolDoc[]): { family: string; tools: McpToolDoc[] 
 }
 
 /** Straight from the MCP contract, never hand-maintained. */
-function ToolsTab({ tools, endpoint }: { tools: McpToolDoc[] | null; endpoint: string }) {
+function ToolsTab({
+  tools,
+  endpoint,
+  wire,
+}: {
+  tools: McpToolDoc[] | null;
+  endpoint: string;
+  wire: McpWire;
+}) {
   const [query, setQuery] = useState("");
   const [testing, setTesting] = useState<McpToolDoc | null>(null);
 
@@ -675,7 +694,12 @@ function ToolsTab({ tools, endpoint }: { tools: McpToolDoc[] | null; endpoint: s
         ))
       )}
 
-      <ToolTesterDialog tool={testing} endpoint={endpoint} onClose={() => setTesting(null)} />
+      <ToolTesterDialog
+        tool={testing}
+        endpoint={endpoint}
+        wire={wire}
+        onClose={() => setTesting(null)}
+      />
     </div>
   );
 }
@@ -693,10 +717,12 @@ function isMutating(tool: McpToolDoc): boolean {
 function ToolTesterDialog({
   tool,
   endpoint,
+  wire,
   onClose,
 }: {
   tool: McpToolDoc | null;
   endpoint: string;
+  wire: McpWire;
   onClose: () => void;
 }) {
   const [args, setArgs] = useState("{}");
@@ -732,7 +758,7 @@ function ToolTesterDialog({
     // Both facts, always: encoding one *or* the other lost the tool name for
     // exactly the runs where the security boundary was being exercised.
     uiAction("mcp.tool.test_run", "mcp", asBrowser ? `${tool.name} as-browser` : tool.name);
-    const body = requestBody(tool.name, parsed);
+    const body = requestBody(tool.name, parsed, wire);
     const res = await invoke<McpTestResult>(
       "mcp_test_call",
       { body, simulateBrowserOrigin: asBrowser },
@@ -760,7 +786,7 @@ function ToolTesterDialog({
     uiAction("mcp.tool.copy_curl", "mcp", tool.name);
     // Safe to hand out precisely because `curl` sends no Origin header, which
     // the transport's DNS-rebinding guard is what refuses.
-    const command = curlCommand(endpoint, requestBody(tool.name, parsed));
+    const command = curlCommand(endpoint, tool.name, requestBody(tool.name, parsed, wire), wire);
     try {
       await navigator.clipboard.writeText(command);
       toast.success("Copied curl command");
@@ -770,6 +796,7 @@ function ToolTesterDialog({
   }
 
   const mutating = isMutating(tool);
+  const destructive = tool.annotations?.destructiveHint === true;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -782,7 +809,11 @@ function ToolTesterDialog({
         {mutating && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span>This tool writes real data. Running it changes your board or calendar.</span>
+            <span>
+              {destructive
+                ? "This tool deletes real data — the task's panes and its worktree — and cannot be undone."
+                : "This tool writes real data. Running it changes your board or calendar."}
+            </span>
           </div>
         )}
 
@@ -860,12 +891,20 @@ function ToolTesterDialog({
 }
 
 /** The one body both the live test call and the copied curl command send. */
-function requestBody(name: string, args: unknown): string {
+function requestBody(name: string, args: unknown, wire: McpWire): string {
   return JSON.stringify({
     jsonrpc: "2.0",
     id: 1,
     method: "tools/call",
-    params: { name, arguments: args },
+    params: {
+      name,
+      arguments: args,
+      _meta: {
+        "io.modelcontextprotocol/protocolVersion": wire.protocolVersion,
+        "io.modelcontextprotocol/clientInfo": { name: "towles-tool-app", version: wire.version },
+        "io.modelcontextprotocol/clientCapabilities": {},
+      },
+    },
   });
 }
 
@@ -875,13 +914,18 @@ function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/** `Content-Type: application/json` is an admission requirement, not a
- * nicety; both parts are shell-quoted so this pastes in verbatim. */
-function curlCommand(endpoint: string, body: string): string {
+/** `Content-Type: application/json` is an admission requirement, the `Mcp-*`
+ * headers must mirror the body, and `Accept` is the spec's rule for every
+ * client; every part is shell-quoted so this pastes in verbatim. */
+function curlCommand(endpoint: string, name: string, body: string, wire: McpWire): string {
   return [
     "curl -X POST",
     shellSingleQuote(endpoint),
     "-H 'Content-Type: application/json'",
+    "-H 'Accept: application/json, text/event-stream'",
+    `-H ${shellSingleQuote(`MCP-Protocol-Version: ${wire.protocolVersion}`)}`,
+    "-H 'Mcp-Method: tools/call'",
+    `-H ${shellSingleQuote(`Mcp-Name: ${name}`)}`,
     `-d ${shellSingleQuote(body)}`,
   ].join(" ");
 }
@@ -916,7 +960,10 @@ function ToolRow({ tool, actions }: { tool: McpToolDoc; actions?: React.ReactNod
   return (
     <div className="flex items-start gap-2 rounded-md px-3 py-2.5 hover:bg-accent/50">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="font-mono text-xs text-foreground">{tool.name}</span>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-xs text-foreground">{tool.name}</span>
+          {tool.title && <span className="text-xs text-muted-foreground">{tool.title}</span>}
+        </div>
         <p className="text-xs text-muted-foreground">{tool.description}</p>
         {params.length > 0 && (
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-0.5">

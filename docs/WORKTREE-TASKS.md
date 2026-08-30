@@ -108,9 +108,9 @@ Rules when working in a task:
   `${TT_MCP_PORT:-8787}` — so a session talks to the app that spawned it.
 
   ```sh
-  curl -s -m 5 -X POST "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp" \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'  # empty => nobody serving
+  curl -s -m 5 -X POST "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp" -H "Content-Type: application/json" \
+    -H "MCP-Protocol-Version: 2026-07-28" -H "Mcp-Method: server/discover" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'  # empty => nobody serving
   tt task ports                                           # every checkout's claims
   ```
 

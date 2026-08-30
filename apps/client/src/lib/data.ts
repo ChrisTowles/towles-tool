@@ -394,7 +394,7 @@ export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
       {
         id: 1,
         ts: now - 2 * MINUTE,
-        method: "initialize",
+        method: "server/discover",
         ok: true,
         durationMs: 0,
         client: "claude-code 2.1",

@@ -18,10 +18,18 @@ export const McpToolDocSchema = z.object({
     properties: z.record(z.string(), McpToolParamSchema).default({}),
     required: z.array(z.string()).default([]),
   }),
-  /** MCP's own tool annotations. The server emits `readOnlyHint: false` on the
-   * tools that write and omits the whole block otherwise, so absence means
-   * "no claim made", not "read-only". */
-  annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
+  title: z.string().optional(),
+  /** MCP's own tool annotations. The server states every hint on every tool,
+   * since the spec reads an omitted one as the risky answer. */
+  annotations: z
+    .object({
+      title: z.string().optional(),
+      readOnlyHint: z.boolean().optional(),
+      destructiveHint: z.boolean().optional(),
+      idempotentHint: z.boolean().optional(),
+      openWorldHint: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const McpToolDocsSchema = z.array(McpToolDocSchema);
@@ -29,8 +37,13 @@ export const McpToolDocsSchema = z.array(McpToolDocSchema);
 export type McpToolDoc = z.infer<typeof McpToolDocSchema>;
 
 /** Runtime validator for `mcp_status` — whether *this* instance won the bind
- * race for the MCP port, and which port that is. */
-export const McpStatusSchema = z.object({ serving: z.boolean(), port: z.number() });
+ * race for the MCP port, which port that is, and what the server speaks. */
+export const McpStatusSchema = z.object({
+  serving: z.boolean(),
+  port: z.number(),
+  protocolVersion: z.string(),
+  version: z.string(),
+});
 
 export type McpStatus = z.infer<typeof McpStatusSchema>;
 

@@ -4,41 +4,54 @@
 //! Same split as [`tt_ide`]: the transport lives in `crates-tauri/tt-app`, so the
 //! whole tool surface is unit-testable with no server to stand up.
 //!
-//! A hijacked session is deliberately **not** gated (the capability gate went
-//! 2026-07-20): it was off by default, so the one mutating tool had effectively never
-//! worked, and the writes here are local and reversible where any session with shell
-//! access could `sqlite3` tt.db regardless. The threat that *is* guarded — a web page
-//! POSTing to `127.0.0.1` — belongs to the transport's admission checks.
+//! Speaks **MCP 2026-07-28 only** — no `initialize` handshake, no session: every request
+//! carries its version and the caller's identity in `params._meta`, `server/discover`
+//! says so up front, and a client opening with `initialize` is refused by an error
+//! naming the version, all the spec asks of a modern-only server.
+//!
+//! No capability gate on writes: they are local and reversible, and any session with
+//! shell access could `sqlite3` tt.db regardless. What *is* guarded — a web page POSTing
+//! to `127.0.0.1` — belongs to the transport's admission checks.
 
+use std::borrow::Cow;
 use std::time::Instant;
 
 use chrono::{Local, NaiveDate, TimeZone};
 
+mod output;
 pub mod port;
 
 use serde_json::{Value, json};
 use tt_store::{EventInput, McpCallInput, Store};
 
-/// Protocol version advertised when the client does not send one of its own.
-const DEFAULT_PROTOCOL_VERSION: &str = "2025-06-18";
+/// The one revision served, shared with the CLI so both ends of `tt open` move together.
+pub const PROTOCOL_VERSION: &str = "2026-07-28";
+/// `params._meta` keys — the version a request must carry, its `clientInfo`, and ours on results.
+pub const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
+pub const META_CLIENT_INFO: &str = "io.modelcontextprotocol/clientInfo";
+pub const META_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
+const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
+/// Streamable HTTP mirrors body fields into these; a mismatch is refused ([`HEADER_MISMATCH`]).
+pub const PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
+pub const METHOD_HEADER: &str = "mcp-method";
+pub const NAME_HEADER: &str = "mcp-name";
 
-/// Longest tool-args rendering kept in the call log; anything past this is
-/// truncated with an ellipsis so a huge payload can't bloat tt.db.
+pub const PARSE_ERROR: i64 = -32700;
+pub const INVALID_REQUEST: i64 = -32600;
+pub const METHOD_NOT_FOUND: i64 = -32601;
+pub const INVALID_PARAMS: i64 = -32602;
+pub const HEADER_MISMATCH: i64 = -32020;
+pub const UNSUPPORTED_PROTOCOL_VERSION: i64 = -32022;
+
+/// Cap on the args rendering kept per call-log row, so a huge payload can't bloat tt.db.
 const CALL_LOG_ARGS_MAX: usize = 400;
 
-/// The app-side half of `task_delete`. Panes and worktree are invisible from this
-/// Tauri-free crate, so the transport injects `tt-app`'s `task::
-/// delete_task_blocking` and this crate keeps only the tool's shape.
-///
-/// A dispatcher with no host **refuses outright** rather than deleting the row:
-/// that row-only delete is the half-delete this tool exists to stop, and it would
-/// strand the worktree with nothing on the board pointing at it.
+/// The app-side half of `task_delete`: panes and worktree are invisible from this Tauri-free
+/// crate, so the transport injects `tt-app`'s `task::delete_task_blocking`. With no host the
+/// tool refuses outright — a row-only delete is the half-delete it exists to stop.
 pub trait TaskHost: Send {
-    /// Close the board task `id`, deleting everything bound to it (panes,
-    /// worktree) while the row survives with `outcome` recorded — `None`
-    /// lets the host infer it from the row's own evidence. `force` skips the
-    /// work-preserving guards. `Ok(Refused)` is a guarded refusal, not a
-    /// failure — see [`TaskDeletion`].
+    /// Close task `id` and delete everything bound to it, keeping the row with `outcome` (`None`:
+    /// infer from the row). `force` skips the work-preserving guards; `Ok(Refused)` is an answer.
     fn delete_task(
         &self,
         id: i64,
@@ -46,25 +59,15 @@ pub trait TaskHost: Send {
         outcome: Option<tt_store::TaskOutcome>,
     ) -> Result<TaskDeletion, String>;
 
-    /// Start the board task described by `req`: mint its worktree on `branch`
-    /// off `base` and launch an agent in it on the task's goal.
-    ///
-    /// Unlike [`TaskHost::delete_task`] this **hands the work off and
-    /// returns** — see [`TaskStartRequest`] for why the completion isn't
-    /// awaited.
+    /// Mint `req`'s worktree and launch an agent on its goal. Hands the work off and returns —
+    /// see [`TaskStartRequest`] for why the completion isn't awaited.
     fn start_task(&self, req: TaskStartRequest) -> Result<(), String>;
 }
 
-/// The app-side half of `preview_file` — the agent→human direction of the Preview pane.
-/// An agent that finished something explainable points at a file and asks for it on
-/// screen, instead of PTY scrollback that dies with the worktree.
-///
-/// A **hand-off** like [`TaskHost::start_task`]: resolving a session to its folder is
-/// invisible from this Tauri-free crate, so the tool answers `"showing"` rather than
-/// claiming the user saw it. Routed by caller, not path — see [`PreviewFile::session`].
+/// The app-side half of `preview_file`, the agent→human direction of the Preview pane. A
+/// hand-off like [`TaskHost::start_task`]: the tool answers `"showing"`, not that the user saw
+/// it. Routed by caller, not path — see [`PreviewFile::session`].
 pub trait PreviewHost: Send {
-    /// Put `file` on screen in the Preview pane of the folder owning the
-    /// requesting agent's session.
     fn show(&self, file: PreviewFile) -> Result<(), String>;
 }
 
@@ -74,22 +77,15 @@ pub struct PreviewFile {
     pub path: String,
     /// What to label the pane with; the file name when the caller gave none.
     pub title: String,
-    /// The PTY session the requesting agent runs in ([`RequestContext::session`]) — **the
-    /// routing key**; the app resolves it to the folder owning that session.
-    ///
-    /// `None` when the caller isn't in an app terminal, the only case that falls back to
-    /// matching the path against the rail's folders. That fallback reliably picks the
-    /// wrong task for a file under no tracked folder — hence the session on the request.
+    /// The routing key: the PTY session the agent runs in, resolved by the app to the folder owning
+    /// it. `None` (no app terminal) falls back to matching the path, which picks wrong for a file
+    /// under no tracked folder — hence the session on the request.
     pub session: Option<String>,
 }
 
-/// The app-side half of `file_open`: put a path already on disk into the Files
-/// pane of the caller's own task, where [`PreviewHost`] shows a page the agent
-/// *authored*. A hand-off for the same reason, hence `"opening"`.
-///
-/// Routed by caller first, path second ([`FileToOpen::session`]) — see
-/// [`PreviewFile::session`]. Here the path fallback is a *good* guess: a file
-/// names a checkout, so the longest tracked-folder prefix is usually the task.
+/// The app-side half of `file_open`: reveal a path already on disk in the caller's Files pane.
+/// A hand-off for [`PreviewHost`]'s reason, hence `"opening"`. Routed by caller first, path
+/// second — and here the path fallback is a good guess, since a file names its checkout.
 pub trait EditorHost: Send {
     fn open_file(&self, request: FileToOpen) -> Result<(), String>;
 }
@@ -98,22 +94,16 @@ pub trait EditorHost: Send {
 pub struct FileToOpen {
     /// Absolute, canonical path to an existing file or directory.
     pub path: String,
-    /// Whether `path` is a directory. Sent because the frontend cannot `stat`:
-    /// a directory opens the pane on the folder, a file opens the pane *and*
-    /// selects the file, and the difference has to be decided where the syscall
-    /// is legal.
+    /// Sent because the frontend cannot `stat`: a directory opens the pane on the folder, a file
+    /// opens the pane *and* selects the file.
     pub is_dir: bool,
     /// 1-based line to reveal, when the caller named one.
     pub line: Option<u32>,
-    /// The PTY session the caller runs in — the routing key. See
-    /// [`EditorHost`].
+    /// The PTY session the caller runs in — the routing key, see [`EditorHost`].
     pub session: Option<String>,
 }
 
-/// Validate a `file_open` path into `(absolute path, is_dir)`.
-///
-/// Absolute and canonical for [`validate_preview_path`]'s reasons: no working
-/// directory to resolve against, and one spelling per file.
+/// Absolute and canonical for [`validate_preview_path`]'s reasons.
 fn validate_open_path(raw: &str) -> Result<(String, bool), String> {
     let path = std::path::Path::new(raw.trim());
     if path.as_os_str().is_empty() {
@@ -130,18 +120,12 @@ fn validate_open_path(raw: &str) -> Result<(String, bool), String> {
     Ok((resolved.to_string_lossy().into_owned(), is_dir))
 }
 
-/// Largest file `preview_file` will accept, checked from the same `stat` that proves the
-/// file exists. The frontend inlines the whole file, so an accidental multi-hundred-MB
-/// path must fail as an answer to the agent rather than as a frozen window.
+/// The frontend inlines the whole file, so a huge path must fail as an answer, not a frozen window.
 const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-/// Validate a `preview_file` path into the absolute path to show. Every rejection is
-/// something the agent can fix and would otherwise discover as a blank pane: a relative
-/// path, a missing file, a directory, or one too big to inline. **File *type* is not one
-/// of them** — the pane renders HTML, Markdown and plain text alike.
-///
-/// The path comes back **canonical** so pane and agent agree on one spelling, and because
-/// the path still routes a request that carried no session ([`PreviewFile::session`]).
+/// Every rejection is one the agent can fix and would otherwise meet as a blank pane: relative,
+/// missing, a directory, too big. File *type* is not one — the pane renders HTML, Markdown and
+/// text alike. Canonical on the way out, so pane and agent agree on one spelling.
 fn validate_preview_path(raw: &str) -> Result<String, String> {
     let path = std::path::Path::new(raw.trim());
     if path.as_os_str().is_empty() {
@@ -164,14 +148,12 @@ fn validate_preview_path(raw: &str) -> Result<String, String> {
             PREVIEW_MAX_BYTES
         ));
     }
-    // Keep the caller's path when canonicalization fails — it already passed
-    // `stat`, so a failure here is exotic and not worth refusing over.
+    // Already passed `stat`; a canonicalize failure is exotic and not worth refusing over.
     let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     Ok(resolved.to_string_lossy().into_owned())
 }
 
-/// The pane label for a previewed file: the caller's title, else the file's own
-/// name — never an empty header, which reads as a broken pane.
+/// The caller's title, else the file name — never an empty header, which reads as broken.
 fn preview_title(path: &str, title: Option<&str>) -> String {
     match title.map(str::trim).filter(|t| !t.is_empty()) {
         Some(t) => t.to_string(),
@@ -182,42 +164,29 @@ fn preview_title(path: &str, title: Option<&str>) -> String {
     }
 }
 
-/// Everything the host needs to start a task, resolved by the dispatcher from the row so
-/// the host does no store reads of its own.
-///
-/// **A hand-off, not a completed action.** A pane has no PTY until the frontend renders
-/// it and the goal is typed into that PTY, so the host can only ask the app to start the
-/// task. The tool reports `status: "starting"`; `task_list`/`task_status` are how a caller
-/// confirms the worktree appeared.
+/// Everything the host needs to start a task, resolved from the row so the host reads nothing.
+/// A hand-off, not a completed action: a pane has no PTY until the frontend renders it, so the
+/// tool reports `status: "starting"` and `task_list`/`task_status` confirm the worktree.
 pub struct TaskStartRequest {
     pub id: i64,
-    /// The row's title, for the host's own logging/labelling.
     pub text: String,
     /// The checkout the worktree branches from — the row's bound repo root.
     pub repo_root: String,
-    /// Branch to create; the dispatcher derives one from `text` when the
-    /// caller doesn't name it, since a task is named after its branch.
+    /// Derived from `text` when the caller doesn't name one — a task is named after its branch.
     pub branch: String,
     /// Base ref, or `None` for the repo's default branch.
     pub base: Option<String>,
-    /// What the agent is told to do — the row's `goal` plus its `notes`, which
-    /// is where a task's real handoff context lives.
+    /// The row's `goal` plus its `notes`, where a task's real handoff context lives.
     pub prompt: String,
 }
 
-/// What a [`TaskHost::delete_task`] attempt produced.
-///
-/// The refusal is an `Ok` variant for the same reason it is one in
-/// `tt_tasks::ops::RemoveOutcome`: "your worktree still has uncommitted work" is an answer
-/// with a next step, not a malfunction, and reported as an error it would invite a forced
-/// retry. Both variants carry `name` so the dispatcher never re-reads the row over a
-/// second SQLite connection just to name the thing in the reply.
+/// What a [`TaskHost::delete_task`] attempt produced. The refusal is an `Ok` variant for the
+/// reason it is one in `tt_tasks::ops::RemoveOutcome`: "uncommitted work" is an answer with a
+/// next step, and as an error it invites a forced retry. Both carry `name` to spare a re-read.
 pub enum TaskDeletion {
     /// The task is gone: panes, worktree, and board row.
     Deleted { name: String, messages: Vec<String> },
-    /// Nothing was deleted. Each blocker carries `losesWork` so a caller can
-    /// tell "stop your dev server and retry" apart from "forcing this destroys
-    /// commits that exist nowhere else".
+    /// Each blocker carries `losesWork`: "stop your dev server" vs "forcing destroys commits".
     Refused {
         name: String,
         blockers: Vec<Value>,
@@ -225,120 +194,174 @@ pub enum TaskDeletion {
     },
 }
 
-/// The stateful core of the server: owns the [`Store`] and dispatches JSON-RPC
-/// requests to tool handlers. Kept free of any transport so it can be driven
-/// directly in tests.
+/// The core of the server: owns the [`Store`] and dispatches JSON-RPC to tool handlers.
 pub struct Dispatcher {
     store: Store,
-    /// Injected by the serving transport — see [`TaskHost`]. `None` in tests
-    /// and any Tauri-free driver, where `task_delete` refuses.
+    /// `serverInfo` on every result. The version is the *app's*, passed in: this crate's own
+    /// says nothing to a client, and only the app knows which build is serving.
+    server_info: Value,
+    /// Injected by the transport; `None` in tests, where `task_delete` refuses.
     task_host: Option<Box<dyn TaskHost>>,
-    /// Injected by the serving transport — see [`PreviewHost`]. `None` in
-    /// tests and any Tauri-free driver, where `preview_file` refuses.
+    /// Injected by the transport; `None` in tests, where `preview_file` refuses.
     preview_host: Option<Box<dyn PreviewHost>>,
-    /// Injected by the serving transport — see [`EditorHost`]. `None` in tests
-    /// and any Tauri-free driver, where `file_open` refuses.
+    /// Injected by the transport; `None` in tests, where `file_open` refuses.
     editor_host: Option<Box<dyn EditorHost>>,
-    /// `clientInfo` from the session's `initialize` (e.g. `claude-code 2.1`),
-    /// stamped onto call-log rows so the app's MCP screen can say who called.
-    client: Option<String>,
-    /// Injected calendar-source ids (test hook), keeping `calendar_set`'s lane
-    /// validation off the real settings file. `None` re-reads settings per call.
+    /// Test hook: fixed lane ids, keeping `calendar_set` off the real settings file.
     calendar_sources: Option<Vec<String>>,
 }
 
-/// What the transport knows about a caller that the JSON-RPC body cannot say — which of
-/// the app's terminals the agent sits in, since `preview_file` puts a page on screen in
-/// *the caller's own* task. `TT_SESSION_ID` is stamped on every PTY and forwarded by the
-/// plugin's `.mcp.json` as `X-TT-Session`, so the model never reads its own environment.
-///
-/// Passed *through* dispatch rather than stashed on the [`Dispatcher`]: one long-lived
-/// dispatcher serves every session, so identity held as state leaks between agents.
+/// What the transport knows that the body cannot say: which app terminal the agent sits in
+/// (`TT_SESSION_ID`, forwarded by the plugin's `.mcp.json` as `X-TT-Session`), so `preview_file`
+/// lands in the caller's own task. Passed through, never stashed: one dispatcher serves everyone.
 #[derive(Debug, Clone, Default)]
 pub struct RequestContext {
-    /// The app PTY session id the caller runs in — `TT_SESSION_ID`, which is
-    /// also the rail's session id and the `term_id` of its pane.
+    /// `TT_SESSION_ID` — also the rail's session id and the `term_id` of its pane.
     pub session: Option<String>,
+    /// The HTTP binding's copies of body fields; `None` on a transport with no header layer.
+    pub headers: Option<MirroredHeaders>,
+}
+
+/// `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` as received.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MirroredHeaders {
+    pub protocol_version: Option<String>,
+    pub method: Option<String>,
+    pub name: Option<String>,
 }
 
 impl RequestContext {
-    /// A context with no caller identity — the Tauri-free drivers and every
-    /// test that isn't specifically about session routing.
+    /// No caller identity — the Tauri-free drivers and most tests.
     pub fn none() -> RequestContext {
         RequestContext::default()
     }
 
-    /// A context naming the PTY session the caller runs in. Blank and
-    /// whitespace-only values collapse to `None`: `${TT_SESSION_ID:-}` expands
-    /// to an empty header outside an app terminal, and an empty string that
-    /// matches no session must read as "didn't say", not as a bad id.
+    /// Blank collapses to `None`: `${TT_SESSION_ID:-}` expands empty outside an app terminal, and
+    /// that must read as "didn't say", not as a bad id.
     pub fn for_session(session: Option<&str>) -> RequestContext {
         RequestContext {
             session: session.map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+            headers: None,
         }
+    }
+
+    pub fn with_headers(mut self, headers: MirroredHeaders) -> RequestContext {
+        self.headers = Some(headers);
+        self
     }
 }
 
-/// What one dispatched request produced: the reply to send back, and whether the call
-/// wrote to the store.
-///
-/// `wrote` answers "**must the transport repaint?**", not "did this mutate?". A refusal, a
-/// failed write and every read report false, as does a tool in [`SELF_REFRESHING_TOOLS`].
+/// What one dispatched request produced. `wrote` answers "must the transport repaint?", not
+/// "did this mutate?": refusals, failed writes, reads and [`SELF_REFRESHING_TOOLS`] all say false.
 pub struct Handled {
-    /// The response line, or `None` for a notification (which gets no reply).
     pub response: Option<String>,
-    /// Whether this call committed a change to the store.
     pub wrote: bool,
+    /// Set when the request was refused before any tool ran; decides the HTTP status.
+    pub error_code: Option<i64>,
 }
 
 impl Handled {
-    /// A reply that changed nothing.
     fn read(response: Option<String>) -> Handled {
-        Handled { response, wrote: false }
+        Handled { response, wrote: false, error_code: None }
+    }
+
+    fn refused(response: String, code: i64) -> Handled {
+        Handled { response: Some(response), wrote: false, error_code: Some(code) }
     }
 }
 
-/// The tools that write to the store. One list read two ways: [`tool_writes`] answers the
-/// transport's "must the UI refresh?" and [`tool_definitions`] stamps
-/// `annotations.readOnlyHint: false` from it, so the wire contract and the internal
-/// decision cannot disagree.
-///
-/// The direction matters: deriving the internal answer from the external JSON would route
-/// control flow through an advisory client hint, and rebuild the contract per request.
+/// The tools whose success means the transport must repaint: a store write the app's UI has
+/// not seen. Not [`Effect`]'s `readOnlyHint` — `task_start` writes nothing here (the frontend
+/// runs its own start path and repaints) yet is anything but read-only to a client.
 const WRITING_TOOLS: &[&str] = &["task_create", "task_summary", "task_delete", "calendar_set"];
 
-/// Whether a tool writes to the store — see [`WRITING_TOOLS`].
 pub fn tool_writes(name: &str) -> bool {
     WRITING_TOOLS.contains(&name)
 }
 
-/// Writing tools that refresh the UI themselves, so the transport must not do it again.
-///
-/// `task_delete` runs through the app's own delete path, which emits a snapshot the moment
-/// the row goes. Leaving [`Handled::wrote`] true would rebuild the whole snapshot again —
-/// under the `StoreState` mutex the transport opened a separate connection to avoid — even
-/// for a *refused* delete. Kept separate from [`WRITING_TOOLS`] rather than removed from
-/// it, because `readOnlyHint` must still say the tool writes.
+/// Writing tools that repaint the UI themselves, so the transport must not. `task_delete` runs
+/// the app's own delete path, which emits a snapshot as the row goes; a second rebuild would
+/// take the `StoreState` mutex even for a refused delete. Still a [`WRITING_TOOLS`] entry.
 const SELF_REFRESHING_TOOLS: &[&str] = &["task_delete"];
 
-/// The result of dispatching one request: the response line to write back, plus
-/// the bits the call log needs — the tool name and compacted args (only set for
-/// `tools/call`) and an `error` message that is `Some` exactly when the call
-/// failed (a JSON-RPC error or an `isError` tool result).
+/// What a tool does to the world, as the four `annotations` hints a client reads before
+/// calling. 2026-07-28 reads an omitted hint as the risky answer (`destructiveHint` and
+/// `openWorldHint` default to true) and Claude Code keys its permission prompt on them, so
+/// every tool states all four; `openWorldHint` is false throughout, nothing here leaves the
+/// machine.
+#[derive(Clone, Copy)]
+enum Effect {
+    /// Modifies nothing — a pane opening is display, not a change to the environment.
+    Read,
+    /// Creates something new each call.
+    Write,
+    /// Replaces its own previous value: repeating it changes nothing further, and what it
+    /// overwrites (a cache day, an agent's own summary) is nothing the user authored.
+    Replace,
+    /// Can lose work nothing re-derives.
+    Destroy,
+}
+
+impl Effect {
+    fn annotations(self, title: &str) -> Value {
+        let (read_only, destructive, idempotent) = match self {
+            Effect::Read => (true, false, true),
+            Effect::Write => (false, false, false),
+            Effect::Replace => (false, false, true),
+            Effect::Destroy => (false, true, false),
+        };
+        json!({
+            "title": title,
+            "readOnlyHint": read_only,
+            "destructiveHint": destructive,
+            "idempotentHint": idempotent,
+            "openWorldHint": false,
+        })
+    }
+}
+
+/// Every tool's display title and [`Effect`]; [`tool_definitions`] refuses a tool missing here.
+const TOOL_HINTS: &[(&str, &str, Effect)] = &[
+    ("task_list", "List board tasks", Effect::Read),
+    ("task_status", "Task status", Effect::Read),
+    ("task_create", "Create board task", Effect::Write),
+    ("task_summary", "Record task summary", Effect::Replace),
+    ("task_delete", "Delete task", Effect::Destroy),
+    ("task_start", "Start task", Effect::Write),
+    ("preview_file", "Preview file", Effect::Read),
+    ("file_open", "Open file", Effect::Read),
+    ("calendar_today", "Today's meetings", Effect::Read),
+    ("calendar_next", "Next meeting", Effect::Read),
+    ("calendar_set", "Set a calendar day", Effect::Replace),
+];
+
+/// Why a tool call produced no result — [`Dispatcher::tools_call`] says what each becomes.
+enum ToolError {
+    Unknown,
+    Failed(String),
+}
+
+/// One dispatched request: the response line, plus what the call log needs — tool name and
+/// compacted args for `tools/call`, and `error` set exactly when the call failed.
 struct Outcome {
     response: String,
     tool: Option<String>,
     args: Option<String>,
     error: Option<String>,
+    /// Set only for a JSON-RPC-level refusal — see [`Handled::error_code`].
+    code: Option<i64>,
 }
 
 impl Outcome {
     fn ok(response: String) -> Outcome {
-        Outcome { response, tool: None, args: None, error: None }
+        Outcome { response, tool: None, args: None, error: None, code: None }
     }
 
     fn err(response: String, error: String) -> Outcome {
-        Outcome { response, tool: None, args: None, error: Some(error) }
+        Outcome { response, tool: None, args: None, error: Some(error), code: None }
+    }
+
+    fn refused(response: String, code: i64, error: String) -> Outcome {
+        Outcome { response, tool: None, args: None, error: Some(error), code: Some(code) }
     }
 
     fn with_tool(mut self, tool: String, args: String) -> Outcome {
@@ -349,54 +372,44 @@ impl Outcome {
 }
 
 impl Dispatcher {
-    /// Build a dispatcher over `store`.
-    pub fn new(store: Store) -> Dispatcher {
+    /// `version` is the serving app's — see [`Dispatcher::server_info`].
+    pub fn new(store: Store, version: &str) -> Dispatcher {
         Dispatcher {
             store,
+            server_info: json!({ "name": "towles-tool", "version": version }),
             task_host: None,
             preview_host: None,
             editor_host: None,
-            client: None,
             calendar_sources: None,
         }
     }
 
-    /// Inject the app-side deletion host — see [`TaskHost`]. The serving
-    /// transport in `tt-app` is the only caller; without it `task_delete`
-    /// refuses.
+    /// Injected by the serving transport — see [`TaskHost`].
     pub fn with_task_host(mut self, host: Box<dyn TaskHost>) -> Dispatcher {
         self.task_host = Some(host);
         self
     }
 
-    /// Inject the app-side preview host — see [`PreviewHost`]. The serving
-    /// transport in `tt-app` is the only caller; without it `preview_file`
-    /// refuses.
+    /// Injected by the serving transport — see [`PreviewHost`].
     pub fn with_preview_host(mut self, host: Box<dyn PreviewHost>) -> Dispatcher {
         self.preview_host = Some(host);
         self
     }
 
-    /// Inject the app-side editor host — see [`EditorHost`]. The serving
-    /// transport in `tt-app` is the only caller; without it `file_open`
-    /// refuses.
+    /// Injected by the serving transport — see [`EditorHost`].
     pub fn with_editor_host(mut self, host: Box<dyn EditorHost>) -> Dispatcher {
         self.editor_host = Some(host);
         self
     }
 
-    /// Build a dispatcher with a fixed calendar-source list (test hook — keeps
-    /// `calendar_set`'s lane validation off the real settings file).
+    /// Test hook — see [`Dispatcher::calendar_sources`].
     pub fn with_calendar_sources(mut self, sources: Vec<String>) -> Dispatcher {
         self.calendar_sources = Some(sources);
         self
     }
 
-    /// The calendar-source ids `calendar_set` validates against: the injected
-    /// override if any, else re-read from the settings file every time, so a
-    /// calendar added in Settings is writable without restarting the server.
-    /// An unreadable settings file yields no ids, which fails closed — every
-    /// `calendar_set` is refused rather than allowed to mint a lane.
+    /// The injected override, else the settings file re-read per call so a calendar added in Settings
+    /// is writable without a restart. An unreadable file yields none, which fails closed.
     fn calendar_source_ids(&self) -> Vec<String> {
         if let Some(ids) = &self.calendar_sources {
             return ids.clone();
@@ -408,10 +421,7 @@ impl Dispatcher {
                     .calendar
                     .sources
                     .into_iter()
-                    // Trimmed to match `calendar_set`, which trims the incoming
-                    // `source` before comparing: without this a settings id with
-                    // stray whitespace is listed as configured yet can never be
-                    // matched, so that lane is permanently unwritable.
+                    // Trimmed like `calendar_set` trims `source`, or a padded id is listed yet never matchable.
                     .map(|source| source.id.trim().to_string())
                     .filter(|id| !id.is_empty())
                     .collect()
@@ -419,23 +429,15 @@ impl Dispatcher {
             .unwrap_or_default()
     }
 
-    /// [`Dispatcher::dispatch_at`] keeping only the response line — the shape
-    /// most tests assert on.
-    ///
-    /// Test-only: the transport needs [`Handled::wrote`], so discarding it is
-    /// never right in production. Gating it here is what keeps that from
-    /// becoming a second, lossy entry point someone reaches for by accident.
+    /// Test-only: the transport needs [`Handled::wrote`], so discarding it is never right in
+    /// production, and gating it here keeps a lossy second entry point from appearing.
     #[cfg(test)]
     fn handle_at(&mut self, request_json: &str, now_ms: i64) -> Option<String> {
         self.dispatch_at(request_json, now_ms, &RequestContext::none()).response
     }
 
-    /// Handle one request line and report what it did, not just what to send back.
-    ///
-    /// A transport needs [`Handled::wrote`] to decide whether anything downstream must be
-    /// refreshed, and only the dispatcher knows which tool ran. Guessing costs real work:
-    /// the app rebuilds and broadcasts an entire store snapshot per refresh, against the
-    /// very lock the transport opened a second SQLite connection to avoid.
+    /// Handle one request line and report what it did: the transport needs [`Handled::wrote`] to
+    /// decide whether to refresh, and a guessed refresh rebuilds a whole snapshot under the store lock.
     pub fn dispatch(&mut self, request_json: &str, ctx: &RequestContext) -> Handled {
         self.dispatch_at(request_json, now_ms(), ctx)
     }
@@ -450,15 +452,15 @@ impl Dispatcher {
         let value: Value = match serde_json::from_str(request_json) {
             Ok(value) => value,
             Err(_) => {
-                return Handled::read(Some(error_response(Value::Null, -32700, "Parse error")));
+                let response = error_response(Value::Null, PARSE_ERROR, "Parse error");
+                return Handled::refused(response, PARSE_ERROR);
             }
         };
 
-        // A top-level array is a JSON-RPC batch. MCP 2025-06-18 removed batching,
-        // so reject it with a single Invalid Request instead of letting the `id`
-        // lookup below miss and silently drop it (which hangs a waiting client).
+        // A batch, gone since MCP 2025-06-18: refuse, rather than drop it and hang the client.
         if value.is_array() {
-            return Handled::read(Some(error_response(Value::Null, -32600, "Invalid Request")));
+            let response = error_response(Value::Null, INVALID_REQUEST, "Invalid Request");
+            return Handled::refused(response, INVALID_REQUEST);
         }
 
         // Requests carry an `id`; notifications do not, and receive no response.
@@ -469,30 +471,26 @@ impl Dispatcher {
 
         let method = match value.get("method").and_then(Value::as_str) {
             Some(method) => method,
-            None => return Handled::read(Some(error_response(id, -32600, "Invalid Request"))),
+            None => {
+                let response = error_response(id, INVALID_REQUEST, "Invalid Request");
+                return Handled::refused(response, INVALID_REQUEST);
+            }
         };
 
-        // `initialize` carries the caller's identity; stamp it onto this and every
-        // later call from the session so the app's MCP screen can say who called.
-        if method == "initialize" {
-            self.client = client_label(&value);
-        }
-
-        // Time the handler and capture the outcome so it can be logged. Instant is
-        // a monotonic elapsed measurement at the transport boundary, not a
-        // timestamp — the row's `ts` still comes from the injected `now_ms`.
+        // Elapsed time only; the row's `ts` is the injected `now_ms`.
         let started = Instant::now();
-        let outcome = match method {
-            "initialize" => Outcome::ok(success_response(id, initialize_result(&value))),
-            "ping" => Outcome::ok(success_response(id, json!({}))),
-            "tools/list" => {
-                Outcome::ok(success_response(id, json!({ "tools": tool_definitions() })))
-            }
-            "tools/call" => self.tools_call(id, &value, now_ms, ctx),
-            _ => Outcome::err(
-                error_response(id, -32601, "Method not found"),
-                "Method not found".to_string(),
-            ),
+        let outcome = match admit(&value, method, ctx) {
+            Err(rejection) => rejection.into_outcome(id),
+            Ok(()) => match method {
+                "server/discover" => Outcome::ok(self.result_response(id, discover_result())),
+                "tools/list" => Outcome::ok(self.result_response(id, tools_list_result())),
+                "tools/call" => self.tools_call(id, &value, now_ms, ctx),
+                _ => Outcome::refused(
+                    error_response(id, METHOD_NOT_FOUND, "Method not found"),
+                    METHOD_NOT_FOUND,
+                    "Method not found".to_string(),
+                ),
+            },
         };
 
         let call = McpCallInput {
@@ -502,26 +500,24 @@ impl Dispatcher {
             ok: outcome.error.is_none(),
             error: outcome.error,
             duration_ms: Some(started.elapsed().as_millis() as i64),
-            client: self.client.clone(),
+            client: client_label(&value),
         };
         if let Err(error) = self.store.record_mcp_call(&call, now_ms) {
             log::warn!("tt-mcp: failed to record call log: {error}");
         }
 
-        // A refused or failed call changed nothing, so it needs no refresh —
-        // and neither does one that already repainted itself
-        // ([`SELF_REFRESHING_TOOLS`]).
+        // Refusals and failures changed nothing; [`SELF_REFRESHING_TOOLS`] already repainted.
         let wrote = call.ok
             && call
                 .tool
                 .as_deref()
                 .is_some_and(|tool| tool_writes(tool) && !SELF_REFRESHING_TOOLS.contains(&tool));
-        Handled { response: Some(outcome.response), wrote }
+        Handled { response: Some(outcome.response), wrote, error_code: outcome.code }
     }
 
-    /// Dispatch a `tools/call`: tool errors become an `isError` result (not a
-    /// JSON-RPC error), per the MCP contract. The returned [`Outcome`] also
-    /// carries the tool name and compacted args for the call log.
+    /// Two failure shapes, as the spec draws them: a tool that ran and refused answers with an
+    /// `isError` result the model can act on; a request naming no tool, or one that doesn't
+    /// exist, is a protocol error (`-32602`) — nothing about it is the model's to fix by retrying.
     fn tools_call(
         &mut self,
         id: Value,
@@ -533,19 +529,23 @@ impl Dispatcher {
         let name = match params.and_then(|p| p.get("name")).and_then(Value::as_str) {
             Some(name) => name.to_string(),
             None => {
-                return Outcome::err(
-                    tool_error_response(id, "tools/call is missing the tool name"),
-                    "tools/call is missing the tool name".to_string(),
-                );
+                let message = "tools/call is missing the tool name".to_string();
+                return Outcome::err(error_response(id, INVALID_PARAMS, &message), message);
             }
         };
         let args = params.and_then(|p| p.get("arguments")).cloned().unwrap_or_else(|| json!({}));
         let logged_args = compact_args(&args);
-        match self.call_tool(&name, &args, now_ms, ctx) {
-            Ok(value) => Outcome::ok(tool_result_response(id, &value)).with_tool(name, logged_args),
-            Err(message) => Outcome::err(tool_error_response(id, &message), message)
-                .with_tool(name, logged_args),
-        }
+        let outcome = match self.call_tool(&name, &args, now_ms, ctx) {
+            Ok(value) => Outcome::ok(self.tool_result_response(id, &value)),
+            Err(ToolError::Failed(message)) => {
+                Outcome::err(self.tool_error_response(id, &message), message)
+            }
+            Err(ToolError::Unknown) => {
+                let message = format!("Unknown tool: {name}");
+                Outcome::err(error_response(id, INVALID_PARAMS, &message), message)
+            }
+        };
+        outcome.with_tool(name, logged_args)
     }
 
     fn call_tool(
@@ -554,8 +554,8 @@ impl Dispatcher {
         args: &Value,
         now_ms: i64,
         ctx: &RequestContext,
-    ) -> Result<Value, String> {
-        match name {
+    ) -> Result<Value, ToolError> {
+        let result = match name {
             "task_list" => self.task_list(),
             "task_status" => self.task_status(args),
             "task_create" => self.task_create(args, now_ms),
@@ -567,29 +567,24 @@ impl Dispatcher {
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
-            other => Err(format!("unknown tool: {other}")),
-        }
+            _ => return Err(ToolError::Unknown),
+        };
+        result.map_err(ToolError::Failed)
     }
 
-    /// Events whose start falls within the local calendar day of `now_ms` —
-    /// the shape of the day, for deciding where the focus blocks are.
+    /// Events starting within the local day of `now_ms` — the shape of the day.
     fn calendar_today(&self, now_ms: i64) -> Result<Value, String> {
         let (start, end) = Store::local_day_bounds(now_ms);
         let events = self.store.events_between(start, end).map_err(|e| e.to_string())?;
         Ok(json!({ "events": events, "now": now_ms }))
     }
 
-    /// The meeting in progress at `now_ms`, or the next one still to start —
-    /// with minutes-until (negative while a meeting is live) and a `live` flag.
+    /// The meeting in progress, else the next to start; `minutesUntil` goes negative while live.
     fn calendar_next(&self, now_ms: i64) -> Result<Value, String> {
         match self.store.current_or_next_event(now_ms).map_err(|e| e.to_string())? {
             Some(event) => {
-                // Floor, not truncate-toward-zero. Plain `/` would report `0`
-                // for the whole first minute of a live meeting, and the
-                // contract promises `minutesUntil` is *negative* while one is
-                // running — so a consumer distinguishing "starts now" from
-                // "already started" would be wrong for exactly the 59 seconds
-                // that distinction matters most.
+                // Floor, not truncate: `/` reports `0` for a live meeting's first minute, and the contract
+                // promises a negative `minutesUntil` while one runs.
                 let minutes_until = (event.start_ms() - now_ms).div_euclid(60_000);
                 let live =
                     event.start_ms() <= now_ms && event.end_ms().is_some_and(|end| now_ms < end);
@@ -604,13 +599,9 @@ impl Dispatcher {
         }
     }
 
-    /// Replace one calendar's events for one local day, leaving every other calendar and
-    /// day untouched.
-    ///
-    /// **The day window is derived here, never taken from the payload** — bounds come from
-    /// [`Store::local_day_bounds`], so a client cannot widen the delete past one day.
-    /// **`source` must name a configured calendar**: a hallucinated id mints an orphan lane
-    /// that still feeds `calendar_next` and that no sweep removes.
+    /// Replace one calendar's events for one local day, touching no other calendar or day. The
+    /// window comes from [`Store::local_day_bounds`], never the payload, so a client can't widen the
+    /// delete; `source` must be a configured lane, or a hallucinated id mints an orphan nothing sweeps.
     fn calendar_set(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let source = args
             .get("source")
@@ -628,10 +619,8 @@ impl Dispatcher {
             .ok_or_else(|| "missing required argument: events (an array)".to_string())?;
         let events: Vec<EventInput> = serde_json::from_value(events_arg.clone())
             .map_err(|e| format!("invalid events payload: {e}"))?;
-        // An event ending before it starts is schema-valid and then read inconsistently:
-        // `calendar_today` windows on `start_ts` and lists it, `current_or_next_event`
-        // matches on `end_ts > now` and drops it. Swapped or timezone-slipped fields are
-        // exactly what a model gets wrong, so refuse rather than silently repair.
+        // `end < start` is schema-valid but reads inconsistently (`calendar_today` lists it,
+        // `current_or_next_event` drops it) — a model's likely slip, so refuse rather than repair.
         if let Some(bad) = events.iter().find(|e| e.end.is_some_and(|end| end < e.start)) {
             return Err(format!(
                 "event {} ends before it starts (start {}, end {}) — check the field order",
@@ -648,9 +637,7 @@ impl Dispatcher {
         };
         let (day_start, day_end) = Store::local_day_bounds(reference_ms);
 
-        // Refuse a day the store's retention sweep would immediately reclaim: the write
-        // would report `written: N` and the next calendar write from any source would
-        // delete those rows — a success value with a one-tick shelf life.
+        // A day retention would reclaim at once: `written: N` with a one-tick shelf life.
         if day_end <= now_ms.saturating_sub(tt_store::EVENT_RETAIN_MS) {
             return Err(format!(
                 "day {} is past the {}-day retention window — events that old are swept, so \
@@ -660,11 +647,8 @@ impl Dispatcher {
             ));
         }
 
-        // Every event must fall inside the day it is pushed for.
-        // `replace_events_for_source` only deletes within `[day_start, day_end)` and
-        // retention only sweeps the *past*, so a row outside the window is reachable by
-        // neither and feeds `calendar_next` as a phantom meeting. A model that mis-dates
-        // one entry is the likely author, so name the offender.
+        // A row outside the day is reachable by neither the lane's next delete nor retention, and
+        // feeds `calendar_next` as a phantom meeting — so name the offender and refuse.
         if let Some(stray) =
             events.iter().find(|e| e.start_ms() < day_start || e.start_ms() >= day_end)
         {
@@ -698,24 +682,20 @@ impl Dispatcher {
         }))
     }
 
-    /// Open (not-done) board tasks in board order, each with its issue/PR
-    /// links and repo/worktree binding.
+    /// Open board tasks in board order, with their issue/PR links and repo/worktree binding.
     fn task_list(&self) -> Result<Value, String> {
         let tasks = self.store.open_tasks().map_err(|e| e.to_string())?;
         Ok(json!({ "tasks": tasks }))
     }
 
-    /// One task by id — the full row including done tasks, which `task_list`
-    /// excludes.
+    /// One task by id, done tasks included.
     fn task_status(&self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")
             .and_then(Value::as_i64)
             .ok_or_else(|| "missing required argument: id".to_string())?;
-        // Only a genuinely absent row is "no such task". Collapsing every store
-        // error into that message tells a caller the task does not exist when
-        // the truth is a busy-timeout, a disk error, or a corrupt page — and a
-        // session that believes its task vanished may go create a duplicate.
+        // Only a genuinely absent row is "no such task": a busy-timeout read as a vanished task
+        // makes a session go create a duplicate.
         let task = self.store.task_by_id(id).map_err(|error| match error {
             tt_store::Error::TaskNotFound(id) => format!("no task with id {id}"),
             other => format!("could not read task {id}: {other}"),
@@ -723,12 +703,9 @@ impl Dispatcher {
         Ok(json!({ "task": task }))
     }
 
-    /// Record what an agent reported when it finished, on the task's own row.
-    ///
-    /// The durable half of a session's ending: the worktree and its terminal scrollback are
-    /// torn down when the user confirms the task is done, so a wrap-up written only into the
-    /// PTY is gone. Deliberately *not* folded into `notes` — [`task_prompt`] feeds notes into
-    /// a `task_start` prompt, so a summary there would come back as instructions.
+    /// Record what an agent reported when it finished, on the task's own row — the worktree and its
+    /// scrollback die when the user confirms the task. Not folded into `notes`: [`task_prompt`] feeds
+    /// notes into a `task_start` prompt, so a summary there would return as instructions.
     fn task_summary(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -738,8 +715,7 @@ impl Dispatcher {
             .get("summary")
             .and_then(Value::as_str)
             .ok_or_else(|| "missing required argument: summary".to_string())?;
-        // Same reasoning as `task_status`: only a genuinely absent row is "no
-        // such task" — a busy db must not read as a vanished one.
+        // As in `task_status`: a busy db must not read as a vanished row.
         let task =
             self.store.set_task_summary(id, summary, now_ms).map_err(|error| match error {
                 tt_store::Error::TaskNotFound(id) => format!("no task with id {id}"),
@@ -748,9 +724,8 @@ impl Dispatcher {
         Ok(json!({ "task": task }))
     }
 
-    /// Create a board task in a tracked repo — the same store path as the app's Agentboard
-    /// `+` flow, so the task lands in that repo's Board swimlane immediately (no worktree
-    /// yet). `repo` must be a GitHub `owner/repo` slug.
+    /// The same store path as the Agentboard `+` flow, so the task lands in that repo's swimlane
+    /// at once (no worktree yet). `repo` is a GitHub `owner/repo` slug.
     fn task_create(&self, args: &Value, now_ms: i64) -> Result<Value, String> {
         let title = args
             .get("title")
@@ -768,9 +743,8 @@ impl Dispatcher {
         let notes = args.get("notes").and_then(Value::as_str);
         let goal = args.get("goal").and_then(Value::as_str);
 
-        // Matched case-insensitively, and stamped with the tracked repo's own spelling
-        // rather than `repo_arg`: a `christowles/x` must not mint a second identity beside
-        // the `gh`-reported `ChrisTowles/x`, splitting one repo across two Board lanes.
+        // Case-insensitive, stamped with the tracked repo's own spelling: `christowles/x` must not
+        // mint a second identity beside `ChrisTowles/x` and split one repo across two lanes.
         let (repo_root, repo) = self
             .store
             .tracked_repo_for_owner_repo(repo_arg)
@@ -790,10 +764,8 @@ impl Dispatcher {
         Ok(json!({ "task": task }))
     }
 
-    /// Start an existing board task — mint its worktree, launch an agent on its goal. Every
-    /// guard is a store read the dispatcher does alone, and each exists because the failure
-    /// is silent or destructive: starting a task that already holds a worktree abandons the
-    /// running one; a closed one resurrects finished work.
+    /// Mint the worktree, launch an agent on the goal. Each guard exists because its failure is
+    /// silent or destructive: a second worktree abandons the running one; a closed task resurrects.
     fn task_start(&mut self, args: &Value) -> Result<Value, String> {
         let id = args
             .get("id")
@@ -808,14 +780,12 @@ impl Dispatcher {
             .filter(|b| !b.is_empty())
             .map(str::to_string);
 
-        // Availability before diagnosis: a caller shouldn't have to fix its arguments to
-        // discover that the tool can't work here at all.
+        // Availability before diagnosis: don't make a caller fix its arguments for a tool that can't run.
         if self.task_host.is_none() {
             return Err("task_start is unavailable: no task host is attached".to_string());
         }
 
-        // `task_by_id` answers `TaskNotFound` for an unknown id, so its message
-        // already distinguishes "no such row" from "the store couldn't answer".
+        // `task_by_id` already distinguishes "no such row" from "couldn't answer".
         let task = self.store.task_by_id(id).map_err(|e| e.to_string())?;
 
         if task.closed {
@@ -842,8 +812,7 @@ impl Dispatcher {
                 )
             })?;
 
-        // A task is named after its branch, so a caller that doesn't pick one
-        // gets the title slugged — the same derivation `tt task new` uses.
+        // A task is named after its branch: slug the title, as `tt task new` does.
         let branch = match branch_arg {
             Some(b) => b.to_string(),
             None => {
@@ -858,9 +827,7 @@ impl Dispatcher {
             }
         };
 
-        // The goal is what the agent is told to do, and `notes` is where a
-        // task's real handoff context lives — send both. Falling back to the
-        // title keeps a bare row startable.
+        // Goal plus notes — the handoff context — with the title as the last resort.
         let prompt = task_start_prompt(&task);
 
         let host =
@@ -882,32 +849,23 @@ impl Dispatcher {
         }))
     }
 
-    /// Put a file on screen in the app's Preview pane — see [`PreviewHost`] for why this
-    /// direction exists at all.
-    ///
-    /// Everything checkable is checked here rather than in the host, because every failure
-    /// mode of this tool is silent: a bad path shows an empty pane and tells the agent
-    /// nothing.
+    /// Put a file on screen in the Preview pane — see [`PreviewHost`]. Everything checkable is
+    /// checked here, because every failure of this tool is a silent empty pane.
     fn preview_file(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
         let raw = args
             .get("path")
             .and_then(Value::as_str)
             .ok_or_else(|| "missing required argument: path".to_string())?;
 
-        // Availability before diagnosis, same as `task_start`: "this tool
-        // can't work here" is a different answer from "that path is wrong".
+        // Availability before diagnosis, as in `task_start`.
         if self.preview_host.is_none() {
             return Err("preview_file is unavailable: no preview host is attached".to_string());
         }
         let path = validate_preview_path(raw)?;
         let title = preview_title(&path, args.get("title").and_then(Value::as_str));
 
-        // Report how it was routed. An agent that sees `"routed": "path"` is
-        // being told its request carried no session — the pane may open
-        // somewhere else — rather than left to discover that from a screenshot.
-        //
-        // The session comes off the transport ([`RequestContext`]), never the
-        // arguments, so there is nothing here for the model to get wrong.
+        // `"routed": "path"` tells an agent its request carried no session and the pane may open
+        // elsewhere. The session comes off the transport, never the arguments.
         let routed = if ctx.session.is_some() { "session" } else { "path" };
         let host =
             self.preview_host.as_ref().expect("checked above, before the path was validated");
@@ -920,12 +878,8 @@ impl Dispatcher {
         Ok(json!({ "status": "showing", "path": path, "title": title, "routed": routed }))
     }
 
-    /// Reveal a file or folder in the caller's own Files pane — see
-    /// [`EditorHost`].
-    ///
-    /// Validated here rather than in the host for `preview_file`'s reason: a
-    /// path that isn't there would otherwise be a pane that never appears and an
-    /// agent told nothing.
+    /// Reveal a file or folder in the caller's own Files pane — see [`EditorHost`]. Validated
+    /// here for `preview_file`'s reason: a missing path would be a pane that never appears.
     fn file_open(&mut self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
         let raw = args
             .get("path")
@@ -973,10 +927,7 @@ impl Dispatcher {
             .as_ref()
             .ok_or_else(|| "task_delete is unavailable: no task host is attached".to_string())?;
 
-        // No pre-read to name the task: the host has to resolve the row anyway
-        // before it can delete anything, so it returns the name it found — and
-        // an unknown id comes back as its error rather than being diagnosed
-        // twice over two connections.
+        // The host resolves the row to delete it anyway, so it names the task and diagnoses unknown ids.
         match host.delete_task(id, force, outcome)? {
             TaskDeletion::Deleted { name, messages } => {
                 Ok(json!({ "status": "deleted", "id": id, "text": name, "messages": messages }))
@@ -996,25 +947,134 @@ impl Dispatcher {
 
 use tt_config::now_ms;
 
-/// Build the `initialize` result, echoing the client's `protocolVersion` if any.
-fn initialize_result(request: &Value) -> Value {
-    let protocol_version = request
-        .get("params")
-        .and_then(|params| params.get("protocolVersion"))
-        .and_then(Value::as_str)
-        .unwrap_or(DEFAULT_PROTOCOL_VERSION);
+/// The one thing the tool list can't say: where a pane lands. Guidance, not a procedure.
+const INSTRUCTIONS: &str = "Sessions started in the app's terminals are routed to their own \
+    task: preview_file and file_open open their panes beside the calling terminal, so pass any \
+    absolute path — where the file lives does not decide where it shows. The board and calendar \
+    tools read and write this app instance's own store.";
+
+/// What `server/discover` answers. The cache hints say "ask again": an instance restarted on
+/// the same port may be a different build with different tools.
+fn discover_result() -> Value {
     json!({
-        "protocolVersion": protocol_version,
+        "supportedVersions": [PROTOCOL_VERSION],
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": "towles-tool", "version": env!("CARGO_PKG_VERSION") },
+        "instructions": INSTRUCTIONS,
+        "ttlMs": 0,
+        "cacheScope": "public",
     })
 }
 
-/// `name version` (or just `name`) from an `initialize` request's `clientInfo`,
-/// or `None` when the caller sent no usable identity. Stamped onto the call log
-/// so the app can show which client is driving the server.
+fn tools_list_result() -> Value {
+    json!({ "tools": tool_definitions(), "ttlMs": 0, "cacheScope": "public" })
+}
+
+fn request_meta(request: &Value) -> Option<&Value> {
+    request.get("params")?.get("_meta")
+}
+
+/// A request turned away before its method was looked at, as the error it becomes.
+struct Rejection {
+    code: i64,
+    message: String,
+    data: Option<Value>,
+}
+
+impl Rejection {
+    fn header(message: String) -> Rejection {
+        Rejection { code: HEADER_MISMATCH, message, data: None }
+    }
+
+    /// A request missing a required `_meta` field is malformed: `-32602`, and 400 over HTTP.
+    fn missing_meta(key: &str) -> Rejection {
+        let message = required(&format!("params._meta.{key}"));
+        Rejection { code: INVALID_PARAMS, message, data: None }
+    }
+
+    fn into_outcome(self, id: Value) -> Outcome {
+        let mut error = json!({ "code": self.code, "message": self.message });
+        if let Some(data) = self.data {
+            error["data"] = data;
+        }
+        let response = json!({ "jsonrpc": "2.0", "id": id, "error": error }).to_string();
+        Outcome::refused(response, self.code, self.message)
+    }
+}
+
+/// Every request's checks before dispatch: the HTTP binding's mirrored headers agree with the
+/// body, and the body names the one version served. The "required" refusals spell the version
+/// out because a legacy client opening with `initialize` can show nothing else.
+fn admit(request: &Value, method: &str, ctx: &RequestContext) -> Result<(), Rejection> {
+    let version =
+        request_meta(request).and_then(|m| m.get(META_PROTOCOL_VERSION)).and_then(Value::as_str);
+    if let Some(headers) = &ctx.headers {
+        if headers.protocol_version.is_none() {
+            return Err(Rejection::header(required(&format!("{PROTOCOL_VERSION_HEADER} header"))));
+        }
+        mirrored(PROTOCOL_VERSION_HEADER, headers.protocol_version.as_deref(), version)?;
+        mirrored(METHOD_HEADER, headers.method.as_deref(), Some(method))?;
+        if method == "tools/call" {
+            let name = request.pointer("/params/name").and_then(Value::as_str);
+            let sent = headers.name.as_deref().map(decode_sentinel);
+            mirrored(NAME_HEADER, sent.as_deref(), name)?;
+        }
+    }
+    match version {
+        None => return Err(Rejection::missing_meta(META_PROTOCOL_VERSION)),
+        Some(requested) if requested != PROTOCOL_VERSION => {
+            return Err(Rejection {
+                code: UNSUPPORTED_PROTOCOL_VERSION,
+                message: "Unsupported protocol version".to_string(),
+                data: Some(json!({ "supported": [PROTOCOL_VERSION], "requested": requested })),
+            });
+        }
+        Some(_) => {}
+    }
+    // Required on every request. Only presence is checked: a `MissingRequiredClientCapability`
+    // answers a request that needs one the client withheld, and nothing here needs any.
+    let capabilities = request_meta(request).and_then(|m| m.get(META_CLIENT_CAPABILITIES));
+    if !capabilities.is_some_and(Value::is_object) {
+        return Err(Rejection::missing_meta(META_CLIENT_CAPABILITIES));
+    }
+    Ok(())
+}
+
+fn required(what: &str) -> String {
+    format!(
+        "{what} is required: this server speaks MCP {PROTOCOL_VERSION} only, which has no \
+         initialize handshake"
+    )
+}
+
+/// Equal to the body field it copies, and absent when there is nothing to copy.
+fn mirrored(header: &str, sent: Option<&str>, body: Option<&str>) -> Result<(), Rejection> {
+    match (sent, body) {
+        (None, None) => Ok(()),
+        (Some(sent), Some(body)) if sent == body => Ok(()),
+        (None, Some(_)) => Err(Rejection::header(format!("missing {header} header"))),
+        (Some(sent), None) => {
+            Err(Rejection::header(format!("{header} header {sent:?} names nothing in the body")))
+        }
+        (Some(sent), Some(body)) => Err(Rejection::header(format!(
+            "{header} header {sent:?} does not match the body's {body:?}"
+        ))),
+    }
+}
+
+/// `=?base64?…?=` carries a header-unsafe name; decoded before comparing, as the spec asks.
+fn decode_sentinel(value: &str) -> Cow<'_, str> {
+    use base64::Engine;
+    value
+        .strip_prefix("=?base64?")
+        .and_then(|rest| rest.strip_suffix("?="))
+        .and_then(|encoded| base64::engine::general_purpose::STANDARD.decode(encoded).ok())
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .map_or(Cow::Borrowed(value), Cow::Owned)
+}
+
+/// `name version` from the request's own `clientInfo`; per request, since nothing persists.
 fn client_label(request: &Value) -> Option<String> {
-    let info = request.get("params")?.get("clientInfo")?;
+    let info = request_meta(request)?.get(META_CLIENT_INFO)?;
     let name = info.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty())?;
     match info.get("version").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()) {
         Some(version) => Some(format!("{name} {version}")),
@@ -1022,9 +1082,7 @@ fn client_label(request: &Value) -> Option<String> {
     }
 }
 
-/// A compact one-line rendering of a tool's arguments for the call log, capped at
-/// [`CALL_LOG_ARGS_MAX`] chars (truncated on a char boundary with an ellipsis) so
-/// a huge payload can't bloat tt.db.
+/// The args for the call log, cut at [`CALL_LOG_ARGS_MAX`] chars on a char boundary.
 fn compact_args(args: &Value) -> String {
     let rendered = args.to_string();
     if rendered.chars().count() <= CALL_LOG_ARGS_MAX {
@@ -1035,34 +1093,41 @@ fn compact_args(args: &Value) -> String {
     truncated
 }
 
-fn success_response(id: Value, result: Value) -> String {
-    json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string()
-}
-
 fn error_response(id: Value, code: i64, message: &str) -> String {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }).to_string()
 }
 
-/// Wrap a tool's JSON result as a `tools/call` success (pretty-printed text item).
-fn tool_result_response(id: Value, value: &Value) -> String {
-    let text = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
-    success_response(id, json!({ "content": [{ "type": "text", "text": text }] }))
+impl Dispatcher {
+    /// Every result carries `resultType`, required since 2026-07-28, and names this server.
+    fn result_response(&self, id: Value, mut result: Value) -> String {
+        if let Some(result) = result.as_object_mut() {
+            result.insert("resultType".to_string(), json!("complete"));
+            result.insert("_meta".to_string(), json!({ META_SERVER_INFO: self.server_info }));
+        }
+        json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string()
+    }
+
+    /// The value twice: as `structuredContent`, which a client validates against the tool's
+    /// `outputSchema` and prefers for display, and as the text block the spec keeps for clients
+    /// that read only that.
+    fn tool_result_response(&self, id: Value, value: &Value) -> String {
+        let text = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
+        self.result_response(
+            id,
+            json!({ "content": [{ "type": "text", "text": text }], "structuredContent": value }),
+        )
+    }
+
+    fn tool_error_response(&self, id: Value, message: &str) -> String {
+        self.result_response(
+            id,
+            json!({ "content": [{ "type": "text", "text": message }], "isError": true }),
+        )
+    }
 }
 
-/// A `tools/call` result flagged `isError` with an explanatory text item.
-fn tool_error_response(id: Value, message: &str) -> String {
-    success_response(
-        id,
-        json!({ "content": [{ "type": "text", "text": message }], "isError": true }),
-    )
-}
-
-/// An epoch-ms instant rendered in the machine's local zone, RFC 3339.
-///
-/// Used for the day-window bounds this tool reports and refuses on. They are
-/// computed as epoch ms (that is what `local_day_bounds` returns), but a caller
-/// reading `1784707200000` in a refusal cannot tell which day it was handed —
-/// which is the whole reason this tool speaks ISO.
+/// Epoch ms as local RFC 3339, for the day-window bounds in refusals: a caller reading
+/// `1784707200000` cannot tell which day it was handed.
 fn local_iso(ms: i64) -> String {
     Local
         .timestamp_millis_opt(ms)
@@ -1071,26 +1136,18 @@ fn local_iso(ms: i64) -> String {
         .unwrap_or_else(|| ms.to_string())
 }
 
-/// Local midnight of a `YYYY-MM-DD` date as epoch ms, or `None` when the date
-/// does not parse or has no unambiguous local midnight. Only used to pick the
-/// reference instant handed to [`Store::local_day_bounds`].
+/// The reference instant for [`Store::local_day_bounds`] from a `YYYY-MM-DD`, or `None`.
 fn day_reference_ms(day: &str) -> Option<i64> {
     let date = NaiveDate::parse_from_str(day.trim(), "%Y-%m-%d").ok()?;
-    // Local **noon**, not midnight. This value is only a reference instant —
-    // `Store::local_day_bounds` re-derives the real `[start, end)` edges from
-    // it — and midnight is the one time of day that can fail to exist or be
-    // ambiguous. Resolving it with `.single()` returned `None` on exactly the
-    // DST-transition dates in zones that switch at midnight (Havana, Santiago,
-    // São Paulo), so a perfectly valid date came back as "invalid day" and that
-    // day's calendar could never be pushed. Noon is unambiguous in every zone.
+    // Noon, not midnight: this is only a reference instant, and midnight is the one time that can
+    // fail to exist — `.single()` returned `None` on DST dates in zones that switch at midnight
+    // (Havana, Santiago, São Paulo), so a valid day's calendar could never be pushed.
     let noon = date.and_hms_opt(12, 0, 0)?;
     Some(Local.from_local_datetime(&noon).earliest()?.timestamp_millis())
 }
 
-/// The calendar-lane refusal: names the rejected id and lists the configured
-/// ones, so a caller can self-correct without another round trip. An empty
-/// configured set is called out separately — "no calendars are configured" is a
-/// settings problem, not a bad argument, and the two want different fixes.
+/// Names the rejected id and lists the configured ones. An empty set is called out separately:
+/// "no calendars configured" is a settings problem, not a bad argument.
 fn unknown_calendar_source_message(source: &str, configured: &[String]) -> String {
     if configured.is_empty() {
         return format!(
@@ -1105,10 +1162,8 @@ fn unknown_calendar_source_message(source: &str, configured: &[String]) -> Strin
     )
 }
 
-/// What the agent starting a task is told to do: its `goal`, then its `notes` under a
-/// header. Both halves matter — the Board's own "Start task" passes the card's *title*, a
-/// label rather than an instruction, so a task with a written goal and pages of handoff
-/// notes started an agent that had seen neither. `text` is the last resort.
+/// `goal`, then `notes` under a header; `text` last. The Board's own "Start task" passed the
+/// title alone, so an agent started on a task with a written goal had seen neither.
 fn task_start_prompt(task: &tt_store::TaskItem) -> String {
     let goal = task.goal.as_deref().map(str::trim).filter(|g| !g.is_empty());
     let notes = task.notes.as_deref().map(str::trim).filter(|n| !n.is_empty());
@@ -1119,9 +1174,7 @@ fn task_start_prompt(task: &tt_store::TaskItem) -> String {
     }
 }
 
-/// The repo-validation refusal: names the argument and lists what *is*
-/// tracked (as `owner/repo` slugs), so a caller can self-correct without
-/// another round trip.
+/// Names the argument and lists the tracked `owner/repo` slugs, so a caller can self-correct.
 fn unknown_repo_message(repo: &str, slugs: &[String]) -> String {
     if slugs.is_empty() {
         return format!(
@@ -1131,10 +1184,8 @@ fn unknown_repo_message(repo: &str, slugs: &[String]) -> String {
     format!("unknown repo: {repo} — tracked repos: {}", slugs.join(", "))
 }
 
-/// JSON Schema tool descriptors returned by `tools/list` — the MCP contract's
-/// single source of truth. Also called directly by the app's `mcp_tool_docs`
-/// command so the MCP screen's tool documentation can never drift from what
-/// the server actually exposes.
+/// The MCP contract's single source of truth, also behind the app's `mcp_tool_docs` command so
+/// the MCP screen's documentation cannot drift from what the server exposes.
 pub fn tool_definitions() -> Value {
     let no_args = || json!({ "type": "object", "properties": {}, "required": [] });
     let mut tools = json!([
@@ -1272,13 +1323,17 @@ pub fn tool_definitions() -> Value {
         },
     ]);
 
-    // Stamp `readOnlyHint` from [`WRITING_TOOLS`] rather than hand-writing it
-    // per descriptor, so the flag a client sees and the flag the transport acts
-    // on are the same fact rather than two that agree today.
     if let Some(entries) = tools.as_array_mut() {
         for entry in entries {
-            let writes = entry["name"].as_str().is_some_and(tool_writes);
-            entry["annotations"] = json!({ "readOnlyHint": !writes });
+            let name = entry["name"].as_str().unwrap_or_default().to_string();
+            let (_, title, effect) = TOOL_HINTS
+                .iter()
+                .find(|(hinted, ..)| *hinted == name)
+                .unwrap_or_else(|| panic!("{name} has no TOOL_HINTS entry"));
+            entry["title"] = json!(title);
+            entry["annotations"] = effect.annotations(title);
+            entry["outputSchema"] =
+                output::schema_for(&name).unwrap_or_else(|| panic!("{name} has no output schema"));
         }
     }
     tools
@@ -1290,10 +1345,9 @@ mod tests {
     use chrono::Duration;
 
     const NOW: i64 = 1_700_000_000_000; // fixed epoch ms for deterministic tests
+    const TEST_VERSION: &str = "0.0.0-test";
 
-    /// The tracked-repo dir and its `owner/repo` slug every test dispatcher
-    /// knows about — seeded into `tt-store`'s tracked-repo identity cache the
-    /// same way the Agentboard poll loop reconciles it in production.
+    /// The tracked repo every test dispatcher knows, seeded as the Agentboard poll loop would.
     const REPO_DIR: &str = "/home/u/code/demo";
     const REPO_SLUG: &str = "o/demo";
 
@@ -1303,21 +1357,33 @@ mod tests {
         store
     }
 
-    /// A dispatcher over a store with one reconciled tracked repo, so no test
-    /// touches the real agentboard `repos.json`.
+    /// A dispatcher over a store with one reconciled tracked repo — never the real `repos.json`.
     fn dispatcher() -> Dispatcher {
         let store = seeded_store();
         store.reconcile_repos(&[(REPO_DIR.to_string(), REPO_SLUG.to_string())], NOW).unwrap();
-        Dispatcher::new(store)
+        Dispatcher::new(store, TEST_VERSION)
             .with_calendar_sources(vec!["google".to_string(), "outlook".to_string()])
     }
 
-    /// Call a tool and return the parsed inner JSON result (the `text` payload).
+    /// Call a tool and return its result, checked against the contract on the way out.
     fn call_tool(dispatcher: &mut Dispatcher, name: &str, args: Value) -> Value {
         let response = call_tool_raw(dispatcher, name, args);
-        assert_eq!(response["result"]["isError"], Value::Null, "unexpected tool error");
-        let text = response["result"]["content"][0]["text"].as_str().unwrap();
-        serde_json::from_str(text).unwrap()
+        conformant_result(name, &response)
+    }
+
+    /// The `structuredContent` of a successful result, after every check a client may make:
+    /// it equals the text block, and it validates against the tool's own `outputSchema`.
+    fn conformant_result(name: &str, response: &Value) -> Value {
+        let result = &response["result"];
+        assert_eq!(result["isError"], Value::Null, "unexpected tool error: {response}");
+        let text = result["content"][0]["text"].as_str().expect("a text block");
+        let value = result["structuredContent"].clone();
+        assert_eq!(serde_json::from_str::<Value>(text).unwrap(), value, "text ≠ structured");
+        let schema = output::schema_for(name).expect("every tool declares an output schema");
+        let validator = jsonschema::validator_for(&schema).expect("a valid schema");
+        let errors: Vec<String> = validator.iter_errors(&value).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{name} result violates its outputSchema: {errors:?}\n{value}");
+        value
     }
 
     /// Call a tool expecting an `isError` result; returns the error text.
@@ -1327,8 +1393,7 @@ mod tests {
         response["result"]["content"][0]["text"].as_str().unwrap().to_string()
     }
 
-    /// [`call_tool`] from a caller the transport identified — the shape every
-    /// real `preview_file` arrives in.
+    /// [`call_tool`] from a caller the transport identified.
     fn call_tool_as(
         dispatcher: &mut Dispatcher,
         name: &str,
@@ -1341,8 +1406,7 @@ mod tests {
             .response
             .expect("tool call returns a response");
         let response: Value = serde_json::from_str(&response).unwrap();
-        assert_eq!(response["result"]["isError"], Value::Null, "unexpected tool error");
-        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+        conformant_result(name, &response)
     }
 
     fn call_tool_raw(dispatcher: &mut Dispatcher, name: &str, args: Value) -> Value {
@@ -1352,39 +1416,124 @@ mod tests {
     }
 
     fn tool_call_request(name: &str, args: Value) -> String {
-        json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": { "name": name, "arguments": args },
-        })
-        .to_string()
+        request(1, "tools/call", json!({ "name": name, "arguments": args }))
+    }
+
+    /// A request in the one shape the server accepts: 2026-07-28 `_meta` on it.
+    fn request(id: i64, method: &str, mut params: Value) -> String {
+        params["_meta"] = json!({
+            META_PROTOCOL_VERSION: PROTOCOL_VERSION,
+            META_CLIENT_INFO: { "name": "claude-code", "version": "2.1" },
+            META_CLIENT_CAPABILITIES: {},
+        });
+        json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }).to_string()
+    }
+
+    fn parsed(dispatcher: &mut Dispatcher, request: &str) -> Value {
+        serde_json::from_str(&dispatcher.handle_at(request, NOW).unwrap()).unwrap()
     }
 
     #[test]
-    fn initialize_echoes_protocol_version_and_server_info() {
+    fn server_discover_names_the_one_version_and_the_tools_capability() {
         let mut dispatcher = dispatcher();
-        let request = json!({
+        let response = parsed(&mut dispatcher, &request(1, "server/discover", json!({})));
+        let result = &response["result"];
+        assert_eq!(result["supportedVersions"], json!([PROTOCOL_VERSION]));
+        assert!(result["capabilities"]["tools"].is_object());
+        assert_eq!(result["resultType"], "complete");
+        assert_eq!(result["_meta"][META_SERVER_INFO]["name"], "towles-tool");
+        assert_eq!(result["_meta"][META_SERVER_INFO]["version"], TEST_VERSION);
+        assert!(result["instructions"].as_str().is_some_and(|i| i.contains("preview_file")));
+        assert_eq!(result["ttlMs"], 0);
+    }
+
+    /// Both required `_meta` fields are checked, and a missing one is the 400 the spec wants.
+    #[test]
+    fn a_request_without_client_capabilities_is_malformed() {
+        let mut dispatcher = dispatcher();
+        let mut value: Value = serde_json::from_str(&request(1, "tools/list", json!({}))).unwrap();
+        value["params"]["_meta"].as_object_mut().unwrap().remove(META_CLIENT_CAPABILITIES);
+        let handled = dispatcher.dispatch_at(&value.to_string(), NOW, &RequestContext::none());
+        let response: Value = serde_json::from_str(&handled.response.unwrap()).unwrap();
+        assert_eq!(response["error"]["code"], INVALID_PARAMS);
+        assert_eq!(handled.error_code, Some(INVALID_PARAMS));
+        let message = response["error"]["message"].as_str().unwrap();
+        assert!(message.contains(META_CLIENT_CAPABILITIES), "{message}");
+    }
+
+    /// A legacy client's `initialize` gets the version named — all it can show.
+    #[test]
+    fn a_legacy_initialize_is_refused_naming_the_version() {
+        let mut dispatcher = dispatcher();
+        let legacy = json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
-            "params": { "protocolVersion": "2025-03-26" },
+            "params": { "protocolVersion": "2025-06-18", "clientInfo": { "name": "old" } },
         })
         .to_string();
-        let response: Value =
-            serde_json::from_str(&dispatcher.handle_at(&request, NOW).unwrap()).unwrap();
-        assert_eq!(response["result"]["protocolVersion"], "2025-03-26");
-        assert_eq!(response["result"]["serverInfo"]["name"], "towles-tool");
-        assert!(response["result"]["capabilities"]["tools"].is_object());
+
+        // Over HTTP the missing header is what's refused.
+        let ctx = RequestContext::none().with_headers(MirroredHeaders::default());
+        let handled = dispatcher.dispatch_at(&legacy, NOW, &ctx);
+        let response: Value = serde_json::from_str(&handled.response.unwrap()).unwrap();
+        assert_eq!(response["error"]["code"], HEADER_MISMATCH);
+        assert_eq!(handled.error_code, Some(HEADER_MISMATCH));
+        let message = response["error"]["message"].as_str().unwrap();
+        assert!(message.contains(PROTOCOL_VERSION) && message.contains("initialize"), "{message}");
+
+        // With no header layer, the body's missing version is.
+        let response = parsed(&mut dispatcher, &legacy);
+        assert_eq!(response["error"]["code"], INVALID_PARAMS);
+        assert!(response["error"]["message"].as_str().unwrap().contains(PROTOCOL_VERSION));
     }
 
     #[test]
-    fn initialize_defaults_protocol_version() {
+    fn an_unsupported_version_lists_the_supported_one() {
         let mut dispatcher = dispatcher();
-        let request = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize" }).to_string();
-        let response: Value =
-            serde_json::from_str(&dispatcher.handle_at(&request, NOW).unwrap()).unwrap();
-        assert_eq!(response["result"]["protocolVersion"], DEFAULT_PROTOCOL_VERSION);
+        let mut value: Value = serde_json::from_str(&request(1, "tools/list", json!({}))).unwrap();
+        value["params"]["_meta"][META_PROTOCOL_VERSION] = json!("2025-11-25");
+        let response = parsed(&mut dispatcher, &value.to_string());
+        assert_eq!(response["error"]["code"], UNSUPPORTED_PROTOCOL_VERSION);
+        assert_eq!(response["error"]["data"]["supported"], json!([PROTOCOL_VERSION]));
+        assert_eq!(response["error"]["data"]["requested"], "2025-11-25");
+    }
+
+    /// The HTTP binding mirrors body fields into headers; the two must agree.
+    #[test]
+    fn mirrored_headers_must_match_the_body() {
+        let mut dispatcher = dispatcher();
+        let call = tool_call_request("task_list", json!({}));
+        let headers = |method: &str, name: Option<&str>| {
+            RequestContext::none().with_headers(MirroredHeaders {
+                protocol_version: Some(PROTOCOL_VERSION.to_string()),
+                method: Some(method.to_string()),
+                name: name.map(str::to_string),
+            })
+        };
+        let codes = |dispatcher: &mut Dispatcher, ctx: &RequestContext| {
+            let handled = dispatcher.dispatch_at(&call, NOW, ctx);
+            let response: Value = serde_json::from_str(&handled.response.unwrap()).unwrap();
+            (handled.error_code, response["error"]["code"].as_i64())
+        };
+
+        assert_eq!(codes(&mut dispatcher, &headers("tools/call", Some("task_list"))), (None, None));
+        assert_eq!(
+            codes(&mut dispatcher, &headers("tools/call", Some("=?base64?dGFza19saXN0?="))),
+            (None, None),
+            "an encoded name is decoded before the comparison"
+        );
+        for wrong in [
+            headers("tools/list", Some("task_list")),
+            headers("tools/call", Some("task_status")),
+            headers("tools/call", None),
+        ] {
+            assert_eq!(
+                codes(&mut dispatcher, &wrong),
+                (Some(HEADER_MISMATCH), Some(HEADER_MISMATCH)),
+                "{wrong:?}"
+            );
+        }
     }
 
     #[test]
@@ -1398,21 +1547,9 @@ mod tests {
     }
 
     #[test]
-    fn ping_returns_empty_result() {
-        let mut dispatcher = dispatcher();
-        let request = json!({ "jsonrpc": "2.0", "id": 9, "method": "ping" }).to_string();
-        let response: Value =
-            serde_json::from_str(&dispatcher.handle_at(&request, NOW).unwrap()).unwrap();
-        assert_eq!(response["id"], 9);
-        assert_eq!(response["result"], json!({}));
-    }
-
-    #[test]
     fn tools_list_is_exactly_the_task_pane_and_calendar_families() {
         let mut dispatcher = dispatcher();
-        let request = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }).to_string();
-        let response: Value =
-            serde_json::from_str(&dispatcher.handle_at(&request, NOW).unwrap()).unwrap();
+        let response = parsed(&mut dispatcher, &request(1, "tools/list", json!({})));
         let names: Vec<&str> = response["result"]["tools"]
             .as_array()
             .unwrap()
@@ -1442,7 +1579,6 @@ mod tests {
     /// Every `(path, title, session)` a fake preview host was handed.
     type Shown = std::sync::Arc<std::sync::Mutex<Vec<(String, String, Option<String>)>>>;
 
-    /// A dispatcher whose preview host records what it was asked to show.
     fn with_preview_host() -> (Dispatcher, Shown) {
         struct FakePreviewHost {
             shown: Shown,
@@ -1458,9 +1594,7 @@ mod tests {
         (dispatcher().with_preview_host(Box::new(host)), shown)
     }
 
-    /// Write `name` into `dir` and return its absolute path — canonical, since
-    /// that is the shape `validate_preview_path` hands on, and a temp dir is
-    /// behind a symlink on macOS (`/var` → `/private/var`).
+    /// Canonical, since a macOS temp dir sits behind a symlink (`/var` → `/private/var`).
     fn artifact_file(dir: &tempfile::TempDir, name: &str, body: &str) -> String {
         let path = dir.path().join(name);
         std::fs::write(&path, body).unwrap();
@@ -1484,8 +1618,6 @@ mod tests {
         assert_eq!(&*shown.lock().unwrap(), &[(path, "The plan".to_string(), None)]);
     }
 
-    /// The routing key comes off the transport, never the arguments — an agent
-    /// that never mentions its session still gets its own pane.
     #[test]
     fn preview_file_routes_by_the_callers_session() {
         let (mut dispatcher, shown) = with_preview_host();
@@ -1503,10 +1635,7 @@ mod tests {
         assert_eq!(shown.lock().unwrap()[0].2.as_deref(), Some("s64abebd44298447d"));
     }
 
-    /// A caller outside an app terminal sends `${TT_SESSION_ID:-}` as an empty
-    /// header. That is "didn't say", not a session id that matches nothing —
-    /// the difference between falling back to the path and routing to no pane
-    /// at all.
+    /// `${TT_SESSION_ID:-}` expands empty outside an app terminal: "didn't say", not a bad id.
     #[test]
     fn preview_file_treats_a_blank_session_as_absent() {
         let (mut dispatcher, shown) = with_preview_host();
@@ -1524,9 +1653,7 @@ mod tests {
         assert_eq!(shown.lock().unwrap()[0].2, None);
     }
 
-    /// The dispatcher is one long-lived instance shared by every session on the
-    /// machine, so a request that carries no identity must not inherit the
-    /// previous caller's — that would put one agent's page in another's pane.
+    /// One dispatcher serves every session; identity must not leak between callers.
     #[test]
     fn a_session_never_leaks_into_the_next_request() {
         let (mut dispatcher, shown) = with_preview_host();
@@ -1546,8 +1673,6 @@ mod tests {
         assert_eq!(shown[1].2, None, "the second caller named no session");
     }
 
-    /// A pane with no header reads as broken, so an untitled artifact is
-    /// labelled with its own file name rather than nothing.
     #[test]
     fn preview_file_falls_back_to_the_file_name_as_the_title() {
         let (mut dispatcher, shown) = with_preview_host();
@@ -1560,8 +1685,6 @@ mod tests {
         assert_eq!(shown.lock().unwrap()[0].1, "findings.html");
     }
 
-    /// Availability is answered before the path is: an agent shouldn't have to
-    /// fix its arguments to discover the tool can't work here at all.
     #[test]
     fn preview_file_without_a_host_refuses() {
         let mut dispatcher = dispatcher();
@@ -1569,8 +1692,7 @@ mod tests {
         assert!(message.contains("no preview host"), "{message}");
     }
 
-    /// Every one of these would otherwise land as a blank pane and a cheerful
-    /// success — the whole reason validation lives in the dispatcher.
+    /// Each would otherwise be a blank pane and a cheerful success.
     #[test]
     fn preview_file_refuses_a_path_it_cannot_render() {
         let dir = tempfile::tempdir().unwrap();
@@ -1595,8 +1717,6 @@ mod tests {
         call_tool(&mut dispatcher, "preview_file", json!({ "path": html }));
     }
 
-    /// The extension check is gone on purpose — Markdown and plain text are
-    /// first-class in the pane now, so pointing at either must not be refused.
     #[test]
     fn preview_file_accepts_markdown_and_plain_text() {
         let dir = tempfile::tempdir().unwrap();
@@ -1609,8 +1729,6 @@ mod tests {
         }
     }
 
-    /// The frontend inlines the whole file, so an oversized one must come back
-    /// as an answer the agent can act on, not a frozen window.
     #[test]
     fn preview_file_refuses_an_oversized_file() {
         let (mut dispatcher, _) = with_preview_host();
@@ -1621,8 +1739,6 @@ mod tests {
         assert!(message.contains("keep it under"), "{message}");
     }
 
-    /// Showing something changes no store row — the transport must not repaint
-    /// the board for it.
     #[test]
     fn preview_file_is_not_a_writing_tool() {
         assert!(!tool_writes("preview_file"));
@@ -1683,8 +1799,6 @@ mod tests {
         );
     }
 
-    /// The frontend can't `stat`, so the directory-ness is decided here — see
-    /// [`FileToOpen::is_dir`].
     #[test]
     fn file_open_marks_a_directory_as_one() {
         let (mut dispatcher, opened) = with_editor_host();
@@ -1710,8 +1824,6 @@ mod tests {
         assert!(message.contains("can't open"), "{message}");
     }
 
-    /// Availability before diagnosis: without a host the answer is "this tool
-    /// can't work here", not "that path is wrong".
     #[test]
     fn file_open_without_a_host_refuses() {
         let mut dispatcher = dispatcher();
@@ -1724,8 +1836,7 @@ mod tests {
         assert!(!tool_writes("file_open"));
     }
 
-    /// An epoch-ms instant as the RFC 3339 the tool now speaks, in local time
-    /// (which is what a real calendar would report).
+    /// Epoch ms as the local RFC 3339 the tool speaks.
     fn iso(ms: i64) -> String {
         Local.timestamp_millis_opt(ms).single().unwrap().to_rfc3339()
     }
@@ -1749,8 +1860,7 @@ mod tests {
     fn calendar_today_returns_only_the_local_day() {
         let (day_start, day_end) = Store::local_day_bounds(NOW);
         let mut dispatcher = dispatcher();
-        // Neighbouring days are pushed as their own days — the only way to
-        // store them, since a day's push refuses events outside its window.
+        // Neighbouring days are pushed as their own days — a day's push refuses events outside it.
         let day_of = |ms: i64| {
             Local.timestamp_millis_opt(ms).single().unwrap().format("%Y-%m-%d").to_string()
         };
@@ -1777,10 +1887,7 @@ mod tests {
         assert_eq!(ids, vec!["standup"], "only today's event is in the window");
     }
 
-    /// A row outside the day it is pushed for is reachable by nothing: the
-    /// lane's next write only deletes inside that day's window, and retention
-    /// only sweeps the past. It would feed the countdown as a phantom meeting
-    /// forever, so the push is refused rather than half-accepted.
+    /// Reachable by neither the lane's next delete nor retention: a phantom meeting forever.
     #[test]
     fn calendar_set_refuses_an_event_outside_the_day_being_written() {
         let (_, day_end) = Store::local_day_bounds(NOW);
@@ -1797,10 +1904,7 @@ mod tests {
         assert!(message.contains("outside the day"), "says why: {message}");
     }
 
-    /// `end < start` parses fine and then reads two different ways: it shows up
-    /// in `calendar_today` (which windows on `start_ts`) but never in
-    /// `calendar_next` (which matches `end_ts > now`), so the meeting is in the
-    /// day's shape and missing from the countdown.
+    /// `end < start` shows in `calendar_today` but never in `calendar_next`.
     #[test]
     fn calendar_set_refuses_an_event_that_ends_before_it_starts() {
         let mut dispatcher = dispatcher();
@@ -1816,9 +1920,7 @@ mod tests {
         assert!(message.contains("ends before it starts"), "says why: {message}");
     }
 
-    /// The contract promises `minutesUntil` is negative while a meeting runs.
-    /// Truncating division would report `0` for the first 59 seconds — the
-    /// window where "starting now" vs "already started" matters most.
+    /// Truncating division would report `0` for a live meeting's first 59 seconds.
     #[test]
     fn calendar_next_minutes_until_is_negative_from_the_first_second() {
         let mut dispatcher = dispatcher();
@@ -1983,8 +2085,7 @@ mod tests {
 
     #[test]
     fn calendar_set_ignores_a_source_field_smuggled_into_an_event() {
-        // `source` is caller-assigned: an event carrying its own `source` must
-        // not be able to write into a different lane.
+        // `source` is caller-assigned: an event's own `source` must not write into another lane.
         let (day_start, _) = Store::local_day_bounds(NOW);
         let mut dispatcher = dispatcher();
         set_calendar(
@@ -2030,7 +2131,7 @@ mod tests {
     fn task_status_returns_one_task_including_done() {
         let store = seeded_store();
         let done = store.add_task("shipped", "done", None, None, NOW).unwrap();
-        let mut dispatcher = Dispatcher::new(store);
+        let mut dispatcher = Dispatcher::new(store, TEST_VERSION);
         let result = call_tool(&mut dispatcher, "task_status", json!({ "id": done.id }));
         assert_eq!(result["task"]["text"], "shipped");
         assert_eq!(result["task"]["status"], "done");
@@ -2050,7 +2151,7 @@ mod tests {
         let store = seeded_store();
         let task =
             store.add_task("switch the files pane", "doing", Some("mine"), None, NOW).unwrap();
-        let mut dispatcher = Dispatcher::new(store);
+        let mut dispatcher = Dispatcher::new(store, TEST_VERSION);
         let result = call_tool(
             &mut dispatcher,
             "task_summary",
@@ -2058,14 +2159,11 @@ mod tests {
         );
         assert_eq!(result["task"]["summary"], "PR #510 merged as 9a550d9. CI green.");
         assert_eq!(result["task"]["summaryAt"], NOW);
-        // It records, it does not close: status and worktree binding are the
-        // user's to change once they have confirmed the work.
+        // It records, it does not close — status and worktree binding stay the user's.
         assert_eq!(result["task"]["status"], "doing");
         assert_eq!(result["task"]["closed"], false);
-        // The user's own notes stay theirs — a summary must not come back as
-        // instructions to the next session that starts this task.
+        // The user's notes stay theirs: a summary there would return as instructions.
         assert_eq!(result["task"]["notes"], "mine");
-        // And it is readable afterwards through the normal task read.
         let read = call_tool(&mut dispatcher, "task_status", json!({ "id": task.id }));
         assert_eq!(read["task"]["summary"], "PR #510 merged as 9a550d9. CI green.");
     }
@@ -2074,7 +2172,7 @@ mod tests {
     fn task_summary_requires_both_args_and_a_known_id() {
         let store = seeded_store();
         let task = store.add_task("x", "doing", None, None, NOW).unwrap();
-        let mut dispatcher = Dispatcher::new(store);
+        let mut dispatcher = Dispatcher::new(store, TEST_VERSION);
         let message = call_tool_err(&mut dispatcher, "task_summary", json!({ "summary": "done" }));
         assert!(message.contains("id"), "error should name the missing arg: {message}");
         let message = call_tool_err(&mut dispatcher, "task_summary", json!({ "id": task.id }));
@@ -2103,18 +2201,14 @@ mod tests {
         assert_eq!(result["task"]["worktree"]["repoRoot"], REPO_DIR);
         assert_eq!(result["task"]["worktree"]["repo"], REPO_SLUG);
 
-        // The new task shows up in the task_list read tool.
         let open = call_tool(&mut dispatcher, "task_list", json!({}));
         let texts: Vec<&str> =
             open["tasks"].as_array().unwrap().iter().map(|t| t["text"].as_str().unwrap()).collect();
         assert!(texts.contains(&"port the CLI"), "created task missing: {texts:?}");
     }
 
-    /// A caller that gets the slug's casing "wrong" must still land in the one
-    /// real swimlane. Before this, the lookup was an exact match against a
-    /// case-folded identity cache: it rejected `gh`'s own casing outright, and
-    /// the casing it *did* accept got stamped onto the row verbatim — so every
-    /// MCP-created task drifted into a second, identically-labelled Board lane.
+    /// Wrong-cased slugs must land in the one real swimlane: an exact match against a case-folded
+    /// cache rejected `gh`'s own casing and stamped the accepted one verbatim, splitting the lane.
     #[test]
     fn task_create_normalizes_the_repo_slug_casing() {
         let mut dispatcher = dispatcher();
@@ -2140,16 +2234,12 @@ mod tests {
         assert_eq!(result["task"]["worktree"]["repoRoot"], REPO_DIR);
     }
 
-    /// A host that records what it was asked to do and answers with whatever
-    /// the test wants — the app's real one tears down worktrees, which has no
-    /// place in a unit test of the tool's shape.
-    /// Each `(id, force, outcome)` the host was called with, shared with the test.
+    /// Each `(id, force, outcome)` a fake host was called with; the real host tears down worktrees,
+    /// which has no place in a unit test of the tool's shape.
     type HostCalls =
         std::sync::Arc<std::sync::Mutex<Vec<(i64, bool, Option<tt_store::TaskOutcome>)>>>;
 
-    /// Each start request the host was handed, shared with the test. Only the
-    /// fields a test asserts on — the whole point is that the dispatcher
-    /// resolved them from the row, so the host does no reads of its own.
+    /// Each start request the host was handed — only the fields a test asserts on.
     type StartCalls =
         std::sync::Arc<std::sync::Mutex<Vec<(i64, String, String, Option<String>, String)>>>;
 
@@ -2206,9 +2296,7 @@ mod tests {
 
     // task_start
 
-    /// Same contract as `task_delete`: without a host the tool must refuse
-    /// rather than half-do the job. There is nothing useful it could do alone —
-    /// minting a worktree and launching an agent are both the host's.
+    /// As with `task_delete`: without a host, refuse rather than half-do the job.
     #[test]
     fn task_start_without_a_host_refuses() {
         let mut dispatcher = dispatcher();
@@ -2216,9 +2304,7 @@ mod tests {
         assert!(message.contains("no task host"), "{message}");
     }
 
-    /// The dispatcher resolves everything from the row so the host reads
-    /// nothing: repo root from the binding, branch slugged from the title, and
-    /// the prompt as goal + notes.
+    /// Everything comes from the row, so the host reads nothing.
     #[test]
     fn task_start_resolves_branch_repo_and_prompt_from_the_row() {
         let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
@@ -2270,8 +2356,7 @@ mod tests {
         assert_eq!(base.as_deref(), Some("develop"));
     }
 
-    /// Starting a task that already holds a worktree would orphan the running
-    /// one — the guard exists so an agent retrying can't do that silently.
+    /// A second worktree would orphan the running one.
     #[test]
     fn task_start_refuses_a_task_that_already_has_a_worktree() {
         let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
@@ -2301,8 +2386,6 @@ mod tests {
         assert!(starts.lock().unwrap().is_empty(), "host must not be called");
     }
 
-    /// The seeded row has no repo binding, so there is no checkout to branch
-    /// from — that has to be said, not guessed at.
     #[test]
     fn task_start_refuses_a_task_with_no_repo_binding() {
         let (mut dispatcher, _, starts) = with_host_recording(deleted("unused", vec![]));
@@ -2320,8 +2403,7 @@ mod tests {
 
     #[test]
     fn start_prompt_prefers_goal_then_falls_back_to_the_title() {
-        // A real row rather than a synthesized one, so the fixture can't drift
-        // from what the store actually hands the dispatcher.
+        // A real row, so the fixture can't drift from what the store hands the dispatcher.
         let store = Store::open_in_memory().unwrap();
         let mut task = store.add_task("Card title", "backlog", None, None, NOW).unwrap();
 
@@ -2339,9 +2421,7 @@ mod tests {
         assert_eq!(task_start_prompt(&task), "Card title\n\n## Notes\n\nContext here.");
     }
 
-    /// The whole point of routing deletion through a host: a dispatcher with
-    /// none must refuse rather than quietly fall back to deleting the row,
-    /// which would strand the worktree on disk.
+    /// Without a host, refuse — deleting only the row would strand the worktree on disk.
     #[test]
     fn task_delete_without_a_host_refuses() {
         let mut dispatcher = dispatcher();
@@ -2363,15 +2443,13 @@ mod tests {
         );
         assert_eq!(result["status"], "deleted");
         assert_eq!(result["id"], 1);
-        // The name comes back from the host, which had to resolve the row
-        // anyway — the dispatcher never reads it a second time.
+        // The name comes from the host, which resolved the row anyway.
         assert_eq!(result["text"], "open task");
         assert_eq!(result["messages"][0], "removed the worktree");
         assert_eq!(*calls.lock().unwrap(), vec![(1, true, Some(tt_store::TaskOutcome::Abandoned))]);
     }
 
-    /// A bad outcome is rejected before the host acts; an omitted one reaches
-    /// the host as `None` — "infer from the row's evidence" is the host's call.
+    /// A bad outcome is rejected before the host acts; an omitted one reaches it as `None`.
     #[test]
     fn task_delete_validates_the_outcome_and_defaults_it_to_inference() {
         let (mut dispatcher, calls) = with_host(deleted("open task", vec![]));
@@ -2388,9 +2466,7 @@ mod tests {
         assert_eq!(*calls.lock().unwrap(), vec![(1, false, None)]);
     }
 
-    /// A guarded refusal is a normal result, not a tool error: reporting it as
-    /// an error would tell a calling agent the delete *failed* and invite a
-    /// retry with force, when it was declined on purpose.
+    /// A guarded refusal is a result, not an error — an error would invite a retry with force.
     #[test]
     fn task_delete_reports_a_refusal_as_a_normal_result() {
         let (mut dispatcher, calls) = with_host(Ok(TaskDeletion::Refused {
@@ -2420,9 +2496,7 @@ mod tests {
         assert!(calls.lock().unwrap().is_empty());
     }
 
-    /// An unknown id is the host's answer, not a pre-flight check here — it has
-    /// to resolve the row to delete it, so diagnosing it twice would be a second
-    /// read for a string the host already produces.
+    /// An unknown id is the host's answer: it resolves the row anyway.
     #[test]
     fn task_delete_surfaces_the_hosts_unknown_id_error() {
         let (mut dispatcher, calls) = with_host(Err("no board task #9999".to_string()));
@@ -2442,7 +2516,7 @@ mod tests {
         assert!(message.contains("unknown repo: nope/nope"), "{message}");
         assert!(message.contains(REPO_SLUG), "error should list tracked repos: {message}");
 
-        let mut empty = Dispatcher::new(seeded_store());
+        let mut empty = Dispatcher::new(seeded_store(), TEST_VERSION);
         let message =
             call_tool_err(&mut empty, "task_create", json!({ "repo": REPO_SLUG, "title": "x" }));
         assert!(message.contains("no repos are tracked"), "{message}");
@@ -2477,10 +2551,8 @@ mod tests {
         assert_eq!(open["tasks"].as_array().unwrap().len(), 1, "only the seeded task remains");
     }
 
-    /// The lane check is what stops a typo minting a calendar nothing will ever
-    /// write again — rows that still feed `calendar_next` and that no sweep
-    /// removes. Exactly the orphan-lane failure the v9 migration destroyed data
-    /// to avoid, so it has to hold at runtime too, not only at migration time.
+    /// The lane check stops a typo minting a calendar nothing writes again — the orphan-lane failure
+    /// the v9 migration destroyed data to avoid, so it must hold at runtime too.
     #[test]
     fn calendar_set_refuses_an_unconfigured_source() {
         let mut dispatcher = dispatcher();
@@ -2493,11 +2565,11 @@ mod tests {
         assert!(message.contains("google"), "refusal lists configured lanes: {message}");
     }
 
-    /// Fails closed: with nothing configured, every push is refused rather than
-    /// allowed to create the first lane implicitly.
+    /// Fails closed: nothing configured means every push is refused.
     #[test]
     fn calendar_set_refuses_everything_when_no_calendars_are_configured() {
-        let mut dispatcher = Dispatcher::new(seeded_store()).with_calendar_sources(vec![]);
+        let mut dispatcher =
+            Dispatcher::new(seeded_store(), TEST_VERSION).with_calendar_sources(vec![]);
         let message = call_tool_err(
             &mut dispatcher,
             "calendar_set",
@@ -2516,42 +2588,79 @@ mod tests {
         assert_eq!(result["written"], 0);
     }
 
-    /// Writes are flagged in the contract, not inferred from the wording of a
-    /// description — the UI's write warning is the only signal a human gets
-    /// before a mutation now that the capability gate is gone, so it must not
-    /// depend on an adjective someone might reword.
+    /// Writes are flagged in the contract, not inferred from a description: the UI's write warning
+    /// is the only signal a human gets before a mutation, so it must not hinge on an adjective.
     #[test]
-    fn mutating_tools_are_flagged_read_only_false() {
+    fn every_tool_states_all_four_hints_and_no_writer_claims_read_only() {
         let tools = tool_definitions();
         let tools = tools.as_array().unwrap();
-        let flag = |name: &str| {
-            tools
-                .iter()
-                .find(|t| t["name"] == name)
-                .and_then(|t| t["annotations"]["readOnlyHint"].as_bool())
+        let hint = |name: &str, key: &str| {
+            tools.iter().find(|t| t["name"] == name).and_then(|t| t["annotations"][key].as_bool())
         };
-        assert_eq!(flag("task_create"), Some(false), "task_create writes");
-        assert_eq!(flag("calendar_set"), Some(false), "calendar_set writes");
-        // Reads say so explicitly. The annotation is stamped from
-        // `WRITING_TOOLS`, so every tool carries the flag and a client never has
-        // to read "absent" as either answer.
-        assert_eq!(flag("task_list"), Some(true));
-        assert_eq!(flag("calendar_next"), Some(true));
+        assert_eq!(hint("task_delete", "destructiveHint"), Some(true));
+        assert_eq!(hint("task_create", "destructiveHint"), Some(false));
+        assert_eq!(hint("task_summary", "idempotentHint"), Some(true));
+        assert_eq!(hint("calendar_set", "idempotentHint"), Some(true));
+        // Mints a worktree and launches an agent: not read-only, whatever the transport repaints.
+        assert_eq!(hint("task_start", "readOnlyHint"), Some(false));
+        assert_eq!(hint("preview_file", "readOnlyHint"), Some(true));
 
-        // The wire flag and the transport's refresh decision come from one
-        // list, so they cannot disagree — this is the assertion that pins it.
         for tool in tools {
             let name = tool["name"].as_str().unwrap();
-            let read_only = tool["annotations"]["readOnlyHint"].as_bool().unwrap();
-            assert_eq!(read_only, !tool_writes(name), "{name}'s hint must match tool_writes");
+            let hints = &tool["annotations"];
+            for key in [
+                "readOnlyHint",
+                "destructiveHint",
+                "idempotentHint",
+                "openWorldHint",
+            ] {
+                assert!(hints[key].is_boolean(), "{name} omits {key}");
+            }
+            assert_eq!(hints["openWorldHint"], false, "{name} never leaves the machine");
+            assert_eq!(hints["title"], tool["title"], "{name}: one title, stated twice");
+            if tool_writes(name) {
+                assert_eq!(hints["readOnlyHint"], false, "{name} writes the store");
+            }
+        }
+        assert_eq!(TOOL_HINTS.len(), tools.len(), "a hint for a tool that no longer exists");
+    }
+
+    /// Inlined and dialect-free, so a client's 2020-12 validator reads it without a resolver.
+    #[test]
+    fn every_tool_declares_a_valid_output_schema() {
+        for tool in tool_definitions().as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            let schema = &tool["outputSchema"];
+            assert_eq!(schema["type"], "object", "{name}");
+            assert!(!schema.to_string().contains("$ref"), "{name} leaves a $ref to resolve");
+            assert!(schema.get("$schema").is_none(), "{name} names a dialect");
+            jsonschema::validator_for(schema).unwrap_or_else(|e| panic!("{name}: {e}"));
+            for format in formats(schema) {
+                assert!(["int64", "date-time"].contains(&format.as_str()), "{name}: {format}");
+            }
+        }
+    }
+
+    /// Every `format` a schema carries — Claude Code's validator warns aloud on one it
+    /// doesn't know (`uint64`), on every `tools/list`.
+    fn formats(schema: &Value) -> Vec<String> {
+        match schema {
+            Value::Object(map) => map
+                .iter()
+                .flat_map(|(key, value)| match (key.as_str(), value.as_str()) {
+                    ("format", Some(format)) => vec![format.to_string()],
+                    _ => formats(value),
+                })
+                .collect(),
+            Value::Array(items) => items.iter().flat_map(formats).collect(),
+            _ => Vec::new(),
         }
     }
 
     #[test]
     fn removed_tools_are_unknown() {
-        // The 2026-07 datamine (mutating tools) and tool-surface review (the
-        // broad dashboard reads) removed these outright; a straggling client
-        // gets a plain unknown-tool refusal, not a capability hint.
+        // Removed in the 2026-07 tool-surface review; a straggler gets the spec's protocol
+        // error, not an `isError` result — and not a refusal at the door, so still a 200.
         let mut dispatcher = dispatcher();
         for tool in [
             "todo_create",
@@ -2567,19 +2676,24 @@ mod tests {
             "snapshot",
             "collect_status",
         ] {
-            let message = call_tool_err(&mut dispatcher, tool, json!({}));
-            assert!(message.contains("unknown tool"), "{tool}: {message}");
+            let request = tool_call_request(tool, json!({}));
+            let handled = dispatcher.dispatch_at(&request, NOW, &RequestContext::none());
+            let response: Value = serde_json::from_str(&handled.response.unwrap()).unwrap();
+            assert_eq!(response["error"]["code"], INVALID_PARAMS, "{tool}: {response}");
+            assert!(response["error"]["message"].as_str().unwrap().contains(tool));
+            assert_eq!(handled.error_code, None, "{tool}");
         }
     }
 
     #[test]
     fn unknown_method_returns_method_not_found() {
         let mut dispatcher = dispatcher();
-        let request = json!({ "jsonrpc": "2.0", "id": 3, "method": "no/such" }).to_string();
-        let response: Value =
-            serde_json::from_str(&dispatcher.handle_at(&request, NOW).unwrap()).unwrap();
-        assert_eq!(response["id"], 3);
-        assert_eq!(response["error"]["code"], -32601);
+        // `ping` and `initialize` went with the handshake; nothing special about them.
+        for method in ["no/such", "ping", "initialize"] {
+            let response = parsed(&mut dispatcher, &request(3, method, json!({})));
+            assert_eq!(response["id"], 3);
+            assert_eq!(response["error"]["code"], METHOD_NOT_FOUND, "{method}");
+        }
     }
 
     #[test]
@@ -2593,8 +2707,7 @@ mod tests {
 
     #[test]
     fn batch_array_returns_invalid_request() {
-        // MCP 2025-06-18 dropped batching: a top-level array must get a single
-        // Invalid Request response, not be silently dropped as a notification.
+        // Batching is gone since 2025-06-18: one Invalid Request, not a silent drop.
         let mut dispatcher = dispatcher();
         let batch = r#"[{"jsonrpc":"2.0","id":1,"method":"ping"}]"#;
         let response: Value =
@@ -2614,78 +2727,55 @@ mod tests {
     }
 
     /// Drive a raw request line through the dispatcher, discarding its response.
-    fn drive(dispatcher: &mut Dispatcher, request: Value) {
+    fn drive(dispatcher: &mut Dispatcher, request: impl ToString) {
         dispatcher.handle_at(&request.to_string(), NOW);
     }
 
     #[test]
-    fn dispatch_records_initialize_client_and_tool_calls() {
+    fn dispatch_records_each_requests_own_client() {
         let mut dispatcher = dispatcher();
 
-        // The session's initialize carries the caller identity for the log.
-        drive(
-            &mut dispatcher,
-            json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": { "clientInfo": { "name": "claude-code", "version": "2.1" } },
-            }),
-        );
-        // A successful tool call, then a failing one (unknown tool).
-        drive(
-            &mut dispatcher,
-            json!({
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": { "name": "task_list", "arguments": { "why": "ship it" } },
-            }),
-        );
-        drive(
-            &mut dispatcher,
-            json!({
-                "jsonrpc": "2.0",
-                "id": 3,
-                "method": "tools/call",
-                "params": { "name": "does_not_exist", "arguments": {} },
-            }),
-        );
+        drive(&mut dispatcher, tool_call_request("task_list", json!({ "why": "ship it" })));
+        drive(&mut dispatcher, tool_call_request("does_not_exist", json!({})));
+        // A caller that sent no `clientInfo` is recorded as nobody, not as the last one.
+        let mut anonymous: Value =
+            serde_json::from_str(&request(3, "server/discover", json!({}))).unwrap();
+        anonymous["params"]["_meta"].as_object_mut().unwrap().remove(META_CLIENT_INFO);
+        drive(&mut dispatcher, anonymous);
 
         let calls = dispatcher.store.mcp_calls(10).unwrap();
         assert_eq!(calls.len(), 3, "one row per handled request: {calls:?}");
 
-        // Newest first: the failing unknown-tool call.
-        assert_eq!(calls[0].method, "tools/call");
-        assert_eq!(calls[0].tool.as_deref(), Some("does_not_exist"));
-        assert!(!calls[0].ok);
-        assert!(calls[0].error.is_some(), "failed call records an error");
-        assert!(calls[0].duration_ms.is_some());
-        // The client identity from initialize rides along on every later row.
-        assert_eq!(calls[0].client.as_deref(), Some("claude-code 2.1"));
+        // Newest first: the anonymous discover.
+        assert_eq!(calls[0].method, "server/discover");
+        assert!(calls[0].ok);
+        assert_eq!(calls[0].client, None);
+
+        // The failing unknown-tool call.
+        assert_eq!(calls[1].method, "tools/call");
+        assert_eq!(calls[1].tool.as_deref(), Some("does_not_exist"));
+        assert!(!calls[1].ok);
+        assert!(calls[1].error.is_some(), "failed call records an error");
+        assert!(calls[1].duration_ms.is_some());
+        assert_eq!(calls[1].client.as_deref(), Some("claude-code 2.1"));
 
         // The successful task_list call, with its compacted args and ts.
-        assert_eq!(calls[1].tool.as_deref(), Some("task_list"));
-        assert!(calls[1].ok);
-        assert_eq!(calls[1].error, None);
-        assert_eq!(calls[1].ts, NOW);
-        assert!(
-            calls[1].args.as_deref().is_some_and(|a| a.contains("ship it")),
-            "args should carry the payload: {:?}",
-            calls[1].args
-        );
-
-        // The initialize request itself: recorded, no tool, client stamped.
-        assert_eq!(calls[2].method, "initialize");
-        assert_eq!(calls[2].tool, None);
+        assert_eq!(calls[2].tool.as_deref(), Some("task_list"));
         assert!(calls[2].ok);
+        assert_eq!(calls[2].error, None);
+        assert_eq!(calls[2].ts, NOW);
+        assert!(
+            calls[2].args.as_deref().is_some_and(|a| a.contains("ship it")),
+            "args should carry the payload: {:?}",
+            calls[2].args
+        );
         assert_eq!(calls[2].client.as_deref(), Some("claude-code 2.1"));
     }
 
     #[test]
     fn dispatch_records_unknown_method_as_error() {
         let mut dispatcher = dispatcher();
-        drive(&mut dispatcher, json!({ "jsonrpc": "2.0", "id": 1, "method": "bogus/method" }));
+        drive(&mut dispatcher, request(1, "bogus/method", json!({})));
         let calls = dispatcher.store.mcp_calls(10).unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].method, "bogus/method");

@@ -143,6 +143,10 @@ fn term_start_blocking(
     if let Some(port) = crate::mcp_http::serving_port() {
         cmd.env(tt_mcp::port::MCP_PORT_ENV, port.to_string());
     }
+    // Claude Code negotiates the modern protocol on HTTP only behind a remote
+    // flag or this env; without it a session opens with `initialize`, which
+    // the 2026-07-28-only server refuses.
+    cmd.env("MCP_PROTOCOL_NEGOTIATION", "auto");
     // Short-circuits Claude Code's lockfile pid/cwd checks, so pairing stays
     // deterministic with several tasks' panes open.
     if let Some(ide) = &ide {

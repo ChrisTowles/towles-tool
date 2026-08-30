@@ -105,6 +105,11 @@ fn calls_file_open_with_the_absolute_path() {
     assert!(!head.contains("origin:"), "an Origin header would be refused by the app: {head}");
     assert_eq!(body["method"], "tools/call");
     assert_eq!(body["params"]["name"], "file_open");
+    // 2026-07-28: the version rides on the request, and the headers mirror the body.
+    assert_eq!(body["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"], "2026-07-28");
+    assert!(head.contains("mcp-protocol-version: 2026-07-28"), "{head}");
+    assert!(head.contains("mcp-method: tools/call"), "{head}");
+    assert!(head.contains("mcp-name: file_open"), "{head}");
     assert_eq!(
         body["params"]["arguments"]["path"],
         std::fs::canonicalize(&file).unwrap().to_string_lossy().into_owned(),
