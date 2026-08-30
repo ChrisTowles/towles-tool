@@ -13,6 +13,15 @@ const valid = {
   promptImprovers: [
     { id: "direct", label: "Direct", enabled: true, preferred: true, prompt: "Restate it." },
   ],
+  savedViews: [
+    {
+      id: "gh-failures",
+      label: "gh failures",
+      filters: [{ field: "outcome", op: "neq", value: "ok" }],
+      days: 1,
+      query: "",
+    },
+  ],
   collectors: {
     calendar: {
       enabled: false,

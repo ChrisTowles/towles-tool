@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { PromptImproverListSchema, UserSettingsSchema } from "./schemas/settings";
 import { invoke } from "./tauri";
 import { slugify } from "./slug";
+import type { Filter } from "./telemetry";
 
 /** Client-side view of the shared user settings (`crates/tt-config`), co-owned
  * by the TS CLI — so a save carries the whole object forward. */
@@ -111,6 +112,27 @@ export function withDefaultPromptImprovers(
   ];
 }
 
+/** A named Log-tab query — `tt_config::SavedView`. `days` is how far back it
+ * reads; `filters` is the chip bar's predicate list. */
+export type SavedView = {
+  id: string;
+  label: string;
+  filters: Filter[];
+  days: number;
+  query: string;
+};
+
+/** Permanent key, as {@link nextCalendarSourceId}. */
+export function nextSavedViewId(views: SavedView[], label: string): string {
+  const taken = new Set(views.map((v) => v.id));
+  const base = slugify(label) || "view";
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 export type CalendarCollector = {
   enabled: boolean;
   refreshMinutes: number;
@@ -150,6 +172,7 @@ export type UserSettings = {
   preferredEditor: string;
   journalSettings: JournalSettings;
   promptImprovers: PromptImprover[];
+  savedViews: SavedView[];
   collectors: CollectorsSettings;
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through

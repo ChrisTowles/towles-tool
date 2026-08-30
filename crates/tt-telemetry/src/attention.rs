@@ -410,6 +410,7 @@ mod tests {
         let mut object = fields.as_object().cloned().unwrap_or_default();
         object.insert("message".into(), Value::from(message));
         TelemetryRecord {
+            pid: None,
             ts: ts.to_string(),
             kind: "event".into(),
             level: "INFO".into(),
@@ -425,6 +426,7 @@ mod tests {
 
     fn spawn(ts: &str, executable: &str, duration_ms: i64, outcome: &str) -> TelemetryRecord {
         TelemetryRecord {
+            pid: None,
             ts: ts.to_string(),
             kind: "span".into(),
             level: "DEBUG".into(),

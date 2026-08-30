@@ -6,8 +6,8 @@ use serde_json::{Map, Value};
 
 use crate::event_log::event_log_date;
 use crate::schema::{
-    FIELD_DURATION_MS, FIELD_KIND, FIELD_LEVEL, FIELD_NAME, FIELD_TARGET, FIELD_TS,
-    FIELD_TT_BUILD_SHA, FIELD_TT_TASK,
+    FIELD_DURATION_MS, FIELD_KIND, FIELD_LEVEL, FIELD_NAME, FIELD_PROCESS_PID, FIELD_TARGET,
+    FIELD_TS, FIELD_TT_BUILD_SHA, FIELD_TT_TASK,
 };
 use crate::{Error, Result, TelemetryRecord};
 
@@ -87,6 +87,7 @@ fn parse_line(line: &str) -> Option<TelemetryRecord> {
     let tt_task = take_string(&mut obj, FIELD_TT_TASK);
     let tt_build_sha = take_string(&mut obj, FIELD_TT_BUILD_SHA);
     let duration_ms = obj.remove(FIELD_DURATION_MS).and_then(|v| v.as_i64());
+    let pid = obj.get(FIELD_PROCESS_PID).and_then(|v| v.as_i64());
     for key in crate::schema::RESOURCE_KEYS {
         obj.remove(*key);
     }
@@ -100,6 +101,7 @@ fn parse_line(line: &str) -> Option<TelemetryRecord> {
         tt_task,
         tt_build_sha,
         duration_ms,
+        pid,
         fields: Value::Object(obj),
         raw: line.to_string(),
     })
@@ -220,8 +222,10 @@ mod tests {
         assert_eq!(r.name, "ui.action");
         assert_eq!(r.tt_task.as_deref(), Some("feat-x"));
         assert_eq!(r.duration_ms, None);
+        assert_eq!(r.pid, Some(1));
         assert_eq!(r.fields["action"], "repo.icon_set");
         assert!(r.fields.get("service.name").is_none());
+        assert!(r.fields.get("process.pid").is_none());
     }
 
     #[test]
