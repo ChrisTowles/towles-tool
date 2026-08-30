@@ -266,11 +266,38 @@ describe("branchRedundant", () => {
     expect(branchRedundant("feature-4-fix-thing", "feature/4-fix-thing")).toBe(true);
   });
 
+  it("matches the human task title the branch was minted from", () => {
+    expect(
+      branchRedundant("Switch to public comment-budget", "chore/switch-to-public-comment-budget"),
+    ).toBe(true);
+    expect(branchRedundant("Give titles the line", "feat/give-titles-the-line")).toBe(true);
+    expect(branchRedundant("Give titles the line", "give-titles-the-line")).toBe(true);
+  });
+
+  it("matches the de-slugified fallback title, whose prefix is already gone", () => {
+    expect(
+      branchRedundant(
+        humanizeFolderName("feat-model-indicator-badge"),
+        "feat/model-indicator-badge",
+      ),
+    ).toBe(true);
+  });
+
   it("keeps the label when they differ", () => {
     expect(branchRedundant("towles-tool", "main")).toBe(false);
+    expect(branchRedundant("Root", "main")).toBe(false);
     expect(branchRedundant("feat-model-indicator-badge", "feat/other-branch")).toBe(false);
+    expect(
+      branchRedundant("Switch to public comment-budget", "chore/switch-to-private-budget"),
+    ).toBe(false);
     expect(branchRedundant("feat-model-indicator-badge", null)).toBe(false);
     expect(branchRedundant("feat-model-indicator-badge", undefined)).toBe(false);
+  });
+
+  it("never strips the title's own leading word, so it can't match another type", () => {
+    // "Fix the thing" is the whole of `fix/the-thing`, word for word.
+    expect(branchRedundant("Fix the thing", "fix/the-thing")).toBe(true);
+    expect(branchRedundant("Fix the thing", "chore/the-thing")).toBe(false);
   });
 
   it("collapses runs and strips trailing dashes like tt-git's slug", () => {
