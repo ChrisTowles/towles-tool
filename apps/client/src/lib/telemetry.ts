@@ -139,3 +139,37 @@ export function loadTelemetryFilters(raw: string | null): TelemetryFilters {
 export function saveTelemetryFilters(filters: TelemetryFilters): void {
   localStorage.setItem(TELEMETRY_FILTERS_KEY, JSON.stringify(filters));
 }
+
+/** The Dashboard tab's aggregate over a range of days — like `AttentionSummary`,
+ * computed in Rust (`crates/tt-telemetry/src/dashboard.rs`), never from records. */
+export type DashboardRange = 1 | 3 | 7 | 14;
+export type DashboardGroupBy = "executable" | "task" | "working_directory";
+
+export type DashboardSeries = { name: string; count: number; failures: number; totalMs: number };
+
+export type DashboardSummary = {
+  days: string[];
+  /** `hour` keys are local `YYYY-MM-DD HH`; `day` keys are the UTC file date. */
+  bucket: "hour" | "day";
+  groupBy: DashboardGroupBy;
+  recordCount: number;
+  spawnCount: number;
+  /** Stacking order, busiest first, `other` last when the tail was folded. */
+  series: string[];
+  buckets: { key: string; spawnsByExec: DashboardSeries[] }[];
+  byExecutable: {
+    name: string;
+    count: number;
+    failures: number;
+    p50Ms: number;
+    p95Ms: number;
+    maxMs: number;
+    totalMs: number;
+  }[];
+  waitByDay: { day: string; count: number; totalMs: number }[];
+  focus: { focusedMs: number; longestMs: number };
+  notifications: { fired: number; skipped: number };
+};
+
+export const telemetryDashboard = (days: DashboardRange, groupBy: DashboardGroupBy) =>
+  invoke<DashboardSummary>("telemetry_dashboard", { days, groupBy });

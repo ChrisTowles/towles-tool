@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  BarChart3,
   CircleAlert,
   Gauge,
   Keyboard,
@@ -38,14 +39,20 @@ import {
   saveTelemetryFilters,
   TELEMETRY_FILTERS_KEY,
   telemetryAttention,
+  telemetryDashboard,
   telemetryDays,
   telemetryEvents,
   type AttentionSummary,
+  type DashboardGroupBy,
+  type DashboardRange,
+  type DashboardSummary,
   type KindFilter,
   type LevelFilter,
   type TelemetryRecord,
 } from "@/lib/telemetry";
 import { AttentionTab } from "@/screens/telemetry/attention-tab";
+import { DEFAULT_GROUP, DEFAULT_RANGE, DashboardTab } from "@/screens/telemetry/dashboard-tab";
+import type { LogPoint } from "@/screens/telemetry/dashboard-charts";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
@@ -96,6 +103,10 @@ export function TelemetryScreen() {
   const [attentionLoading, setAttentionLoading] = useState(false);
   const [keyboard, setKeyboard] = useState<KeyboardScore | null>(null);
   const [keyboardLoading, setKeyboardLoading] = useState(false);
+  const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [dashboardRange, setDashboardRange] = useState<DashboardRange>(DEFAULT_RANGE);
+  const [dashboardGroup, setDashboardGroup] = useState<DashboardGroupBy>(DEFAULT_GROUP);
 
   useEffect(() => {
     saveTelemetryFilters({ level, kind, target, query });
@@ -145,6 +156,20 @@ export function TelemetryScreen() {
     setKeyboardLoading(false);
   }
 
+  /** Range-scoped like the keyboard score, so it ignores the day picker too. */
+  async function loadDashboard() {
+    setDashboardLoading(true);
+    const r = await telemetryDashboard(dashboardRange, dashboardGroup);
+    r.match({
+      ok: setDashboard,
+      err: (e) => {
+        setDashboard(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not build the dashboard: ${errorMessage(e)}`);
+      },
+    });
+    setDashboardLoading(false);
+  }
+
   /** Re-lists the available days and resolves the selected one if unset. */
   async function refreshDays() {
     const daysResult = await telemetryDays();
@@ -167,6 +192,7 @@ export function TelemetryScreen() {
     if (day) void loadEvents(day);
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
+    if (tab === "dashboard") void loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only on focus/mount; refreshDays/loadEvents/day are read fresh, not tracked (a changed day reloads via the effect below)
   }, [activeTab]);
 
@@ -187,12 +213,26 @@ export function TelemetryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAttention is read fresh, not tracked
   }, [tab, day]);
 
+  useEffect(() => {
+    if (tab === "dashboard") void loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadDashboard is read fresh, not tracked
+  }, [tab, dashboardRange, dashboardGroup]);
+
   function manualRefresh() {
     uiAction("telemetry.refresh", "telemetry");
     void refreshDays();
     if (day) void loadEvents(day);
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
+    if (tab === "dashboard") void loadDashboard();
+  }
+
+  /** A chart point becomes a Log search: the series name as the query, and the
+   * day picker moved to that day when the log has it. */
+  function openLogAt(point: LogPoint) {
+    setQuery(point.executable ?? "");
+    if (days?.includes(point.day)) setDay(point.day);
+    switchTab("log");
   }
 
   function switchTab(next: string) {
@@ -322,6 +362,10 @@ export function TelemetryScreen() {
             <LayoutDashboard className="size-4" />
             Overview
           </TabsTrigger>
+          <TabsTrigger value="dashboard" className="justify-start gap-2 px-2 py-1.5">
+            <BarChart3 className="size-4" />
+            Dashboard
+          </TabsTrigger>
           <TabsTrigger value="attention" className="justify-start gap-2 px-2 py-1.5">
             <Gauge className="size-4" />
             Attention
@@ -347,6 +391,19 @@ export function TelemetryScreen() {
               levelCounts={levelCounts}
               day={day}
               onOpenLog={() => switchTab("log")}
+            />
+          </TabsContent>
+
+          <TabsContent value="dashboard" className="p-4">
+            <DashboardTab
+              summary={dashboard}
+              loading={dashboardLoading}
+              range={dashboardRange}
+              group={dashboardGroup}
+              onRange={setDashboardRange}
+              onGroup={setDashboardGroup}
+              onRefresh={() => void loadDashboard()}
+              onOpenLog={openLogAt}
             />
           </TabsContent>
 

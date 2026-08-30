@@ -12,7 +12,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::{Duration, Utc};
-use tt_telemetry::{AttentionSummary, KeyboardDay, KeyboardScore, TelemetryRecord};
+use tt_telemetry::{
+    AttentionSummary, Bucket, DashboardSummary, GroupBy, KeyboardDay, KeyboardScore,
+    TelemetryRecord,
+};
 
 fn telemetry_dir() -> Result<PathBuf, String> {
     tt_config::telemetry_dir().map_err(|e| e.to_string())
@@ -110,4 +113,26 @@ fn keyboard_day(dir: &Path, date: &str, is_today: bool) -> Result<KeyboardDay, S
         cache.get_or_insert_with(HashMap::new).insert(date.to_string(), day.clone());
     }
     Ok(day)
+}
+
+/// The last `days` UTC calendar days, today included: an empty day shows as a
+/// gap rather than the range silently reaching further back.
+#[tauri::command]
+pub async fn telemetry_dashboard(days: u32, group_by: String) -> Result<DashboardSummary, String> {
+    let dir = telemetry_dir()?;
+    let group_by =
+        GroupBy::parse(&group_by).ok_or_else(|| format!("unknown group_by: {group_by}"))?;
+    let days = i64::from(days).clamp(1, KEYBOARD_WINDOW_DAYS);
+    tauri::async_runtime::spawn_blocking(move || {
+        let today = Utc::now().date_naive();
+        let dates: Vec<String> = (0..days)
+            .rev()
+            .map(|back| (today - Duration::days(back)).format("%Y-%m-%d").to_string())
+            .collect();
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        let bucket = if days == 1 { Bucket::Hour } else { Bucket::Day };
+        Ok(tt_telemetry::summarize_dashboard(&dates, &records, bucket, group_by))
+    })
+    .await
+    .map_err(|e| format!("telemetry dashboard task panicked: {e}"))?
 }
