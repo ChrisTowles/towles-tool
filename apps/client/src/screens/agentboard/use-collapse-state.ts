@@ -37,8 +37,12 @@ export function useCollapseState(state: StatePayload): CollapseState {
 
   function applyCollapse(changes: CollapseChange[]) {
     if (changes.length === 0) return;
-    for (const c of changes) void invoke("ab_save_collapsed", { key: c.key, collapsed: c.collapsed });
-    setCollapsed((c) => ({ ...c, ...Object.fromEntries(changes.map((n) => [n.key, n.collapsed])) }));
+    for (const c of changes)
+      void invoke("ab_save_collapsed", { key: c.key, collapsed: c.collapsed });
+    setCollapsed((c) => ({
+      ...c,
+      ...Object.fromEntries(changes.map((n) => [n.key, n.collapsed])),
+    }));
   }
 
   // Whole-rail icon collapse (issue #70): same persisted map, sentinel key.

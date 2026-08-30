@@ -70,6 +70,17 @@ alias in `lib/term-protocol.ts` covers Ctrl+Shift+C/V. It stops at shift on
 purpose: bare Ctrl is the shell's (⌃C is SIGINT, ⌃D is EOF), which is also why a
 mac Ctrl chord no binding claims never matches on its main key alone.
 
+## The rail is one tree with one cursor
+
+`lib/rail-nodes.ts` flattens the rail to the rows on screen — repo, checkout,
+session — and the cursor (Ctrl+Shift+arrows), the 1–9 jump digits
+(`lib/rail-hotkeys.ts`) and the fold chords all read that one walk, so a new
+rail row is unreachable by keyboard until it appears there. The cursor is a
+`RailNode` rather than a key, so `resolveCursor` hands it to the nearest
+surviving row when its own goes (repo folds, worktree deleted). Exactly one row
+wears `ring-violet-500`; the violet *edge* answers a different question —
+which checkout you are working in.
+
 ## A pane has no PTY until it is rendered
 
 Terminal rendering is a custom protocol, not xterm.js: `lib/term-protocol.ts`

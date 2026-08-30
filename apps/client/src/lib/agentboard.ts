@@ -645,23 +645,6 @@ function cycleWhere(
   return all[chosen];
 }
 
-export function cycleSession(
-  repos: RepoData[],
-  fromSessionId: string | null,
-  direction: "next" | "prev",
-): SessionData | null {
-  const all: SessionData[] = [];
-  for (const r of repos) for (const f of r.folders) for (const s of f.sessions) all.push(s);
-  if (all.length === 0) return null;
-
-  const fromIndex = fromSessionId ? all.findIndex((s) => s.id === fromSessionId) : -1;
-
-  if (direction === "next") {
-    return fromIndex === -1 ? all[0] : all[(fromIndex + 1) % all.length];
-  }
-  return fromIndex === -1 ? all[all.length - 1] : all[(fromIndex - 1 + all.length) % all.length];
-}
-
 export function liveSessions(folder: FolderData): SessionData[] {
   return folder.sessions.filter((s) => s.live);
 }
@@ -767,16 +750,16 @@ export function searchRepos(repos: RepoData[], query: string): RepoData[] {
   return kept;
 }
 
-/** One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. */
+/** One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. The
+ * rail level is the tree walk in `rail-nodes.ts`; this covers the rest. */
 export type FocusLevel = "rail" | "window" | "pane";
 
 export type FocusMove =
-  | { kind: "session"; direction: "next" | "prev" }
   | { kind: "level"; level: FocusLevel }
   | { kind: "pane"; id: string }
   | { kind: "window"; id: string };
 
-// Right descends rail → window strip → panes, skipping the window level for a
+// Right descends the window strip → panes, skipping the window level for a
 // single-window folder; Left and Up climb back out, ending on the rail.
 export function moveFocus(args: {
   level: FocusLevel;
@@ -790,13 +773,6 @@ export function moveFocus(args: {
   const multiWin = windows.length > 1;
   const firstPane = (): FocusMove | null =>
     panes.length > 0 ? { kind: "pane", id: panes[0] } : null;
-
-  if (level === "rail") {
-    if (direction === "up") return { kind: "session", direction: "prev" };
-    if (direction === "down") return { kind: "session", direction: "next" };
-    if (direction === "right") return multiWin ? { kind: "level", level: "window" } : firstPane();
-    return null;
-  }
 
   if (level === "window") {
     const wi = activeWindowId ? windows.indexOf(activeWindowId) : -1;

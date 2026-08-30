@@ -40,6 +40,7 @@ export function SessionRow({
   compactPct,
   title,
   active,
+  cursor,
   hotkey,
   renaming,
   overlay,
@@ -53,6 +54,8 @@ export function SessionRow({
   compactPct: number;
   title?: string;
   active: boolean;
+  /** Under the rail cursor — the row the arrows are steering. */
+  cursor: boolean;
   /** 1–9 while the jump chord is held and this row is one of the first nine. */
   hotkey?: number;
   renaming: boolean;
@@ -106,6 +109,7 @@ export function SessionRow({
           "relative ml-1.5 flex cursor-pointer items-center gap-2 border-l-2 border-transparent py-1 pr-3 pl-9",
           hovered && !needs && "bg-accent",
           active && !needs && "border-l-violet-500 bg-accent",
+          cursor && "ring-1 ring-inset ring-violet-500",
           // Needs-you wins over hover/active for both the edge and the fill —
           // a thin 2px border alone was too easy to miss scanning the rail, so
           // the whole row washes amber, not just its left pixel.
