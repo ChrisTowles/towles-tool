@@ -27,6 +27,30 @@ shots as long as it isn't moved):
 convert full.png -crop <W>x<H>+<X>+<Y> +repage app.png
 ```
 
+### The "Allow Towles Tool to Take Screenshots?" dialog
+
+`cosmic-screenshot` is a client of `org.freedesktop.portal.Screenshot`, and
+xdg-desktop-portal gates each app-id behind a one-time Access dialog. The
+app-id comes from the caller's systemd scope, and everything spawned from a
+terminal pane inside the app inherits it
+(`app-cosmic-dev.towles.tool-<pid>.scope` → `dev.towles.tool` →
+`Name=Towles Tool`). Run the same command from a terminal outside the app and
+the app-id is `""` — a separate row, granted separately.
+
+The grant is only written when the dialog is *answered*; a Deny or a timeout
+(`Failed to show access dialog: Timeout was reached` in
+`journalctl --user -u xdg-desktop-portal`) leaves it unset and the next capture
+re-prompts. Grant both rows once, without waiting for a dialog:
+
+```sh
+flatpak permission-set screenshot screenshot dev.towles.tool yes
+flatpak permission-set screenshot screenshot "" yes
+flatpak permission-list screenshot   # verify
+```
+
+It lands in `~/.local/share/flatpak/db/screenshot` and survives reboots and
+app rebuilds.
+
 ## Driving the UI (no input injection)
 
 There is no working synthetic input on this setup — `xdotool` can't reach
