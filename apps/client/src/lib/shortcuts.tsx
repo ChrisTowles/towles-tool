@@ -248,6 +248,34 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
+    id: "ab-collapse",
+    scope: "agentboard",
+    keys: "alt+shift+arrowleft",
+    description: "Collapse the focused checkout, then its repo",
+    allowInEditable: true,
+  },
+  {
+    id: "ab-expand",
+    scope: "agentboard",
+    keys: "alt+shift+arrowright",
+    description: "Expand the focused repo, then its checkout",
+    allowInEditable: true,
+  },
+  {
+    id: "ab-collapse-all",
+    scope: "agentboard",
+    keys: "alt+shift+arrowup",
+    description: "Collapse every repo on the rail",
+    allowInEditable: true,
+  },
+  {
+    id: "ab-expand-all",
+    scope: "agentboard",
+    keys: "alt+shift+arrowdown",
+    description: "Expand every repo on the rail",
+    allowInEditable: true,
+  },
+  {
     // Bare Enter is safe because the handler declines (returns `false`) when a
     // button/link/dialog has DOM focus, so the browser's native Enter still runs.
     id: "ab-focus-terminal",
@@ -290,6 +318,10 @@ const KEYCAP_LABELS: Record<string, string> = {
   backspace: "⌫",
   delete: "Del",
   enter: "Enter",
+  arrowup: "↑",
+  arrowdown: "↓",
+  arrowleft: "←",
+  arrowright: "→",
 };
 
 /** `["⌘","⇧","W"]` on mac, `["Ctrl","Shift","W"]` elsewhere. */
@@ -368,7 +400,7 @@ function matches(spec: KeySpec, e: KeyboardEvent): boolean {
   if (IS_MAC && e.ctrlKey && !macCtrlAlias(spec, e)) return false;
   // `?` arrives as key "?" with shiftKey set — compare shift only for
   // modifier-style specs, where shift is a deliberate chord component.
-  const shiftOk = spec.mod ? e.shiftKey === spec.shift : true;
+  const shiftOk = spec.mod || spec.shift ? e.shiftKey === spec.shift : true;
   return mod === spec.mod && shiftOk && e.altKey === spec.alt && keyMatches(spec.key, e);
 }
 

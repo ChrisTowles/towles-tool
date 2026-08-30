@@ -43,6 +43,7 @@ import {
 } from "@/lib/agentboard";
 import { taskAdoptWorktree, type PrItem, type TaskItem } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
@@ -298,6 +299,7 @@ export function RepoGroup({
           settingUpSince={settingUpSince}
           actions={actions}
           onToggle={() => {
+            mouseAction(isCollapsed ? "ab-expand" : "ab-collapse", "agentboard");
             onToggle(repo.key);
             onSelectFolder(folder.dir);
           }}
@@ -458,6 +460,7 @@ export function RepoGroup({
                   settingUpSince={settingUpSince}
                   actions={actions}
                   onToggle={() => {
+                    mouseAction(fCollapsed ? "ab-expand" : "ab-collapse", "agentboard");
                     onToggle(key);
                     onSelectFolder(folder.dir);
                   }}

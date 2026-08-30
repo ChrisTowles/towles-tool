@@ -22,6 +22,27 @@ function key(overrides: Partial<KeyboardEvent>): KeyboardEvent {
   } as KeyboardEvent;
 }
 
+describe("rail collapse chords", () => {
+  it("matches Alt+Shift+arrow and nothing looser", () => {
+    const left = key({ altKey: true, shiftKey: true, key: "ArrowLeft" });
+    expect(matchesShortcut("ab-collapse", left)).toBe(true);
+    expect(matchesShortcut("ab-expand", left)).toBe(false);
+    // A shift-less spec is lenient about shift; a shift-bearing one must not be,
+    // or bare Alt+arrow (word-wise motion in the shell) would fold the rail.
+    expect(matchesShortcut("ab-collapse", key({ altKey: true, key: "ArrowLeft" }))).toBe(false);
+    expect(
+      matchesShortcut("ab-collapse", key({ ctrlKey: true, altKey: true, shiftKey: true, key: "ArrowLeft" })),
+    ).toBe(false);
+  });
+
+  it("labels the arrows as glyphs, and yields the chord from a terminal", () => {
+    expect(shortcutHint("ab-collapse-all")).toBe("Shift+Alt+↑");
+    expect(matchesEditableOverride(key({ altKey: true, shiftKey: true, key: "ArrowDown" }))).toBe(
+      true,
+    );
+  });
+});
+
 describe("tab shortcuts", () => {
   it("registers a jump binding for each digit 1–9", () => {
     for (let n = 1; n <= 9; n++) {

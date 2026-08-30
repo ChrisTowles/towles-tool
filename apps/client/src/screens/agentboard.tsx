@@ -89,6 +89,7 @@ import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
+import { railCollapseMove, type CollapseDirection } from "@/lib/rail-collapse";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
@@ -146,7 +147,8 @@ export function AgentboardScreen() {
   // Only *crashes* land here — a clean logout takes its pane with it.
   const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
   const expectedKills = useRef<Set<string>>(new Set());
-  const { collapsed, toggleCollapsed, railCollapsed, toggleRail } = useCollapseState(state);
+  const { collapsed, toggleCollapsed, applyCollapse, railCollapsed, toggleRail } =
+    useCollapseState(state);
   // Filtered-out folders demote to a per-repo "N idle" stub, never hidden.
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether worktrees `tt task` didn't create get rail folders at all.
@@ -625,6 +627,19 @@ export function AgentboardScreen() {
     setFocusLevel("pane");
   }
 
+  // Declining when nothing changes leaves the chord to the platform.
+  function collapseByArrow(direction: CollapseDirection): boolean {
+    const changes = railCollapseMove({
+      repos: shownRepos,
+      activeFolderDir,
+      collapsed,
+      direction,
+    });
+    if (changes.length === 0) return false;
+    applyCollapse(changes);
+    return true;
+  }
+
   // One cursor over rail, window strip and panes; the arrows move whichever is
   // focused. Transitions live in `moveFocus` — this just applies its verdict.
   function focusByArrow(direction: "up" | "down" | "left" | "right") {
@@ -1018,6 +1033,10 @@ export function AgentboardScreen() {
         "ab-focus-down-bracket": () => focusByArrow("down"),
         "ab-focus-left": () => focusByArrow("left"),
         "ab-focus-right": () => focusByArrow("right"),
+        "ab-collapse": () => collapseByArrow("left"),
+        "ab-expand": () => collapseByArrow("right"),
+        "ab-collapse-all": () => collapseByArrow("up"),
+        "ab-expand-all": () => collapseByArrow("down"),
         "ab-focus-terminal": focusActiveTerminal,
         "ab-split-session": splitIntoWindow,
         "ab-new-terminal-right": () => {
@@ -1027,6 +1046,7 @@ export function AgentboardScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers are stable within a render; only the state they close over (listed) should rebuild the map
       [
         activeFolderDir,
+        collapsed,
         hotkeyTargets,
         selected,
         focusedPaneId,
