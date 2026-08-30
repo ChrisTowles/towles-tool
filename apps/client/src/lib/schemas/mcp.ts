@@ -18,9 +18,8 @@ export const McpToolDocSchema = z.object({
     properties: z.record(z.string(), McpToolParamSchema).default({}),
     required: z.array(z.string()).default([]),
   }),
-  /** MCP's own tool annotations. The server emits `readOnlyHint: false` on the
-   * tools that write and omits the whole block otherwise, so absence means
-   * "no claim made", not "read-only". */
+  /** MCP's own tool annotations. The server stamps `readOnlyHint` on every
+   * tool from its writing-tools list, so it is never absent in practice. */
   annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
 });
 
