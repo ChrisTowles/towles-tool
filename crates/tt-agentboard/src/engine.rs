@@ -229,6 +229,11 @@ impl Engine {
             .show_unmanaged_worktrees
             .unwrap_or(tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES);
 
+        let mut sessions = SessionStore::new(Some(default_sessions_path()));
+        if sessions.drop_never_used() {
+            persisted(sessions.save(), "sessions");
+        }
+
         Self {
             projects_dir: projects_dir.clone(),
             repo_paths: load_repos(&repos_path),
@@ -237,7 +242,7 @@ impl Engine {
             repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),
-            sessions: SessionStore::new(Some(default_sessions_path())),
+            sessions,
             folder_meta: crate::folder_meta::FolderMetaStore::new(Some(
                 crate::folder_meta::default_folder_meta_path(),
             )),
@@ -609,15 +614,6 @@ impl Engine {
         let entries = repo_entries(&all_paths);
         let rows_by_dir: HashMap<String, RailRow> =
             rows.into_iter().map(|r| (r.dir.clone(), r)).collect();
-        let mut seeded = false;
-        for entry in &entries {
-            if self.sessions.ensure_default(&entry.dir, now) {
-                seeded = true;
-            }
-        }
-        if seeded {
-            persisted(self.sessions.save(), "sessions");
-        }
         let payload = self.compute_payload_for_entries(&entries, &rows_by_dir, snapshot, now);
         // Never on an empty entry set, far likelier a transient glitch than a real
         // config wipe; a genuine remove-all prunes on the next poll.
@@ -1078,6 +1074,25 @@ mod engine_tests {
         assert!(!e.remove_repo("/repo/a"));
         assert!(!e.repo_dirs().contains(&"/repo/a".to_string()));
         assert!(e.repo_dirs().contains(&"/repo/b".to_string()));
+    }
+
+    #[test]
+    fn a_tracked_folder_is_listed_with_no_sessions_until_one_is_created() {
+        let (_tmp, mut e) = engine();
+        assert!(e.add_repo("/repo/quiet"));
+        let snapshot = AgentSnapshot {
+            live_threads: HashSet::new(),
+            tt_session_by_thread: HashMap::new(),
+            session_agents: HashMap::new(),
+        };
+
+        let payload = e.compute_payload_with(&snapshot, 1000);
+        assert_eq!(payload.repos[0].folders[0].dir, "/repo/quiet");
+        assert!(payload.repos[0].folders[0].sessions.is_empty());
+
+        e.add_session("/repo/quiet", None, 1001);
+        let payload = e.compute_payload_with(&snapshot, 1002);
+        assert_eq!(payload.repos[0].folders[0].sessions.len(), 1);
     }
 
     #[test]

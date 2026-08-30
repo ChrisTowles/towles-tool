@@ -1,8 +1,9 @@
 //! Persisted PTY-session records per folder (Folder Rail). A "session" is one
 //! xterm PTY shell rooted in a checkout; Claude Code runs *inside* one. The
 //! records (id + display name + createdAt) persist to the app's own file,
-//! `~/.config/towles-tool/agentboard/sessions.json`, so a folder's sessions
-//! survive restarts even though the PTYs themselves are respawned lazily.
+//! `~/.config/towles-tool/agentboard/sessions.json`, so a session that was used
+//! survives restarts (its PTY is respawned lazily) — see [`SessionStore::drop_never_used`]
+//! for the one nothing ever ran in, which does not.
 //!
 //! Sits beside `repos.json` (same per-file, not-in-shared-settings pattern; see
 //! [`crate::repos`]). Path-parameterized so tests use a tempdir; `now_ms` is
@@ -34,6 +35,19 @@ pub struct SessionRecord {
     /// input to the resume picker (see [`crate::resume`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_claude_session_id: Option<String>,
+}
+
+impl SessionRecord {
+    /// Nothing ever ran here: no Claude session was seen, no launch purpose was
+    /// recorded, and the generated name still stands.
+    fn never_used(&self) -> bool {
+        self.purpose.is_none()
+            && self.last_claude_session_id.is_none()
+            && self
+                .name
+                .strip_prefix("shell ")
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    }
 }
 
 /// On-disk shape: `{ "folders": { "<folderDir>": [ {id,name,createdAt}, ... ] },
@@ -93,17 +107,41 @@ impl SessionStore {
         self.folders.iter().map(|(dir, list)| (dir.as_str(), list.as_slice()))
     }
 
-    /// Seed a default `shell 1` for a folder we've never seen before. A folder
-    /// whose sessions were all deliberately closed keeps its (empty) entry and
-    /// is NOT re-seeded — zero-session folders are a legitimate state the UI
-    /// renders as "no sessions". Returns whether a record was created (caller
-    /// persists on `true`).
+    /// Seed a `shell 1` for a folder that has no sessions. Only an explicit "I
+    /// need a session here" calls this — nothing is seeded for a folder merely
+    /// being tracked, or the rail would list shells nobody started. Returns
+    /// whether a record was created (caller persists on `true`).
     pub fn ensure_default(&mut self, dir: &str, now_ms: i64) -> bool {
-        if !self.folders.contains_key(dir) {
+        if self.sessions_for(dir).is_empty() {
             self.add(dir, None, now_ms);
             return true;
         }
         false
+    }
+
+    /// Drop every record nothing ever ran in, forgetting an emptied folder
+    /// outright so its next session is `shell 1` again. Startup-only: a PTY
+    /// dies with the app that owned it, so at load such a record describes a
+    /// shell that does not exist. Returns whether anything went; caller
+    /// persists.
+    pub fn drop_never_used(&mut self) -> bool {
+        let mut touched: Vec<String> = Vec::new();
+        for (dir, list) in self.folders.iter_mut() {
+            let before = list.len();
+            list.retain(|r| !r.never_used());
+            if list.len() != before {
+                touched.push(dir.clone());
+            }
+        }
+        for dir in &touched {
+            if self.folders.get(dir).is_some_and(Vec::is_empty) {
+                self.folders.remove(dir);
+                self.next_seq.remove(dir);
+            }
+        }
+        let dropped = !touched.is_empty();
+        self.dirty.extend(touched);
+        dropped
     }
 
     /// Append a new session to a folder. `name` defaults to `shell <n>` from a
@@ -232,6 +270,7 @@ impl SessionStore {
                         }
                         None => {
                             config.folders.remove(dir);
+                            config.next_seq.remove(dir);
                         }
                     }
                     if let Some(seq) = self.next_seq.get(dir) {
@@ -286,6 +325,41 @@ mod tests {
         // Idempotent once seeded.
         assert!(!store.ensure_default("/r/a", 2000));
         assert_eq!(store.sessions_for("/r/a").len(), 1);
+    }
+
+    #[test]
+    fn ensure_default_reseeds_a_folder_whose_sessions_were_all_closed() {
+        let mut store = SessionStore::new(None);
+        let rec = store.add("/r/a", None, 1);
+        assert!(store.remove(&rec.id));
+        assert!(store.ensure_default("/r/a", 2));
+        assert_eq!(store.sessions_for("/r/a").len(), 1);
+    }
+
+    #[test]
+    fn drop_never_used_forgets_untouched_folders_and_keeps_the_rest() {
+        let mut store = SessionStore::new(None);
+        store.add("/r/untouched", None, 1);
+        let named = store.add("/r/named", None, 1);
+        store.rename(&named.id, "logs");
+        let purposeful = store.add("/r/purposeful", None, 1);
+        store.set_purpose(&purposeful.id, Some("ship the thing"));
+        let agent = store.add("/r/agent", None, 1);
+        store.note_agent(&agent.id, "thread-1");
+        let mixed = store.add("/r/mixed", None, 1);
+        store.note_agent(&mixed.id, "thread-2");
+        store.add("/r/mixed", None, 2);
+
+        assert!(store.drop_never_used());
+        assert!(store.sessions_for("/r/untouched").is_empty());
+        assert_eq!(store.sessions_for("/r/named")[0].name, "logs");
+        assert_eq!(store.sessions_for("/r/purposeful").len(), 1);
+        assert_eq!(store.sessions_for("/r/agent").len(), 1);
+        assert_eq!(store.sessions_for("/r/mixed").len(), 1);
+        assert_eq!(store.sessions_for("/r/mixed")[0].id, mixed.id);
+        // Nothing left to drop, and the forgotten folder starts over at one.
+        assert!(!store.drop_never_used());
+        assert_eq!(store.add("/r/untouched", None, 3).name, "shell 1");
     }
 
     #[test]
