@@ -161,8 +161,9 @@ export function HotkeyBadge({ n }: { n: number }) {
   );
 }
 
-/** Open ring = pending on you, filled = something happened. A shape cue, so
- * `waiting` and `complete` don't rely on hue alone to tell each other apart. */
+/** Open ring = pending on you, filled = something happened, so the states don't
+ * lean on hue alone. The live two shout — waiting loudest, its halo the only
+ * expanding one — off an unchanged `size-2` box, so volume never shifts a title. */
 export function Dot({ session }: { session: SessionData }) {
   if (!session.live) {
     return (
@@ -175,7 +176,19 @@ export function Dot({ session }: { session: SessionData }) {
   if (st === "waiting") {
     return (
       <Hint label="agent waiting — needs your input">
-        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-blue-500 bg-transparent" />
+        <span className="relative block size-2 shrink-0">
+          <span className="absolute inset-0 -m-1 animate-ping rounded-full bg-blue-500/40 motion-reduce:animate-none" />
+          <span className="absolute inset-0 -m-0.5 rounded-full border-2 border-blue-400 bg-blue-500/30 ring-2 ring-blue-500/25" />
+        </span>
+      </Hint>
+    );
+  }
+  if (st === "busy") {
+    return (
+      <Hint label="agent busy">
+        <span className="relative block size-2 shrink-0">
+          <span className="absolute inset-0 -m-0.5 animate-pulse rounded-full bg-cyan-400 ring-3 ring-cyan-500/30 motion-reduce:animate-none" />
+        </span>
       </Hint>
     );
   }
@@ -185,7 +198,6 @@ export function Dot({ session }: { session: SessionData }) {
         className={cn(
           "size-2 shrink-0 rounded-full",
           st ? statusColor(st) : "bg-muted-foreground/40",
-          st === "busy" && "animate-pulse",
         )}
       />
     </Hint>
