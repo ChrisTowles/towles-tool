@@ -111,6 +111,9 @@ export function SessionRow({
           // the whole row washes amber, not just its left pixel.
           needs && "border-l-amber-500 bg-amber-500/10",
           needs && hovered && "bg-amber-500/15",
+          // Amber already owns the edge and the fill, so focus moves to a ring
+          // — otherwise a jump between two needs-you rows lands invisibly.
+          active && needs && "ring-1 ring-inset ring-violet-500/70",
         )}
       >
         {hotkey === undefined ? <Glyph agent={agent} /> : <HotkeyBadge n={hotkey} />}

@@ -577,6 +577,15 @@ export function sessionCatchesEye(s: SessionData): boolean {
   return sessionNeeds(s) || s.unseen;
 }
 
+/** The session in its own words: the thread title Claude gave itself, falling
+ * back to the launch prompt. `null` when it never spoke. */
+export function sessionSaid(s: SessionData): string | null {
+  const thread = s.agentState?.threadName?.trim();
+  if (thread && thread !== "Claude Code") return thread;
+  const purpose = s.purpose?.trim();
+  return purpose && purpose.length > 0 ? purpose : null;
+}
+
 export function fmtWaitingAge(sinceMs: number | null | undefined, now: number): string | null {
   if (sinceMs == null) return null;
   const diff = now - sinceMs;

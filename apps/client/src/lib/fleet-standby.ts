@@ -8,6 +8,7 @@ import {
   humanizeFolderName,
   liveSessions,
   sessionNeeds,
+  sessionSaid,
   type FolderData,
   type RepoData,
   type SessionData,
@@ -97,7 +98,7 @@ function needsRow(
     dir: folder.dir,
     title: folderTitle(folder),
     repo: repo.name,
-    said: whatItSaid(oldest),
+    said: sessionSaid(oldest),
     note: errored ? "errored" : (fmtWaitingAge(oldest.needsSinceMs, now) ?? "waiting"),
     errored,
     since: oldest.needsSinceMs ?? now,
@@ -108,11 +109,4 @@ function needsRow(
  * prefix would only restate. */
 function folderTitle(folder: FolderData): string {
   return folder.isWorktree ? humanizeFolderName(folder.name) : "Root";
-}
-
-function whatItSaid(session: SessionData): string | null {
-  const thread = session.agentState?.threadName?.trim();
-  if (thread && thread !== "Claude Code") return thread;
-  const purpose = session.purpose?.trim();
-  return purpose && purpose.length > 0 ? purpose : null;
 }
