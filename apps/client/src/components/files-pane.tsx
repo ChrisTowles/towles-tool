@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
 import type { FolderData } from "@/lib/agentboard";
 
 /** Put one file on screen — Claude's openFile, the MCP `file_open` tool, a terminal link.
- * `path` is checkout-relative; a fresh nonce per request so the same file re-fires. */
+ * `path` is checkout-relative, or absolute for a file outside the checkout; a fresh nonce
+ * per request so the same file re-fires. */
 export type FilesOpenRequest = { path: string; line: number | null; nonce: number };
 
 /** A folder's checkout as a *pane* in the Agentboard tiling: a VS Code workbench (code-server)

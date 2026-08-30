@@ -1447,7 +1447,7 @@ export function RepoMenu({
               onSelect={() => void openInExternalEditor(dir, { where: "rail.menu" })}
               className="whitespace-nowrap"
             >
-              <ExternalLink className="size-3.5" /> Open in editor
+              <ExternalLink className="size-3.5" /> Open in external editor
             </DropdownMenuItem>
           )}
           {onNewTask && (

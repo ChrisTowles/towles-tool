@@ -170,8 +170,8 @@ export function PaneGrid(props: {
                   cwd={termDir ?? cwds.current[id]}
                   onExit={(exit) => onExit(id, exit)}
                   onTitle={onTitle}
-                  // Only folder-owned terminals can route links into a files
-                  // pane; others keep the external-editor default.
+                  // Only folder-owned terminals have a workbench to route a
+                  // link into; a folderless one keeps the external editor.
                   onOpenPath={
                     termDir
                       ? (path, line) => void onOpenTerminalPath(termDir, id, path, line)

@@ -6,7 +6,7 @@
 //! log line and a reveal polls a socket, so both run on blocking threads and
 //! never on the GTK main thread.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use tauri::webview::NewWindowResponse;
@@ -164,8 +164,9 @@ fn running_port(app: &AppHandle, child: &Mutex<Option<CodeServerChild>>) -> Resu
 }
 
 /// The workbench URL for `dir`, starting the server if this is the first pane.
-/// A checkout-relative `path` rides the URL so the workbench opens it as it
-/// boots — the only way to open a file in a workbench that doesn't exist yet.
+/// `path` rides the URL so the workbench opens it as it boots — the only way to
+/// open a file in a workbench that doesn't exist yet. Checkout-relative, or
+/// absolute for a file outside the checkout.
 #[tauri::command]
 pub async fn code_server_open(
     app: AppHandle,
@@ -187,7 +188,9 @@ pub async fn code_server_open(
     Ok(CodeServerInfo { url: workbench_url(port, &folder, open), port })
 }
 
-/// Open a checkout-relative `path` in the workbench already running for `dir`.
+/// Open `path` in the workbench already running for `dir` — checkout-relative,
+/// or absolute for a file outside the checkout, which the workbench opens all
+/// the same.
 #[tauri::command]
 pub async fn code_server_reveal(
     state: State<'_, CodeServerHost>,
@@ -208,7 +211,8 @@ pub async fn code_server_reveal(
     let file = PathBuf::from(&dir).join(&path);
     tracing::debug!(dir = %dir, path = %path, line = line.unwrap_or(0), "code_server.reveal");
     tauri::async_runtime::spawn_blocking(move || {
-        tt_codeserver::reveal(&registry, port, &file, line).map_err(|e| e.to_string())
+        tt_codeserver::reveal(&registry, port, Path::new(&dir), &file, line)
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("code-server reveal task failed: {e}"))?
