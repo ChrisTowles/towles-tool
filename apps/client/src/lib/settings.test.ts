@@ -73,6 +73,7 @@ function base(): UserSettings {
     },
     promptImprovers: [],
     savedViews: [],
+    savedQueries: [],
     collectors: {
       calendar: {
         enabled: false,

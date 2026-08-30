@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   CircleAlert,
+  Database,
   Gauge,
   GitCompare,
   Keyboard,
@@ -73,6 +74,7 @@ import type { LogPoint } from "@/screens/telemetry/dashboard-charts";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { LogFilterBar } from "@/screens/telemetry/log-filter-bar";
 import { TraceTree } from "@/screens/telemetry/trace-tree";
+import { QueryTab } from "@/screens/telemetry/query-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
@@ -507,6 +509,10 @@ export function TelemetryScreen() {
             <Keyboard className="size-4" />
             Keyboard
           </TabsTrigger>
+          <TabsTrigger value="query" className="justify-start gap-2 px-2 py-1.5">
+            <Database className="size-4" />
+            Query
+          </TabsTrigger>
           <TabsTrigger value="log" className="justify-start gap-2 px-2 py-1.5">
             <ScrollText className="size-4" />
             Log
@@ -559,6 +565,10 @@ export function TelemetryScreen() {
 
           <TabsContent value="keyboard" className="p-4">
             <KeyboardTab score={keyboard} loading={keyboardLoading} />
+          </TabsContent>
+
+          <TabsContent value="query" className="flex h-full min-h-0 flex-col p-4">
+            <QueryTab />
           </TabsContent>
 
           <TabsContent value="log" className="p-4">

@@ -22,6 +22,7 @@ const valid = {
       query: "",
     },
   ],
+  savedQueries: [{ id: "slow-spawns", label: "slow spawns", sql: "select 1" }],
   collectors: {
     calendar: {
       enabled: false,

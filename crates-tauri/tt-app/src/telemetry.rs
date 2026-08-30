@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use chrono::{Duration, Utc};
+use tt_telemetry::query::{EventDb, QueryResult};
 use tt_telemetry::{
     AttentionSummary, Bucket, BuildKey, BuildSnapshot, DashboardSummary, Delta, GroupBy,
     KeyboardDay, KeyboardScore, TelemetryRecord,
@@ -227,4 +228,76 @@ pub async fn telemetry_trace(ts: String, day: String) -> Result<Vec<TelemetryRec
     })
     .await
     .map_err(|e| format!("telemetry trace task panicked: {e}"))?
+}
+
+/// Days the Query tab loads — the log's retention, so "everything there is".
+const QUERY_WINDOW_DAYS: usize = 14;
+
+/// The Query tab's database, kept for the UTC day it was built on: loading a
+/// fortnight of JSONL (~30 MB) per Run would dwarf any query, but today's file
+/// keeps growing, so the day rollover and an explicit reload are the two
+/// rebuild triggers.
+static QUERY_DB: Mutex<Option<(String, EventDb)>> = Mutex::new(None);
+
+fn build_query_db(dir: &Path) -> Result<EventDb, String> {
+    let days = tt_telemetry::recent_days(dir, QUERY_WINDOW_DAYS).map_err(|e| e.to_string())?;
+    let records = tt_telemetry::read_days(dir, &days).map_err(|e| e.to_string())?;
+    EventDb::build(&records).map_err(|e| e.to_string())
+}
+
+fn utc_today() -> String {
+    Utc::now().format("%Y-%m-%d").to_string()
+}
+
+/// One read-only statement over the last fortnight of records. A run is a
+/// user gesture, so it's logged — shape and outcome only, never the SQL.
+#[tauri::command]
+pub async fn telemetry_query(sql: String) -> Result<QueryResult, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let today = utc_today();
+        let mut slot = QUERY_DB.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref().is_none_or(|(day, _)| *day != today) {
+            let db = build_query_db(&dir)?;
+            *slot = Some((today, db));
+        }
+        let Some((_, db)) = slot.as_ref() else {
+            return Err("telemetry query database missing after build".to_string());
+        };
+        let result = tt_telemetry::query::run(db, &sql, tt_telemetry::query::ROW_CAP);
+        match &result {
+            Ok(r) => tracing::info!(
+                rows = r.rows.len(),
+                truncated = r.truncated,
+                elapsed_ms = r.elapsed_ms,
+                outcome = "ok",
+                "telemetry.query_ran"
+            ),
+            Err(e) => tracing::info!(
+                rows = 0,
+                truncated = false,
+                elapsed_ms = 0,
+                outcome = e.outcome(),
+                "telemetry.query_ran"
+            ),
+        }
+        result.map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("telemetry query task panicked: {e}"))?
+}
+
+/// Rebuilds the Query tab's database from disk now, so lines written since
+/// the last build (today's file is live) are queryable before the day rolls.
+#[tauri::command]
+pub async fn telemetry_query_reload() -> Result<(), String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = build_query_db(&dir)?;
+        tracing::info!(records = db.record_count(), "telemetry.query_reloaded");
+        *QUERY_DB.lock().unwrap_or_else(|e| e.into_inner()) = Some((utc_today(), db));
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("telemetry query reload task panicked: {e}"))?
 }

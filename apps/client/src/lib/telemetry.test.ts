@@ -3,12 +3,16 @@ import {
   DEFAULT_TELEMETRY_FILTERS,
   effectiveFilters,
   filterLabel,
+  fmtCell,
   fmtDuration,
   focusShare,
   loadTelemetryFilters,
   nearestRange,
+  numericColumns,
+  resultCaption,
   type AttentionSummary,
   type Filter,
+  type QueryResult,
 } from "@/lib/telemetry";
 
 describe("loadTelemetryFilters", () => {
@@ -144,5 +148,37 @@ describe("focusShare", () => {
   it("clamps above 100 rather than reporting an impossible share", () => {
     const summary = { ...base, elapsedMs: 1_000, focus: { ...base.focus, focusedMs: 5_000 } };
     expect(focusShare(summary)).toBe(100);
+  });
+});
+
+describe("query results", () => {
+  const result: QueryResult = {
+    columns: ["executable", "n", "avg_ms", "note"],
+    rows: [
+      ["gh", 3, 12.5, null],
+      ["git", 1, null, null],
+    ],
+    truncated: false,
+    elapsedMs: 41,
+  };
+
+  it("numericColumns: numbers and nulls right-align, all-null stays text", () => {
+    expect(numericColumns(result)).toEqual([false, true, true, false]);
+    expect(numericColumns({ ...result, rows: [] })).toEqual([false, false, false, false]);
+  });
+
+  it("resultCaption: count, elapsed, and the cap when it hit", () => {
+    expect(resultCaption(result)).toBe("2 rows · 41 ms");
+    expect(resultCaption({ ...result, rows: [result.rows[0]] })).toBe("1 row · 41 ms");
+    expect(resultCaption({ ...result, truncated: true }, 2000)).toBe(
+      "2 rows · 41 ms · first 2,000 only, narrow the query",
+    );
+  });
+
+  it("fmtCell: null is spelled out, reals get two places", () => {
+    expect(fmtCell(null)).toBe("null");
+    expect(fmtCell(3)).toBe("3");
+    expect(fmtCell(12.5)).toBe("12.50");
+    expect(fmtCell("gh")).toBe("gh");
   });
 });

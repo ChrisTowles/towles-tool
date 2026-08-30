@@ -133,6 +133,24 @@ export function nextSavedViewId(views: SavedView[], label: string): string {
   }
 }
 
+/** One row of the Telemetry screen's Query tab — a name and its SQL. */
+export type SavedQuery = {
+  id: string;
+  label: string;
+  sql: string;
+};
+
+/** Permanent key, as {@link nextCalendarSourceId}. */
+export function nextSavedQueryId(queries: SavedQuery[], label: string): string {
+  const taken = new Set(queries.map((q) => q.id));
+  const base = slugify(label) || "query";
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 export type CalendarCollector = {
   enabled: boolean;
   refreshMinutes: number;
@@ -173,6 +191,7 @@ export type UserSettings = {
   journalSettings: JournalSettings;
   promptImprovers: PromptImprover[];
   savedViews: SavedView[];
+  savedQueries: SavedQuery[];
   collectors: CollectorsSettings;
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through

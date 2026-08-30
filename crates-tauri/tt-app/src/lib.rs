@@ -761,6 +761,8 @@ pub fn run() {
             telemetry::telemetry_build_compare,
             telemetry::telemetry_records,
             telemetry::telemetry_trace,
+            telemetry::telemetry_query,
+            telemetry::telemetry_query_reload,
             agentboard::ab_ensure_session,
             doctor::doctor_run,
             settings::settings_get,

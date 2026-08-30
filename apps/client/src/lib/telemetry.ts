@@ -300,3 +300,50 @@ export function effectiveFilters(kind: KindFilter, filters: Filter[]): Filter[] 
 export function nearestRange(days: number): RangeDays {
   return RANGE_DAYS.find((d) => d >= days) ?? 14;
 }
+
+/** Mirrors `tt_telemetry::query::ROW_CAP`. */
+export const QUERY_ROW_CAP = 2000;
+
+/** SQLite has no booleans; a blob arrives already described as text. */
+export type QueryValue = string | number | null;
+
+export type QueryResult = {
+  columns: string[];
+  rows: QueryValue[][];
+  truncated: boolean;
+  elapsedMs: number;
+};
+
+/** One read-only SELECT over the last fortnight; rejects anything else. */
+export const telemetryQuery = (sql: string) => invoke<QueryResult>("telemetry_query", { sql });
+
+/** Rebuilds the query database from disk, picking up today's newest lines. */
+export const telemetryQueryReload = () => invoke<void>("telemetry_query_reload");
+
+/** A column is numeric when it has a number and nothing but numbers and nulls
+ * — those right-align in tabular figures; an all-null column stays text. */
+export function numericColumns(result: QueryResult): boolean[] {
+  return result.columns.map((_, i) => {
+    let seen = false;
+    for (const row of result.rows) {
+      const v = row[i];
+      if (v === null) continue;
+      if (typeof v !== "number") return false;
+      seen = true;
+    }
+    return seen;
+  });
+}
+
+/** `1,204 rows · 41 ms`, and when the cap hit, that the answer is a prefix. */
+export function resultCaption(result: QueryResult, cap = QUERY_ROW_CAP): string {
+  const n = result.rows.length;
+  const rows = `${n.toLocaleString()} ${n === 1 ? "row" : "rows"} · ${result.elapsedMs} ms`;
+  return result.truncated ? `${rows} · first ${cap.toLocaleString()} only, narrow the query` : rows;
+}
+
+export function fmtCell(value: QueryValue): string {
+  if (value === null) return "null";
+  if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  return value;
+}
