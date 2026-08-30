@@ -22,6 +22,39 @@ function key(overrides: Partial<KeyboardEvent>): KeyboardEvent {
   } as KeyboardEvent;
 }
 
+describe("rail chords", () => {
+  it("matches Alt+Shift+arrow and nothing looser", () => {
+    const up = key({ altKey: true, shiftKey: true, key: "ArrowUp" });
+    expect(matchesShortcut("ab-collapse-all", up)).toBe(true);
+    expect(matchesShortcut("ab-expand-all", up)).toBe(false);
+    // A shift-less spec is lenient about shift; a shift-bearing one must not be,
+    // or bare Alt+arrow (word-wise motion in the shell) would fold the rail.
+    expect(matchesShortcut("ab-collapse-all", key({ altKey: true, key: "ArrowUp" }))).toBe(false);
+    expect(
+      matchesShortcut(
+        "ab-collapse-all",
+        key({ ctrlKey: true, altKey: true, shiftKey: true, key: "ArrowUp" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps the tree walk on mod+shift, clear of the fold-everything chord", () => {
+    const left = key({ ctrlKey: true, shiftKey: true, key: "ArrowLeft" });
+    expect(matchesShortcut("ab-focus-left", left)).toBe(true);
+    expect(
+      matchesShortcut("ab-focus-left", key({ altKey: true, shiftKey: true, key: "ArrowLeft" })),
+    ).toBe(false);
+  });
+
+  it("labels the arrows as glyphs, and yields the chord from a terminal", () => {
+    expect(shortcutHint("ab-collapse-all")).toBe("Shift+Alt+↑");
+    expect(shortcutHint("ab-focus-left")).toBe("Ctrl+Shift+←");
+    expect(matchesEditableOverride(key({ altKey: true, shiftKey: true, key: "ArrowDown" }))).toBe(
+      true,
+    );
+  });
+});
+
 describe("tab shortcuts", () => {
   it("registers a jump binding for each digit 1–9", () => {
     for (let n = 1; n <= 9; n++) {

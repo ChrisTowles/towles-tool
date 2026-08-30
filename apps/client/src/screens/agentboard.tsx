@@ -38,7 +38,6 @@ import {
   consumePendingOpenSessions,
   cycleNeedsYou,
   cycleNotBusy,
-  cycleSession,
   exitPaneId,
   filesPaneId,
   filesPaneTarget,
@@ -89,6 +88,8 @@ import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
+import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
+import { railMove, railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { useStoreSnapshot } from "@/lib/data";
 import { useFocusTarget } from "@/lib/focus-target";
@@ -128,6 +129,9 @@ export function AgentboardScreen() {
   // The tile that last claimed a click — the sole driver of the violet ring.
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
   const [focusLevel, setFocusLevel] = useState<FocusLevel>("rail");
+  // The rail cursor: one row of `railTree`, kept as the node so a row that
+  // disappears can hand the cursor to whatever now stands for it.
+  const [railCursor, setRailCursor] = useState<RailNode | null>(null);
   // The nonce lets a re-request of the *same* session still fire.
   const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
     id: string;
@@ -146,7 +150,8 @@ export function AgentboardScreen() {
   // Only *crashes* land here — a clean logout takes its pane with it.
   const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
   const expectedKills = useRef<Set<string>>(new Set());
-  const { collapsed, toggleCollapsed, railCollapsed, toggleRail } = useCollapseState(state);
+  const { collapsed, toggleCollapsed, applyCollapse, railCollapsed, toggleRail } =
+    useCollapseState(state);
   // Filtered-out folders demote to a per-repo "N idle" stub, never hidden.
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether worktrees `tt task` didn't create get rail folders at all.
@@ -222,10 +227,14 @@ export function AgentboardScreen() {
   // computed from, so what you press is what you read. The targets are kept
   // even while nothing is held — the handlers address them without a repaint.
   const hotkeysHeld = useModifierHeld("ab-jump-session-1");
-  const hotkeyTargets = useMemo(
-    () => railHotkeyTargets({ repos: shownRepos, idleDirs, idleRevealed, collapsed, wins }),
+  const railVis = useMemo(
+    () => ({ repos: shownRepos, idleDirs, idleRevealed, collapsed, wins }),
     [shownRepos, idleDirs, idleRevealed, collapsed, wins],
   );
+  const railTree = useMemo(() => railNodes(railVis), [railVis]);
+  const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
+  const cursorKey = cursorNode?.key ?? null;
+  const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
   // The collapsed strip has no session rows to badge, so it offers no numbers.
   const railHotkeys = useMemo(
     () =>
@@ -492,7 +501,17 @@ export function AgentboardScreen() {
     replacePaneInPlace(sessionId, exitPaneId(sessionId));
   }
 
+  // Clicking a row moves the cursor there too, or the ring would name a
+  // different row than the one you just chose.
+  function setCursorFor(folderDir: string, sessionId?: string) {
+    const node =
+      (sessionId === undefined ? undefined : railTree.find((n) => n.sessionId === sessionId)) ??
+      railTree.find((n) => n.kind !== "session" && n.dir === folderDir);
+    if (node) setRailCursor(node);
+  }
+
   function selectFolder(folderDir: string) {
+    setCursorFor(folderDir);
     setActiveFolderDir(folderDir);
     setSelected((cur) => (cur && cur.folderDir !== folderDir ? null : cur));
     setFocusLevel("rail");
@@ -508,6 +527,7 @@ export function AgentboardScreen() {
 
   function selectSession(folderDir: string, sessionId: string) {
     setJumpRecall(null);
+    setCursorFor(folderDir, sessionId);
     mountSession(folderDir, sessionId);
     setSelected({ folderDir, sessionId });
     setFocusedPaneId(sessionId);
@@ -580,17 +600,6 @@ export function AgentboardScreen() {
     );
   }
 
-  // ab-focus-up/down: the whole list in rail order — unlike jumpToNeedsYou, no
-  // filter to sessions needing attention.
-  function focusSession(direction: "next" | "prev") {
-    // What is on screen: a keystroke must not land on a hidden checkout.
-    const target = cycleSession(shownRepos, selected?.sessionId ?? null, direction);
-    if (!target) return;
-    const folderDir = folderOf.get(target.id)?.dir;
-    if (!folderDir) return;
-    selectSession(folderDir, target.id);
-  }
-
   // ab-focus-terminal (Enter): real DOM focus, so the next keystroke lands in
   // the shell instead of nowhere.
   function focusActiveTerminal(): boolean {
@@ -601,7 +610,7 @@ export function AgentboardScreen() {
       if (active.closest('[role="dialog"], [role="alertdialog"]')) return false;
     }
     const sessionPaneId = activeWin?.panes.find((id) => sessionById.has(id));
-    const targetId = sessionPaneId ?? activeFolder.sessions[0]?.id;
+    const targetId = cursorNode?.sessionId ?? sessionPaneId ?? activeFolder.sessions[0]?.id;
     if (!targetId) return false;
     selectSession(activeFolderDir, targetId);
     setFocusLevel("pane");
@@ -625,9 +634,64 @@ export function AgentboardScreen() {
     setFocusLevel("pane");
   }
 
-  // One cursor over rail, window strip and panes; the arrows move whichever is
-  // focused. Transitions live in `moveFocus` — this just applies its verdict.
-  function focusByArrow(direction: "up" | "down" | "left" | "right") {
+  // Declining when nothing changes leaves the chord to the platform.
+  function collapseWholeRail(collapse: boolean): boolean {
+    const changes = collapse
+      ? railCollapseAll(shownRepos, collapsed)
+      : railExpandAll(shownRepos, collapsed);
+    if (changes.length === 0) return false;
+    applyCollapse(changes);
+    return true;
+  }
+
+  // The cursor lands: a session row selects its session, a checkout row (a solo
+  // repo's header included) makes that checkout the working context, and a
+  // multi-checkout repo header speaks for no one checkout, so it only rings.
+  function landOnRow(key: string) {
+    const node = railTree.find((n) => n.key === key);
+    if (!node) return;
+    if (node.sessionId !== null && node.dir !== null) {
+      selectSession(node.dir, node.sessionId);
+      return;
+    }
+    if (node.dir !== null) {
+      selectFolder(node.dir);
+      return;
+    }
+    setRailCursor(node);
+    setFocusLevel("rail");
+  }
+
+  // Walking off a leaf's right edge is the pane grid's business, not the tree's.
+  function leaveRailRight(): boolean {
+    if (windowsForFolder.length > 1) {
+      setFocusLevel("window");
+      setFocusedPaneId(null);
+      blurTerminal();
+      return true;
+    }
+    const first = activeWin?.panes[0];
+    if (first === undefined) return false;
+    focusPane(first);
+    return true;
+  }
+
+  function moveRailCursor(direction: "up" | "down" | "left" | "right"): boolean {
+    const move = railMove({ nodes: railTree, cursor: cursorKey, direction, collapsed });
+    if (!move) return false;
+    if (move.kind === "collapse") {
+      applyCollapse([{ key: move.key, collapsed: move.collapsed }]);
+      return true;
+    }
+    if (move.kind === "exit") return leaveRailRight();
+    landOnRow(move.key);
+    return true;
+  }
+
+  // One cursor over rail, window strip and panes. In the rail it walks the tree
+  // (`railMove`); past it, `moveFocus` owns the transitions.
+  function focusByArrow(direction: "up" | "down" | "left" | "right"): boolean {
+    if (focusLevel === "rail") return moveRailCursor(direction);
     const move = moveFocus({
       level: focusLevel,
       direction,
@@ -636,11 +700,8 @@ export function AgentboardScreen() {
       windows: windowsForFolder.map((w) => w.id),
       activeWindowId: activeWin?.id ?? null,
     });
-    if (!move) return;
+    if (!move) return false;
     switch (move.kind) {
-      case "session":
-        focusSession(move.direction);
-        break;
       case "level":
         setFocusLevel(move.level);
         setFocusedPaneId(null);
@@ -653,6 +714,7 @@ export function AgentboardScreen() {
         actions.focusWindow(move.id);
         break;
     }
+    return true;
   }
 
   const taskCreation = useTaskCreation({
@@ -1018,6 +1080,8 @@ export function AgentboardScreen() {
         "ab-focus-down-bracket": () => focusByArrow("down"),
         "ab-focus-left": () => focusByArrow("left"),
         "ab-focus-right": () => focusByArrow("right"),
+        "ab-collapse-all": () => collapseWholeRail(true),
+        "ab-expand-all": () => collapseWholeRail(false),
         "ab-focus-terminal": focusActiveTerminal,
         "ab-split-session": splitIntoWindow,
         "ab-new-terminal-right": () => {
@@ -1027,6 +1091,10 @@ export function AgentboardScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers are stable within a render; only the state they close over (listed) should rebuild the map
       [
         activeFolderDir,
+        collapsed,
+        railTree,
+        cursorKey,
+        cursorNode,
         hotkeyTargets,
         selected,
         focusedPaneId,
@@ -1173,6 +1241,7 @@ export function AgentboardScreen() {
                               selectedSessionId={selected?.sessionId ?? null}
                               activePaneId={focusedPaneId}
                               activeFolderDir={activeFolderDir}
+                              cursorKey={cursorKey}
                               hotkeys={railHotkeys}
                               collapsed={collapsed}
                               renaming={renaming}

@@ -206,14 +206,14 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-focus-up",
     scope: "agentboard",
     keys: "mod+shift+arrowup",
-    description: "Move focus up — climb out of panes/windows, then previous session",
+    description: "Previous rail row — repo, checkout or session",
     allowInEditable: true,
   },
   {
     id: "ab-focus-down",
     scope: "agentboard",
     keys: "mod+shift+arrowdown",
-    description: "Move focus down — next session, or on through the panes",
+    description: "Next rail row — repo, checkout or session",
     allowInEditable: true,
   },
   {
@@ -221,7 +221,7 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-focus-up-bracket",
     scope: "agentboard",
     keys: "mod+shift+[",
-    description: "Move focus up — climb out of panes/windows, then previous session",
+    description: "Previous rail row — repo, checkout or session",
     allowInEditable: true,
     hideInHelp: true,
   },
@@ -229,7 +229,7 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-focus-down-bracket",
     scope: "agentboard",
     keys: "mod+shift+]",
-    description: "Move focus down — next session, or on through the panes",
+    description: "Next rail row — repo, checkout or session",
     allowInEditable: true,
     hideInHelp: true,
   },
@@ -237,14 +237,29 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-focus-left",
     scope: "agentboard",
     keys: "mod+shift+arrowleft",
-    description: "Focus the previous pane or window — off the edge, back to the rail",
+    description: "Collapse the row under the cursor, else climb to what holds it",
     allowInEditable: true,
   },
   {
     id: "ab-focus-right",
     scope: "agentboard",
     keys: "mod+shift+arrowright",
-    description: "Focus the next pane or window — from the rail, into the panes",
+    description:
+      "Expand the row under the cursor, else step into it — off a session, into the panes",
+    allowInEditable: true,
+  },
+  {
+    id: "ab-collapse-all",
+    scope: "agentboard",
+    keys: "alt+shift+arrowup",
+    description: "Collapse every repo on the rail",
+    allowInEditable: true,
+  },
+  {
+    id: "ab-expand-all",
+    scope: "agentboard",
+    keys: "alt+shift+arrowdown",
+    description: "Expand every repo on the rail",
     allowInEditable: true,
   },
   {
@@ -290,6 +305,10 @@ const KEYCAP_LABELS: Record<string, string> = {
   backspace: "⌫",
   delete: "Del",
   enter: "Enter",
+  arrowup: "↑",
+  arrowdown: "↓",
+  arrowleft: "←",
+  arrowright: "→",
 };
 
 /** `["⌘","⇧","W"]` on mac, `["Ctrl","Shift","W"]` elsewhere. */
@@ -368,7 +387,7 @@ function matches(spec: KeySpec, e: KeyboardEvent): boolean {
   if (IS_MAC && e.ctrlKey && !macCtrlAlias(spec, e)) return false;
   // `?` arrives as key "?" with shiftKey set — compare shift only for
   // modifier-style specs, where shift is a deliberate chord component.
-  const shiftOk = spec.mod ? e.shiftKey === spec.shift : true;
+  const shiftOk = spec.mod || spec.shift ? e.shiftKey === spec.shift : true;
   return mod === spec.mod && shiftOk && e.altKey === spec.alt && keyMatches(spec.key, e);
 }
 

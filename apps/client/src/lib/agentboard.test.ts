@@ -10,7 +10,6 @@ import {
   moveFocus,
   cycleNeedsYou,
   cycleNotBusy,
-  cycleSession,
   colCount,
   dragCol,
   ownerRepoFromOrigin,
@@ -1589,21 +1588,6 @@ describe("moveFocus", () => {
     over = {},
   ) => moveFocus({ ...base, level, direction: dir, ...over });
 
-  it("walks rail sessions with up/down", () => {
-    expect(at("rail", "up")).toEqual({ kind: "session", direction: "prev" });
-    expect(at("rail", "down")).toEqual({ kind: "session", direction: "next" });
-    expect(at("rail", "left")).toBeNull();
-  });
-
-  it("descends right from the rail — window strip only when there are several windows", () => {
-    expect(at("rail", "right")).toEqual({ kind: "pane", id: "s1" });
-    expect(at("rail", "right", { windows: ["w1", "w2"] })).toEqual({
-      kind: "level",
-      level: "window",
-    });
-    expect(at("rail", "right", { panes: [] })).toBeNull();
-  });
-
   it("moves between windows at the strip, left edge landing on the rail", () => {
     const wins = { windows: ["w1", "w2"], activeWindowId: "w2" };
     expect(at("window", "left", wins)).toEqual({ kind: "window", id: "w1" });
@@ -1771,56 +1755,6 @@ describe("cycleNotBusy", () => {
       ]),
     ];
     expect(cycleNotBusy(swamped, null, "next")).toBeNull();
-  });
-});
-
-describe("cycleSession", () => {
-  // Board order: a1, a2, b1, b2 — no attention filter, every session counts.
-  const repos = [
-    repo("a", [
-      folder({
-        dir: "a/f1",
-        sessions: [session({ id: "a1", live: true }), session({ id: "a2", live: true })],
-      }),
-    ]),
-    repo("b", [
-      folder({
-        dir: "b/f1",
-        sessions: [session({ id: "b1", live: true }), session({ id: "b2", live: true })],
-      }),
-    ]),
-  ];
-
-  it("returns null when the board has no sessions", () => {
-    expect(cycleSession([], null, "next")).toBeNull();
-  });
-
-  it("starts from the beginning when nothing is selected", () => {
-    expect(cycleSession(repos, null, "next")?.id).toBe("a1");
-  });
-
-  it("starts from the end when nothing is selected and direction is prev", () => {
-    expect(cycleSession(repos, null, "prev")?.id).toBe("b2");
-  });
-
-  it("moves forward across folders and repos", () => {
-    expect(cycleSession(repos, "a1", "next")?.id).toBe("a2");
-    expect(cycleSession(repos, "a2", "next")?.id).toBe("b1");
-    expect(cycleSession(repos, "b1", "next")?.id).toBe("b2");
-  });
-
-  it("wraps around from the last session back to the first", () => {
-    expect(cycleSession(repos, "b2", "next")?.id).toBe("a1");
-  });
-
-  it("moves backward, wrapping from the first session to the last", () => {
-    expect(cycleSession(repos, "a1", "prev")?.id).toBe("b2");
-    expect(cycleSession(repos, "b1", "prev")?.id).toBe("a2");
-  });
-
-  it("treats an unrecognized fromSessionId the same as nothing selected", () => {
-    expect(cycleSession(repos, "not-a-real-id", "next")?.id).toBe("a1");
-    expect(cycleSession(repos, "not-a-real-id", "prev")?.id).toBe("b2");
   });
 });
 

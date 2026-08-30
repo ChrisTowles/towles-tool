@@ -45,6 +45,7 @@ import { taskAdoptWorktree, type PrItem, type TaskItem } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import { railRowMotion } from "@/lib/rail-motion";
+import { sessionNodeKey } from "@/lib/rail-nodes";
 import { AnimatePresence, motion } from "motion/react";
 
 /** Undefined for every row but `detected` — that is what hides the affordance. */
@@ -68,6 +69,7 @@ export function RepoGroup({
   selectedSessionId,
   activePaneId,
   activeFolderDir,
+  cursorKey,
   hotkeys,
   collapsed,
   renaming,
@@ -108,6 +110,8 @@ export function RepoGroup({
   /** A view pane has no session record, so `selectedSessionId` can't name it. */
   activePaneId: string | null;
   activeFolderDir: string | null;
+  /** The rail cursor's `railNodes` key — the one row wearing the focus ring. */
+  cursorKey: string | null;
   /** Session id → its jump digit, while the chord is held; absent otherwise. */
   hotkeys?: Map<string, number>;
   collapsed: Record<string, boolean>;
@@ -157,6 +161,7 @@ export function RepoGroup({
   const sessionRow = (folder: FolderData, s: SessionData) => (
     <motion.div key={s.id} {...railRowMotion}>
       <SessionRow
+        cursor={cursorKey === sessionNodeKey(s.id)}
         session={s}
         folderDir={folder.dir}
         now={now}
@@ -290,6 +295,7 @@ export function RepoGroup({
           pr={prForFolder(prs, repo.originUrl, folder.branch)}
           task={taskForFolder(tasks, folder.dir)}
           collapsed={isCollapsed}
+          cursor={cursorKey === repo.key}
           now={now}
           active={activeFolderDir === folder.dir}
           deleting={deleting}
@@ -357,7 +363,8 @@ export function RepoGroup({
         style={statusOwnsRow ? undefined : { ...accent.edgeStyle, ...accent.surfaceStyle }}
         className={cn(
           "sticky top-0 z-10 flex w-full items-center gap-2 border-b border-l-2 border-border border-l-transparent bg-card px-3 py-2 hover:bg-accent",
-          repoActive && "border-l-violet-500 ring-1 ring-inset ring-violet-500/50",
+          repoActive && "border-l-violet-500",
+          cursorKey === repo.key && "ring-1 ring-inset ring-violet-500",
         )}
       >
         <button
@@ -450,6 +457,7 @@ export function RepoGroup({
                   pr={prForFolder(prs, repo.originUrl, folder.branch)}
                   task={taskForFolder(tasks, folder.dir)}
                   collapsed={fCollapsed}
+                  cursor={cursorKey === key}
                   now={now}
                   active={activeFolderDir === folder.dir}
                   deleting={deleting}

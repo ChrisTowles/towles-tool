@@ -64,6 +64,7 @@ export function FolderHeader({
   task,
   collapsed,
   active,
+  cursor,
   now,
   deleting,
   deletingLabel,
@@ -94,6 +95,8 @@ export function FolderHeader({
   task?: TaskItem;
   collapsed: boolean;
   active: boolean;
+  /** Under the rail cursor — the row the arrows are steering. */
+  cursor: boolean;
   now: number;
   /** The caller already dims and disables the whole row; the badges here say
    * which operation. */
@@ -186,12 +189,12 @@ export function FolderHeader({
         // beneath show through, so its active state is a ring rather than a
         // fill. Folder rows sit in normal flow and keep the fill.
         scope === "repo"
-          ? cn(
-              "sticky top-0 z-10 pl-3 hover:bg-accent",
-              active && "ring-1 ring-inset ring-violet-500/50",
-            )
+          ? "sticky top-0 z-10 pl-3 hover:bg-accent"
           : cn("pl-6 hover:bg-accent/50", active && "bg-accent/60"),
         active && "border-l-violet-500",
+        // The cursor is the one ring on the rail: exactly one row wears it, so
+        // "where am I" never has to be inferred from a fill or an edge.
+        cursor && "ring-1 ring-inset ring-violet-500",
       )}
     >
       {/* Three blocks: who this is (title), what git and GitHub say (branch,
