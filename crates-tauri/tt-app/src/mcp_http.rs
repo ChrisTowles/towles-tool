@@ -30,6 +30,8 @@ pub fn mcp_status() -> serde_json::Value {
     serde_json::json!({
         "serving": SERVING.load(Ordering::Relaxed),
         "port": PORT.load(Ordering::Relaxed),
+        "protocolVersion": tt_mcp::PROTOCOL_VERSION,
+        "version": env!("CARGO_PKG_VERSION"),
     })
 }
 
@@ -155,7 +157,21 @@ pub async fn mcp_test_call(
     let mut request = Request::builder()
         .method("POST")
         .uri(format!("http://127.0.0.1:{port}{MCP_PATH}"))
-        .header(hyper::header::CONTENT_TYPE, "application/json");
+        .header(hyper::header::CONTENT_TYPE, "application/json")
+        .header(hyper::header::ACCEPT, "application/json, text/event-stream");
+    // Mirrored from the body the way a real client does it, so a body without `_meta`
+    // is refused exactly as a legacy client's would be.
+    let sent: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    let meta = &sent["params"]["_meta"];
+    for (header, value) in [
+        (tt_mcp::PROTOCOL_VERSION_HEADER, meta[tt_mcp::META_PROTOCOL_VERSION].as_str()),
+        (tt_mcp::METHOD_HEADER, sent["method"].as_str()),
+        (tt_mcp::NAME_HEADER, sent["params"]["name"].as_str()),
+    ] {
+        if let Some(value) = value {
+            request = request.header(header, value);
+        }
+    }
     if simulate_browser_origin {
         request = request.header(hyper::header::ORIGIN, "https://example.invalid");
     }
@@ -369,7 +385,13 @@ pub const SESSION_HEADER: &str = "x-tt-session";
 /// An **undecodable** header reads as absent — the opposite of `Origin`'s presence
 /// rule, since a garbled value should cost a preferred pane, not the call.
 fn caller_context(headers: &hyper::HeaderMap) -> tt_mcp::RequestContext {
+    let get = |name: &str| headers.get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
     tt_mcp::RequestContext::for_session(headers.get(SESSION_HEADER).and_then(|v| v.to_str().ok()))
+        .with_headers(tt_mcp::MirroredHeaders {
+            protocol_version: get(tt_mcp::PROTOCOL_VERSION_HEADER),
+            method: get(tt_mcp::METHOD_HEADER),
+            name: get(tt_mcp::NAME_HEADER),
+        })
 }
 
 /// The path only, never the file's contents; `preview.rs` documents why.
@@ -505,7 +527,8 @@ async fn serve_connection(
                             crate::store::emit_snapshot_from_app(&app);
                         });
                     }
-                    Ok(json_response(handled.response.unwrap_or_default()))
+                    let status = status_for(handled.error_code);
+                    Ok(json_response(status, handled.response.unwrap_or_default()))
                 }
                 Err(error) => {
                     tracing::error!(%error, "mcp.http: dispatch task failed");
@@ -549,8 +572,23 @@ fn status_response(status: hyper::StatusCode, body: String) -> hyper::Response<S
     response
 }
 
-fn json_response(body: String) -> hyper::Response<String> {
-    let mut response = status_response(hyper::StatusCode::OK, body);
+/// 2026-07-28 gives the refusals a client keys its fallback on a status of their own;
+/// everything else, a tool's `isError` answer included, is a 200 with a JSON-RPC body.
+fn status_for(error_code: Option<i64>) -> hyper::StatusCode {
+    match error_code {
+        Some(tt_mcp::METHOD_NOT_FOUND) => hyper::StatusCode::NOT_FOUND,
+        Some(
+            tt_mcp::HEADER_MISMATCH
+            | tt_mcp::UNSUPPORTED_PROTOCOL_VERSION
+            | tt_mcp::INVALID_REQUEST
+            | tt_mcp::PARSE_ERROR,
+        ) => hyper::StatusCode::BAD_REQUEST,
+        _ => hyper::StatusCode::OK,
+    }
+}
+
+fn json_response(status: hyper::StatusCode, body: String) -> hyper::Response<String> {
+    let mut response = status_response(status, body);
     response.headers_mut().insert(
         hyper::header::CONTENT_TYPE,
         hyper::header::HeaderValue::from_static("application/json"),
@@ -681,6 +719,37 @@ mod tests {
         assert_eq!(Refusal::MethodNotAllowed.status(), 405);
         assert_eq!(Refusal::TooLarge.status(), 413);
         assert_eq!(Refusal::Unreadable.status(), 400);
+    }
+
+    /// The dispatcher's refusals get the status the spec assigns; a tool's own
+    /// `isError` answer (no code) and any other JSON-RPC error stay a 200.
+    #[test]
+    fn dispatcher_refusals_map_to_the_specs_statuses() {
+        use hyper::StatusCode;
+        assert_eq!(status_for(None), StatusCode::OK);
+        assert_eq!(status_for(Some(tt_mcp::METHOD_NOT_FOUND)), StatusCode::NOT_FOUND);
+        assert_eq!(status_for(Some(tt_mcp::HEADER_MISMATCH)), StatusCode::BAD_REQUEST);
+        assert_eq!(status_for(Some(tt_mcp::UNSUPPORTED_PROTOCOL_VERSION)), StatusCode::BAD_REQUEST);
+        assert_eq!(status_for(Some(tt_mcp::PARSE_ERROR)), StatusCode::BAD_REQUEST);
+        assert_eq!(status_for(Some(-32603)), StatusCode::OK);
+    }
+
+    #[test]
+    fn the_mirrored_headers_reach_the_dispatcher() {
+        let mut headers = hyper::HeaderMap::new();
+        headers.insert(tt_mcp::PROTOCOL_VERSION_HEADER, "2026-07-28".parse().unwrap());
+        headers.insert(tt_mcp::METHOD_HEADER, "tools/call".parse().unwrap());
+        headers.insert(tt_mcp::NAME_HEADER, "file_open".parse().unwrap());
+        assert_eq!(
+            caller_context(&headers).headers,
+            Some(tt_mcp::MirroredHeaders {
+                protocol_version: Some("2026-07-28".into()),
+                method: Some("tools/call".into()),
+                name: Some("file_open".into()),
+            })
+        );
+        // Always a header layer here, even with nothing in it: absence is what gets refused.
+        assert_eq!(caller_context(&hyper::HeaderMap::new()).headers, Some(Default::default()));
     }
 
     // --- caller identity (`preview_file` routing) ---

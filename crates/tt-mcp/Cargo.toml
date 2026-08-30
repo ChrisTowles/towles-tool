@@ -11,6 +11,7 @@ tt-store = { workspace = true }
 # For the `TT_MCP_PORT` claim in a checkout's rendered `.env` — `port` reads it
 # as a claim rather than parsing it, so app and client agree with the siblings.
 tt-tasks = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }

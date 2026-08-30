@@ -29,8 +29,13 @@ export const McpToolDocsSchema = z.array(McpToolDocSchema);
 export type McpToolDoc = z.infer<typeof McpToolDocSchema>;
 
 /** Runtime validator for `mcp_status` — whether *this* instance won the bind
- * race for the MCP port, and which port that is. */
-export const McpStatusSchema = z.object({ serving: z.boolean(), port: z.number() });
+ * race for the MCP port, which port that is, and what the server speaks. */
+export const McpStatusSchema = z.object({
+  serving: z.boolean(),
+  port: z.number(),
+  protocolVersion: z.string(),
+  version: z.string(),
+});
 
 export type McpStatus = z.infer<typeof McpStatusSchema>;
 

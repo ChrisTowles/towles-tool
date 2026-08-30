@@ -4,11 +4,27 @@ The hand-rolled JSON-RPC MCP server and its transport, including the trust
 boundary. Referenced from [CLAUDE.md](../CLAUDE.md)'s Architecture section.
 
 hand-rolled JSON-RPC MCP server, **transport-free** (the same
-split as `tt-ide`): `Dispatcher::handle_at` takes a request string and an
+split as `tt-ide`): `Dispatcher::dispatch_at` takes a request string and an
 injected `now_ms` and returns a response string, so the whole tool surface
 is unit-testable with no server to stand up. The transport is
 `crates-tauri/tt-app/src/mcp_http.rs` — read that module's doc before
-touching either half. Tools: `task_list`, `task_status`, `task_create`
+touching either half.
+
+**It speaks MCP 2026-07-28 only.** That revision has no `initialize`
+handshake and no session: every request names its protocol version in
+`params._meta` (and, over HTTP, in the mirrored `MCP-Protocol-Version`,
+`Mcp-Method` and `Mcp-Name` headers, which the dispatcher checks against the
+body), `server/discover` answers with the one supported version, the caller's
+identity for the call log comes from each request's own `clientInfo`, and
+every result carries `resultType` plus `_meta.serverInfo`. A client that
+opens with `initialize` — an older Claude Code, or Cursor as of 2026-07 —
+gets a 400 whose message names the version, which is all the spec asks of a
+modern-only server; there is no dual-era fallback. `tt open` and the MCP
+screen's tool tester are the in-repo clients, and `tt_mcp` exports the
+version, `_meta` keys and header names so they cannot drift. Statuses follow
+the spec: an unknown method is a 404, a header mismatch or unsupported
+version a 400 (`-32020`/`-32022`), and a tool's own `isError` answer a 200
+(`mcp_http::status_for`). Tools: `task_list`, `task_status`, `task_create`
 (a #339 board task in a tracked repo's swimlane, same store path as the
 app's `store_add_task`), `task_summary`, `task_start`, `task_delete`,
 `preview_file`, plus the calendar family `calendar_today`, `calendar_next`
