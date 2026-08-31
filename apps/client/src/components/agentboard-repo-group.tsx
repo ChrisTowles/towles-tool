@@ -2,8 +2,7 @@
  * `FolderHeader`, `SessionRow` and `ViewPaneRow`. */
 import { type ReactElement } from "react";
 import { toast } from "sonner";
-import { FolderGit2, FolderPlus } from "lucide-react";
-import { Hint } from "@/components/hint";
+import { FolderPlus } from "lucide-react";
 import {
   Chevron,
   CollapsedLive,
@@ -11,6 +10,7 @@ import {
   NeedsBadge,
   RepoMenu,
 } from "@/components/agentboard-bits";
+import { FoldToggleRow, FoldedRepoStub } from "@/components/agentboard-fold-rows";
 import { FolderHeader } from "@/components/agentboard-folder-header";
 import {
   ViewPaneRow,
@@ -34,6 +34,7 @@ import {
   pathScope,
   prForFolder,
   taskForFolder,
+  withoutFolded,
   type FolderData,
   type Overlay,
   type RepoData,
@@ -47,6 +48,10 @@ import { uiAction } from "@/lib/ui-action";
 import { railRowMotion } from "@/lib/rail-motion";
 import { sessionNodeKey } from "@/lib/rail-nodes";
 import { AnimatePresence, motion } from "motion/react";
+
+const IDLE_HINT = "Checkouts with nothing going on right now";
+const UNMANAGED_HINT =
+  "Worktrees no task of yours claims — an agent's own, or one added by hand. Adopt one to make it a task.";
 
 /** Undefined for every row but `detected` — that is what hides the affordance. */
 function adoptWorktree(folder: FolderData) {
@@ -95,6 +100,9 @@ export function RepoGroup({
   idleDirs,
   idleRevealed,
   onToggleIdle,
+  unmanagedDirs,
+  unmanagedRevealed,
+  onToggleUnmanaged,
   quietDirs,
   taskFormOpen,
   taskFormInitialGoal,
@@ -143,6 +151,11 @@ export function RepoGroup({
   idleDirs?: Set<string>;
   idleRevealed?: boolean;
   onToggleIdle?: () => void;
+  /** Worktrees no task claims — agents make their own, so they fold into a stub
+   * of their own instead of one folder apiece burying the work you asked for. */
+  unmanagedDirs?: Set<string>;
+  unmanagedRevealed?: boolean;
+  onToggleUnmanaged?: () => void;
   /** Folders marked quiet by hand, normally already gone from `repo`
    * (`partitionQuiet`). One arriving here is peeked or active, and gets a
    * badge saying so. */
@@ -156,6 +169,8 @@ export function RepoGroup({
   const solo = isSoloRepo(repo);
   const idle = idleDirs ?? new Set<string>();
   const showIdle = idleRevealed ?? false;
+  const unmanaged = unmanagedDirs ?? new Set<string>();
+  const showUnmanaged = unmanagedRevealed ?? false;
   const quiet = quietDirs ?? new Set<string>();
 
   const sessionRow = (folder: FolderData, s: SessionData) => (
@@ -273,7 +288,7 @@ export function RepoGroup({
     const folder = repo.folders[0];
     const isCollapsed = collapsed[repo.key];
     if (idle.has(folder.dir) && !showIdle) {
-      return <IdleRepoStub name={repo.name} count={1} onToggle={onToggleIdle} />;
+      return <FoldedRepoStub name={repo.name} idle={1} unmanaged={0} onToggle={onToggleIdle} />;
     }
     // Phase rides on the folder, so a row is never dimmed for a departed one.
     const deleting = folderBusy(folder);
@@ -333,7 +348,13 @@ export function RepoGroup({
         )}
         {!isCollapsed && sessionRows(folder, "pb-2")}
         {idle.size > 0 && showIdle && (
-          <IdleToggleRow count={idle.size} revealed onToggle={onToggleIdle} />
+          <FoldToggleRow
+            count={idle.size}
+            noun="idle"
+            hint={IDLE_HINT}
+            revealed
+            onToggle={onToggleIdle}
+          />
         )}
       </div>
     );
@@ -342,9 +363,25 @@ export function RepoGroup({
   // Multi-checkout repo: repo header, then each folder as a sub-header. A repo
   // the filter has emptied shrinks to a single dim stub line.
   const repoCollapsed = collapsed[repo.key];
-  const shownFolders = showIdle ? repo.folders : repo.folders.filter((f) => !idle.has(f.dir));
+  const shownFolders = withoutFolded(
+    withoutFolded(repo.folders, unmanaged, showUnmanaged),
+    idle,
+    showIdle,
+  );
+  // Both folds gave way at once: the one row left has to undo both, or a repo
+  // of nothing but agents' worktrees opens onto another stub.
   if (shownFolders.length === 0) {
-    return <IdleRepoStub name={repo.name} count={idle.size} onToggle={onToggleIdle} />;
+    return (
+      <FoldedRepoStub
+        name={repo.name}
+        idle={idle.size}
+        unmanaged={unmanaged.size}
+        onToggle={() => {
+          if (idle.size > 0) onToggleIdle?.();
+          if (unmanaged.size > 0) onToggleUnmanaged?.();
+        }}
+      />
+    );
   }
   // Folder-rail rule: focus never stops at the child level, so a collapsed repo
   // row still shows it holds the folder you're looking at.
@@ -492,60 +529,24 @@ export function RepoGroup({
           })}
         </AnimatePresence>
       )}
+      {!repoCollapsed && unmanaged.size > 0 && (
+        <FoldToggleRow
+          count={unmanaged.size}
+          noun="unmanaged"
+          hint={UNMANAGED_HINT}
+          revealed={showUnmanaged}
+          onToggle={onToggleUnmanaged}
+        />
+      )}
       {!repoCollapsed && idle.size > 0 && (
-        <IdleToggleRow count={idle.size} revealed={showIdle} onToggle={onToggleIdle} />
+        <FoldToggleRow
+          count={idle.size}
+          noun="idle"
+          hint={IDLE_HINT}
+          revealed={showIdle}
+          onToggle={onToggleIdle}
+        />
       )}
     </div>
-  );
-}
-
-/** A repo the rail filter has emptied, demoted to one dim row rather than
- * removed — the filter is a view setting, so nothing it touches vanishes. */
-function IdleRepoStub({
-  name,
-  count,
-  onToggle,
-}: {
-  name: string;
-  count: number;
-  onToggle?: () => void;
-}) {
-  return (
-    <Hint label="Nothing going on here right now — click to show">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-2 border-b bg-card px-3 py-1.5 text-left text-muted-foreground/60 hover:bg-accent/40 hover:text-muted-foreground"
-      >
-        <Chevron collapsed />
-        <FolderGit2 className="size-3.5 shrink-0 opacity-60" />
-        <span className="min-w-0 truncate text-sm">{name}</span>
-        <span className="ml-auto shrink-0 font-mono text-[10px]">
-          {count === 1 ? "idle" : `${count} idle`}
-        </span>
-      </button>
-    </Hint>
-  );
-}
-
-/** The stub row under a repo's visible folders: "N idle" / "hide N idle". */
-function IdleToggleRow({
-  count,
-  revealed,
-  onToggle,
-}: {
-  count: number;
-  revealed: boolean;
-  onToggle?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex w-full items-center gap-1.5 py-1 pr-3 pl-6 text-left font-mono text-[10.5px] text-muted-foreground/50 hover:text-muted-foreground"
-    >
-      <Chevron collapsed={!revealed} />
-      {revealed ? `hide ${count} idle` : `${count} idle`}
-    </button>
   );
 }

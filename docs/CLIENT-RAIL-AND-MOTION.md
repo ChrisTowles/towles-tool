@@ -4,13 +4,23 @@ Two `apps/client` areas whose rules only matter once you are inside them — spl
 out of [`apps/client/CLAUDE.md`](../apps/client/CLAUDE.md), which every session
 pays for, and which keeps the conventions that apply everywhere.
 
-## The rail is five files, split by what a row *is*
+## The rail is six files, split by what a row *is*
 
 `components/agentboard-rail.tsx` is the rail's own chrome (collapsed strip,
 rollup tally) — not the tree, which is `agentboard-repo-group` (a repo) →
 `agentboard-folder-header` (a checkout) → `agentboard-session-row` (a PTY) /
-`agentboard-pane-rows`, with shared atoms in `agentboard-bits` and pure logic in
-`lib/agentboard.ts`. A new row kind gets a sixth file, not a grown one.
+`agentboard-pane-rows`, plus `agentboard-fold-rows` for the rows that stand for
+rows *not* shown ("N idle", "N unmanaged"), with shared atoms in
+`agentboard-bits` and pure logic in `lib/agentboard.ts`. A new row kind gets a
+seventh file, not a grown one.
+
+**Folding is per-repo, and always reversible in place.** The rail filter demotes
+idle checkouts; `isFolderUnmanaged` demotes the worktrees agents make for
+themselves, whatever the filter says. Both leave a counted stub row that peeks
+open (`withoutFolded` is the one answer for the render and for
+`lib/rail-nodes.ts`'s walk, so the keyboard sees exactly what you see), and
+neither ever folds a checkout you are working in, one with a live session, or
+one with something waiting on you.
 
 **In a rail row, a box means a control or an alert — never a fact**, because a
 rail that boxes everything ranks nothing. Facts (diff counts, branch, base-moved,

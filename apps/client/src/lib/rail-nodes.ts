@@ -1,5 +1,6 @@
 import {
   isSoloRepo,
+  withoutFolded,
   type FolderData,
   type RepoData,
   type SessionData,
@@ -27,6 +28,10 @@ export type RailVisibility = {
   idleDirs: Map<string, Set<string>>;
   /** Repo keys whose idle rows are peeked open. */
   idleRevealed: Set<string>;
+  /** Repo key → the unclaimed checkout dirs folded into the "N unmanaged" stub. */
+  unmanagedDirs: Map<string, Set<string>>;
+  /** Repo keys whose unmanaged rows are peeked open. */
+  unmanagedRevealed: Set<string>;
   collapsed: Record<string, boolean>;
   wins: WindowsPayload | null;
 };
@@ -37,14 +42,14 @@ export type RailVisibility = {
 // children, and a repo the filter emptied shrinks to a stub with no header,
 // so it is no row at all.
 export function railNodes(v: RailVisibility): RailNode[] {
-  const { repos, idleDirs, idleRevealed, collapsed, wins } = v;
+  const { repos, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed, collapsed, wins } = v;
   const out: RailNode[] = [];
   for (const repo of repos) {
-    const idle = idleDirs.get(repo.key);
-    const shown =
-      !idle || idleRevealed.has(repo.key)
-        ? repo.folders
-        : repo.folders.filter((f) => !idle.has(f.dir));
+    const shown = withoutFolded(
+      withoutFolded(repo.folders, unmanagedDirs.get(repo.key), unmanagedRevealed.has(repo.key)),
+      idleDirs.get(repo.key),
+      idleRevealed.has(repo.key),
+    );
     if (shown.length === 0) continue;
 
     // A solo repo wears one header for both levels, so its sessions hang

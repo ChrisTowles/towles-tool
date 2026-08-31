@@ -28,6 +28,8 @@ function nodes(collapsed: Record<string, boolean> = {}, wins: WindowsPayload | n
     repos: REPOS,
     idleDirs: new Map(),
     idleRevealed: new Set(),
+    unmanagedDirs: new Map(),
+    unmanagedRevealed: new Set(),
     collapsed,
     wins,
   });
@@ -96,10 +98,33 @@ describe("railNodes", () => {
       repos: REPOS,
       idleDirs: new Map([["path:/code/dotfiles", new Set(["/code/dotfiles"])]]),
       idleRevealed: new Set(),
+      unmanagedDirs: new Map(),
+      unmanagedRevealed: new Set(),
       collapsed: {},
       wins: null,
     });
     expect(keys(hidden).some((k) => k.endsWith("dotfiles"))).toBe(false);
+  });
+
+  it("drops the worktrees agents made until their stub is peeked open", () => {
+    const v = {
+      repos: [MULTI],
+      idleDirs: new Map(),
+      idleRevealed: new Set<string>(),
+      unmanagedDirs: new Map([[REPO_KEY, new Set(["/code/tt/wt/feat-x"])]]),
+      unmanagedRevealed: new Set<string>(),
+      collapsed: {},
+      wins: null,
+    };
+    expect(keys(railNodes(v))).toEqual(["r0:tt", "f1:tt", "s2:c"]);
+    expect(keys(railNodes({ ...v, unmanagedRevealed: new Set([REPO_KEY]) }))).toEqual([
+      "r0:tt",
+      "f1:tt",
+      "s2:c",
+      "f1:feat-x",
+      "s2:d",
+      "s2:e",
+    ]);
   });
 
   it("orders a checkout's sessions window-grouped first, as the rail draws them", () => {
@@ -161,6 +186,8 @@ describe("railMove", () => {
           repos: [empty],
           idleDirs: new Map(),
           idleRevealed: new Set(),
+          unmanagedDirs: new Map(),
+          unmanagedRevealed: new Set(),
           collapsed: {},
           wins: null,
         }),

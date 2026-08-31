@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { FolderGit2, FolderPlus } from "lucide-react";
 import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-working-context";
@@ -108,6 +108,23 @@ import { uiAction } from "@/lib/ui-action";
 import { toast } from "sonner";
 
 /** Release the shell's claim on the keyboard when focus moves off its pane. */
+/** A stub row's peek, toggled per repo. The event is emitted outside the
+ * updater: a state updater must stay pure, or StrictMode double-counts it. */
+function togglePeek(
+  revealed: Set<string>,
+  set: Dispatch<SetStateAction<Set<string>>>,
+  event: "agentboard.idle_peek" | "agentboard.unmanaged_peek",
+) {
+  return (repoKey: string) => {
+    uiAction(event, "agentboard", revealed.has(repoKey) ? "hide" : "show");
+    set((keys) => {
+      const next = new Set(keys);
+      if (!next.delete(repoKey)) next.add(repoKey);
+      return next;
+    });
+  };
+}
+
 function blurTerminal() {
   const el = document.activeElement;
   if (el instanceof HTMLElement && el.closest("[data-term-host]")) el.blur();
@@ -163,20 +180,17 @@ export function AgentboardScreen() {
   // Quiet is a persisted view mode instead: its switch is in the rail header,
   // so the hiding is never something you can't find your way back out of.
   const [idleRevealed, setIdleRevealed] = useState<Set<string>>(new Set());
+  const [unmanagedRevealed, setUnmanagedRevealed] = useState<Set<string>>(new Set());
   const [showQuiet, setShowQuiet] = useShowQuiet();
   // Never persisted: a rail that opened already narrowed to yesterday's search
   // is a rail with repos missing and no memory of why.
   const [query, setQuery] = useState("");
-  // The event is emitted here rather than inside the updater: a state updater
-  // must stay pure, or StrictMode's double invoke double-counts the gesture.
-  const toggleIdleRevealed = (repoKey: string) => {
-    uiAction("agentboard.idle_peek", "agentboard", idleRevealed.has(repoKey) ? "hide" : "show");
-    setIdleRevealed((keys) => {
-      const next = new Set(keys);
-      if (!next.delete(repoKey)) next.add(repoKey);
-      return next;
-    });
-  };
+  const toggleIdleRevealed = togglePeek(idleRevealed, setIdleRevealed, "agentboard.idle_peek");
+  const toggleUnmanagedRevealed = togglePeek(
+    unmanagedRevealed,
+    setUnmanagedRevealed,
+    "agentboard.unmanaged_peek",
+  );
   const [renaming, setRenaming] = useState<string | null>(null);
   // Live PTY titles (Claude emits `✳ <title>`), preferred over the backend label.
   const [titles, setTitles] = useState<Record<string, string>>({});
@@ -196,6 +210,7 @@ export function AgentboardScreen() {
     quietDirs,
     quietCount,
     idleDirs,
+    unmanagedDirs,
     visibleRepos,
     missingRepoCount,
     folderOf,
@@ -209,6 +224,7 @@ export function AgentboardScreen() {
     filter,
     recentHours,
     idleRevealed,
+    unmanagedRevealed,
     showQuiet,
     query,
     activeFolderDir,
@@ -228,8 +244,16 @@ export function AgentboardScreen() {
   // even while nothing is held — the handlers address them without a repaint.
   const hotkeysHeld = useModifierHeld("ab-jump-session-1");
   const railVis = useMemo(
-    () => ({ repos: shownRepos, idleDirs, idleRevealed, collapsed, wins }),
-    [shownRepos, idleDirs, idleRevealed, collapsed, wins],
+    () => ({
+      repos: shownRepos,
+      idleDirs,
+      idleRevealed,
+      unmanagedDirs,
+      unmanagedRevealed,
+      collapsed,
+      wins,
+    }),
+    [shownRepos, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed, collapsed, wins],
   );
   const railTree = useMemo(() => railNodes(railVis), [railVis]);
   const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
@@ -1233,6 +1257,9 @@ export function AgentboardScreen() {
                               idleDirs={idleDirs.get(repo.key)}
                               idleRevealed={idleRevealed.has(repo.key)}
                               onToggleIdle={() => toggleIdleRevealed(repo.key)}
+                              unmanagedDirs={unmanagedDirs.get(repo.key)}
+                              unmanagedRevealed={unmanagedRevealed.has(repo.key)}
+                              onToggleUnmanaged={() => toggleUnmanagedRevealed(repo.key)}
                               quietDirs={quietDirs.get(repo.key)}
                               now={now}
                               compactPct={state.compactRecommendPercent}
