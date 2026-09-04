@@ -136,3 +136,42 @@ describe("mentionLabel", () => {
     expect(mentionLabel("U_WIFE", null, {})).toBe("@user");
   });
 });
+
+describe("emoji shortcodes", () => {
+  it("renders a known shortcode as its character and keeps the name", () => {
+    expect(parseMrkdwn("nice :tada:")).toEqual([
+      { type: "text", value: "nice " },
+      { type: "emoji", name: "tada", char: "🎉" },
+    ]);
+  });
+
+  it("leaves a custom workspace shortcode as literal text", () => {
+    expect(parseMrkdwn("ship it :shipit:")).toEqual([{ type: "text", value: "ship it :shipit:" }]);
+  });
+
+  it("drops a skin-tone suffix rather than emitting a stray swatch", () => {
+    expect(parseMrkdwn(":wave::skin-tone-3:")).toEqual([
+      { type: "emoji", name: "wave", char: "👋" },
+    ]);
+  });
+
+  it("does not treat a clock time as a shortcode", () => {
+    expect(parseMrkdwn("meet at 10:30:00 sharp")).toEqual([
+      { type: "text", value: "meet at 10:30:00 sharp" },
+    ]);
+  });
+
+  it("parses emoji inside emphasis and alongside entities", () => {
+    expect(parseMrkdwn("*yes :fire:* <@U1>")).toEqual([
+      {
+        type: "strong",
+        children: [
+          { type: "text", value: "yes " },
+          { type: "emoji", name: "fire", char: "🔥" },
+        ],
+      },
+      { type: "text", value: " " },
+      { type: "user", id: "U1", label: null },
+    ]);
+  });
+});

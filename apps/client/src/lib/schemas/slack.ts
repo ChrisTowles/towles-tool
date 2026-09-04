@@ -14,11 +14,22 @@ const DmFileSchema = z.object({
   isImage: z.boolean(),
 });
 
+const DmReactionSchema = z.object({
+  name: z.string(),
+  count: z.number(),
+  mine: z.boolean(),
+});
+
 const DmMessageSchema = z.object({
+  tsRaw: z.string(),
   text: z.string(),
   ts: z.number(),
   fromMe: z.boolean(),
   files: z.array(DmFileSchema),
+  reactions: z.array(DmReactionSchema),
+  threadTs: z.string(),
+  replyCount: z.number(),
+  latestReplyTs: z.number(),
 });
 
 export const SlackDmViewSchema = z.object({
@@ -27,6 +38,8 @@ export const SlackDmViewSchema = z.object({
   watchUserId: z.string(),
   messages: z.array(DmMessageSchema),
 });
+
+export const SlackThreadSchema = z.array(DmMessageSchema);
 
 export const SlackFileDataSchema = z.object({
   mimetype: z.string(),

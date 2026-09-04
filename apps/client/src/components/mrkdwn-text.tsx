@@ -65,5 +65,13 @@ function renderNode(node: MrkdwnNode, opts: MentionOpts): ReactNode {
       return <span className={MENTION_CLASS}>#{node.label}</span>;
     case "broadcast":
       return <span className={MENTION_CLASS}>{node.label}</span>;
+    case "emoji":
+      // The `font-emoji` stack is the OS colour font; without it WebKitGTK
+      // renders some glyphs from the monochrome text fallback.
+      return (
+        <span role="img" aria-label={node.name} className="font-emoji">
+          {node.char}
+        </span>
+      );
   }
 }

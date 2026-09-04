@@ -152,7 +152,7 @@ async fn run_connection(
         };
 
     // Resolved once so events match the exact conversation; on failure
-    // `is_watched_message` falls back to sender-matching.
+    // `is_watched_event` falls back to sender-matching.
     let dm = config.dm.clone();
     let watched_channel =
         tauri::async_runtime::spawn_blocking(move || tt_collect::dm_channel_id(&dm))
@@ -185,7 +185,7 @@ async fn run_connection(
                         eprintln!("slack socket: server disconnect ({reason}); reconnecting");
                         return Outcome::Disconnected;
                     }
-                    Envelope::Event { envelope_id, message } => {
+                    Envelope::Event { envelope_id, event } => {
                         // Ack first — Slack drops the socket on an unacked envelope.
                         if let Err(e) =
                             ws.send(Message::Text(tt_collect::ack_json(&envelope_id).into())).await
@@ -193,9 +193,9 @@ async fn run_connection(
                             eprintln!("slack socket: ack failed: {e}");
                             return Outcome::Error;
                         }
-                        if let Some(msg) = message
-                            && tt_collect::is_watched_message(
-                                &msg,
+                        if let Some(event) = event
+                            && tt_collect::is_watched_event(
+                                &event,
                                 &watched_channel,
                                 &config.dm.watch_user_id,
                             )
