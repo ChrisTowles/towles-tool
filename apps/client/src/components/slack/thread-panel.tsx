@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MessagesSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -6,6 +6,7 @@ import { errorMessage } from "@/lib/errors";
 import { slackDmThread, type DmMessage } from "@/lib/slack";
 import { Composer } from "./composer";
 import { MessageBubble, type BubbleActions } from "./message-bubble";
+import { usePinToBottom } from "./use-pin-to-bottom";
 
 /** One thread beside the conversation, with a composer that posts back into the
  * same `thread_ts`. Refetches on every `revision` bump — the screen ticks it on
@@ -32,7 +33,7 @@ export function ThreadPanel({
   const [messages, setMessages] = useState<DmMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const endRef = useRef<HTMLDivElement>(null);
+  const { viewportRef, listRef, composerRef, repin } = usePinToBottom(error === null);
 
   const load = useCallback(async () => {
     const loaded = await slackDmThread(threadTs);
@@ -50,10 +51,6 @@ export function ThreadPanel({
     setLoading(true);
     void load();
   }, [load, revision]);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
 
   const replies = Math.max(messages.length - 1, 0);
 
@@ -84,8 +81,8 @@ export function ThreadPanel({
           </p>
         </div>
       ) : (
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-1.5 px-3 py-3">
+        <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
+          <div ref={listRef} className="flex flex-col gap-1.5 px-3 py-3">
             {loading && messages.length === 0 && (
               <p className="py-6 text-center text-xs text-muted-foreground">Loading thread…</p>
             )}
@@ -108,17 +105,19 @@ export function ThreadPanel({
                 )}
               </div>
             ))}
-            <div ref={endRef} />
           </div>
         </ScrollArea>
       )}
 
-      <div className="shrink-0 border-t border-border bg-card px-3 py-2.5">
+      <div ref={composerRef} className="shrink-0 border-t border-border bg-card px-3 py-2.5">
         <Composer
           compact
           placeholder={`Reply to ${watchName}…`}
           sending={sending}
-          onSend={onReply}
+          onSend={(text) => {
+            repin();
+            return onReply(text);
+          }}
         />
       </div>
     </aside>

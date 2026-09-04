@@ -8,8 +8,14 @@ import { cn } from "@/lib/utils"
 function ScrollArea({
   className,
   children,
+  viewportRef,
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  // The scrolling box is Radix's viewport, not the root, so anything that
+  // reads or drives scroll position (pinning a chat to its newest message)
+  // needs a handle on it.
+  viewportRef?: React.Ref<HTMLDivElement>
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -17,6 +23,7 @@ function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        ref={viewportRef}
         data-slot="scroll-area-viewport"
         // Radix wraps children in an internal `display: table; min-width: 100%`
         // div to measure content size for the scrollbar thumb. `display:table`
