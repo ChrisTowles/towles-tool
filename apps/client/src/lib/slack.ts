@@ -3,13 +3,10 @@ import { Result } from "better-result";
 import { SlackDmViewSchema, SlackFileDataSchema, SlackThreadSchema } from "./schemas/slack";
 import { errorMessage, type IpcError } from "./errors";
 import { invoke, isTauri } from "./tauri";
+import { useStoreSnapshot } from "./store-snapshot";
+import type { DmItem } from "./data";
 
-/** Client-side view of the watched Slack DM conversation, mirroring the Rust
- * types (camelCase, epoch-ms timestamps). A pull, not a subscription — the
- * panel refetches after a send and whenever the store re-emits. */
-
-/** The private URLs need the token's bearer header, so images go through
- * {@link slackDmFile} rather than straight into an `<img>`. */
+/** Private URLs need the bearer header, so images go through {@link slackDmFile}. */
 export type DmFile = {
   id: string;
   name: string;
@@ -42,9 +39,8 @@ export type DmMessage = {
   latestReplyTs: number;
 };
 
-/** `configured` is false when the collector has no token/member id yet — the
- * panel shows setup guidance instead of a thread. `watchUserId` resolves
- * `<@id>` mentions to the watched name. */
+/** `configured` is false when the collector has no token/member id yet.
+ * `watchUserId` resolves `<@id>` mentions to the watched name. */
 export type SlackDmView = {
   configured: boolean;
   watchName: string;
@@ -82,15 +78,13 @@ export function isAuthError(message: string): boolean {
   return AUTH_ERROR_CODES.some((code) => message.includes(code));
 }
 
-/** Exercises the attachment layout in browser dev, where a real `url_private`
- * would need the Tauri file-fetch command. */
+/** A real `url_private` would need the Tauri file-fetch command. */
 const MOCK_IMAGE =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="150"><rect width="240" height="150" fill="#a78bfa"/><text x="120" y="80" font-family="sans-serif" font-size="18" fill="white" text-anchor="middle">photo</text></svg>`,
   );
 
-/** Browser-dev fallback: the panel stays workable without real credentials. */
 const MIN = 60_000;
 const MOCK_NOW = () => Date.now();
 const MOCK_THREAD_TS = "1720000100.000100";
@@ -153,7 +147,6 @@ function mockView(now: number = MOCK_NOW()): SlackDmView {
   };
 }
 
-/** The replies behind {@link mockView}'s thread parent. */
 function mockThread(now: number = MOCK_NOW()): DmMessage[] {
   const parent = mockView(now).messages.at(-1);
   return [
@@ -174,16 +167,24 @@ function mockThread(now: number = MOCK_NOW()): DmMessage[] {
   ];
 }
 
-/** Most refetches come back identical. Handing back a fresh object anyway
- * reloads every image and shifts the scroll under the reader. */
+/** A fresh object for identical content reloads every image. */
 function sameView(a: SlackDmView | null, b: SlackDmView): boolean {
   return a !== null && JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** Refetches on mount, on `refresh`, and whenever the store snapshot re-emits.
- * `view` is null only during the first load. `revision` counts loads so an open
- * thread refetches off the same triggers — deriving it from the messages
- * wouldn't do, since a reply leaves every top-level message byte-identical. */
+/** The only part of a snapshot that says this conversation moved: every write
+ * path runs the collector, which restamps `fetchedAt`. The rest is noise. */
+export function dmSignal(dms: DmItem[]): string {
+  return dms.map((d) => `${d.channel}:${d.ts}:${d.fetchedAt}:${d.dismissedTs}`).join("|");
+}
+
+/** The panel works with the watcher off, where no write ever lands, so it also
+ * pulls on its own. Each load restarts the wait. */
+const IDLE_REFETCH_MS = 60_000;
+
+/** Refetches on mount, on `refresh`, when {@link dmSignal} moves and on the
+ * idle timer. `revision` counts loads so an open thread refetches off the same
+ * triggers — a reply leaves every top-level message byte-identical. */
 export function useSlackDm(): {
   view: SlackDmView | null;
   loading: boolean;
@@ -195,6 +196,7 @@ export function useSlackDm(): {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const signal = dmSignal(useStoreSnapshot().snapshot.dms);
 
   const load = useCallback(async () => {
     setRevision((n) => n + 1);
@@ -221,31 +223,15 @@ export function useSlackDm(): {
   useEffect(() => {
     void load();
     if (!isTauri()) return;
-
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        const sub = await listen("store://snapshot", () => void load());
-        if (disposed) sub();
-        else unlisten = sub;
-      } catch {
-        // No Tauri event bus — the mount fetch + manual refresh still work.
-      }
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [load]);
+    const idle = window.setInterval(() => void load(), IDLE_REFETCH_MS);
+    return () => window.clearInterval(idle);
+  }, [load, signal]);
 
   return { view, loading, error, revision, refresh };
 }
 
-/** The `Err` carries the raw Slack error string (see {@link isScopeError}). The
- * command refreshes the store snapshot, which nudges {@link useSlackDm}. A
- * `threadTs` posts into that thread rather than the conversation. */
+/** The `Err` carries the raw Slack error string (see {@link isScopeError}); the
+ * command refreshes the store, which nudges {@link useSlackDm}. */
 export function slackDmSend(text: string, threadTs?: string): Promise<Result<void, IpcError>> {
   return invoke<void>("slack_dm_send", { text, threadTs: threadTs ?? null });
 }
