@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Result } from "better-result";
-import { SlackDmViewSchema, SlackFileDataSchema } from "./schemas/slack";
+import { Result } from "better-result";
+import { SlackDmViewSchema, SlackFileDataSchema, SlackThreadSchema } from "./schemas/slack";
 import { errorMessage, type IpcError } from "./errors";
 import { invoke, isTauri } from "./tauri";
 
@@ -20,11 +20,26 @@ export type DmFile = {
   isImage: boolean;
 };
 
+/** One aggregated emoji reaction. `name` is the bare Slack shortcode, which is
+ * also what {@link slackDmReact} sends back. */
+export type DmReaction = {
+  name: string;
+  count: number;
+  mine: boolean;
+};
+
 export type DmMessage = {
+  /** Slack's `"seconds.micros"` id — what threads and reactions are keyed by. */
+  tsRaw: string;
   text: string;
   ts: number;
   fromMe: boolean;
   files: DmFile[];
+  reactions: DmReaction[];
+  /** The thread this belongs to; on a parent it equals `tsRaw`. */
+  threadTs: string;
+  replyCount: number;
+  latestReplyTs: number;
 };
 
 /** `configured` is false when the collector has no token/member id yet — the
@@ -76,24 +91,43 @@ const MOCK_IMAGE =
   );
 
 /** Browser-dev fallback: the panel stays workable without real credentials. */
-function mockView(now: number = Date.now()): SlackDmView {
-  const MIN = 60_000;
+const MIN = 60_000;
+const MOCK_NOW = () => Date.now();
+const MOCK_THREAD_TS = "1720000100.000100";
+
+function msg(over: Partial<DmMessage> & Pick<DmMessage, "text" | "ts" | "fromMe">): DmMessage {
+  return {
+    tsRaw: `${over.ts / 1000}`,
+    files: [],
+    reactions: [],
+    threadTs: "",
+    replyCount: 0,
+    latestReplyTs: 0,
+    ...over,
+  };
+}
+
+function mockView(now: number = MOCK_NOW()): SlackDmView {
   return {
     configured: true,
     watchName: "Danielle",
     watchUserId: "U_DANIELLE",
     messages: [
-      {
+      msg({
         text: "hey, are you still on for *dinner* tonight? see <https://ex.com/menu|the menu>",
         ts: now - 42 * MIN,
         fromMe: false,
-        files: [],
-      },
-      { text: "yes! leaving in about an hour", ts: now - 40 * MIN, fromMe: true, files: [] },
-      {
+        reactions: [{ name: "+1", count: 1, mine: true }],
+      }),
+      msg({ text: "yes! leaving in about an hour :tada:", ts: now - 40 * MIN, fromMe: true }),
+      msg({
         text: "found this place",
         ts: now - 38 * MIN,
         fromMe: false,
+        reactions: [
+          { name: "heart", count: 2, mine: true },
+          { name: "shipit", count: 1, mine: false },
+        ],
         files: [
           {
             id: "F_MOCK",
@@ -105,25 +139,59 @@ function mockView(now: number = Date.now()): SlackDmView {
             isImage: true,
           },
         ],
-      },
+      }),
+      msg({
+        tsRaw: MOCK_THREAD_TS,
+        text: "weekend plan — putting the details in a thread",
+        ts: now - 30 * MIN,
+        fromMe: false,
+        threadTs: MOCK_THREAD_TS,
+        replyCount: 2,
+        latestReplyTs: now - 12 * MIN,
+      }),
     ],
   };
 }
 
-/** Refetches on mount, on `refresh`, and whenever the store snapshot re-emits
- * (a background tick may have landed a reply). `view` is null only during the
- * first load; `error` separates "not configured" from "broke". */
+/** The replies behind {@link mockView}'s thread parent. */
+function mockThread(now: number = MOCK_NOW()): DmMessage[] {
+  const parent = mockView(now).messages.at(-1);
+  return [
+    ...(parent ? [parent] : []),
+    msg({
+      text: "saturday: swim lessons at 9",
+      ts: now - 20 * MIN,
+      fromMe: false,
+      threadTs: MOCK_THREAD_TS,
+    }),
+    msg({
+      text: "got it :white_check_mark:",
+      ts: now - 12 * MIN,
+      fromMe: true,
+      threadTs: MOCK_THREAD_TS,
+      reactions: [{ name: "heart", count: 1, mine: false }],
+    }),
+  ];
+}
+
+/** Refetches on mount, on `refresh`, and whenever the store snapshot re-emits.
+ * `view` is null only during the first load. `revision` counts loads so an open
+ * thread refetches off the same triggers — deriving it from the messages
+ * wouldn't do, since a reply leaves every top-level message byte-identical. */
 export function useSlackDm(): {
   view: SlackDmView | null;
   loading: boolean;
   error: string | null;
+  revision: number;
   refresh: () => void;
 } {
   const [view, setView] = useState<SlackDmView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
 
   const load = useCallback(async () => {
+    setRevision((n) => n + 1);
     if (!isTauri()) {
       setView(mockView());
       setLoading(false);
@@ -166,13 +234,30 @@ export function useSlackDm(): {
     };
   }, [load]);
 
-  return { view, loading, error, refresh };
+  return { view, loading, error, revision, refresh };
 }
 
 /** The `Err` carries the raw Slack error string (see {@link isScopeError}). The
- * command refreshes the store snapshot, which nudges {@link useSlackDm}. */
-export function slackDmSend(text: string): Promise<Result<void, IpcError>> {
-  return invoke<void>("slack_dm_send", { text });
+ * command refreshes the store snapshot, which nudges {@link useSlackDm}. A
+ * `threadTs` posts into that thread rather than the conversation. */
+export function slackDmSend(text: string, threadTs?: string): Promise<Result<void, IpcError>> {
+  return invoke<void>("slack_dm_send", { text, threadTs: threadTs ?? null });
+}
+
+/** Toggle one of my reactions on a message. Slack treats a redundant toggle as
+ * success, so an optimistic chip never has to be rolled back. */
+export function slackDmReact(
+  ts: string,
+  name: string,
+  add: boolean,
+): Promise<Result<void, IpcError>> {
+  return invoke<void>("slack_dm_react", { ts, name, add });
+}
+
+/** A thread's parent followed by its replies, oldest first. */
+export function slackDmThread(threadTs: string): Promise<Result<DmMessage[], IpcError>> {
+  if (!isTauri()) return Promise.resolve(Result.ok(mockThread()));
+  return invoke<DmMessage[]>("slack_dm_thread", { threadTs }, { schema: SlackThreadSchema });
 }
 
 /** The webview can't load `url_private` directly, so bytes come back base64 over

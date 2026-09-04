@@ -1,7 +1,9 @@
 /**
- * Pure parser for Slack's `mrkdwn`, which is deliberately not Markdown: single
- * `*bold*`, `_italic_`, `~strike~`, `<url|label>`, `<@U123>`, `& < >` escaped.
+ * Pure parser for Slack's `mrkdwn`, deliberately not Markdown: single `*bold*`,
+ * `_italic_`, `~strike~`, `<url|label>`, `<@U123>`, `:shortcode:`, `& < >`.
  */
+
+import { emojiChar } from "./emoji";
 
 export type MrkdwnNode =
   | { type: "text"; value: string }
@@ -13,7 +15,8 @@ export type MrkdwnNode =
   | { type: "link"; url: string; label: string }
   | { type: "user"; id: string; label: string | null }
   | { type: "channel"; label: string }
-  | { type: "broadcast"; label: string };
+  | { type: "broadcast"; label: string }
+  | { type: "emoji"; name: string; char: string | null };
 
 // Atoms whose contents are literal (no emphasis parsing inside): fenced code,
 // inline code, and angle-wrapped entities. Tried left-to-right at each position,
@@ -125,7 +128,27 @@ function closesHere(text: string, j: number, marker: string): boolean {
   return next === undefined || !/[0-9A-Za-z]/.test(next);
 }
 
+// Slack shortcodes are lowercase alnum plus `_ + -`, optionally carrying a skin
+// tone: `:wave::skin-tone-3:`. Both colons are consumed so `10:30:00` can't
+// match — a bare digit run is not a shortcode.
+const SHORTCODE = /:([a-z0-9_+-]+)(::skin-tone-\d)?:/g;
+
 function pushText(nodes: MrkdwnNode[], raw: string): void {
+  if (!raw) return;
+  let last = 0;
+  SHORTCODE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = SHORTCODE.exec(raw)) !== null) {
+    const char = emojiChar(m[1]);
+    if (char === null) continue;
+    if (m.index > last) pushLiteral(nodes, raw.slice(last, m.index));
+    nodes.push({ type: "emoji", name: m[1], char });
+    last = SHORTCODE.lastIndex;
+  }
+  pushLiteral(nodes, raw.slice(last));
+}
+
+function pushLiteral(nodes: MrkdwnNode[], raw: string): void {
   if (!raw) return;
   const value = unescapeEntities(raw);
   const last = nodes[nodes.length - 1];

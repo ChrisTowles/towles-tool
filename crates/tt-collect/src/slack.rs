@@ -1,16 +1,16 @@
 //! Slack DM watcher + chat bridge: one DM conversation via the Slack Web API.
 //!
-//! The *watcher* ([`fetch_dm`]) makes three calls per tick with a user OAuth token
-//! (`xoxp-…`, scopes `im:history`/`im:read`): `auth.test` validates it and yields
-//! the team id for the `slack://` deep link, `conversations.open` resolves the
-//! watched user's DM channel, `conversations.history` fetches the latest messages.
-//! The newest real message decides everything: sent by the watched user ⇒
-//! *unanswered*, sent by anyone else ⇒ answered.
+//! The *watcher* ([`fetch_dm`]) polls with a user OAuth token (`xoxp-…`): the
+//! newest real message decides everything — sent by the watched user ⇒
+//! *unanswered*, sent by anyone else ⇒ answered. The *chat bridge* serves the
+//! app's DM panel on demand. HTTP plumbing is isolated in [`SlackHttp`];
+//! response interpretation is pure functions over `serde_json::Value`, so it
+//! unit-tests with inline fixtures.
 //!
-//! The *chat bridge* serves the app's DM panel on demand: [`fetch_dm_history`]
-//! returns the conversation oldest-first, [`send_dm`] posts a reply as the user.
-//! HTTP plumbing is isolated in [`SlackHttp`]; response interpretation is pure
-//! functions over `serde_json::Value`, so it unit-tests with inline fixtures.
+//! Slack keeps thread replies *out* of `conversations.history` — a parent only
+//! carries `reply_count`/`latest_reply`. So the newest thing in the DM may be a
+//! reply the watcher would otherwise never see; [`fetch_dm`] follows the
+//! freshest parent into `conversations.replies` when that is the case.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -21,12 +21,9 @@ use tt_store::DmInput;
 /// cap a dead network wedges the scheduler's blocking worker.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The shared HTTP agent for every Slack Web API / file call, built once on
-/// first use with native-tls rather than ureq's default rustls+webpki-roots
-/// stack. Corporate TLS-inspecting proxies (Zscaler and similar) inject their
-/// own root CA into the OS trust store, not into rustls's bundled Mozilla
-/// roots — native-tls verifies against the OS store, so intercepted networks
-/// still work.
+/// The shared HTTP agent, built once with native-tls rather than ureq's default
+/// rustls+webpki-roots. TLS-inspecting proxies (Zscaler and similar) inject
+/// their root CA into the OS trust store, which only native-tls consults.
 pub(crate) fn agent() -> Result<&'static ureq::Agent, String> {
     static AGENT: OnceLock<Result<ureq::Agent, String>> = OnceLock::new();
     AGENT
@@ -39,19 +36,17 @@ pub(crate) fn agent() -> Result<&'static ureq::Agent, String> {
         .map_err(String::clone)
 }
 
-/// Slack settings the collector needs, decoupled from `tt-config` (callers map
-/// their settings into this, mirroring how `CalendarProvider` is passed in).
+/// Slack settings the collector needs, decoupled from `tt-config` — callers map
+/// their settings into this, as `CalendarProvider` is passed in.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlackDmConfig {
     /// User OAuth token (`xoxp-…`).
     pub token: String,
-    /// Slack member ID being watched (e.g. `U0123ABCD`).
     pub watch_user_id: String,
-    /// Display name for the banner; falls back to the member ID when empty.
+    /// Falls back to the member id when empty.
     pub watch_name: String,
 }
 
-/// Minimal Slack Web API client (GET/POST with bearer token).
 struct SlackHttp<'a> {
     token: &'a str,
 }
@@ -69,9 +64,8 @@ impl SlackHttp<'_> {
         Self::parse_response(response, method)
     }
 
-    /// POST with a form-encoded body — for calls carrying user-written text
-    /// (`chat.postMessage`), where a query string would cap length and mangle
-    /// newlines.
+    /// For calls carrying user-written text: a query string would cap length and
+    /// mangle newlines.
     fn call_form(&self, method: &str, form: &[(&str, &str)]) -> Result<serde_json::Value, String> {
         let response = agent()?
             .post(&format!("https://slack.com/api/{method}"))
@@ -91,48 +85,63 @@ impl SlackHttp<'_> {
     }
 }
 
-/// One message of the watched DM conversation, as the app's chat panel renders
-/// it. Serialized camelCase because it crosses the Tauri IPC boundary verbatim.
+/// One message, as the app's chat panel renders it. Serialized camelCase because
+/// it crosses the Tauri IPC boundary verbatim.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DmMessage {
+    /// Slack's `"seconds.micros"` — the id `conversations.replies` and
+    /// `reactions.add` are keyed by. `ts` is the same instant in epoch ms.
+    pub ts_raw: String,
     pub text: String,
-    /// Epoch ms.
     pub ts: i64,
-    /// `true` when the message was sent by me (anyone but the watched user).
+    /// Sent by me — anyone but the watched user.
     pub from_me: bool,
-    /// Files (images/attachments) shared on this message, if any. Empty for a
-    /// plain text message.
     pub files: Vec<DmFile>,
+    pub reactions: Vec<DmReaction>,
+    /// Empty when standalone. On a parent it equals `ts_raw`; on a reply it
+    /// points back at the parent.
+    pub thread_ts: String,
+    pub reply_count: u32,
+    pub latest_reply_ts: i64,
 }
 
-/// One file attached to a DM message. The private URLs need the token's bearer
-/// header, so the webview can't load them directly — the app fetches the bytes
-/// through [`fetch_file`] (see the `slack_dm_file` command) and renders images
-/// as a `data:` URI. Serialized camelCase for the IPC boundary.
+/// One emoji reaction, aggregated across its reactors. A DM has exactly two
+/// members, so anyone who isn't the watched user is me.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DmReaction {
+    /// Shortcode without colons (`thumbsup`, `heart`, `+1`).
+    pub name: String,
+    pub count: u32,
+    /// I am one of the reactors, so the chip toggles off rather than on.
+    pub mine: bool,
+}
+
+/// One attached file. The private URLs need the token's bearer header, so the
+/// webview can't load them — the app fetches bytes through [`fetch_file`] and
+/// renders images as a `data:` URI.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DmFile {
     pub id: String,
-    /// Display name (`name`, falling back to `title`).
+    /// `name`, falling back to `title`.
     pub name: String,
     pub mimetype: String,
-    /// Full-size authenticated URL (`url_private`).
     pub url_private: String,
-    /// A thumbnail URL when Slack provided one (images only), else empty.
+    /// Empty when Slack made no thumbnail (non-images).
     pub thumb_url: String,
-    /// Human-facing web permalink, for "open in browser" on non-image chips.
+    /// Web permalink, for "open in browser" on a non-image chip.
     pub permalink: String,
-    /// `true` when the mimetype is `image/*` — the panel renders these inline.
+    /// The panel renders these inline.
     pub is_image: bool,
 }
 
-/// Fetch the newest `limit` messages of the watched DM, oldest first. Serves
-/// the app's chat panel on demand (no store involved).
+/// The newest `limit` top-level messages, oldest first — no store involved.
+/// Thread replies are excluded; the panel pulls those via [`fetch_thread`].
 pub fn fetch_dm_history(config: &SlackDmConfig, limit: u32) -> Result<Vec<DmMessage>, String> {
     let http = SlackHttp { token: &config.token };
-    let open = http.call("conversations.open", &[("users", config.watch_user_id.as_str())])?;
-    let channel = parse_open_channel(&open)?;
+    let channel = open_channel(&http, config)?;
     let history = http.call(
         "conversations.history",
         &[("channel", channel.as_str()), ("limit", &limit.to_string())],
@@ -140,32 +149,55 @@ pub fn fetch_dm_history(config: &SlackDmConfig, limit: u32) -> Result<Vec<DmMess
     Ok(parse_history(&history, config))
 }
 
-/// Resolve the watched user's DM channel id (`D…`) via `conversations.open`
-/// (idempotent — returns the existing channel). The socket loop uses it to match
-/// incoming `message.im` events to the watched conversation exactly.
-pub fn dm_channel_id(config: &SlackDmConfig) -> Result<String, String> {
+/// One thread's parent followed by every reply, oldest first.
+pub fn fetch_thread(config: &SlackDmConfig, thread_ts: &str) -> Result<Vec<DmMessage>, String> {
     let http = SlackHttp { token: &config.token };
+    let channel = open_channel(&http, config)?;
+    let replies = http.call(
+        "conversations.replies",
+        &[
+            ("channel", channel.as_str()),
+            ("ts", thread_ts),
+            ("limit", &THREAD_LIMIT.to_string()),
+        ],
+    )?;
+    // `conversations.replies` is oldest-first already, so `parse_history`'s
+    // reverse (right for `conversations.history`) has to be undone.
+    let mut out = parse_history(&replies, config);
+    out.reverse();
+    Ok(out)
+}
+
+/// The panel is a glance surface, not an archive.
+const THREAD_LIMIT: u32 = 200;
+
+/// The watched user's DM channel id. `conversations.open` is idempotent — it
+/// returns the existing channel rather than creating a second one.
+fn open_channel(http: &SlackHttp<'_>, config: &SlackDmConfig) -> Result<String, String> {
     let open = http.call("conversations.open", &[("users", config.watch_user_id.as_str())])?;
     parse_open_channel(&open)
 }
 
-/// A workspace member, for the "pick the person to watch" dropdown in Settings.
-/// Serialized camelCase for the Tauri IPC boundary.
+/// The socket loop's copy of [`open_channel`], for matching incoming events to
+/// the watched conversation exactly.
+pub fn dm_channel_id(config: &SlackDmConfig) -> Result<String, String> {
+    open_channel(&SlackHttp { token: &config.token }, config)
+}
+
+/// A workspace member, for Settings' "pick the person to watch" dropdown.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SlackUser {
     pub id: String,
-    /// Best display name: profile display name, then real name, then handle.
     pub name: String,
 }
 
-/// Hard cap on `users.list` pages fetched — enough for a personal/family
-/// workspace many times over, without a runaway on a huge corporate one.
+/// Enough for a personal workspace many times over, without a runaway on a
+/// huge corporate one.
 const MAX_USER_PAGES: usize = 20;
 
-/// Fetch the workspace's human members (`users.list`, `users:read` scope), for
-/// the watch-user picker. Bots, deleted accounts and Slackbot are dropped;
-/// results are sorted by name. Paginates up to [`MAX_USER_PAGES`].
+/// The workspace's human members (`users:read`), sorted by name. Bots, deleted
+/// accounts and Slackbot are dropped.
 pub fn list_users(token: &str) -> Result<Vec<SlackUser>, String> {
     let http = SlackHttp { token };
     let mut users: Vec<SlackUser> = Vec::new();
@@ -190,8 +222,6 @@ pub fn list_users(token: &str) -> Result<Vec<SlackUser>, String> {
     Ok(users)
 }
 
-/// Parse a `users.list` page into human members, dropping bots, deleted
-/// accounts and Slackbot.
 pub(crate) fn parse_users(body: &serde_json::Value) -> Vec<SlackUser> {
     let Some(members) = body.get("members").and_then(|v| v.as_array()) else {
         return Vec::new();
@@ -210,8 +240,7 @@ pub(crate) fn parse_users(body: &serde_json::Value) -> Vec<SlackUser> {
         .collect()
 }
 
-/// The best name for a member: profile display name, then real name, then the
-/// `name` handle, then the id.
+/// Profile display name, then real name, then the handle, then the id.
 fn user_display_name(member: &serde_json::Value, id: &str) -> String {
     fn trimmed(value: Option<&str>) -> Option<&str> {
         value.map(str::trim).filter(|s| !s.is_empty())
@@ -223,32 +252,58 @@ fn user_display_name(member: &serde_json::Value, id: &str) -> String {
         .to_string()
 }
 
-/// Send `text` to the watched DM as the token's user (`chat:write` scope).
-pub fn send_dm(config: &SlackDmConfig, text: &str) -> Result<(), String> {
+/// Post as the token's user (`chat:write`). A non-empty `thread_ts` replies
+/// inside that thread instead of starting a new top-level message.
+pub fn send_dm(config: &SlackDmConfig, text: &str, thread_ts: &str) -> Result<(), String> {
     let http = SlackHttp { token: &config.token };
-    let open = http.call("conversations.open", &[("users", config.watch_user_id.as_str())])?;
-    let channel = parse_open_channel(&open)?;
-    http.call_form("chat.postMessage", &[("channel", channel.as_str()), ("text", text)])?;
+    let channel = open_channel(&http, config)?;
+    let mut form = vec![("channel", channel.as_str()), ("text", text)];
+    if !thread_ts.is_empty() {
+        form.push(("thread_ts", thread_ts));
+    }
+    http.call_form("chat.postMessage", &form)?;
     Ok(())
 }
 
-/// Hard cap on a fetched file (bytes). Thumbnails are tiny and full images a few
-/// MB; the cap keeps a surprise large upload from ballooning the base64 payload
-/// that crosses the IPC boundary.
+/// Toggle one of my reactions (`reactions:write`), `name` a bare shortcode.
+///
+/// A redundant toggle is `already_reacted`/`no_reaction`, which both mean the
+/// reaction already reads as asked — success, not an error on a right state.
+pub fn set_reaction(config: &SlackDmConfig, ts: &str, name: &str, add: bool) -> Result<(), String> {
+    let http = SlackHttp { token: &config.token };
+    let channel = open_channel(&http, config)?;
+    let method = if add { "reactions.add" } else { "reactions.remove" };
+    let name = name.trim().trim_matches(':');
+    match http.call_form(
+        method,
+        &[
+            ("channel", channel.as_str()),
+            ("timestamp", ts),
+            ("name", name),
+        ],
+    ) {
+        Ok(_) => Ok(()),
+        Err(e) if is_redundant_reaction(&e) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+fn is_redundant_reaction(error: &str) -> bool {
+    error.contains("already_reacted") || error.contains("no_reaction")
+}
+
+/// Keeps a surprise large upload from ballooning the base64 IPC payload.
 const MAX_FILE_BYTES: u64 = 20 * 1024 * 1024;
 
-/// A fetched Slack file: its declared content type and raw bytes.
 pub struct SlackFile {
     pub mimetype: String,
     pub bytes: Vec<u8>,
 }
 
-/// Fetch a private Slack file's bytes with the user token's bearer header — the
-/// webview can't, since those URLs 302 to a sign-in page without it. Only
-/// `*.slack.com` URLs are honored (the token must never ride along to an
-/// arbitrary host). A missing `files:read` scope surfaces as a distinct
-/// unauthorized error the caller can render as a placeholder rather than a hard
-/// failure.
+/// A private file's bytes, bearer-authenticated — the webview can't, since those
+/// URLs 302 to a sign-in page. Only `*.slack.com` is honored: the token must
+/// never ride along to another host. A missing `files:read` scope gets its own
+/// error so the caller can render a placeholder, not a failed panel.
 pub fn fetch_file(token: &str, url: &str) -> Result<SlackFile, String> {
     use std::io::Read;
 
@@ -279,14 +334,12 @@ pub fn fetch_file(token: &str, url: &str) -> Result<SlackFile, String> {
     Ok(SlackFile { mimetype, bytes })
 }
 
-/// The one unauthorized message, carrying the stable `files:read` marker the
-/// frontend matches to show its "re-auth for images" placeholder.
+/// Carries the stable `files:read` marker the frontend matches on.
 fn file_unauthorized() -> String {
     "slack file unauthorized (files:read scope missing)".to_string()
 }
 
-/// Whether `url` is an `https` URL on a `*.slack.com` host — the guard that
-/// keeps the bearer token from being attached to any other origin.
+/// The guard keeping the bearer token off any other origin.
 pub(crate) fn is_slack_file_url(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("https://") else {
         return false;
@@ -298,11 +351,7 @@ pub(crate) fn is_slack_file_url(url: &str) -> bool {
     host == "slack.com" || host.ends_with(".slack.com")
 }
 
-/// Map a `conversations.history` response to chronological (oldest-first)
-/// messages. Skips senderless entries and edit/delete tombstones, but *keeps*
-/// `file_share` messages (a photo or attachment with no or little text) so the
-/// chat panel can render them — unlike [`latest_message`], which only cares
-/// about the answered/unanswered edge.
+/// A `conversations.history` (or `.replies`) response as oldest-first messages.
 pub(crate) fn parse_history(history: &serde_json::Value, config: &SlackDmConfig) -> Vec<DmMessage> {
     let Some(messages) = history.get("messages").and_then(|v| v.as_array()) else {
         return Vec::new();
@@ -310,38 +359,68 @@ pub(crate) fn parse_history(history: &serde_json::Value, config: &SlackDmConfig)
     let mut out: Vec<DmMessage> = messages
         .iter()
         .filter(|m| is_renderable(m))
-        .filter_map(|m| {
-            let sender = m.get("user").and_then(|v| v.as_str())?;
-            Some(DmMessage {
-                text: str_at(m, "text"),
-                ts: slack_ts_ms(str_at(m, "ts").as_str()),
-                from_me: sender != config.watch_user_id,
-                files: parse_files(m),
-            })
-        })
+        .filter_map(|m| parse_message(m, config))
         .collect();
     // Slack returns history newest-first; the chat view reads top-down in time.
     out.reverse();
     out
 }
 
-/// Whether a `conversations.history` entry is a real message the panel renders:
-/// it has a sender, and it is either a plain message (no subtype) or a
-/// `file_share` (a shared image/attachment). Edits, deletes, joins and other
-/// subtypes are noise.
+fn parse_message(m: &serde_json::Value, config: &SlackDmConfig) -> Option<DmMessage> {
+    let sender = m.get("user").and_then(|v| v.as_str())?;
+    Some(DmMessage {
+        ts_raw: str_at(m, "ts"),
+        text: str_at(m, "text"),
+        ts: slack_ts_ms(str_at(m, "ts").as_str()),
+        from_me: sender != config.watch_user_id,
+        files: parse_files(m),
+        reactions: parse_reactions(m, config),
+        thread_ts: str_at(m, "thread_ts"),
+        reply_count: m.get("reply_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        latest_reply_ts: slack_ts_ms(str_at(m, "latest_reply").as_str()),
+    })
+}
+
+/// A real message: a sender, and a subtype of none, `file_share` or
+/// `thread_broadcast`. Edits, deletes and joins are noise.
 fn is_renderable(m: &serde_json::Value) -> bool {
     if m.get("user").and_then(|v| v.as_str()).is_none() {
         return false;
     }
     match m.get("subtype").and_then(|v| v.as_str()) {
-        None => true,
-        Some("file_share") => true,
+        None | Some("file_share") | Some("thread_broadcast") => true,
         Some(_) => false,
     }
 }
 
-/// Parse a message's `files` array into [`DmFile`]s, skipping tombstoned
-/// (deleted) entries and any without an id.
+fn parse_reactions(m: &serde_json::Value, config: &SlackDmConfig) -> Vec<DmReaction> {
+    let Some(reactions) = m.get("reactions").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    reactions
+        .iter()
+        .filter_map(|r| {
+            let name = r.get("name").and_then(|v| v.as_str())?;
+            let users: Vec<&str> = r
+                .get("users")
+                .and_then(|v| v.as_array())
+                .map_or_else(Vec::new, |u| u.iter().filter_map(|v| v.as_str()).collect());
+            // `count` is authoritative; `users` may be elided on large threads,
+            // and a reaction with neither is not worth a chip.
+            let count =
+                r.get("count").and_then(|v| v.as_u64()).unwrap_or(users.len() as u64) as u32;
+            if count == 0 {
+                return None;
+            }
+            Some(DmReaction {
+                name: name.to_string(),
+                count,
+                mine: users.iter().any(|u| *u != config.watch_user_id),
+            })
+        })
+        .collect()
+}
+
 fn parse_files(m: &serde_json::Value) -> Vec<DmFile> {
     let Some(files) = m.get("files").and_then(|v| v.as_array()) else {
         return Vec::new();
@@ -349,8 +428,7 @@ fn parse_files(m: &serde_json::Value) -> Vec<DmFile> {
     files.iter().filter_map(parse_file).collect()
 }
 
-/// Parse one Slack file object. Returns `None` for tombstones and entries
-/// missing an id.
+/// `None` for a tombstone or an entry with no id.
 fn parse_file(f: &serde_json::Value) -> Option<DmFile> {
     if f.get("mode").and_then(|v| v.as_str()) == Some("tombstone") {
         return None;
@@ -375,9 +453,8 @@ fn parse_file(f: &serde_json::Value) -> Option<DmFile> {
     })
 }
 
-/// Choose a reasonably-sized thumbnail URL from a Slack file object, preferring
-/// a mid-size render and falling back through what's available. Empty when the
-/// file has no thumbnails (non-image attachments).
+/// A mid-size thumbnail, falling back through what Slack made. Empty for a
+/// non-image.
 fn pick_thumb(f: &serde_json::Value) -> String {
     for key in [
         "thumb_360",
@@ -393,20 +470,63 @@ fn pick_thumb(f: &serde_json::Value) -> String {
     String::new()
 }
 
-/// Fetch the watched DM's latest state. Returns `Ok(None)` when the DM exists
-/// but holds no visible messages yet.
+/// The watched DM's latest state; `Ok(None)` when it holds no visible message.
+///
+/// The fourth call fires only when a thread holds something newer than every
+/// top-level message. History reports a parent's `latest_reply` but never the
+/// reply itself, so unfollowed, a threaded ask reads as *answered*.
 pub(crate) fn fetch_dm(config: &SlackDmConfig) -> Result<Option<DmInput>, String> {
     let http = SlackHttp { token: &config.token };
 
     let auth = http.call("auth.test", &[])?;
     let team_id = str_at(&auth, "team_id");
 
-    let open = http.call("conversations.open", &[("users", config.watch_user_id.as_str())])?;
-    let channel = parse_open_channel(&open)?;
+    let channel = open_channel(&http, config)?;
 
     let history =
         http.call("conversations.history", &[("channel", channel.as_str()), ("limit", "10")])?;
-    Ok(latest_message(&history, config, &channel, &team_id))
+    let top = latest_message(&history, config, &channel, &team_id);
+    let Some(thread_ts) = fresher_thread(&history, top.as_ref().map_or(0, |d| d.ts)) else {
+        return Ok(top);
+    };
+    let replies = http.call(
+        "conversations.replies",
+        &[
+            ("channel", channel.as_str()),
+            ("ts", thread_ts.as_str()),
+            ("limit", "50"),
+        ],
+    )?;
+    Ok(latest_reply(&replies, config, &channel, &team_id).or(top))
+}
+
+/// The thread whose newest reply lands after `floor_ms`. Ties go to the
+/// top-level message, already in hand.
+pub(crate) fn fresher_thread(history: &serde_json::Value, floor_ms: i64) -> Option<String> {
+    let messages = history.get("messages").and_then(|v| v.as_array())?;
+    messages
+        .iter()
+        .filter(|m| m.get("reply_count").and_then(|v| v.as_u64()).unwrap_or(0) > 0)
+        .map(|m| (slack_ts_ms(str_at(m, "latest_reply").as_str()), str_at(m, "thread_ts")))
+        .filter(|(reply_ms, thread_ts)| *reply_ms > floor_ms && !thread_ts.is_empty())
+        .max_by_key(|(reply_ms, _)| *reply_ms)
+        .map(|(_, thread_ts)| thread_ts)
+}
+
+/// The newest entry of a `conversations.replies` response, by max `ts` rather
+/// than position: only `conversations.history` promises an order.
+pub(crate) fn latest_reply(
+    replies: &serde_json::Value,
+    config: &SlackDmConfig,
+    channel: &str,
+    team_id: &str,
+) -> Option<DmInput> {
+    let messages = replies.get("messages").and_then(|v| v.as_array())?;
+    let newest = messages
+        .iter()
+        .filter(|m| is_renderable(m))
+        .max_by_key(|m| slack_ts_ms(str_at(m, "ts").as_str()))?;
+    Some(dm_input(newest, config, channel, team_id))
 }
 
 /// Slack wraps errors in `{"ok": false, "error": "..."}` with HTTP 200.
@@ -418,7 +538,6 @@ fn check_ok(body: &serde_json::Value, method: &str) -> Result<(), String> {
     Err(format!("slack {method} failed: {error}"))
 }
 
-/// Extract the DM channel id from a `conversations.open` response.
 pub(crate) fn parse_open_channel(body: &serde_json::Value) -> Result<String, String> {
     body.pointer("/channel/id")
         .and_then(|v| v.as_str())
@@ -426,11 +545,8 @@ pub(crate) fn parse_open_channel(body: &serde_json::Value) -> Result<String, Str
         .ok_or_else(|| "slack conversations.open: no channel id in response".to_string())
 }
 
-/// Map a `conversations.history` response to the DM's latest state.
-///
-/// Skips messages with a `subtype` (joins, edits-tombstones, bot chatter) and
-/// messages without a sender; the first remaining entry is the newest real
-/// message (Slack returns history newest-first).
+/// The DM's latest state. History is newest-first, so the first entry with a
+/// sender and no subtype is the newest real message.
 pub(crate) fn latest_message(
     history: &serde_json::Value,
     config: &SlackDmConfig,
@@ -441,9 +557,16 @@ pub(crate) fn latest_message(
     let msg = messages
         .iter()
         .find(|m| m.get("subtype").is_none() && m.get("user").and_then(|v| v.as_str()).is_some())?;
+    Some(dm_input(msg, config, channel, team_id))
+}
 
+fn dm_input(
+    msg: &serde_json::Value,
+    config: &SlackDmConfig,
+    channel: &str,
+    team_id: &str,
+) -> DmInput {
     let sender = msg.get("user").and_then(|v| v.as_str()).unwrap_or_default();
-    let from_me = sender != config.watch_user_id;
     let from_name = if config.watch_name.trim().is_empty() {
         config.watch_user_id.clone()
     } else {
@@ -455,18 +578,17 @@ pub(crate) fn latest_message(
         Some(format!("slack://channel?team={team_id}&id={channel}"))
     };
 
-    Some(DmInput {
+    DmInput {
         channel: channel.to_string(),
         from_name,
         text: str_at(msg, "text"),
         ts: slack_ts_ms(str_at(msg, "ts").as_str()),
-        from_me,
+        from_me: sender != config.watch_user_id,
         url,
-    })
+    }
 }
 
-/// Slack `ts` is `"seconds.micros"` as a string; convert to epoch ms (0 on
-/// unparseable input, matching the other collectors' lenient timestamps).
+/// `"seconds.micros"` → epoch ms; 0 on garbage, as the other collectors do.
 pub(crate) fn slack_ts_ms(ts: &str) -> i64 {
     ts.parse::<f64>().map(|s| (s * 1000.0) as i64).unwrap_or(0)
 }
@@ -680,6 +802,89 @@ mod tests {
         assert!(!is_slack_file_url("https://evil.com/x"));
         assert!(!is_slack_file_url("https://files.slack.com.evil.com/x"));
         assert!(!is_slack_file_url("https://notslack.com/x"));
+    }
+
+    #[test]
+    fn parse_history_reads_reactions_and_marks_mine() {
+        let history = json!({"ok": true, "messages": [
+            {"user": "U_WIFE", "text": "dinner?", "ts": "1720000100.0", "reactions": [
+                {"name": "thumbsup", "count": 2, "users": ["U_WIFE", "U_ME"]},
+                {"name": "heart", "count": 1, "users": ["U_WIFE"]},
+                {"name": "ghost", "count": 0, "users": []}
+            ]}
+        ]});
+        let msgs = parse_history(&history, &config());
+        assert_eq!(
+            msgs[0].reactions,
+            vec![
+                DmReaction { name: "thumbsup".into(), count: 2, mine: true },
+                DmReaction { name: "heart".into(), count: 1, mine: false },
+            ],
+            "a reactor who isn't the watched user is me; a zero-count chip is dropped"
+        );
+    }
+
+    #[test]
+    fn parse_history_reads_thread_parents_and_keeps_broadcasts() {
+        let history = json!({"ok": true, "messages": [
+            {"subtype": "thread_broadcast", "user": "U_WIFE", "text": "also sharing",
+             "ts": "1720000400.0", "thread_ts": "1720000100.0"},
+            {"user": "U_WIFE", "text": "the plan", "ts": "1720000100.0",
+             "thread_ts": "1720000100.0", "reply_count": 3, "latest_reply": "1720000400.0"},
+            {"user": "U_ME", "text": "unthreaded", "ts": "1720000050.0"}
+        ]});
+        let msgs = parse_history(&history, &config());
+        assert_eq!(msgs.len(), 3, "the thread_broadcast is kept");
+        assert_eq!(msgs[0].reply_count, 0, "a plain message parents nothing");
+        assert_eq!(msgs[0].thread_ts, "");
+        let parent = &msgs[1];
+        assert_eq!(parent.ts_raw, "1720000100.0");
+        assert_eq!(parent.thread_ts, "1720000100.0", "a parent points at itself");
+        assert_eq!(parent.reply_count, 3);
+        assert_eq!(parent.latest_reply_ts, 1720000400000);
+        assert_eq!(msgs[2].thread_ts, "1720000100.0", "the broadcast points back at its parent");
+    }
+
+    #[test]
+    fn fresher_thread_finds_a_reply_newer_than_the_top_level() {
+        let history = json!({"ok": true, "messages": [
+            {"user": "U_ME", "text": "newest top-level", "ts": "1720000300.0"},
+            {"user": "U_WIFE", "text": "old parent", "ts": "1720000100.0",
+             "thread_ts": "1720000100.0", "reply_count": 1, "latest_reply": "1720000500.0"},
+            {"user": "U_WIFE", "text": "stale parent", "ts": "1720000090.0",
+             "thread_ts": "1720000090.0", "reply_count": 1, "latest_reply": "1720000200.0"}
+        ]});
+        assert_eq!(fresher_thread(&history, 1720000300000).as_deref(), Some("1720000100.0"));
+        // Nothing beats a top-level message newer than every reply.
+        assert_eq!(fresher_thread(&history, 1720000600000), None);
+        // A parent with no replies is never followed.
+        let flat = json!({"ok": true, "messages": [{"user": "U_WIFE", "ts": "1720000100.0"}]});
+        assert_eq!(fresher_thread(&flat, 0), None);
+    }
+
+    #[test]
+    fn latest_reply_takes_the_newest_entry_regardless_of_order() {
+        let replies = json!({"ok": true, "messages": [
+            {"user": "U_ME", "text": "the parent", "ts": "1720000100.0",
+             "thread_ts": "1720000100.0"},
+            {"user": "U_WIFE", "text": "can you grab the kids?", "ts": "1720000500.0",
+             "thread_ts": "1720000100.0"},
+            {"subtype": "message_changed", "user": "U_WIFE", "ts": "1720000900.0"}
+        ]});
+        let dm = latest_reply(&replies, &config(), "D1", "T1").unwrap();
+        assert_eq!(dm.text, "can you grab the kids?");
+        assert_eq!(dm.ts, 1720000500000);
+        assert!(!dm.from_me, "a threaded ask from her still leaves the DM unanswered");
+        assert!(
+            latest_reply(&json!({"ok": true, "messages": []}), &config(), "D1", "T1").is_none()
+        );
+    }
+
+    #[test]
+    fn redundant_reaction_toggles_are_not_errors() {
+        assert!(is_redundant_reaction("slack reactions.add failed: already_reacted"));
+        assert!(is_redundant_reaction("slack reactions.remove failed: no_reaction"));
+        assert!(!is_redundant_reaction("slack reactions.add failed: missing_scope"));
     }
 
     #[test]
