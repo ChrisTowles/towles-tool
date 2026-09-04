@@ -174,6 +174,12 @@ function mockThread(now: number = MOCK_NOW()): DmMessage[] {
   ];
 }
 
+/** Most refetches come back identical. Handing back a fresh object anyway
+ * reloads every image and shifts the scroll under the reader. */
+function sameView(a: SlackDmView | null, b: SlackDmView): boolean {
+  return a !== null && JSON.stringify(a) === JSON.stringify(b);
+}
+
 /** Refetches on mount, on `refresh`, and whenever the store snapshot re-emits.
  * `view` is null only during the first load. `revision` counts loads so an open
  * thread refetches off the same triggers — deriving it from the messages
@@ -200,7 +206,7 @@ export function useSlackDm(): {
     const loaded = await invoke<SlackDmView>("slack_dm_history", {}, { schema: SlackDmViewSchema });
     loaded.match({
       ok: (next) => {
-        setView(next);
+        setView((prev) => (sameView(prev, next) ? prev : next));
         setError(null);
       },
       err: (e) => setError(errorMessage(e)),

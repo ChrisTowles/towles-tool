@@ -30,18 +30,17 @@ function openFile(file: DmFile) {
   void openExternalUrl(file.permalink || file.urlPrivate);
 }
 
-/** The private Slack URL needs the bearer token, so the Tauri shell fetches the
- * bytes via `slack_dm_file` and renders a `data:` URI; browser dev uses the mock
- * URL directly. */
+/** The private URL needs the bearer token, so the bytes come over IPC. Keyed on
+ * the URL, not the `DmFile`: a refetch hands back equal-but-new objects, and
+ * reloading would drop loaded images to a short placeholder and jolt the
+ * thread's scroll as they came back. */
 function ImageAttachment({ file }: { file: DmFile }) {
+  const url = fileSrcUrl(file);
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    setSrc(null);
-    setError(null);
-    const url = fileSrcUrl(file);
     if (!isTauri()) {
       setSrc(url);
       return;
@@ -56,7 +55,7 @@ function ImageAttachment({ file }: { file: DmFile }) {
     return () => {
       alive = false;
     };
-  }, [file]);
+  }, [url]);
 
   if (error !== null) {
     const note = isFileScopeError(error)

@@ -27,7 +27,7 @@ describe("Telemetry screen", () => {
 
   it("switches to the Log tab and shows the search filter", async () => {
     await clickTab("Log");
-    const search = await browser.$('input[placeholder="Search target, name, fields…"]');
+    const search = await browser.$('input[placeholder="Search raw lines…"]');
     await search.waitForDisplayed({ timeout: 10000 });
   });
 
