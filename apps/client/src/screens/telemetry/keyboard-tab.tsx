@@ -15,7 +15,7 @@ import { SHORTCUTS, shortcutKeys } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /** Keyboard — the habit tab: bindings that fired (`shortcut.<id>`) against clicks that
- * took a bound action's place (`mouse.<id>`), over `keyboard_score`'s fixed 14-day window
+ * took a bound action's place (`mouse.<id>`), over `keyboard_score`'s fixed window
  * rather than the screen's day picker — a habit is only legible across days. */
 export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; loading: boolean }) {
   if (!score) {
@@ -47,7 +47,7 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
           detail={bestStreak > 0 ? `best ${bestStreak}d` : "no won day yet"}
         />
         <StatTile
-          label="Last 14 days"
+          label={`Last ${days.length} days`}
           value={fmtShare(score.windowShare)}
           detail={`${score.windowShortcut} keys · ${score.windowMouse} clicks`}
         />
@@ -66,7 +66,7 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
         ) : (
           <ol className="flex flex-col gap-3">
             {recommendations.map((r, i) => (
-              <RecommendationRow key={r.shortcut + r.title} rec={r} rank={i + 1} />
+              <RecommendationRow key={r.title} rec={r} rank={i + 1} />
             ))}
           </ol>
         )}
@@ -95,7 +95,8 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
         <Card title="Practice these" note={`${score.topMissed.length}`}>
           {score.topMissed.length === 0 ? (
             <Empty inline>
-              Nothing with a shortcut was clicked in the last 14 days — the habit is holding.
+              Nothing with a shortcut was clicked in the last {days.length} days — the habit is
+              holding.
             </Empty>
           ) : (
             <div className="flex flex-col gap-2">
@@ -113,11 +114,7 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
             <div className="flex flex-col gap-1.5">
               {unused.map((id) => (
                 <div key={id} className="flex items-baseline gap-2 text-xs">
-                  <KbdGroup className="w-24 shrink-0 justify-start">
-                    {shortcutKeys(id).map((cap) => (
-                      <Kbd key={cap}>{cap}</Kbd>
-                    ))}
-                  </KbdGroup>
+                  <Keycaps id={id} className="w-24 shrink-0 justify-start" />
                   <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {SHORTCUTS[id].description}
                   </span>
@@ -185,11 +182,7 @@ function RecommendationRow({ rec, rank }: { rec: Recommendation; rank: number })
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <KbdGroup>
-            {shortcutKeys(rec.shortcut).map((cap) => (
-              <Kbd key={cap}>{cap}</Kbd>
-            ))}
-          </KbdGroup>
+          <Keycaps id={rec.shortcut} />
           <span className="font-medium">{rec.title}</span>
           {rank === 1 && (
             <span className="rounded-sm bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-700 dark:text-violet-300">
@@ -201,6 +194,16 @@ function RecommendationRow({ rec, rank }: { rec: Recommendation; rank: number })
         {rec.tip && <span className="text-muted-foreground/80">{rec.tip}</span>}
       </div>
     </li>
+  );
+}
+
+function Keycaps({ id, className }: { id: string; className?: string }) {
+  return (
+    <KbdGroup className={className}>
+      {shortcutKeys(id).map((cap) => (
+        <Kbd key={cap}>{cap}</Kbd>
+      ))}
+    </KbdGroup>
   );
 }
 

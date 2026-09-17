@@ -21,8 +21,6 @@ export type KeyboardDay = {
   /** Too few bound actions to judge; streaks pass straight through it. */
   idle: boolean;
   byShortcut: ShortcutSplit[];
-  /** Needs-you notifications that fired — alerts a jump chord could answer. */
-  needsYou: number;
 };
 
 export type KeyboardScore = {
@@ -33,12 +31,14 @@ export type KeyboardScore = {
   windowShortcut: number;
   windowMouse: number;
   windowShare: number | null;
+  /** Needs-you notifications that fired — alerts a jump chord could answer. */
   windowNeedsYou: number;
   byShortcut: ShortcutSplit[];
   topMissed: ShortcutSplit[];
   /** Echoed from Rust so the UI states the goal without restating constants. */
   goalShare: number;
   goalMinActions: number;
+  practiceMinActions: number;
 };
 
 export const keyboardScore = () => invoke<KeyboardScore>("telemetry_keyboard");

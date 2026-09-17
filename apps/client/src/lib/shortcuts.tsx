@@ -27,10 +27,16 @@ export type Shortcut = {
   keys: string;
   description: string;
   when?: string;
+  /** What to know once the keys are in hand — the Keyboard tab's "Start doing" row. */
+  tip?: () => string;
+  /** Lands on a session a needs-you alert flagged. */
+  answersNeedsYou?: boolean;
   allowInEditable?: boolean;
   hideInHelp?: boolean;
   spec: KeySpec;
 };
+
+export const FOLDER_FOCUSED = "a folder is focused";
 
 const MODIFIER_TOKENS = new Set(["mod", "shift", "alt"]);
 
@@ -114,14 +120,16 @@ export const SHORTCUTS = defineShortcuts([
     scope: "agentboard",
     keys: "mod+d",
     description: "New session in the focused folder",
-    when: "a folder is focused",
+    when: FOLDER_FOCUSED,
   },
   {
     id: "ab-new-task",
     scope: "agentboard",
     keys: "mod+shift+d",
     description: "New task — goal, issues, branch",
-    when: "a folder is focused",
+    when: FOLDER_FOCUSED,
+    tip: () =>
+      `${shortcutHint("ab-start-task")} then starts it, so a task never leaves the keyboard.`,
     allowInEditable: true,
   },
   {
@@ -130,6 +138,8 @@ export const SHORTCUTS = defineShortcuts([
     keys: "mod+shift+delete",
     description: "Delete the focused worktree (confirms first)",
     when: "a worktree is focused",
+    tip: () =>
+      `Keep the modifiers held: Delete, then ${shortcutHint("ab-confirm-close-worktree")} confirms.`,
     allowInEditable: true,
   },
   {
@@ -150,6 +160,7 @@ export const SHORTCUTS = defineShortcuts([
     keys: "mod+shift+w",
     description: "Close the focused pane (a session pane kills its shell)",
     when: "a pane is focused",
+    tip: () => "Works from inside a terminal too — no need to click out first.",
     allowInEditable: true,
   },
   {
@@ -157,7 +168,7 @@ export const SHORTCUTS = defineShortcuts([
     scope: "agentboard",
     keys: "mod+shift+e",
     description: "Open the focused folder's files pane",
-    when: "a folder is focused",
+    when: FOLDER_FOCUSED,
     allowInEditable: true,
   },
   {
@@ -172,6 +183,7 @@ export const SHORTCUTS = defineShortcuts([
     scope: "agentboard",
     keys: "mod+shift+n",
     description: "Jump to next session needing you",
+    answersNeedsYou: true,
     allowInEditable: true,
   },
   {
@@ -179,6 +191,7 @@ export const SHORTCUTS = defineShortcuts([
     scope: "agentboard",
     keys: "mod+shift+p",
     description: "Jump to previous session needing you",
+    answersNeedsYou: true,
     allowInEditable: true,
   },
   {
@@ -187,6 +200,7 @@ export const SHORTCUTS = defineShortcuts([
     scope: "agentboard",
     keys: "mod+shift+a",
     description: "Jump to next agent that isn't busy — idle or needing you",
+    answersNeedsYou: true,
     allowInEditable: true,
   },
   // One binding per digit, addressing the rail's visible sessions top-down; the
@@ -199,6 +213,7 @@ export const SHORTCUTS = defineShortcuts([
       i === 0
         ? "Jump to a numbered rail session 1–9 — hold to see the numbers"
         : `Jump to rail session ${i + 1}`,
+    answersNeedsYou: true,
     allowInEditable: true,
     hideInHelp: i > 0,
   })),
@@ -269,14 +284,14 @@ export const SHORTCUTS = defineShortcuts([
     scope: "agentboard",
     keys: "enter",
     description: "Jump into the focused folder's first session and start typing",
-    when: "a folder is focused",
+    when: FOLDER_FOCUSED,
   },
   {
     id: "ab-split-session",
     scope: "agentboard",
     keys: "mod+shift+s",
     description: "Add another session as a pane in this window",
-    when: "a folder is focused",
+    when: FOLDER_FOCUSED,
     allowInEditable: true,
   },
   {
@@ -284,7 +299,7 @@ export const SHORTCUTS = defineShortcuts([
     scope: "agentboard",
     keys: "mod+shift+o",
     description: "Open a new terminal to the right",
-    when: "a folder is focused",
+    when: FOLDER_FOCUSED,
     allowInEditable: true,
   },
   {
@@ -293,6 +308,15 @@ export const SHORTCUTS = defineShortcuts([
     keys: "mod+enter",
     description: "Run the query",
     when: "the Query tab is showing",
+    allowInEditable: true,
+  },
+  {
+    // Matched by the new-task form itself (`matchesShortcut`), like term-search below.
+    id: "ab-start-task",
+    scope: "agentboard",
+    keys: "mod+enter",
+    description: "Start the task being written",
+    when: "the new-task form is focused",
     allowInEditable: true,
   },
   {
@@ -333,8 +357,15 @@ export function shortcutKeys(id: string): string[] {
   return caps;
 }
 
+const HINT_SEPARATOR = IS_MAC ? "" : "+";
+
 export function shortcutHint(id: string): string {
-  return shortcutKeys(id).join(IS_MAC ? "" : "+");
+  return shortcutKeys(id).join(HINT_SEPARATOR);
+}
+
+/** {@link shortcutHint} without the main key — what to hold. */
+export function modifierHint(id: string): string {
+  return shortcutKeys(id).slice(0, -1).join(HINT_SEPARATOR);
 }
 
 /** UI Events key names, not {@link shortcutHint}'s keycaps, which a screen

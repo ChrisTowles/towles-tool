@@ -55,6 +55,16 @@ describe("rail chords", () => {
   });
 });
 
+describe("new-task form", () => {
+  it("starts the task on mod+enter, not a bare or shifted Enter", () => {
+    expect(matchesShortcut("ab-start-task", key({ ctrlKey: true, key: "Enter" }))).toBe(true);
+    expect(matchesShortcut("ab-start-task", key({ key: "Enter" }))).toBe(false);
+    expect(
+      matchesShortcut("ab-start-task", key({ ctrlKey: true, shiftKey: true, key: "Enter" })),
+    ).toBe(false);
+  });
+});
+
 describe("tab shortcuts", () => {
   it("registers a jump binding for each digit 1–9", () => {
     for (let n = 1; n <= 9; n++) {

@@ -9,7 +9,6 @@ const day = (shortcut: number, mouse: number, goalMet = false): KeyboardDay => (
   goalMet,
   idle: shortcut + mouse < 10,
   byShortcut: [],
-  needsYou: 0,
 });
 
 describe("tierFor", () => {

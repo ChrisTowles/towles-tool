@@ -11,10 +11,9 @@ const score = (byShortcut: ShortcutSplit[], windowNeedsYou = 0): KeyboardScore =
     goalMet: false,
     idle: true,
     byShortcut: [],
-    needsYou: 0,
   };
   return {
-    days: [today],
+    days: Array.from({ length: 14 }, () => today),
     today,
     streak: 0,
     bestStreak: 0,
@@ -23,9 +22,10 @@ const score = (byShortcut: ShortcutSplit[], windowNeedsYou = 0): KeyboardScore =
     windowShare: null,
     windowNeedsYou,
     byShortcut,
-    topMissed: [],
+    topMissed: byShortcut,
     goalShare: 0.75,
     goalMinActions: 10,
+    practiceMinActions: 3,
   };
 };
 
@@ -36,7 +36,7 @@ const split = (id: string, shortcut: number, mouse: number): ShortcutSplit => ({
 });
 
 describe("recommend", () => {
-  it("ranks the bindings the mouse keeps winning by clicks passed up", () => {
+  it("ranks by keyboard share like Practice these, clicks breaking ties", () => {
     const recs = recommend(score([split("ab-toggle-files", 0, 10), split("ab-new-task", 0, 21)]));
     expect(recs.map((r) => r.shortcut)).toEqual(["ab-new-task", "ab-toggle-files"]);
     expect(recs[0].why).toBe("Clicked 21× in 14 days, pressed 0×.");
@@ -51,6 +51,7 @@ describe("recommend", () => {
   it("names the jump chord when alerts go unanswered by key", () => {
     const recs = recommend(score([split("ab-jump-next", 5, 0)], 48));
     expect(recs[0]).toMatchObject({ shortcut: "ab-jump-next", missed: 43 });
+    expect(recs[0].tip).toMatch(/holding Ctrl\+Shift numbers the rail/);
     expect(recs[0].why).toBe("48 alerts fired in 14 days; you jumped to one by key 5×.");
   });
 
@@ -59,6 +60,13 @@ describe("recommend", () => {
       score([split("ab-jump-idle", 4, 0), split("ab-jump-session-2", 4, 0)], 10),
     );
     expect(recs).toEqual([]);
+  });
+
+  it("slots the alerts in by their share, not their count", () => {
+    const recs = recommend(
+      score([split("ab-toggle-files", 0, 9), split("ab-jump-next", 6, 0)], 30),
+    );
+    expect(recs.map((r) => r.shortcut)).toEqual(["ab-toggle-files", "ab-jump-next"]);
   });
 
   it("keeps the list short", () => {

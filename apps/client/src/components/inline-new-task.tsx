@@ -39,6 +39,7 @@ import { referencedIssueNumbers } from "@/lib/goal-text";
 import { loadUserSettings, type PromptImprover } from "@/lib/settings";
 import { type BaseBranch, BaseBranchesSchema, PastedImagePathsSchema } from "@/lib/schemas/task";
 import { invoke } from "@/lib/tauri";
+import { matchesShortcut } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { slugify } from "@/lib/slug";
@@ -549,8 +550,9 @@ export function InlineNewTask({
           void pasteImages(e.dataTransfer);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (matchesShortcut("ab-start-task", e.nativeEvent)) {
             e.preventDefault();
+            uiAction("shortcut.ab-start-task", "agentboard");
             submit();
           }
           if (e.key === "Escape") cancel();

@@ -7,13 +7,11 @@
 use serde::Serialize;
 
 use crate::TelemetryRecord;
-use crate::attention::event_name;
+use crate::attention::{event_name, summarize_notifications};
 
 const SHORTCUT_PREFIX: &str = "shortcut.";
 const MOUSE_PREFIX: &str = "mouse.";
 const ACTION_EVENT: &str = "ui.action";
-/// A notification that reached the user — each one an alert a jump chord could answer.
-const NEEDS_YOU_FIRED: &str = "notify_needs_you: fired";
 
 /// Share of duel actions taken by keyboard that wins the day.
 pub const GOAL_SHARE: f64 = 0.75;
@@ -47,6 +45,8 @@ pub struct KeyboardDay {
     /// Too quiet to judge — see [`GOAL_MIN_ACTIONS`].
     pub idle: bool,
     pub by_shortcut: Vec<ShortcutSplit>,
+    /// Only [`KeyboardScore::window_needs_you`] reads it.
+    #[serde(skip)]
     pub needs_you: usize,
 }
 
@@ -83,6 +83,7 @@ pub struct KeyboardScore {
     /// Echoed so the UI states the goal without restating the constants.
     pub goal_share: f64,
     pub goal_min_actions: usize,
+    pub practice_min_actions: usize,
 }
 
 impl KeyboardDay {
@@ -110,7 +111,7 @@ pub fn summarize_keyboard(date: &str, records: &[TelemetryRecord]) -> KeyboardDa
     let mut splits: Vec<ShortcutSplit> = Vec::new();
     let mut shortcut = 0usize;
     let mut mouse = 0usize;
-    let needs_you = records.iter().filter(|r| event_name(r) == NEEDS_YOU_FIRED).count();
+    let needs_you = summarize_notifications(records).fired;
 
     for record in records.iter().filter(|r| event_name(r) == ACTION_EVENT) {
         let Some(action) = record.fields.get("action").and_then(|v| v.as_str()) else {
@@ -222,6 +223,7 @@ pub fn keyboard_score(days: Vec<KeyboardDay>) -> KeyboardScore {
         top_missed,
         goal_share: GOAL_SHARE,
         goal_min_actions: GOAL_MIN_ACTIONS,
+        practice_min_actions: PRACTICE_MIN_ACTIONS,
     }
 }
 
@@ -305,7 +307,7 @@ mod tests {
     #[test]
     fn counts_needs_you_alerts_that_fired_not_ones_skipped() {
         let mut fired = action("");
-        fired.fields = json!({ "message": NEEDS_YOU_FIRED });
+        fired.fields = json!({ "message": "notify_needs_you: fired" });
         let mut skipped = action("");
         skipped.fields = json!({ "message": "notify_needs_you: skipped, window focused" });
         let day = summarize_keyboard("2026-07-25", &[fired.clone(), fired, skipped]);
