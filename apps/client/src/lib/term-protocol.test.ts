@@ -236,6 +236,14 @@ describe("copy/paste chords on macOS", () => {
     });
   });
 
+  it("with PC-style keybindings, copies on Ctrl+Shift+C only and still sends ⌃C", async () => {
+    const mac = await macModule();
+    (await import("./keymap")).setPcKeybindings(true);
+    expect(mac.isCopyChord(key("c", { ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(mac.isCopyChord(key("c", { metaKey: true, shiftKey: true }))).toBe(false);
+    expect(mac.keyEventWire(wireKey("c", "KeyC", { ctrlKey: true }))).toMatchObject({ ctrl: true });
+  });
+
   it("yields both copy spellings rather than sending them to the shell", async () => {
     const mac = await macModule();
     expect(mac.keyEventWire(wireKey("c", "KeyC", { metaKey: true, shiftKey: true }))).toBeNull();

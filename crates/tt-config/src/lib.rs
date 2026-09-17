@@ -144,6 +144,11 @@ pub struct AgentboardSettings {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_pane: Option<bool>,
+
+    /// macOS only: Ctrl, not ⌘, is the shortcut modifier — in the app and in
+    /// the code-server workbench, which loads its Windows/Linux keymap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pc_keybindings: Option<bool>,
 }
 
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
@@ -1573,6 +1578,15 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("shortcutsWorkInTerminal"));
         assert!(s.agentboard.shortcuts_work_in_terminal.unwrap_or(true));
+    }
+
+    #[test]
+    fn pc_keybindings_defaults_unset_and_off() {
+        let s = UserSettings::default();
+        assert!(s.agentboard.pc_keybindings.is_none());
+        assert!(!serde_json::to_string(&s).unwrap().contains("pcKeybindings"));
+        let on: AgentboardSettings = serde_json::from_str(r#"{"pcKeybindings":true}"#).unwrap();
+        assert_eq!(on.pc_keybindings, Some(true));
     }
 
     #[test]

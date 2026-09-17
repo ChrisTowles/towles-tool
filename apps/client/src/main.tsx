@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { MotionConfig } from "motion/react";
 import "./index.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { IS_MAC, installPcEditKeys, setPcKeybindings } from "@/lib/keymap";
+import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
+import { invoke } from "@/lib/tauri";
 import { installConsoleCollector } from "@/lib/wdio-console";
 import { App } from "./App";
 
@@ -14,6 +17,19 @@ if (import.meta.env.VITE_WDIO) {
   // the collector too late to catch the very warnings worth catching.
   installConsoleCollector();
   void import("@wdio/tauri-plugin");
+}
+
+// Mac only, before the first render: the keycaps, the native monitor and every
+// workbench's keymap all wait on this read.
+if (IS_MAC) {
+  onSettingsChanged(() => {
+    void loadUserSettings().then((s) => {
+      const on = s?.agentboard?.pcKeybindings ?? false;
+      setPcKeybindings(on);
+      void invoke("keymap_set_pc", { on });
+    });
+  });
+  installPcEditKeys();
 }
 
 createRoot(document.getElementById("root")!).render(

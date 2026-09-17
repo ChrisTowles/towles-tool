@@ -69,6 +69,9 @@ one spelling drives both platforms and no external remapper is needed — the sa
 alias in `lib/term-protocol.ts` covers Ctrl+Shift+C/V. It stops at shift on
 purpose: bare Ctrl is the shell's (⌃C is SIGINT, ⌃D is EOF), which is also why a
 mac Ctrl chord no binding claims never matches on its main key alone.
+**Never read `IS_MAC` to pick a modifier — ask `macKeymap()`** (`lib/keymap.ts`):
+the `pcKeybindings` setting makes a Mac take Ctrl exactly as Linux does, and the
+chords Cocoa takes before any DOM keydown are `tt-app`'s `macos_keys.rs`.
 
 ## The rail is one tree with one cursor
 

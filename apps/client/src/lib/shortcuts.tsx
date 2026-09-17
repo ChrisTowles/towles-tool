@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type RefObject } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { keyboardScore, latestKeyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
+import { isInTerminal, isTextField, macKeymap } from "@/lib/keymap";
 import { uiAction } from "@/lib/ui-action";
 import { SCREENS, type ScreenId } from "@/lib/screens";
 import { useLiveSettingRef } from "./settings";
@@ -12,7 +13,7 @@ import { useLiveSettingRef } from "./settings";
 
 export type ShortcutScope = "global" | ScreenId;
 
-/** `mod` = ⌘ on mac, Ctrl elsewhere. */
+/** `mod` = ⌘ on mac, Ctrl elsewhere ({@link macKeymap}). */
 type KeySpec = {
   mod: boolean;
   shift: boolean;
@@ -330,8 +331,6 @@ export const SHORTCUTS = defineShortcuts([
   },
 ]);
 
-export const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "");
-
 /** Symbols only where the glyph is reliably in the UI font — ⌦ renders as tofu. */
 const KEYCAP_LABELS: Record<string, string> = {
   backspace: "⌫",
@@ -348,24 +347,27 @@ export function shortcutKeys(id: string): string[] {
   const s = SHORTCUTS[id];
   if (!s) throw new Error(`Unknown shortcut id "${id}"`);
   const caps: string[] = [];
-  if (s.spec.mod) caps.push(IS_MAC ? "⌘" : "Ctrl");
-  if (s.spec.shift) caps.push(IS_MAC ? "⇧" : "Shift");
-  if (s.spec.alt) caps.push(IS_MAC ? "⌥" : "Alt");
+  const mac = macKeymap();
+  if (s.spec.mod) caps.push(mac ? "⌘" : "Ctrl");
+  if (s.spec.shift) caps.push(mac ? "⇧" : "Shift");
+  if (s.spec.alt) caps.push(mac ? "⌥" : "Alt");
   caps.push(
     KEYCAP_LABELS[s.spec.key] ?? (s.spec.key.length === 1 ? s.spec.key.toUpperCase() : s.spec.key),
   );
   return caps;
 }
 
-const HINT_SEPARATOR = IS_MAC ? "" : "+";
+function hintSeparator(): string {
+  return macKeymap() ? "" : "+";
+}
 
 export function shortcutHint(id: string): string {
-  return shortcutKeys(id).join(HINT_SEPARATOR);
+  return shortcutKeys(id).join(hintSeparator());
 }
 
 /** {@link shortcutHint} without the main key — what to hold. */
 export function modifierHint(id: string): string {
-  return shortcutKeys(id).slice(0, -1).join(HINT_SEPARATOR);
+  return shortcutKeys(id).slice(0, -1).join(hintSeparator());
 }
 
 /** UI Events key names, not {@link shortcutHint}'s keycaps, which a screen
@@ -374,7 +376,7 @@ export function shortcutAria(id: string): string {
   const s = SHORTCUTS[id];
   if (!s) throw new Error(`Unknown shortcut id "${id}"`);
   const parts: string[] = [];
-  if (s.spec.mod) parts.push(IS_MAC ? "Meta" : "Control");
+  if (s.spec.mod) parts.push(macKeymap() ? "Meta" : "Control");
   if (s.spec.shift) parts.push("Shift");
   if (s.spec.alt) parts.push("Alt");
   parts.push(s.spec.key.length === 1 ? s.spec.key.toUpperCase() : s.spec.key);
@@ -420,10 +422,11 @@ export function useShortcutsWorkInTerminal(): RefObject<boolean> {
 }
 
 function matches(spec: KeySpec, e: KeyboardEvent): boolean {
-  const mod = IS_MAC ? e.metaKey || macCtrlAlias(spec, e) : e.ctrlKey;
+  const mac = macKeymap();
+  const mod = mac ? e.metaKey || macCtrlAlias(spec, e) : e.ctrlKey;
   // A mac Ctrl chord this binding didn't claim belongs to the shell (⌃C, ⌃D),
   // so it must never fall through and match on the main key alone.
-  if (IS_MAC && e.ctrlKey && !macCtrlAlias(spec, e)) return false;
+  if (mac && e.ctrlKey && !macCtrlAlias(spec, e)) return false;
   // `?` arrives as key "?" with shiftKey set — compare shift only for
   // modifier-style specs, where shift is a deliberate chord component.
   const shiftOk = spec.mod || spec.shift ? e.shiftKey === spec.shift : true;
@@ -474,7 +477,7 @@ export function modifiersHeld(id: string, down: Set<string>): boolean {
   const spec = SHORTCUTS[id]?.spec;
   if (!spec) throw new Error(`Unknown shortcut id "${id}"`);
   const ctrlAlias = spec.mod && spec.shift && down.has("Control") && !down.has("Meta");
-  const mod = IS_MAC ? down.has("Meta") || ctrlAlias : down.has("Control");
+  const mod = macKeymap() ? down.has("Meta") || ctrlAlias : down.has("Control");
   return mod === spec.mod && down.has("Shift") === spec.shift && down.has("Alt") === spec.alt;
 }
 
@@ -488,11 +491,7 @@ function macCtrlAlias(spec: KeySpec, e: KeyboardEvent): boolean {
 /** Somewhere that owns its own keystrokes — in a terminal, Ctrl+D is EOF. */
 function isEditableTarget(e: KeyboardEvent): boolean {
   const el = e.target;
-  if (!(el instanceof HTMLElement)) return false;
-  if (el.isContentEditable) return true;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  return el.closest("[data-term-host]") != null;
+  return el instanceof HTMLElement && (isTextField(el) || isInTerminal(el));
 }
 
 // `enabled` gates the whole set — scope activation for screens that stay mounted while

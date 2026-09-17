@@ -191,6 +191,7 @@ pub fn run() {
                 .ok_or("tauri.conf.json has no `main` window")?;
             let main = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
                 .on_new_window(|url, _features| codeserver::on_new_window(url))
+                .initialization_script_for_all_frames(tt_codeserver::PC_KEYMAP_SCRIPT)
                 .build()?;
             let _ = main.set_title(&format!("Towles Tool — {}", task_label()));
 
@@ -691,6 +692,7 @@ pub fn run() {
             codeserver::code_server_open,
             codeserver::code_server_reveal,
             codeserver::code_server_show_changes,
+            macos_keys::keymap_set_pc,
             browser::browser_status,
             browser::browser_open,
             browser::browser_navigate,

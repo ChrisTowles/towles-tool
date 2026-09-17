@@ -174,6 +174,7 @@ pub async fn code_server_open(
     dir: String,
     path: Option<String>,
     line: Option<u32>,
+    pc_keymap: bool,
 ) -> Result<CodeServerInfo, String> {
     let folder = PathBuf::from(&dir);
     if !folder.is_dir() {
@@ -185,7 +186,7 @@ pub async fn code_server_open(
         .map_err(|e| format!("code-server launch task failed: {e}"))??;
     let file = path.map(|p| folder.join(p));
     let open = file.as_deref().map(|f| (f, line));
-    Ok(CodeServerInfo { url: workbench_url(port, &folder, open), port })
+    Ok(CodeServerInfo { url: workbench_url(port, &folder, open, pc_keymap), port })
 }
 
 /// Open `path` in the workbench already running for `dir` — checkout-relative,

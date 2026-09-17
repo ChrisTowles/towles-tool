@@ -216,6 +216,11 @@ impl TermState {
         }
     }
 
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn has_focused(&self) -> bool {
+        self.focused.lock().unwrap().is_some()
+    }
+
     /// Skips the webview; only `macos_keys` needs it, since Cocoa swallows some
     /// Ctrl chords before WKWebView sees a keydown. The return also consumes the
     /// OS event — never report `true` undelivered.

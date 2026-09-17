@@ -2,7 +2,7 @@
  * checkout against the app's one server (docs/CODE-SERVER.md). Keyed on the URL alone — a
  * remount drops the workbench session and re-pays the several-second boot. */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { FilesOpenRequest } from "@/components/files-pane";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import type { CodeServerInstall } from "@/lib/code-server";
 import { codeServerOpen, codeServerReveal, subscribeCodeServerInstall } from "@/lib/code-server";
 import { errorMessage, NotInTauri } from "@/lib/errors";
+import { pcKeymap, subscribeKeymap } from "@/lib/keymap";
 
 type Phase =
   | { at: "starting" }
@@ -41,15 +42,18 @@ export function CodeServerPane({
   // time the workbench is. Every later one goes to the running workbench instead: a URL
   // change would be a reload.
   const servedByUrl = useRef<FilesOpenRequest | undefined>(undefined);
+  // The workbench picks its keymap as it boots, so a change reloads it.
+  const pcKeys = useSyncExternalStore(subscribeKeymap, pcKeymap);
 
   useEffect(() => subscribeCodeServerInstall(setInstall), []);
 
   useEffect(() => {
+    if (pcKeys === null) return;
     let alive = true;
     setPhase({ at: "starting" });
     const initial = latestRequest.current;
     servedByUrl.current = initial;
-    void codeServerOpen(dir, initial?.path ?? null, initial?.line ?? null).then((r) => {
+    void codeServerOpen(dir, initial?.path ?? null, initial?.line ?? null, pcKeys).then((r) => {
       if (!alive) return;
       setInstall(undefined);
       setPhase(
@@ -63,7 +67,7 @@ export function CodeServerPane({
     return () => {
       alive = false;
     };
-  }, [dir, attempt]);
+  }, [dir, attempt, pcKeys]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 

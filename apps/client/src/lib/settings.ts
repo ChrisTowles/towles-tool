@@ -263,6 +263,8 @@ export type UserSettings = {
     showUnmanagedWorktrees?: boolean;
     jarvisPane?: boolean;
     browserPane?: boolean;
+    /** macOS only — see `lib/keymap.ts`. */
+    pcKeybindings?: boolean;
   } & Record<string, unknown>;
 };
 

@@ -149,6 +149,18 @@ path segment stays in, other http(s) goes out, other schemes open nowhere. A
 guess, because wry hands the Linux handler `size: None` whatever features the
 opener passed.
 
+## PC-style keybindings on a Mac
+
+VS Code's web build picks its keymap off `navigator.userAgent`, and has no
+setting for it. With `agentboard.pcKeybindings` on, `workbench_url` adds
+`tt-keymap=pc` and `tt_codeserver::PC_KEYMAP_SCRIPT` — injected into every frame
+of the app's webview, inert without that query — reports a Linux user agent
+before the workbench loads, so every chord is the Windows/Linux one. Two gaps are
+not the keymap's: in a browser VS Code leaves copy and cut to the browser's own
+chord (⌘ on a Mac), so the script runs them on Ctrl+C/X outside the terminal; and
+paste is `macos_keys.rs` turning Ctrl+V into ⌘V natively, the only trusted paste.
+Toggling reloads open panes.
+
 ## What it gives up
 
 The iframe is a cross-origin document, and that one fact costs:
