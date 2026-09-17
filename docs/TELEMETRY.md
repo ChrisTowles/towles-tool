@@ -92,6 +92,10 @@ session") must **not** call it, because it wasn't a keystroke the user
 passed up. Same aggregate-in-Rust rule as Attention, plus a cache: the
 score spans a fortnight and the status bar polls it, so finished days are
 memoized in `telemetry.rs` and only today's file is re-read.
+Its **Start doing** card (`lib/keyboard-recommend.ts`) turns that score into at
+most three instructions ranked by keystrokes passed up — a bound action the mouse
+keeps winning, or needs-you alerts (`notify_needs_you: fired`, counted per day in
+`keyboard.rs`) that no jump chord answered.
 Its **Rules** tab is Braintrust's scorers with counting in place of a model
 (`tt_telemetry::score`, `crates/tt-telemetry/src/rules.rs`): a rule is
 settings (`tt_config::TelemetryRule`, editable under Settings → Collectors)

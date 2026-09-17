@@ -1,5 +1,6 @@
 import { Card, Empty, StatTile } from "@/components/store-bits";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { recommend, type Recommendation } from "@/lib/keyboard-recommend";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   TIER_LABELS,
@@ -30,6 +31,7 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
   const remaining = actionsToGoal(today, score.goalShare, score.goalMinActions);
   const goalPercent = Math.round(score.goalShare * 100);
   const unused = unusedShortcuts(score);
+  const recommendations = recommend(score);
 
   return (
     <div className="flex flex-col gap-4">
@@ -55,6 +57,20 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
           detail={`over ${score.goalMinActions}+ bound actions`}
         />
       </div>
+
+      <Card title="Start doing" note="one habit at a time — the top row first">
+        {recommendations.length === 0 ? (
+          <Empty inline>
+            Nothing to change — the keys already carry the work they're bound to.
+          </Empty>
+        ) : (
+          <ol className="flex flex-col gap-3">
+            {recommendations.map((r, i) => (
+              <RecommendationRow key={r.shortcut + r.title} rec={r} rank={i + 1} />
+            ))}
+          </ol>
+        )}
+      </Card>
 
       {remaining !== null && !today.idle && (
         <div className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-xs text-violet-700 dark:text-violet-300">
@@ -158,6 +174,33 @@ function StreakStrip({ days }: { days: KeyboardDay[] }) {
         </Tooltip>
       ))}
     </div>
+  );
+}
+
+function RecommendationRow({ rec, rank }: { rec: Recommendation; rank: number }) {
+  return (
+    <li className="flex gap-3 text-xs">
+      <span className="w-4 shrink-0 text-right font-mono text-muted-foreground tabular-nums">
+        {rank}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <KbdGroup>
+            {shortcutKeys(rec.shortcut).map((cap) => (
+              <Kbd key={cap}>{cap}</Kbd>
+            ))}
+          </KbdGroup>
+          <span className="font-medium">{rec.title}</span>
+          {rank === 1 && (
+            <span className="rounded-sm bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-700 dark:text-violet-300">
+              this week
+            </span>
+          )}
+        </div>
+        <span className="text-muted-foreground">{rec.why}</span>
+        {rec.tip && <span className="text-muted-foreground/80">{rec.tip}</span>}
+      </div>
+    </li>
   );
 }
 
