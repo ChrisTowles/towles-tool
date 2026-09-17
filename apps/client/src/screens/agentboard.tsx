@@ -85,6 +85,7 @@ import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/la
 import { buildJumpRecall, type JumpRecall } from "@/lib/jump-recall";
 import type { PreviewRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
+import { codeServerOpenClaudeSession } from "@/lib/code-server";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
@@ -396,9 +397,27 @@ export function AgentboardScreen() {
         [dir]: { path: target, line: req.line, nonce: req.nonce },
       }));
     }
+    focusFiles(dir);
+  }
+
+  function focusFiles(dir: string) {
     setActiveFolderDir(dir);
     ackFolder(dir);
     openFiles(dir);
+  }
+
+  // The extension resumes from the transcripts filed under its workspace folder,
+  // so the session's cwd has to *be* a checkout on the rail, not sit inside one.
+  async function openClaudeSessionInEditor(dir: string, sessionId: string) {
+    if (!railRef.current.folderNameByDir.has(dir)) {
+      toast.error(`Couldn't open the session in the editor — ${dir} isn't a checkout on the rail`);
+      return;
+    }
+    focusFiles(dir);
+    const opened = await codeServerOpenClaudeSession(dir, sessionId);
+    if (opened.isErr()) {
+      toast.error(`Couldn't open the session in the editor — ${opened.error.message}`);
+    }
   }
 
   // Same, for the native pane — a window rectangle rendered by Bevy, not DOM.
@@ -934,6 +953,8 @@ export function AgentboardScreen() {
             taskId: req.taskId,
           },
         );
+      } else if (req.kind === "open-claude-session") {
+        void openClaudeSessionInEditor(req.folderDir, req.sessionId);
       } else if (req.kind === "open-file") {
         openFileFromRequest(req);
       } else if (req.kind === "show-file") {

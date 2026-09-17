@@ -48,6 +48,11 @@ pub struct TranscriptEntry {
     /// the session — unlike the lossy hyphen-encoded project directory name.
     #[serde(default)]
     pub cwd: Option<String>,
+    /// How the session was launched: `cli`, `sdk-cli`, `claude-vscode`, ….
+    #[serde(default)]
+    pub entrypoint: Option<String>,
+    #[serde(rename = "sessionKind", default)]
+    pub session_kind: Option<String>,
 }
 
 impl TranscriptEntry {

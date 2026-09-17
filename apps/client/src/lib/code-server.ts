@@ -32,6 +32,11 @@ export function codeServerReveal(dir: string, path: string, line: number | null)
   return invoke<null>("code_server_reveal", { dir, path, line });
 }
 
+/** Resume ended Claude session `sessionId` in the Claude Code panel of `dir`'s workbench. */
+export function codeServerOpenClaudeSession(dir: string, sessionId: string) {
+  return invoke<null>("code_server_open_claude_session", { dir, sessionId });
+}
+
 /** Progress while the backend provisions code-server on a machine that has none — a
  * ~235 MB download the first time, so the pane shows it rather than a spinner. */
 const CodeServerInstallSchema = z.object({

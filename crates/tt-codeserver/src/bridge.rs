@@ -15,9 +15,9 @@ use sha2::{Digest, Sha256};
 
 use crate::{CodeServerError, RETRY_PAUSE, unix_http};
 
-/// A click on the Agentboard's diff chip opens the pane in the same gesture, so
-/// this covers the server starting, the workbench booting, and git's first scan.
-const SHOW_DEADLINE: Duration = Duration::from_secs(45);
+/// Every request is sent in the same gesture that opens the pane, so this covers
+/// the server starting and the workbench booting (and, for a diff, git's first scan).
+const DEADLINE: Duration = Duration::from_secs(45);
 
 /// Bumping this rewrites the profile entry beside the old copy. The built-in
 /// copy carries no version and is overwritten in place.
@@ -133,19 +133,34 @@ pub fn socket(bridge_dir: &Path, folder: &Path) -> PathBuf {
 }
 
 /// Ask `folder`'s workbench to put everything uncommitted on screen, as VS
-/// Code's Source Control would open it. Polls, like [`crate::reveal`]: a pane
-/// opened a moment ago is still booting.
+/// Code's Source Control would open it.
 pub fn show(bridge_dir: &Path, folder: &Path) -> Result<(), CodeServerError> {
-    let body = json!({ "type": "changes" }).to_string();
+    post(bridge_dir, folder, &json!({ "type": "changes" }))
+}
+
+/// Resume Claude session `session_id` in the Claude Code extension's panel of
+/// `folder`'s workbench. The caller owns checking the session has ended: a
+/// resumed live session is a second writer on its transcript.
+pub fn open_claude_session(
+    bridge_dir: &Path,
+    folder: &Path,
+    session_id: &str,
+) -> Result<(), CodeServerError> {
+    post(bridge_dir, folder, &json!({ "type": "claude-session", "sessionId": session_id }))
+}
+
+/// Polls, like [`crate::reveal`]: a pane opened a moment ago is still booting.
+fn post(bridge_dir: &Path, folder: &Path, body: &Value) -> Result<(), CodeServerError> {
+    let body = body.to_string();
     let request = format!(
         "POST / HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     );
     let socket = socket(bridge_dir, folder);
-    let deadline = Instant::now() + SHOW_DEADLINE;
+    let deadline = Instant::now() + DEADLINE;
     loop {
         // A connect error is a window that has not opened its socket yet; 503 is
-        // that window answering that git has not scanned the folder yet. Both
+        // that window answering that it is not ready for this request yet. Both
         // mean ask again, so the deadline covers the whole exchange rather than
         // only the socket appearing.
         let pending = match unix_http(&socket, &request) {

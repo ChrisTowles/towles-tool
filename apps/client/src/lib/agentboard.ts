@@ -1507,6 +1507,13 @@ export type AgentboardNav =
       title: string;
       nonce: number;
     }
+  /** Claude Sessions' "Open in editor": resume an ended session in the Claude
+   * Code extension's panel of `folderDir`'s workbench. */
+  | {
+      kind: "open-claude-session";
+      folderDir: string;
+      sessionId: string;
+    }
   /** The MCP `file_open` tool and `tt open`'s delivery. `path` is absolute:
    * only the screen knows the folder once `folderDir` is null. */
   | {

@@ -236,6 +236,25 @@ pub async fn code_server_show_changes(dir: String) -> Result<(), String> {
     .map_err(|e| format!("code-server show-changes task failed: {e}"))?
 }
 
+/// Resume an ended Claude session in the Claude Code extension's panel of `dir`'s
+/// workbench. A live one is refused: resuming it would put a second process on
+/// the transcript the terminal's session is still writing.
+#[tauri::command]
+pub async fn code_server_open_claude_session(
+    dir: String,
+    session_id: String,
+) -> Result<(), String> {
+    let bridge_dir = tt_config::code_server_bridge_dir();
+    let folder = PathBuf::from(&dir);
+    tracing::debug!(dir = %dir, "code_server.open_claude_session");
+    tauri::async_runtime::spawn_blocking(move || {
+        tt_agentboard::claude_cli::fetch_agents().ensure_session_ended(&session_id)?;
+        bridge::open_claude_session(&bridge_dir, &folder, &session_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("code-server open-claude-session task failed: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Popup, popup_route};

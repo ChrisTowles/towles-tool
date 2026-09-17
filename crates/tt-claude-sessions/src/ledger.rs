@@ -8,8 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use tt_claude_code::{
-    UsageTotals, parse_transcript_file, session_cwd, session_title, usage_totals, user_prompt_blob,
-    user_prompts_with_timestamps,
+    UsageTotals, parse_transcript_file, session_cwd, session_is_programmatic, session_title,
+    usage_totals, user_prompt_blob, user_prompts_with_timestamps,
 };
 
 use crate::Result;
@@ -36,6 +36,9 @@ pub struct SessionDetail {
     /// field), for "open this session in Agentboard" — `None` for older
     /// transcripts that predate the field.
     pub cwd: Option<String>,
+    /// Started by a program (the SDK, a daemon): Claude Code's editor panel
+    /// won't list it, so it can't be resumed there.
+    pub programmatic: bool,
     pub usage: UsageTotals,
     pub opus_tokens: i64,
     pub sonnet_tokens: i64,
@@ -170,6 +173,7 @@ fn detail_from_candidate(
         mtime,
         title: session_title(&entries),
         cwd: session_cwd(&entries),
+        programmatic: session_is_programmatic(&entries),
         usage: usage_totals(&entries),
         opus_tokens: analysis.opus_tokens,
         sonnet_tokens: analysis.sonnet_tokens,

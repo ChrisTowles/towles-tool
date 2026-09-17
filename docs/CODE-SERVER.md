@@ -206,9 +206,37 @@ The same door fits the rest: verified against a live instance, the app's MCP
 HTTP server already answers the extension host (Node, no `Origin`) **200** and
 the workbench page itself (browser `Origin`) **403**. So a selection relay, or a
 command bound to one of our chords, is this mechanism with a different payload.
-`anthropic.claude-code` is itself on Open VSX (2.1.238) if the official bridge is
-ever wanted back — it would serve its own lockfile while our terminals stamp
-`CLAUDE_CODE_SSE_PORT` at ours, and ours wins.
+## Claude Code's own extension
+
+`anthropic.claude-code` installs from Open VSX into the shared extensions dir
+like any other. It serves its own IDE lockfile per window, and it cannot take a
+terminal's session: our terminals stamp `CLAUDE_CODE_SSE_PORT` at the app's
+server, and the CLI takes the lockfile with that port and nothing else. Its
+panel is bound in-process (an SDK MCP server), never by lockfile.
+
+What the bridge adds is **session → panel**: Claude Sessions' "Open in editor"
+sends `{"type":"claude-session","sessionId"}`, and the bridge calls
+`claude-vscode.editor.open(sessionId)`, which resumes that transcript in the
+panel, or reveals its tab if one is already open. Two rules come with it:
+
+- **Ended sessions only.** The extension checks only that the transcript
+  exists, so resuming a live one puts a second writer on it.
+  `code_server_open_claude_session` refuses when `claude agents` lists the id,
+  and when it cannot ask.
+- **Only sessions the panel lists.** It resumes from the transcripts filed
+  under its workspace folder, leaving out programmatic ones (an `sdk-*`
+  entrypoint or a daemon `sessionKind`); asked for anything else, it quietly
+  opens a blank conversation. So the button needs a `cwd` that *is* a checkout
+  on the rail, and hides for `programmatic` sessions
+  (`tt_claude_code::session_is_programmatic`).
+
+A window deletes its lockfile when its extension host shuts down cleanly. One
+killed outright leaves the file behind, and the CLI never sweeps it: `pid` is the
+shared code-server process, which outlives every window. Neither matters while
+`CLAUDE_CODE_SSE_PORT` is stamped. A `claude` started without it (an outside
+terminal, or a pane whose IDE server failed to bind) falls back to cwd matching,
+and auto-connects only on exactly one match. In a checkout with a terminal and
+an open workbench, that is two, so it asks via `/ide` instead.
 
 **Known gap:** `PR_SET_PDEATHSIG` reaps the server when the app is killed on
 Linux; macOS has no equivalent, so a `SIGKILL`ed app there leaks one tree.
