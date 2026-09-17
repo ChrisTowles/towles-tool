@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { MotionConfig } from "motion/react";
 import "./index.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { installPcEditKeys, setPcKeybindings } from "@/lib/keymap";
+import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
 import { installConsoleCollector } from "@/lib/wdio-console";
 import { App } from "./App";
 
@@ -15,6 +17,14 @@ if (import.meta.env.VITE_WDIO) {
   installConsoleCollector();
   void import("@wdio/tauri-plugin");
 }
+
+// Before the first render, so no keycap is drawn in the wrong keymap for long.
+onSettingsChanged(() => {
+  void loadUserSettings().then((s) => {
+    if (s) setPcKeybindings(s.agentboard?.pcKeybindings ?? false);
+  });
+});
+installPcEditKeys();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

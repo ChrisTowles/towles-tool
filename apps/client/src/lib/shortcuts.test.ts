@@ -327,4 +327,26 @@ describe("on macOS", () => {
     expect(mac.shortcutHint("ab-jump-idle")).toBe("⌘⇧A");
     expect(mac.shortcutAria("ab-jump-idle")).toBe("Meta+Shift+A");
   });
+  describe("with PC-style keybindings", () => {
+    async function pcModule() {
+      const mac = await macModule();
+      (await import("./keymap")).setPcKeybindings(true);
+      return mac;
+    }
+
+    it("takes Ctrl as the modifier and leaves ⌘ alone", async () => {
+      const pc = await pcModule();
+      expect(pc.matchesShortcut("palette", key({ ctrlKey: true, key: "k" }))).toBe(true);
+      expect(pc.matchesShortcut("palette", key({ metaKey: true, key: "k" }))).toBe(false);
+      expect(
+        pc.matchesShortcut("ab-jump-idle", key({ ctrlKey: true, shiftKey: true, key: "a" })),
+      ).toBe(true);
+    });
+
+    it("labels with Ctrl the way Linux does", async () => {
+      const pc = await pcModule();
+      expect(pc.shortcutHint("ab-jump-idle")).toBe("Ctrl+Shift+A");
+      expect(pc.shortcutAria("ab-jump-idle")).toBe("Control+Shift+A");
+    });
+  });
 });

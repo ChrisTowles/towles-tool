@@ -35,8 +35,8 @@ import {
   useCopyOnSelect,
   useTerminalFontSize,
 } from "@/lib/terminal-prefs";
+import { macKeymap } from "@/lib/keymap";
 import {
-  IS_MAC,
   matchesEditableOverride,
   matchesShortcut,
   useShortcutsWorkInTerminal,
@@ -1056,7 +1056,7 @@ export function TerminalView({
           )}
           <ContextMenuItem disabled={!copyEnabled} onSelect={() => bridgeRef.current?.copy()}>
             Copy
-            <ContextMenuShortcut>{IS_MAC ? "⇧⌘C" : "Ctrl+Shift+C"}</ContextMenuShortcut>
+            <ContextMenuShortcut>{macKeymap() ? "⇧⌘C" : "Ctrl+Shift+C"}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => bridgeRef.current?.paste()}>Paste</ContextMenuItem>
           <ContextMenuItem onSelect={() => bridgeRef.current?.selectAll()}>
@@ -1065,7 +1065,7 @@ export function TerminalView({
           <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => setSearchOpen(true)}>
             Search scrollback
-            <ContextMenuShortcut>{IS_MAC ? "⇧⌘F" : "Ctrl+Shift+F"}</ContextMenuShortcut>
+            <ContextMenuShortcut>{macKeymap() ? "⇧⌘F" : "Ctrl+Shift+F"}</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => bridgeRef.current?.clearScrollback()}>
             Clear scrollback

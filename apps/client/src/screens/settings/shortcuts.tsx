@@ -1,5 +1,6 @@
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { isEmptyQuery, matchesFilter } from "@/lib/settings-filter";
+import { IS_MAC } from "@/lib/keymap";
 import { DEFAULT_SHORTCUT_COACH } from "@/lib/shortcut-coach";
 import { SHORTCUTS, scopeTitle, shortcutKeys, type ShortcutScope } from "@/lib/shortcuts";
 import type { UserSettings } from "@/lib/settings";
@@ -33,6 +34,42 @@ export function ShortcutCoachRow({
       checked={settings.agentboard?.shortcutCoach ?? DEFAULT_SHORTCUT_COACH}
       onCheckedChange={(v) =>
         update((s) => ({ ...s, agentboard: { ...s.agentboard, shortcutCoach: v } }))
+      }
+    />
+  );
+}
+
+/** Mac only: elsewhere Ctrl already is the modifier. */
+export function PcKeybindingsRow({
+  settings,
+  update,
+  query,
+}: {
+  settings: UserSettings;
+  update: Update;
+  query: string;
+}) {
+  const shown =
+    isEmptyQuery(query) ||
+    matchesFilter(query, "PC-style keybindings", [
+      "ctrl",
+      "control",
+      "command",
+      "copy",
+      "paste",
+      "windows",
+      "linux",
+      "vs code",
+      "keymap",
+    ]);
+  if (!IS_MAC || !shown) return null;
+  return (
+    <ToggleRow
+      label="PC-style keybindings"
+      description="Use Ctrl instead of ⌘, like Windows and Linux: Ctrl+C copies, Ctrl+V pastes, Ctrl+K opens the palette. VS Code panes switch to their Windows/Linux keymap and reload. A terminal keeps Ctrl+C as interrupt — copy there with Ctrl+Shift+C."
+      checked={settings.agentboard?.pcKeybindings ?? false}
+      onCheckedChange={(v) =>
+        update((s) => ({ ...s, agentboard: { ...s.agentboard, pcKeybindings: v } }))
       }
     />
   );

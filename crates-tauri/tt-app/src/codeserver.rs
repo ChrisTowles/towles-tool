@@ -13,7 +13,7 @@ use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, State};
 use tt_codeserver::bridge;
 use tt_codeserver::install::{self, Phase, Progress};
-use tt_codeserver::{CodeServerChild, CodeServerConfig, find_code_server, workbench_url};
+use tt_codeserver::{CodeServerChild, CodeServerConfig, Keymap, find_code_server, workbench_url};
 
 use crate::ide::MAIN_WINDOW_LABEL;
 
@@ -185,7 +185,8 @@ pub async fn code_server_open(
         .map_err(|e| format!("code-server launch task failed: {e}"))??;
     let file = path.map(|p| folder.join(p));
     let open = file.as_deref().map(|f| (f, line));
-    Ok(CodeServerInfo { url: workbench_url(port, &folder, open), port })
+    let keymap = if crate::macos_keys::pc_keybindings() { Keymap::Pc } else { Keymap::Native };
+    Ok(CodeServerInfo { url: workbench_url(port, &folder, open, keymap), port })
 }
 
 /// Open `path` in the workbench already running for `dir` — checkout-relative,

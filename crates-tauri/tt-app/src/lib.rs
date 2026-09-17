@@ -191,10 +191,14 @@ pub fn run() {
                 .ok_or("tauri.conf.json has no `main` window")?;
             let main = tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
                 .on_new_window(|url, _features| codeserver::on_new_window(url))
+                .initialization_script_for_all_frames(tt_codeserver::PC_KEYMAP_SCRIPT)
                 .build()?;
             let _ = main.set_title(&format!("Towles Tool — {}", task_label()));
 
             // No-op off macOS — see macos_keys' module doc.
+            if let Ok(settings) = tt_config::load() {
+                macos_keys::set_pc_keybindings(&settings.agentboard);
+            }
             macos_keys::install(app.handle());
 
             // Fire-and-forget release check → update banner + OS notification.

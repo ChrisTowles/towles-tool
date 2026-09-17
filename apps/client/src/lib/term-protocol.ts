@@ -1,7 +1,6 @@
 /** Wire types for `terminal://frame`, mirroring crates/tt-vt/src/frame.rs. */
 
-// Duplicated from shortcuts.tsx rather than imported: that module pulls in React UI.
-const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "");
+import { macKeymap } from "./keymap";
 
 export interface Run {
   x: number;
@@ -197,7 +196,7 @@ export function isPasteChord(e: KeyEventLike): boolean {
 }
 
 function chordMod(e: KeyEventLike): boolean {
-  return IS_MAC ? e.metaKey || e.ctrlKey : e.ctrlKey;
+  return macKeymap() ? e.metaKey || e.ctrlKey : e.ctrlKey;
 }
 
 /** null when the keystroke isn't the shell's to consume — Meta stays with the OS,
