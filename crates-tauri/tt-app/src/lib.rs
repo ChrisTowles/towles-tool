@@ -669,6 +669,8 @@ pub fn run() {
             agentboard::ab_get_state,
             agentboard::ab_mark_seen,
             agentboard::ab_add_repo,
+            agentboard::ab_create_repo,
+            agentboard::ab_clone_repo,
             agentboard::ab_remove_repo,
             agentboard::ab_untrack_missing,
             agentboard::ab_discover_repos,

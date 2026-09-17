@@ -1,28 +1,29 @@
+import { useState } from "react";
 import {
-  Archive,
-  Box,
   CalendarClock,
-  CircleSlash,
-  Search,
-  Eye,
-  EyeOff,
+  FolderCog,
   FolderGit2,
   FolderPlus,
   FolderX,
   GitPullRequest,
-  History,
   PanelLeftClose,
+  Plus,
   RadioTower,
+  Search,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import { DismissButton } from "@/components/store-bits";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Hint } from "@/components/hint";
@@ -31,95 +32,18 @@ import { RAIL_RECENT_HOUR_CHOICES } from "@/lib/rail-prefs";
 import type { RailFilter } from "@/lib/settings";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
+import { NewRepoDialog, type NewRepoMode } from "./new-repo-dialog";
 import type { AttentionItem } from "./use-attention";
 
-/** Icon + resting tooltip per rail filter. The icon *is* the readout — an
- * always-open menu would cost a rail row, so the trigger has to say which mode
- * is on without being opened. */
-const FILTER_META: Record<RailFilter, { icon: typeof Eye; title: string }> = {
-  all: { icon: Eye, title: "Showing every checkout" },
-  active: {
-    icon: EyeOff,
-    title:
-      "Showing only checkouts with something going on (a live session, a dirty tree, unpushed commits, an agent waiting)",
-  },
-  recent: { icon: History, title: "Showing only checkouts you worked in recently" },
+const FILTER_SUMMARY: Record<RailFilter, string> = {
+  all: "all checkouts",
+  active: "only checkouts with something going on",
+  recent: "only checkouts worked in recently",
 };
 
-// The middle two answers aren't degrees of one thing: "going on" is about
-// *now*, "worked recently" is the last N hours. A menu, not a cycling icon, so
-// the hour span sits with the mode it measures.
-function RailFilterMenu(props: {
-  filter: RailFilter;
-  recentHours: number;
-  onSetFilter: (next: RailFilter) => void;
-  onSetRecentHours: (next: number) => void;
-}) {
-  const { filter, recentHours, onSetFilter, onSetRecentHours } = props;
-  const { icon: Icon, title } = FILTER_META[filter];
-  return (
-    <DropdownMenu>
-      <Hint label={title}>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Which checkouts to show"
-            className={cn(
-              "flex items-center gap-0.5 rounded-md p-1 hover:bg-accent/50",
-              filter === "all"
-                ? "text-muted-foreground hover:text-foreground"
-                : "text-violet-500 hover:text-violet-400",
-            )}
-          >
-            <Icon className="size-3.5" />
-            {filter === "recent" && (
-              <span className="font-mono text-[10px] leading-none">{recentHours}h</span>
-            )}
-          </button>
-        </DropdownMenuTrigger>
-      </Hint>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel>Show</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={filter}
-          onValueChange={(next) => {
-            uiAction("agentboard.rail_filter", "agentboard", next);
-            onSetFilter(next as RailFilter);
-          }}
-        >
-          <DropdownMenuRadioItem value="all">Everything</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="active">Only what&apos;s going on</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="recent">Worked recently</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        {filter === "recent" && (
-          // Deliberately not menu items: picking a span is a refinement of the
-          // mode above it, so the menu stays open while you compare 4h to 8h.
-          <div className="flex items-center gap-1 px-2 pb-1.5 pt-1">
-            {RAIL_RECENT_HOUR_CHOICES.map((hours) => (
-              <button
-                key={hours}
-                type="button"
-                aria-pressed={hours === recentHours}
-                onClick={() => {
-                  uiAction("agentboard.rail_recent_hours", "agentboard", String(hours));
-                  onSetRecentHours(hours);
-                }}
-                className={cn(
-                  "flex-1 rounded-md border py-0.5 font-mono text-[11px] hover:bg-accent/50",
-                  hours === recentHours
-                    ? "border-violet-500/40 bg-violet-500/10 text-violet-500"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {hours}h
-              </button>
-            ))}
-          </div>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+const keepOpen = (e: Event) => e.preventDefault();
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // Type-to-narrow over repo, branch and task title. Transient: no persistence,
 // Escape clears, and the count of what it hides sits in the field itself, so a
@@ -141,8 +65,7 @@ function RepoSearch({
         onChange={(e) => onSet(e.target.value)}
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
-          // Stop here: the screen's Escape closes panes and clears selection,
-          // and a search field's Escape means the search.
+          // The screen's Escape closes panes; a search field's Escape means the search.
           e.stopPropagation();
           onSet("");
         }}
@@ -170,51 +93,175 @@ function RepoSearch({
   );
 }
 
-// Marking a checkout quiet takes it off the rail, so the count of what that
-// hid belongs where you look before wondering where a repo went — beside the
-// filter, not at the far end of the tree.
-function QuietToggle({
-  count,
-  on,
-  onSet,
+function AddRepoMenu({
+  onOpenRepoManager,
+  onNewRepo,
 }: {
-  count: number;
-  on: boolean;
-  onSet: (next: boolean) => void;
+  onOpenRepoManager: () => void;
+  onNewRepo: (mode: NewRepoMode) => void;
 }) {
   return (
-    <Hint
-      label={
-        on
-          ? `Showing ${count} checkout${count === 1 ? "" : "s"} marked quiet — click to hide them again`
-          : `${count} checkout${count === 1 ? "" : "s"} marked quiet ${count === 1 ? "is" : "are"} hidden — click to show them`
-      }
-    >
-      <button
-        type="button"
-        onClick={() => {
-          uiAction("agentboard.show_quiet", "agentboard", on ? "off" : "on");
-          onSet(!on);
-        }}
-        aria-label={on ? "Hide checkouts marked quiet" : "Show checkouts marked quiet"}
-        aria-pressed={on}
-        className={cn(
-          "flex items-center gap-0.5 rounded-md p-1 hover:bg-accent/50",
-          on
-            ? "text-violet-500 hover:text-violet-400"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        {/* Not an eye: the filter beside this one already owns that glyph,
-            and two of them a few pixels apart read as one control. */}
-        <Archive className="size-3.5" />
-        <span className="font-mono text-[10px] leading-none">{count}</span>
-      </button>
-    </Hint>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Add a repo"
+          className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-violet-500 hover:bg-accent/50"
+        >
+          <Plus className="size-3.5" /> Repo
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuItem onSelect={() => onNewRepo("create")}>
+          <FolderPlus /> Create new repo…
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onNewRepo("clone")}>
+          <FolderGit2 /> Clone from GitHub…
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onOpenRepoManager}>
+          <FolderCog /> Track or manage repos…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-// The rail's fixed top: title row, filter/cleanup affordances, and the
+// Every view preference is a radio or a checkbox, so its state reads from a
+// checkmark rather than from an icon's color. The trigger lights up only when
+// the rail is narrowed below "all".
+function ViewMenu(props: {
+  filter: RailFilter;
+  recentHours: number;
+  onSetFilter: (next: RailFilter) => void;
+  onSetRecentHours: (next: number) => void;
+  quietCount: number;
+  showQuiet: boolean;
+  onSetShowQuiet: (next: boolean) => void;
+  showUnmanagedWorktrees: boolean;
+  onSetShowUnmanagedWorktrees: (next: boolean) => void;
+  jarvisPane: boolean;
+  onSetJarvisPane: (next: boolean) => void;
+  dismissedPrCount: number;
+  clearingDismissals: boolean;
+  onClearDismissals: () => void;
+}) {
+  const { filter, recentHours, quietCount } = props;
+  return (
+    <DropdownMenu>
+      <Hint label={`View options — showing ${FILTER_SUMMARY[filter]}`}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="View options"
+            className={cn(
+              "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-accent/50",
+              filter === "all"
+                ? "text-muted-foreground hover:text-foreground"
+                : "text-violet-500 hover:text-violet-400",
+            )}
+          >
+            <SlidersHorizontal className="size-3.5" />
+            {filter === "active" && <span>Active</span>}
+            {filter === "recent" && <span className="font-mono">{recentHours}h</span>}
+          </button>
+        </DropdownMenuTrigger>
+      </Hint>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>Show checkouts</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={filter}
+          onValueChange={(next) => {
+            uiAction("agentboard.rail_filter", "agentboard", next);
+            props.onSetFilter(next as RailFilter);
+          }}
+        >
+          <DropdownMenuRadioItem value="all" onSelect={keepOpen}>
+            All
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="active" onSelect={keepOpen}>
+            With something going on
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="recent" onSelect={keepOpen}>
+            Worked in recently
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        {filter === "recent" && (
+          <div className="flex items-center gap-1 px-2 pt-1 pb-1.5">
+            {RAIL_RECENT_HOUR_CHOICES.map((hours) => (
+              <button
+                key={hours}
+                type="button"
+                aria-pressed={hours === recentHours}
+                onClick={() => {
+                  uiAction("agentboard.rail_recent_hours", "agentboard", String(hours));
+                  props.onSetRecentHours(hours);
+                }}
+                className={cn(
+                  "flex-1 rounded-md border py-0.5 font-mono text-[11px] hover:bg-accent/50",
+                  hours === recentHours
+                    ? "border-violet-500/40 bg-violet-500/10 text-violet-500"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {hours}h
+              </button>
+            ))}
+          </div>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>Also show</DropdownMenuLabel>
+        {quietCount > 0 && (
+          <DropdownMenuCheckboxItem
+            checked={props.showQuiet}
+            onSelect={keepOpen}
+            onCheckedChange={(on) => {
+              uiAction("agentboard.show_quiet", "agentboard", on ? "on" : "off");
+              props.onSetShowQuiet(on);
+            }}
+          >
+            <span className="flex-1">Checkouts marked quiet</span>
+            <span className="font-mono text-[11px] text-muted-foreground">{quietCount}</span>
+          </DropdownMenuCheckboxItem>
+        )}
+        <DropdownMenuCheckboxItem
+          checked={props.showUnmanagedWorktrees}
+          onSelect={keepOpen}
+          onCheckedChange={(on) => {
+            uiAction("agentboard.show_unmanaged_worktrees", "agentboard", on ? "on" : "off");
+            props.onSetShowUnmanagedWorktrees(on);
+          }}
+        >
+          Worktrees not made by tt task
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={props.jarvisPane}
+          onSelect={keepOpen}
+          onCheckedChange={(on) => {
+            uiAction("agentboard.jarvis_pane", "agentboard", on ? "on" : "off");
+            props.onSetJarvisPane(on);
+          }}
+        >
+          <span className="flex-1">Jarvis pane</span>
+          <span className="text-[11px] text-muted-foreground">experimental</span>
+        </DropdownMenuCheckboxItem>
+        {props.dismissedPrCount > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={props.clearingDismissals}
+              onSelect={props.onClearDismissals}
+            >
+              Bring back {plural(props.dismissedPrCount, "dismissed PR")}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// The rail's fixed top: search, the add and view menus, alerts, and the
 // attention strip. Everything below this scrolls.
 export function RailHeader(props: {
   attention: AttentionItem[];
@@ -226,67 +273,37 @@ export function RailHeader(props: {
   recentHours: number;
   onSetFilter: (next: RailFilter) => void;
   onSetRecentHours: (next: number) => void;
-  /** Checkouts marked quiet by hand — shown or hidden, this is how many. */
   quietCount: number;
   showQuiet: boolean;
   onSetShowQuiet: (next: boolean) => void;
-  /** Free-text repo filter. Transient by design — nothing persists it, so the
-   * rail never opens already narrowed to yesterday's search. */
+  /** Transient by design, so the rail never opens narrowed to yesterday's search. */
   query: string;
   onSetQuery: (next: string) => void;
-  /** Repos the query is currently hiding; 0 when nothing is typed. */
   queryHidden: number;
   showUnmanagedWorktrees: boolean;
   onSetShowUnmanagedWorktrees: (next: boolean) => void;
   jarvisPane: boolean;
   onSetJarvisPane: (next: boolean) => void;
+  /** Where a created or cloned repo goes, most likely first. */
+  parentDirs: string[];
   onOpenRepoManager: () => void;
   onCleanupMissing: () => void;
   onClearDismissals: () => void;
   onCollapseRail: () => void;
 }) {
-  const {
-    attention,
-    missingRepoCount,
-    agentScanOk,
-    dismissedPrCount,
-    clearingDismissals,
-    filter,
-    recentHours,
-    onSetFilter,
-    onSetRecentHours,
-    quietCount,
-    showQuiet,
-    onSetShowQuiet,
-    query,
-    onSetQuery,
-    queryHidden,
-    showUnmanagedWorktrees,
-    onSetShowUnmanagedWorktrees,
-    jarvisPane,
-    onSetJarvisPane,
-    onOpenRepoManager,
-    onCleanupMissing,
-    onClearDismissals,
-    onCollapseRail,
-  } = props;
+  const { attention, missingRepoCount } = props;
+  const [newRepo, setNewRepo] = useState<NewRepoMode | null>(null);
   return (
     <>
+      <NewRepoDialog
+        mode={newRepo}
+        parentDirs={props.parentDirs}
+        onClose={() => setNewRepo(null)}
+      />
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        {/* The filter takes the row the "REPOS" heading used to hold: the rail
-            is self-evidently the repo list, and a heading can't find a repo. */}
-        <RepoSearch query={query} onSet={onSetQuery} hidden={queryHidden} />
+        <RepoSearch query={props.query} onSet={props.onSetQuery} hidden={props.queryHidden} />
         <span className="flex shrink-0 items-center gap-0.5">
-          <Hint label="Manage tracked repos in Settings — track, reorder, icon and color">
-            <button
-              type="button"
-              onClick={onOpenRepoManager}
-              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-violet-500 hover:bg-accent/50"
-            >
-              <FolderPlus className="size-3.5" /> Manage repos
-            </button>
-          </Hint>
-          {!agentScanOk && (
+          {!props.agentScanOk && (
             <Hint label="Can't reach `claude agents` — agent status on these rows is missing, not empty. Retrying with a widening backoff.">
               <span
                 role="status"
@@ -299,116 +316,47 @@ export function RailHeader(props: {
           )}
           {missingRepoCount > 0 && (
             <Hint
-              label={`Untrack ${missingRepoCount} repo${missingRepoCount === 1 ? "" : "s"} whose director${missingRepoCount === 1 ? "y is" : "ies are"} gone from disk`}
+              label={`Untrack ${plural(missingRepoCount, "repo")} whose directory is gone from disk`}
             >
               <button
                 type="button"
-                onClick={onCleanupMissing}
-                aria-label={`Untrack ${missingRepoCount} missing repos`}
+                onClick={props.onCleanupMissing}
+                aria-label={`Untrack ${plural(missingRepoCount, "missing repo")}`}
                 className="rounded-md p-1 text-amber-500 hover:bg-accent/50 hover:text-amber-400"
               >
                 <FolderX className="size-3.5" />
               </button>
             </Hint>
           )}
-          <RailFilterMenu
-            filter={filter}
-            recentHours={recentHours}
-            onSetFilter={onSetFilter}
-            onSetRecentHours={onSetRecentHours}
+          <AddRepoMenu
+            onOpenRepoManager={props.onOpenRepoManager}
+            onNewRepo={(mode) => {
+              uiAction(`repo.${mode}_opened`, "agentboard");
+              setNewRepo(mode);
+            }}
           />
-          {/* Only with marks to speak for: the count is what makes hiding
-              reversible, so it appears exactly when something is hidden — or
-              would be if you flipped this off. */}
-          {quietCount > 0 && (
-            <QuietToggle count={quietCount} on={showQuiet} onSet={onSetShowQuiet} />
-          )}
-          <Hint
-            label={
-              showUnmanagedWorktrees
-                ? 'Showing every git worktree — the ones agents made for themselves fold into a per-repo "N unmanaged" row you can open. Click to drop them entirely.'
-                : "Showing only the tasks you asked for — click to also find worktrees agents made for themselves, or ones added by hand"
-            }
-          >
-            <button
-              type="button"
-              onClick={() => {
-                uiAction(
-                  "agentboard.show_unmanaged_worktrees",
-                  "agentboard",
-                  showUnmanagedWorktrees ? "off" : "on",
-                );
-                onSetShowUnmanagedWorktrees(!showUnmanagedWorktrees);
-              }}
-              aria-label={
-                showUnmanagedWorktrees
-                  ? "Show only worktrees you asked for"
-                  : "Show every git worktree, including ones you didn't ask for"
-              }
-              aria-pressed={showUnmanagedWorktrees}
-              className={cn(
-                "rounded-md p-1 hover:bg-accent/50",
-                showUnmanagedWorktrees
-                  ? "text-violet-500 hover:text-violet-400"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <FolderGit2 className="size-3.5" />
-            </button>
-          </Hint>
-          {/* Jarvis, the native Bevy surface: this toggles both the strip at
-              the bottom of the rail and whether a checkout can tile one as a
-              *pane* (`components/jarvis-pane.tsx`) — one switch for the whole
-              proof-of-concept. Left off, no surface is ever created and no
-              renderer runs; turned off after the fact, the surfaces are parked
-              rather than freed, because a Bevy app can't be dropped in-process
-              (`crates-tauri/tt-pane`). */}
-          <Hint
-            label={
-              jarvisPane
-                ? "Jarvis (native Bevy surface) is on — rail strip plus a “jarvis” button on each checkout that tiles one as a pane. Click to turn it off"
-                : "Turn on Jarvis, the native Bevy surface: a rail strip, and a “jarvis” pane you can tile beside a checkout's terminals (proof-of-concept; Linux/Wayland only)"
-            }
-          >
-            <button
-              type="button"
-              onClick={() => {
-                uiAction("agentboard.jarvis_pane", "agentboard", jarvisPane ? "off" : "on");
-                onSetJarvisPane(!jarvisPane);
-              }}
-              aria-label={jarvisPane ? "Hide the Jarvis pane" : "Show the Jarvis pane"}
-              aria-pressed={jarvisPane}
-              className={cn(
-                "rounded-md p-1 hover:bg-accent/50",
-                jarvisPane
-                  ? "text-violet-500 hover:text-violet-400"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Box className="size-3.5" />
-            </button>
-          </Hint>
-          {dismissedPrCount > 0 && (
-            <Hint
-              label={`Bring back ${dismissedPrCount} dismissed PR${dismissedPrCount === 1 ? "" : "s"}`}
-            >
-              <button
-                type="button"
-                onClick={onClearDismissals}
-                disabled={clearingDismissals}
-                aria-label="Clear all dismissed PRs"
-                className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
-              >
-                <CircleSlash className="size-3.5" />
-              </button>
-            </Hint>
-          )}
+          <ViewMenu
+            filter={props.filter}
+            recentHours={props.recentHours}
+            onSetFilter={props.onSetFilter}
+            onSetRecentHours={props.onSetRecentHours}
+            quietCount={props.quietCount}
+            showQuiet={props.showQuiet}
+            onSetShowQuiet={props.onSetShowQuiet}
+            showUnmanagedWorktrees={props.showUnmanagedWorktrees}
+            onSetShowUnmanagedWorktrees={props.onSetShowUnmanagedWorktrees}
+            jarvisPane={props.jarvisPane}
+            onSetJarvisPane={props.onSetJarvisPane}
+            dismissedPrCount={props.dismissedPrCount}
+            clearingDismissals={props.clearingDismissals}
+            onClearDismissals={props.onClearDismissals}
+          />
           <Hint label="Collapse the rail to icons" shortcut="ab-toggle-rail">
             <button
               type="button"
               onClick={() => {
                 mouseAction("ab-toggle-rail", "agentboard");
-                onCollapseRail();
+                props.onCollapseRail();
               }}
               aria-label="Collapse the rail to icons"
               className="rounded-md p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
