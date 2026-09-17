@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use crate::{CodeServerError, RETRY_PAUSE, unix_http};
 
 /// Every request is sent in the same gesture that opens the pane, so this covers
-/// the server starting, the workbench booting, and git's first scan.
+/// the server starting and the workbench booting (and, for a diff, git's first scan).
 const DEADLINE: Duration = Duration::from_secs(45);
 
 /// Bumping this rewrites the profile entry beside the old copy. The built-in
@@ -146,19 +146,7 @@ pub fn open_claude_session(
     folder: &Path,
     session_id: &str,
 ) -> Result<(), CodeServerError> {
-    if !is_uuid(session_id) {
-        return Err(CodeServerError::Reveal(format!("not a Claude session id: {session_id}")));
-    }
     post(bridge_dir, folder, &json!({ "type": "claude-session", "sessionId": session_id }))
-}
-
-/// The extension drops anything else without a word, so say so here.
-fn is_uuid(id: &str) -> bool {
-    id.len() == 36
-        && id.char_indices().all(|(i, c)| match i {
-            8 | 13 | 18 | 23 => c == '-',
-            _ => c.is_ascii_hexdigit(),
-        })
 }
 
 /// Polls, like [`crate::reveal`]: a pane opened a moment ago is still booting.
@@ -247,14 +235,6 @@ mod tests {
             entries[0]["location"]["path"],
             dir.path().join("towles-tool.tt-bridge-0.1.0").to_string_lossy().as_ref()
         );
-    }
-
-    #[test]
-    fn only_a_uuid_is_sent_as_a_session_id() {
-        assert!(is_uuid("40b5de23-200f-4019-a43c-3d97c3c49bfa"));
-        assert!(!is_uuid("40b5de23"));
-        assert!(!is_uuid("40b5de23x200f-4019-a43c-3d97c3c49bfa"));
-        assert!(!is_uuid("40b5de23-200f-4019-a43c-3d97c3c49bfg"));
     }
 
     #[test]

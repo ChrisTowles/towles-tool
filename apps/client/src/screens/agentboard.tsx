@@ -85,6 +85,7 @@ import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/la
 import { buildJumpRecall, type JumpRecall } from "@/lib/jump-recall";
 import type { PreviewRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
+import { codeServerOpenClaudeSession } from "@/lib/code-server";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
@@ -396,6 +397,10 @@ export function AgentboardScreen() {
         [dir]: { path: target, line: req.line, nonce: req.nonce },
       }));
     }
+    focusFiles(dir);
+  }
+
+  function focusFiles(dir: string) {
     setActiveFolderDir(dir);
     ackFolder(dir);
     openFiles(dir);
@@ -404,14 +409,12 @@ export function AgentboardScreen() {
   // The extension resumes from the transcripts filed under its workspace folder,
   // so the session's cwd has to *be* a checkout on the rail, not sit inside one.
   async function openClaudeSessionInEditor(dir: string, sessionId: string) {
-    if (!railRef.current.repos.some((r) => r.folders.some((f) => f.dir === dir))) {
+    if (!railRef.current.folderNameByDir.has(dir)) {
       toast.error(`Couldn't open the session in the editor — ${dir} isn't a checkout on the rail`);
       return;
     }
-    setActiveFolderDir(dir);
-    ackFolder(dir);
-    openFiles(dir);
-    const opened = await invoke<null>("code_server_open_claude_session", { dir, sessionId });
+    focusFiles(dir);
+    const opened = await codeServerOpenClaudeSession(dir, sessionId);
     if (opened.isErr()) {
       toast.error(`Couldn't open the session in the editor — ${opened.error.message}`);
     }

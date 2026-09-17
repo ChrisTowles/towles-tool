@@ -248,20 +248,7 @@ pub async fn code_server_open_claude_session(
     let folder = PathBuf::from(&dir);
     tracing::debug!(dir = %dir, "code_server.open_claude_session");
     tauri::async_runtime::spawn_blocking(move || {
-        match tt_agentboard::claude_cli::fetch_agents().session_ended(&session_id) {
-            Some(true) => {}
-            Some(false) => {
-                return Err(
-                    "this session is still running — end it before opening it in the editor"
-                        .to_string(),
-                );
-            }
-            None => {
-                return Err(
-                    "couldn't ask `claude` whether this session is still running".to_string()
-                );
-            }
-        }
+        tt_agentboard::claude_cli::fetch_agents().ensure_session_ended(&session_id)?;
         bridge::open_claude_session(&bridge_dir, &folder, &session_id).map_err(|e| e.to_string())
     })
     .await
