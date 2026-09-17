@@ -104,6 +104,7 @@ import {
   useShowUnmanagedWorktrees,
 } from "@/lib/rail-prefs";
 import { useWorkspace } from "@/lib/workspace";
+import { repoParentDirs } from "@/lib/new-repo";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
 import { toast } from "sonner";
@@ -303,6 +304,8 @@ export function AgentboardScreen() {
           );
         }
   }, [state.repos, now]);
+
+  const parentDirs = useMemo(() => repoParentDirs(state.repos.map((r) => r.dir)), [state.repos]);
 
   const openRepoManager = () => {
     uiAction("repo.manage_opened", "agentboard");
@@ -1231,6 +1234,7 @@ export function AgentboardScreen() {
                     onCleanupMissing={() => void cleanupMissing()}
                     onClearDismissals={() => void attention.clearDismissals()}
                     onCollapseRail={toggleRail}
+                    parentDirs={parentDirs}
                   />
 
                   {/* min-h-0 is load-bearing: without it this flex child grows past the

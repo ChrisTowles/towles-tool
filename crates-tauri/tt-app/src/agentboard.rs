@@ -214,6 +214,53 @@ pub fn ab_add_repo(state: State<Ab>, path: String) {
     state.emit.notify_one();
 }
 
+fn expand_home(parent: &str) -> std::path::PathBuf {
+    match (parent.trim().strip_prefix("~"), dirs::home_dir()) {
+        (Some(rest), Some(home)) => home.join(rest.trim_start_matches('/')),
+        _ => std::path::PathBuf::from(parent.trim()),
+    }
+}
+
+async fn provision_and_track(
+    state: State<'_, Ab>,
+    make: impl FnOnce() -> tt_git::repo::Result<std::path::PathBuf> + Send + 'static,
+) -> Result<String, String> {
+    let dir = tauri::async_runtime::spawn_blocking(make)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let path = dir.to_string_lossy().to_string();
+    ab_add_repo(state, path.clone());
+    Ok(path)
+}
+
+/// Returns the new repo's directory, already tracked.
+#[tauri::command]
+pub async fn ab_create_repo(
+    state: State<'_, Ab>,
+    parent: String,
+    name: String,
+) -> Result<String, String> {
+    let parent = expand_home(&parent);
+    provision_and_track(state, move || tt_git::provision::init_repo(&parent, &name)).await
+}
+
+/// `source` is `owner/repo` or a clone URL; `name` defaults to the repo's own.
+#[tauri::command]
+pub async fn ab_clone_repo(
+    state: State<'_, Ab>,
+    source: String,
+    parent: String,
+    name: Option<String>,
+) -> Result<String, String> {
+    let (url, default_name) = tt_git::provision::parse_clone_source(&source)
+        .ok_or_else(|| format!("\"{}\" isn't owner/repo or a clone URL", source.trim()))?;
+    let name = name.filter(|n| !n.trim().is_empty()).unwrap_or(default_name);
+    let parent = expand_home(&parent);
+    provision_and_track(state, move || tt_git::provision::clone_repo(&url, &parent, name.trim()))
+        .await
+}
+
 /// Takes the exact dir, not a resolved session name — removing several by name
 /// in a row is unsafe (see `remove_repo_persisted`). `dir` is not always a
 /// `repos.json` entry either: a worktree deleted outside `tt task rm` leaves only
