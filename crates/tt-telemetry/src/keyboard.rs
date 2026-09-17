@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use crate::TelemetryRecord;
-use crate::attention::event_name;
+use crate::attention::{event_name, summarize_notifications};
 
 const SHORTCUT_PREFIX: &str = "shortcut.";
 const MOUSE_PREFIX: &str = "mouse.";
@@ -45,6 +45,9 @@ pub struct KeyboardDay {
     /// Too quiet to judge — see [`GOAL_MIN_ACTIONS`].
     pub idle: bool,
     pub by_shortcut: Vec<ShortcutSplit>,
+    /// Only [`KeyboardScore::window_needs_you`] reads it.
+    #[serde(skip)]
+    pub needs_you: usize,
 }
 
 /// One binding's own duel record.
@@ -72,6 +75,7 @@ pub struct KeyboardScore {
     pub window_shortcut: usize,
     pub window_mouse: usize,
     pub window_share: Option<f64>,
+    pub window_needs_you: usize,
     /// Every binding the window saw — what the `?` overlay annotates rows with.
     pub by_shortcut: Vec<ShortcutSplit>,
     /// Worst keyboard share first; bindings too thin to judge sort last.
@@ -79,6 +83,7 @@ pub struct KeyboardScore {
     /// Echoed so the UI states the goal without restating the constants.
     pub goal_share: f64,
     pub goal_min_actions: usize,
+    pub practice_min_actions: usize,
 }
 
 impl KeyboardDay {
@@ -92,6 +97,7 @@ impl KeyboardDay {
             goal_met: false,
             idle: true,
             by_shortcut: Vec::new(),
+            needs_you: 0,
         }
     }
 
@@ -105,6 +111,7 @@ pub fn summarize_keyboard(date: &str, records: &[TelemetryRecord]) -> KeyboardDa
     let mut splits: Vec<ShortcutSplit> = Vec::new();
     let mut shortcut = 0usize;
     let mut mouse = 0usize;
+    let needs_you = summarize_notifications(records).fired;
 
     for record in records.iter().filter(|r| event_name(r) == ACTION_EVENT) {
         let Some(action) = record.fields.get("action").and_then(|v| v.as_str()) else {
@@ -134,6 +141,7 @@ pub fn summarize_keyboard(date: &str, records: &[TelemetryRecord]) -> KeyboardDa
         goal_met: !idle && share.is_some_and(|s| s >= GOAL_SHARE),
         idle,
         by_shortcut: splits,
+        needs_you,
     }
 }
 
@@ -176,6 +184,7 @@ pub fn keyboard_score(days: Vec<KeyboardDay>) -> KeyboardScore {
     let window_shortcut: usize = days.iter().map(|d| d.shortcut).sum();
     let window_mouse: usize = days.iter().map(|d| d.mouse).sum();
     let window_total = window_shortcut + window_mouse;
+    let window_needs_you = days.iter().map(|d| d.needs_you).sum();
 
     let mut by_shortcut: Vec<ShortcutSplit> = Vec::new();
     for day in &days {
@@ -209,10 +218,12 @@ pub fn keyboard_score(days: Vec<KeyboardDay>) -> KeyboardScore {
         window_shortcut,
         window_mouse,
         window_share: (window_total > 0).then(|| window_shortcut as f64 / window_total as f64),
+        window_needs_you,
         by_shortcut,
         top_missed,
         goal_share: GOAL_SHARE,
         goal_min_actions: GOAL_MIN_ACTIONS,
+        practice_min_actions: PRACTICE_MIN_ACTIONS,
     }
 }
 
@@ -291,6 +302,17 @@ mod tests {
             day.by_shortcut[1],
             ShortcutSplit { id: "palette".into(), shortcut: 2, mouse: 0 }
         );
+    }
+
+    #[test]
+    fn counts_needs_you_alerts_that_fired_not_ones_skipped() {
+        let mut fired = action("");
+        fired.fields = json!({ "message": "notify_needs_you: fired" });
+        let mut skipped = action("");
+        skipped.fields = json!({ "message": "notify_needs_you: skipped, window focused" });
+        let day = summarize_keyboard("2026-07-25", &[fired.clone(), fired, skipped]);
+        assert_eq!(day.needs_you, 2);
+        assert_eq!(keyboard_score(vec![day.clone(), day]).window_needs_you, 4);
     }
 
     #[test]
