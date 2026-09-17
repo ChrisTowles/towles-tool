@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type RefObject } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { keyboardScore, latestKeyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
-import { macKeymap } from "@/lib/keymap";
+import { isInTerminal, isTextField, macKeymap } from "@/lib/keymap";
 import { uiAction } from "@/lib/ui-action";
 import { SCREENS, type ScreenId } from "@/lib/screens";
 import { useLiveSettingRef } from "./settings";
@@ -491,11 +491,7 @@ function macCtrlAlias(spec: KeySpec, e: KeyboardEvent): boolean {
 /** Somewhere that owns its own keystrokes — in a terminal, Ctrl+D is EOF. */
 function isEditableTarget(e: KeyboardEvent): boolean {
   const el = e.target;
-  if (!(el instanceof HTMLElement)) return false;
-  if (el.isContentEditable) return true;
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  return el.closest("[data-term-host]") != null;
+  return el instanceof HTMLElement && (isTextField(el) || isInTerminal(el));
 }
 
 // `enabled` gates the whole set — scope activation for screens that stay mounted while

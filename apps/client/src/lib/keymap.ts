@@ -5,21 +5,22 @@
 
 export const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "");
 
-let pcKeybindings = false;
+/** `null` until the first settings read lands: a workbench booted on a guess reboots. */
+let pcKeybindings: boolean | null = IS_MAC ? null : false;
 const listeners = new Set<() => void>();
 
 /** ⌘ is the shortcut modifier. */
 export function macKeymap(): boolean {
-  return IS_MAC && !pcKeybindings;
+  return IS_MAC && pcKeybindings !== true;
 }
 
-/** Only a Mac can opt in; anywhere else this already is the keymap. */
-export function pcKeymapOnMac(): boolean {
-  return IS_MAC && pcKeybindings;
+/** Whether the PC keymap is on, or `null` while still unknown. */
+export function pcKeymap(): boolean | null {
+  return pcKeybindings;
 }
 
 export function setPcKeybindings(on: boolean): void {
-  if (on === pcKeybindings) return;
+  if (!IS_MAC || on === pcKeybindings) return;
   pcKeybindings = on;
   for (const listener of listeners) listener();
 }
@@ -27,6 +28,15 @@ export function setPcKeybindings(on: boolean): void {
 export function subscribeKeymap(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** A field that owns its own editing keys. */
+export function isTextField(el: HTMLElement): boolean {
+  return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+}
+
+export function isInTerminal(el: HTMLElement): boolean {
+  return el.closest("[data-term-host]") != null;
 }
 
 type EditKeyEvent = Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">;
@@ -50,15 +60,18 @@ export function pcEditCommand(e: EditKeyEvent, editable: boolean, selected: bool
   return editable || (command === "copy" && selected) ? command : null;
 }
 
-/** Ctrl+V needs nothing here: the native monitor hands it over as ⌘V, the only paste a
+/** Mac only. Ctrl+V needs nothing here: the native monitor hands it over as ⌘V, the only paste a
  * page cannot start itself. A terminal's keys stay its own. */
 export function installPcEditKeys(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
-    if (!pcKeymapOnMac() || e.defaultPrevented) return;
+    if (macKeymap() || e.defaultPrevented) return;
     const el = e.target instanceof HTMLElement ? e.target : null;
-    if (!el || el.closest("[data-term-host]")) return;
-    const editable = el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA";
-    const command = pcEditCommand(e, editable, !(window.getSelection()?.isCollapsed ?? true));
+    if (!el || isInTerminal(el)) return;
+    const command = pcEditCommand(
+      e,
+      isTextField(el),
+      !(window.getSelection()?.isCollapsed ?? true),
+    );
     if (command && document.execCommand(command)) e.preventDefault();
   };
   window.addEventListener("keydown", onKeyDown);

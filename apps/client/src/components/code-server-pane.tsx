@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import type { CodeServerInstall } from "@/lib/code-server";
 import { codeServerOpen, codeServerReveal, subscribeCodeServerInstall } from "@/lib/code-server";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { pcKeymapOnMac, subscribeKeymap } from "@/lib/keymap";
+import { pcKeymap, subscribeKeymap } from "@/lib/keymap";
 
 type Phase =
   | { at: "starting" }
@@ -43,16 +43,17 @@ export function CodeServerPane({
   // change would be a reload.
   const servedByUrl = useRef<FilesOpenRequest | undefined>(undefined);
   // The workbench picks its keymap as it boots, so a change reloads it.
-  const pcKeys = useSyncExternalStore(subscribeKeymap, pcKeymapOnMac);
+  const pcKeys = useSyncExternalStore(subscribeKeymap, pcKeymap);
 
   useEffect(() => subscribeCodeServerInstall(setInstall), []);
 
   useEffect(() => {
+    if (pcKeys === null) return;
     let alive = true;
     setPhase({ at: "starting" });
     const initial = latestRequest.current;
     servedByUrl.current = initial;
-    void codeServerOpen(dir, initial?.path ?? null, initial?.line ?? null).then((r) => {
+    void codeServerOpen(dir, initial?.path ?? null, initial?.line ?? null, pcKeys).then((r) => {
       if (!alive) return;
       setInstall(undefined);
       setPhase(

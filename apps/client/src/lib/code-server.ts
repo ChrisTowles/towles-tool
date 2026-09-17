@@ -12,11 +12,17 @@ const CodeServerInfoSchema = z.object({
 export type CodeServerInfo = z.infer<typeof CodeServerInfoSchema>;
 
 /** The workbench URL for `dir`, starting the server on the first call. A `path`
- * (checkout-relative) rides the URL so the workbench opens it as it boots. */
-export function codeServerOpen(dir: string, path: string | null, line: number | null) {
+ * (checkout-relative) rides the URL so the workbench opens it as it boots, and so
+ * does the keymap it boots with. */
+export function codeServerOpen(
+  dir: string,
+  path: string | null,
+  line: number | null,
+  pcKeymap: boolean,
+) {
   return invoke<CodeServerInfo>(
     "code_server_open",
-    { dir, path, line },
+    { dir, path, line, pcKeymap },
     { schema: CodeServerInfoSchema },
   );
 }

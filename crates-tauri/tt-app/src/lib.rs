@@ -196,9 +196,6 @@ pub fn run() {
             let _ = main.set_title(&format!("Towles Tool — {}", task_label()));
 
             // No-op off macOS — see macos_keys' module doc.
-            if let Ok(settings) = tt_config::load() {
-                macos_keys::set_pc_keybindings(&settings.agentboard);
-            }
             macos_keys::install(app.handle());
 
             // Fire-and-forget release check → update banner + OS notification.
@@ -695,6 +692,7 @@ pub fn run() {
             codeserver::code_server_open,
             codeserver::code_server_reveal,
             codeserver::code_server_show_changes,
+            macos_keys::keymap_set_pc,
             browser::browser_status,
             browser::browser_open,
             browser::browser_navigate,

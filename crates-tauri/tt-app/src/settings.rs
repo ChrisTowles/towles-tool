@@ -62,7 +62,6 @@ pub fn settings_default_telemetry_rules() -> Vec<tt_config::TelemetryRule> {
 pub fn settings_set(settings: UserSettings, signal: State<SettingsSignal>) -> Result<(), String> {
     tt_config::save_merge(&settings).map_err(|e| format!("failed to save settings: {e}"))?;
     tracing::info!("settings.saved");
-    crate::macos_keys::set_pc_keybindings(&settings.agentboard);
     signal.scheduler.notify_one();
     signal.slack_socket.notify_one();
     Ok(())

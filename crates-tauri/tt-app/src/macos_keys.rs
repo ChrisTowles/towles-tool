@@ -11,32 +11,26 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static PC_KEYBINDINGS: AtomicBool = AtomicBool::new(false);
 
-/// Off macOS the setting means nothing, so it always reads off.
-pub fn set_pc_keybindings(settings: &tt_config::AgentboardSettings) {
-    let on = cfg!(target_os = "macos") && settings.pc_keybindings.unwrap_or(false);
+/// The frontend owns the setting and its refresh policy; this only obeys.
+#[tauri::command]
+pub fn keymap_set_pc(on: bool) {
     PC_KEYBINDINGS.store(on, Ordering::Relaxed);
-}
-
-pub fn pc_keybindings() -> bool {
-    PC_KEYBINDINGS.load(Ordering::Relaxed)
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Action {
     Pass,
-    ToTerminal,
     Respell,
     Command,
 }
 
-/// For a chord already known to hold Control and neither ⌘ nor ⌥.
+/// With PC keybindings on, for a Ctrl+C or Ctrl+V a terminal didn't take.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn decide(key: Option<char>, shift: bool, pc: bool, terminal_focused: bool) -> Action {
+fn decide(key: char, shift: bool, terminal_focused: bool) -> Action {
     match key {
-        Some('c') if !shift && terminal_focused => Action::ToTerminal,
-        Some('c') if pc => Action::Respell,
-        Some('v') if pc && !shift && !terminal_focused => Action::Command,
+        'c' => Action::Respell,
+        'v' if !shift && !terminal_focused => Action::Command,
         _ => Action::Pass,
     }
 }
@@ -66,7 +60,9 @@ mod imp {
     use tauri::{AppHandle, Manager};
     use tt_vt::{KeyAction, KeyEvent};
 
-    use super::{Action, chord_key, decide, pc_keybindings};
+    use std::sync::atomic::Ordering;
+
+    use super::{Action, PC_KEYBINDINGS, chord_key, decide};
     use crate::terminal::TermState;
 
     /// Installs the monitor for the app's lifetime (no teardown point — the
@@ -86,20 +82,20 @@ mod imp {
             let unmodified = event_ref
                 .charactersByApplyingModifiers(NSEventModifierFlags::empty())
                 .map(|s| s.to_string());
-            let key = chord_key(characters.as_deref(), unmodified.as_deref());
+            let key = match chord_key(characters.as_deref(), unmodified.as_deref()) {
+                Some(key @ ('c' | 'v')) => key,
+                _ => return event.as_ptr(),
+            };
             let shift = mods.contains(NSEventModifierFlags::Shift);
             let terms = app.state::<TermState>();
-            let pc = pc_keybindings();
-            let mut action = decide(key, shift, pc, terms.has_focused());
-            if action == Action::ToTerminal {
-                if terms.send_key_to_focused(ctrl_c()) {
-                    return std::ptr::null_mut();
-                }
-                // Focus moved between the check and the send.
-                action = decide(key, shift, pc, false);
+            if key == 'c' && !shift && terms.send_key_to_focused(ctrl_c()) {
+                return std::ptr::null_mut();
             }
-            match action {
-                Action::Pass | Action::ToTerminal => event.as_ptr(),
+            if !PC_KEYBINDINGS.load(Ordering::Relaxed) {
+                return event.as_ptr();
+            }
+            match decide(key, shift, terms.has_focused()) {
+                Action::Pass => event.as_ptr(),
                 Action::Respell => rewrite(event, mods, if shift { "C" } else { "c" }),
                 Action::Command => {
                     let flags =
@@ -178,26 +174,16 @@ mod tests {
     }
 
     #[test]
-    fn a_focused_terminal_keeps_ctrl_c_as_sigint_either_way() {
-        assert_eq!(decide(Some('c'), false, false, true), Action::ToTerminal);
-        assert_eq!(decide(Some('c'), false, true, true), Action::ToTerminal);
-    }
-
-    #[test]
-    fn without_pc_keybindings_nothing_else_is_touched() {
-        assert_eq!(decide(Some('c'), false, false, false), Action::Pass);
-        assert_eq!(decide(Some('c'), true, false, true), Action::Pass);
-        assert_eq!(decide(Some('v'), false, false, false), Action::Pass);
-    }
-
-    #[test]
-    fn pc_keybindings_make_ctrl_c_a_keystroke_and_ctrl_v_a_paste() {
-        assert_eq!(decide(Some('c'), false, true, false), Action::Respell);
+    fn ctrl_c_is_always_spelled_for_the_page() {
+        assert_eq!(decide('c', false, false), Action::Respell);
         // Ctrl+Shift+C is a terminal's copy chord, so it has to be spelled too.
-        assert_eq!(decide(Some('c'), true, true, true), Action::Respell);
-        assert_eq!(decide(Some('v'), false, true, false), Action::Command);
-        assert_eq!(decide(Some('v'), false, true, true), Action::Pass);
-        assert_eq!(decide(Some('v'), true, true, false), Action::Pass);
-        assert_eq!(decide(Some('a'), false, true, false), Action::Pass);
+        assert_eq!(decide('c', true, true), Action::Respell);
+    }
+
+    #[test]
+    fn ctrl_v_pastes_everywhere_but_a_terminal() {
+        assert_eq!(decide('v', false, false), Action::Command);
+        assert_eq!(decide('v', false, true), Action::Pass);
+        assert_eq!(decide('v', true, false), Action::Pass);
     }
 }

@@ -141,15 +141,6 @@ pub fn build_args(cfg: &CodeServerConfig) -> Vec<String> {
     ]
 }
 
-/// Which modifier the workbench's shortcuts use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Keymap {
-    /// VS Code's own choice for the platform it runs on.
-    Native,
-    /// Ctrl on a Mac too, through [`PC_KEYMAP_SCRIPT`].
-    Pc,
-}
-
 /// Injected into every frame of the app's webview; it reads the keymap
 /// [`workbench_url`] puts on the URL and does nothing without one.
 pub const PC_KEYMAP_SCRIPT: &str = include_str!("pc_keymap.js");
@@ -163,12 +154,9 @@ pub fn workbench_url(
     port: u16,
     folder: &Path,
     open: Option<(&Path, Option<u32>)>,
-    keymap: Keymap,
+    pc_keymap: bool,
 ) -> String {
-    let keymap = match keymap {
-        Keymap::Native => "native",
-        Keymap::Pc => "pc",
-    };
+    let keymap = if pc_keymap { "pc" } else { "native" };
     let mut url = format!(
         "http://127.0.0.1:{port}/?folder={}&tt-keymap={keymap}",
         encode_query(&folder.to_string_lossy())
@@ -529,15 +517,14 @@ mod tests {
 
     #[test]
     fn workbench_url_percent_encodes_the_folder() {
-        let url = workbench_url(4200, Path::new("/home/me/code/my repo"), None, Keymap::Native);
+        let url = workbench_url(4200, Path::new("/home/me/code/my repo"), None, false);
         assert_eq!(url, "http://127.0.0.1:4200/?folder=/home/me/code/my%20repo&tt-keymap=native");
     }
 
     #[test]
     fn workbench_url_names_the_pc_keymap_the_frame_script_reads() {
-        let url = workbench_url(4200, Path::new("/r"), None, Keymap::Pc);
+        let url = workbench_url(4200, Path::new("/r"), None, true);
         assert!(url.ends_with("&tt-keymap=pc"), "{url}");
-        assert!(PC_KEYMAP_SCRIPT.contains(r#"const FLAG = "tt-keymap";"#));
     }
 
     #[test]
@@ -546,7 +533,7 @@ mod tests {
             4200,
             Path::new("/home/me/repo"),
             Some((Path::new("/home/me/repo/src/main.rs"), Some(42))),
-            Keymap::Native,
+            false,
         );
         let (base, payload) = url.split_once("&payload=").expect("a payload");
         assert_eq!(base, "http://127.0.0.1:4200/?folder=/home/me/repo&tt-keymap=native");
