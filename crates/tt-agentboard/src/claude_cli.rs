@@ -93,6 +93,12 @@ impl AgentScan {
     fn failed() -> Self {
         Self { agents: Vec::new(), ok: false }
     }
+
+    /// Whether no process is running `session_id` — `None` when the scan
+    /// failed, which proves nothing either way.
+    pub fn session_ended(&self, session_id: &str) -> Option<bool> {
+        self.ok.then(|| !self.agents.iter().any(|a| a.session_id == session_id))
+    }
 }
 
 /// Run the CLI. Failures (claude missing, non-zero exit, timeout, bad JSON)
@@ -191,6 +197,14 @@ mod tests {
 
     fn out(exit_code: i32, stdout: &str) -> tt_exec::Result<tt_exec::Output> {
         Ok(tt_exec::Output { stdout: stdout.to_string(), stderr: String::new(), exit_code })
+    }
+
+    #[test]
+    fn a_session_has_ended_only_when_a_good_scan_does_not_list_it() {
+        let scan = scan_from(out(0, r#"[{"pid":1,"cwd":"/r","sessionId":"live"}]"#));
+        assert_eq!(scan.session_ended("live"), Some(false));
+        assert_eq!(scan.session_ended("gone"), Some(true));
+        assert_eq!(scan_from(out(1, "")).session_ended("gone"), None);
     }
 
     /// The bug this whole type exists for: for eighteen days the scan exited 1

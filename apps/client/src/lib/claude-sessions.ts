@@ -44,6 +44,8 @@ export type ClaudeSession = {
   costUsd: number;
   /** Real launch directory; null for transcripts that predate the field. */
   cwd: string | null;
+  /** Started by the SDK or a daemon — the editor panel can't resume it. */
+  programmatic: boolean;
   /** Prompt-text context; only present on search hits. */
   snippet?: string;
 };

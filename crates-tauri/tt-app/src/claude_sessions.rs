@@ -60,6 +60,7 @@ pub struct ClaudeSessionRow {
     pub cost_usd: f64,
     /// Real launch directory. `None` for transcripts predating the `cwd` field.
     pub cwd: Option<String>,
+    pub programmatic: bool,
     /// Prompt-text context around the match; only set on search hits.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snippet: Option<String>,
@@ -79,6 +80,7 @@ impl ClaudeSessionRow {
             cache_creation_tokens: d.usage.cache_creation_tokens,
             cost_usd: d.cost_usd,
             cwd: d.cwd.clone(),
+            programmatic: d.programmatic,
             snippet,
         }
     }

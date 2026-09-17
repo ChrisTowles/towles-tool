@@ -401,6 +401,22 @@ export function AgentboardScreen() {
     openFiles(dir);
   }
 
+  // The extension resumes from the transcripts filed under its workspace folder,
+  // so the session's cwd has to *be* a checkout on the rail, not sit inside one.
+  async function openClaudeSessionInEditor(dir: string, sessionId: string) {
+    if (!railRef.current.repos.some((r) => r.folders.some((f) => f.dir === dir))) {
+      toast.error(`Couldn't open the session in the editor — ${dir} isn't a checkout on the rail`);
+      return;
+    }
+    setActiveFolderDir(dir);
+    ackFolder(dir);
+    openFiles(dir);
+    const opened = await invoke<null>("code_server_open_claude_session", { dir, sessionId });
+    if (opened.isErr()) {
+      toast.error(`Couldn't open the session in the editor — ${opened.error.message}`);
+    }
+  }
+
   // Same, for the native pane — a window rectangle rendered by Bevy, not DOM.
   function openJarvis(dir: string) {
     uiAction("agentboard.open_jarvis_pane", "agentboard");
@@ -934,6 +950,8 @@ export function AgentboardScreen() {
             taskId: req.taskId,
           },
         );
+      } else if (req.kind === "open-claude-session") {
+        void openClaudeSessionInEditor(req.folderDir, req.sessionId);
       } else if (req.kind === "open-file") {
         openFileFromRequest(req);
       } else if (req.kind === "show-file") {

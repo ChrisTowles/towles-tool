@@ -693,6 +693,7 @@ pub fn run() {
             codeserver::code_server_reveal,
             codeserver::code_server_show_changes,
             macos_keys::keymap_set_pc,
+            codeserver::code_server_open_claude_session,
             browser::browser_status,
             browser::browser_open,
             browser::browser_navigate,

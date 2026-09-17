@@ -16,6 +16,7 @@
 pub mod cwd;
 pub mod models;
 pub mod parse;
+pub mod programmatic;
 pub mod prompts;
 pub mod title;
 pub mod types;
@@ -27,6 +28,7 @@ pub use models::{
     resolve_window,
 };
 pub use parse::{parse_transcript, parse_transcript_file};
+pub use programmatic::session_is_programmatic;
 pub use prompts::{UserPrompt, user_prompt_blob, user_prompts, user_prompts_with_timestamps};
 pub use title::{session_title, session_title_file, session_title_str};
 pub use types::{CacheCreation, Content, Message, ToolUse, TranscriptEntry, Usage};

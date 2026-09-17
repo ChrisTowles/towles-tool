@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Repeat2,
   Search,
+  SquareCode,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -56,9 +57,11 @@ import {
   type LedgerDay,
   type SessionBreakdown,
 } from "@/lib/claude-sessions";
+import { requestAgentboardNav } from "@/lib/agentboard";
 import { NotInTauri, type IpcError } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import { useClipboardCopy } from "@/lib/use-clipboard-copy";
+import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
 /** Surface a failed sessions read. Silent outside the Tauri shell, where every
@@ -737,13 +740,39 @@ function SortableTh({
 }
 
 /** Icon buttons to copy a session's ID and transcript file path — the two
- * things needed to point Claude at a specific session file. Shared by the
- * Sessions table, Insights cards, and the breakdown dialog header. */
-function CopySessionButtons({ session }: { session: ClaudeSession }) {
+ * things needed to point Claude at a specific session file — and to resume it
+ * in the editor. Shared by the Sessions table, Insights cards, and the
+ * breakdown dialog header. */
+function SessionButtons({ session }: { session: ClaudeSession }) {
   const { copiedKey, copy } = useClipboardCopy();
+  const { openTab } = useWorkspace();
+  const { cwd } = session;
 
   return (
     <span className="inline-flex items-center gap-0.5">
+      {cwd && !session.programmatic && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                uiAction("claude_sessions.open_in_editor", "claude-sessions");
+                openTab("agentboard");
+                requestAgentboardNav({
+                  kind: "open-claude-session",
+                  folderDir: cwd,
+                  sessionId: session.sessionId,
+                });
+              }}
+            >
+              <SquareCode />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open in editor</TooltipContent>
+        </Tooltip>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -828,7 +857,7 @@ function BreakdownDialog({
             <span className="min-w-0 truncate">
               {session?.title ?? session?.sessionId.slice(0, 8)}
             </span>
-            {session && <CopySessionButtons session={session} />}
+            {session && <SessionButtons session={session} />}
           </DialogTitle>
           <DialogDescription>
             {session?.project} · {session?.date} ·{" "}
@@ -1061,7 +1090,7 @@ function SessionTable({ sessions, searching }: { sessions: ClaudeSession[]; sear
                   {formatCost(s.costUsd)}
                 </td>
                 <td className="py-1.5 pl-3 text-right">
-                  <CopySessionButtons session={s} />
+                  <SessionButtons session={s} />
                 </td>
               </tr>
             );
@@ -1156,7 +1185,7 @@ function InsightsTab({ days, nonce, active }: { days: string; nonce: number; act
                 {insight.detail}
               </span>
             </span>
-            <CopySessionButtons session={s} />
+            <SessionButtons session={s} />
           </div>
         );
       })}

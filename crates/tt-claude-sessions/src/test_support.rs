@@ -19,6 +19,7 @@ pub(crate) fn session_detail() -> SessionDetail {
         mtime: 0,
         title: None,
         cwd: None,
+        programmatic: false,
         usage: UsageTotals::default(),
         opus_tokens: 0,
         sonnet_tokens: 0,

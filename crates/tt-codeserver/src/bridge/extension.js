@@ -44,9 +44,20 @@ async function showChanges(repo) {
   if (!staged && !working) await vscode.commands.executeCommand("workbench.view.scm");
 }
 
+// Resumes a transcript in Claude Code's own panel, which reveals the tab when
+// it is already open. Activated here rather than waited for: it only activates
+// on its own once startup finishes, and a pane opened a moment ago has not.
+async function openClaudeSession(sessionId) {
+  const claude = vscode.extensions.getExtension("anthropic.claude-code");
+  if (!claude) throw new Error("the Claude Code extension is not installed in this workbench");
+  await claude.activate();
+  await vscode.commands.executeCommand("claude-vscode.editor.open", sessionId);
+}
+
 async function run(folder, request) {
-  if (request.type !== "changes") throw new Error(`unknown request: ${request.type}`);
-  return showChanges(await repository(folder));
+  if (request.type === "changes") return showChanges(await repository(folder));
+  if (request.type === "claude-session") return openClaudeSession(request.sessionId);
+  throw new Error(`unknown request: ${request.type}`);
 }
 
 function reply(conn, status, body) {
