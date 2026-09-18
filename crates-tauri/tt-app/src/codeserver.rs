@@ -142,6 +142,7 @@ fn config(binary: PathBuf) -> Result<CodeServerConfig, String> {
     let root = tt_config::code_server_install_dir().map_err(|e| e.to_string())?;
     Ok(CodeServerConfig {
         builtin_extensions_dir: install::builtin_extensions_dir(&root, &binary),
+        webview_pre_dir: install::webview_pre_dir(&root, &binary),
         binary,
         config_file: user_data_dir.join("config.yaml"),
         user_data_dir,

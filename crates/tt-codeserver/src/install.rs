@@ -16,7 +16,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 /// The release every install pins to. Moving it means new [`ASSETS`] digests.
-pub const VERSION: &str = "4.133.0";
+pub const VERSION: &str = "4.137.0";
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Between two reads of the body, not for the whole transfer: a 235 MB
@@ -47,38 +47,38 @@ struct Asset {
 }
 
 /// The four builds coder publishes, keyed by `(os, arch)` as Rust spells them.
-/// Digests are the ones GitHub reports for the v4.133.0 assets.
+/// Digests are the ones GitHub reports for the v4.137.0 assets.
 const ASSETS: &[((&str, &str), Asset)] = &[
     (
         ("linux", "x86_64"),
         Asset {
-            name: "code-server-4.133.0-linux-amd64.tar.gz",
-            bytes: 235_581_640,
-            sha256: "a4e0f8f8c76e7de8e7424289f74e507af4c97bfe104c3e8ee272b8cc7b46c6f1",
+            name: "code-server-4.137.0-linux-amd64.tar.gz",
+            bytes: 229_010_937,
+            sha256: "9303165b7fd43532091922f77e2f119ff2fa109c6b6f1c3c966fb02f3d6d9c8b",
         },
     ),
     (
         ("linux", "aarch64"),
         Asset {
-            name: "code-server-4.133.0-linux-arm64.tar.gz",
-            bytes: 229_166_602,
-            sha256: "d999d8b0256e5537f3b62e6c09f624220026e19107a04a876c0cef62d1c71147",
+            name: "code-server-4.137.0-linux-arm64.tar.gz",
+            bytes: 223_794_781,
+            sha256: "0fba760298fe06480d940e218f0873a645ba1e7e3ac4b527059af82d85a90462",
         },
     ),
     (
         ("macos", "x86_64"),
         Asset {
-            name: "code-server-4.133.0-macos-amd64.tar.gz",
-            bytes: 227_305_837,
-            sha256: "a87706c2146436af6f63e8dbc0aa983b31312caea2b3ddff32e99da79f58ce7a",
+            name: "code-server-4.137.0-macos-amd64.tar.gz",
+            bytes: 222_765_518,
+            sha256: "f1403dab28a207d61e468f191fd7c41432543724cc57ac5cade4529666187b3a",
         },
     ),
     (
         ("macos", "aarch64"),
         Asset {
-            name: "code-server-4.133.0-macos-arm64.tar.gz",
-            bytes: 207_882_232,
-            sha256: "dcfa7932dbb6f47ca803ed4b7872847b9aa5394867ba9c78303fa461bda37deb",
+            name: "code-server-4.137.0-macos-arm64.tar.gz",
+            bytes: 203_877_784,
+            sha256: "118604a8245816535d8e538f478d2ee93514bcb8ac75e210d2345a5dc7806f65",
         },
     ),
 ];
@@ -110,10 +110,32 @@ pub fn installed_binary(root: &Path) -> Option<PathBuf> {
 /// manifest every checkout shares. `None` unless `binary` is the install this
 /// app manages: a Homebrew or system tree is not ours to write into.
 pub fn builtin_extensions_dir(root: &Path, binary: &Path) -> Option<PathBuf> {
+    managed_vscode_path(root, binary, &["extensions"])
+}
+
+/// The webview host files [`crate::webview_relay`] patches, under the same
+/// ownership rule as [`builtin_extensions_dir`].
+pub fn webview_pre_dir(root: &Path, binary: &Path) -> Option<PathBuf> {
+    managed_vscode_path(
+        root,
+        binary,
+        &[
+            "out",
+            "vs",
+            "workbench",
+            "contrib",
+            "webview",
+            "browser",
+            "pre",
+        ],
+    )
+}
+
+fn managed_vscode_path(root: &Path, binary: &Path, rel: &[&str]) -> Option<PathBuf> {
     let dist = install_dir(root);
     binary
         .starts_with(&dist)
-        .then(|| dist.join("lib").join("vscode").join("extensions"))
+        .then(|| rel.iter().fold(dist.join("lib").join("vscode"), |p, part| p.join(part)))
         .filter(|d| d.is_dir())
 }
 

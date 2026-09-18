@@ -40,7 +40,13 @@ password auth — never reaches this process. Loopback-only, same posture as
 **Framing is not a problem.** Unlike the Chrome pane ([why not the iframe
 preview](BROWSER-PANE.md)), code-server ships no `X-Frame-Options` and no
 `frame-ancestors`, so the workbench frames cleanly from `tauri://` and its
-WebSocket is same-origin to the frame. No headless browser needed.
+WebSocket is same-origin to the frame. No headless browser needed. Its
+webviews (the previews, every extension panel) are what `tauri://` breaks: under
+WebKit their service worker can't reach its frames, so `webview_relay` patches a
+`BroadcastChannel` fallback into the managed dist. And a cross-origin frame's
+storage lasts one session, so VS Code's editor cache is always cold; media
+associations in `Machine/settings.json` keep a boot-time image out of the text
+editor.
 
 ## Opening a file from outside the pane
 
