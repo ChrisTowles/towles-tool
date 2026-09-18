@@ -266,10 +266,18 @@ pub async fn task_create(
         warnings = created.warnings.len(),
         "task.created"
     );
+    // The row was bound before the directory existed, and a missing dir has no
+    // fs watch to wake it — so its cached "missing" would otherwise ride the TTL.
+    let dir_s = created.dir.to_string_lossy().to_string();
+    app.state::<crate::agentboard::Ab>()
+        .engine
+        .lock()
+        .unwrap()
+        .invalidate_git(&dir_s, tt_agentboard::GitInvalidation::WorktreeCreated);
     refresh_all_git_info_in_background(&app);
     Ok(TaskCreated {
         name: created.name,
-        dir: created.dir.to_string_lossy().to_string(),
+        dir: dir_s,
         branch: created.branch,
         base: created.base,
         warnings: created.warnings,

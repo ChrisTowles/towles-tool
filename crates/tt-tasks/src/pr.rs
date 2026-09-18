@@ -88,7 +88,7 @@ fn gh_json(checkout: &Path, args: &[&str]) -> Result<serde_json::Value, String> 
     let out = tt_exec::run_in_dir_with_timeout("gh", args, checkout, GH_TIMEOUT)
         .map_err(|e| format!("could not run gh: {e}"))?;
     if !out.ok() {
-        return Err(format!("gh {}: {}", args.join(" "), out.stderr.trim()));
+        return Err(format!("gh {}: {}", args[..2].join(" "), out.stderr.trim()));
     }
     serde_json::from_str(&out.stdout).map_err(|e| format!("invalid gh JSON: {e}"))
 }

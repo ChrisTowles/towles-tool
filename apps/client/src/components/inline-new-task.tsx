@@ -509,7 +509,7 @@ export function InlineNewTask({
     uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "agentboard");
     onSubmit({
       goal: goal.trim(),
-      title: goalToTitle(goal) || goalToTitle(reviewGoal(prCheck.pr)),
+      title: goalToTitle(goal || reviewGoal(prCheck.pr)).replace(/[\s:—–-]+$/, ""),
       branch: prCheck.branch,
       base: prCheck.pr.baseBranch,
       options: {
