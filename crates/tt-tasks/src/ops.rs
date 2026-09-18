@@ -16,14 +16,12 @@ use thiserror::Error;
 use crate::{TemplateError, envfile, layout};
 
 pub const TEMPLATE_SIDECAR: &str = "task-env.template";
-/// Declared setup command from the task's rendered `.env`, spawned directly — no shell,
-/// so a repo needing more than one command points this at its own task runner.
+/// Spawned directly — no shell; point it at a task runner for more than one command.
 pub const SETUP_ENV_KEY: &str = "TT_TASK_SETUP";
 /// Declared teardown, run while the task's `.env` and tree still exist. No fallback.
 pub const TEARDOWN_ENV_KEY: &str = "TT_TASK_TEARDOWN";
 const GIT_TIMEOUT: Duration = Duration::from_secs(30);
-/// [`create_task`]'s pre-flight fetch is best-effort freshness, so it gets a shorter
-/// leash and fails fast on a slow network instead of blocking creation for 30s.
+/// [`create_task`]'s pre-flight fetch is best-effort, so it fails fast on a slow network.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
 /// Past this a creation step is named with its duration — usually the environment's fault.
@@ -46,14 +44,16 @@ pub enum OpsError {
     #[error("git: {0}")]
     Git(String),
 
+    #[error("pull request: {0}")]
+    Pr(String),
+
     #[error("env template {path}: {source}")]
     Template { path: String, source: TemplateError },
 
     #[error("{0}")]
     Io(String),
 
-    /// Kept out of [`OpsError::Io`] because callers degrade differently: a failed
-    /// registry write is a warning on an otherwise-successful render.
+    /// Not [`OpsError::Io`]: a failed registry write only warns on a successful render.
     #[error("port registry {path}: {detail}")]
     Registry { path: String, detail: String },
 
@@ -88,13 +88,11 @@ pub type Result<T> = std::result::Result<T, OpsError>;
 
 /// The repo's main checkout and its name (directory basename).
 pub struct TaskRoot {
-    /// A normal clone whose `.git` directory owns every task's git state.
     pub checkout: PathBuf,
     pub repo: String,
 }
 
 impl TaskRoot {
-    /// The directory holding the worktree tasks (may not exist yet).
     pub fn tasks_dir(&self) -> PathBuf {
         layout::worktrees_dir(&self.checkout)
     }
@@ -151,7 +149,6 @@ fn main_checkout(dir: &Path) -> PathBuf {
     };
     let gitdir =
         if Path::new(&gitdir).is_absolute() { PathBuf::from(gitdir) } else { dir.join(gitdir) };
-    // `<main>/.git/worktrees/<wt>` → `<main>`; anything else is not a linked worktree.
     for ancestor in gitdir.ancestors() {
         if ancestor.file_name().is_some_and(|n| n == ".git")
             && gitdir
@@ -222,7 +219,6 @@ fn git_checkout_timeout(
         .map_err(|e| OpsError::Git(e.to_string()))
 }
 
-/// Warn when a creation step ran long enough to implicate the environment — [`SLOW_STEP`].
 fn note_if_slow(warnings: &mut Vec<String>, label: &str, elapsed: Duration) {
     if elapsed > SLOW_STEP {
         warnings.push(format!("{label} took {:.1}s — slower than expected", elapsed.as_secs_f64()));
@@ -235,11 +231,9 @@ fn note_if_slow(warnings: &mut Vec<String>, label: &str, elapsed: Duration) {
 pub struct BaseRefs {
     pub base: String,
     pub local: String,
-    /// `refs/remotes/origin/<base>`, when it resolves.
     pub remote: Option<String>,
 }
 
-/// One set of git calls, reused across every task by callers that loop.
 pub fn base_refs(checkout: &Path) -> BaseRefs {
     let base = base_branch(checkout);
     let local = format!("refs/heads/{base}");
@@ -260,7 +254,6 @@ pub fn work_state(
 ) -> crate::landed::WorkState {
     use crate::landed::{LandedVia, WorkState, probe_work_state};
 
-    // An unreadable checkout degrades to "holds work", never to "safe to delete".
     let Ok(repo) = repo_at(dir) else {
         return WorkState { uncommitted, orphaned, ..Default::default() };
     };
@@ -282,7 +275,6 @@ pub fn work_state(
     }
 }
 
-/// Changed-path count for a checkout — the uncommitted axis.
 pub fn uncommitted_count(dir: &Path) -> usize {
     repo_at(dir).ok().and_then(|repo| repo.status().ok()).map(|status| status.len()).unwrap_or(0)
 }
@@ -292,7 +284,6 @@ pub fn orphaned_count(dir: &Path) -> u64 {
     repo_at(dir).map(|repo| repo.orphaned_count()).unwrap_or_default()
 }
 
-/// This checkout's repository, from the process-wide cache in [`tt_git::repo`].
 pub fn repo_at(dir: &Path) -> Result<tt_git::repo::Repo> {
     tt_git::repo::open(dir).map_err(|e| OpsError::Git(e.to_string()))
 }
@@ -519,7 +510,9 @@ mod render;
 
 pub use branch::{BranchRefused, SyncError, live_task_branch, sync_task_branch};
 pub use claims::{PortClaim, PortRegistry, PortStatus, port_occupied, port_report};
-pub use create::{CreateOpts, CreatePhase, CreatedTask, create_task};
+pub use create::{
+    CreateOpts, CreatePhase, CreatedTask, PrCheck, TaskSource, check_pr, create_task,
+};
 pub use init::{InitReport, init_repo};
 pub use remove::{
     CleanOpts, CleanReport, FinishedTask, KeptTask, RemoveOpts, RemoveOutcome, RemovePhase,

@@ -20,6 +20,7 @@ pub mod layout;
 pub mod ops;
 pub mod pasted;
 pub mod ports;
+pub mod pr;
 pub mod staleness;
 pub mod suggest;
 pub mod template;
@@ -32,7 +33,8 @@ pub use layout::{
 };
 pub use ops::{
     CleanOpts, CleanReport, CreateOpts, CreatedTask, FinishedTask, KeptTask, OpsError, RemoveOpts,
-    RemovedTask, TaskRoot, clean_tasks, create_task, discover_root, remove_task, resolve_task_dir,
+    RemovedTask, TaskRoot, TaskSource, clean_tasks, create_task, discover_root, remove_task,
+    resolve_task_dir,
 };
 pub use pasted::{PastedError, PastedImage, write_images};
 pub use staleness::{DEFAULT_STALE_DAYS, Staleness, assess as assess_staleness};

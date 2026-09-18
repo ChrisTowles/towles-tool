@@ -18,6 +18,8 @@ tt task init                              # onboard a repo: template, .gitignore
 tt task new "<title>" --repo <name|dir> [-b feat/thing] [--base <ref>] [--status doing] [--notes ...]
                                           # board task + .claude/worktrees/<branch-slug> in one shot
                                           # (branch defaults to a slug of the title)
+tt task new --pr <number> --repo <name|dir>
+                                          # review task on an open PR's existing head branch
 tt task ls [--json]                       # fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>                        # (re)render .env — idempotent, keeps claims
 tt task env primary                       # same, for the main checkout
@@ -37,7 +39,9 @@ the app's `+`.
 The Agentboard rail shows the whole fleet automatically (worktrees of any
 tracked checkout are discovered per poll), and the `+` button on the repo
 header opens the same creation flow as a modal: goal → branch → base, then
-Claude starts on the goal in the new task's terminal. **A row exists because a
+Claude starts on the goal in the new task's terminal. Its **Review PR** mode
+checks out an open PR's *existing* head instead (fork PRs as `<owner>/<branch>`),
+fetched without force so local commits the PR lacks are never lost. **A row exists because a
 record says so, never because the filesystem does**: the main checkout plus one
 row per board task, pushed in each scan tick (`Engine::set_task_worktrees`).
 Anything else — a Claude Code agent's worktree, a hand-added one — is minted a

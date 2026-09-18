@@ -45,6 +45,7 @@ instance is serving this checkout — there is no `preferredEditor` fallback.
 tt task init               # Onboard a repo: template, gitignore .env, primary .env
 tt task new "Do the thing" --repo myrepo -b feat/thing  # board task + branch-named worktree + rendered .env
 tt task new "Do the thing" --repo myrepo --goal "..."   # goal shown on the Board card under the title
+tt task new --pr 123 --repo myrepo                     # review task: checks out PR #123's existing head branch (fork PRs as <owner>/<branch>)
 tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>         # (Re)render a checkout's .env (or `primary`) — idempotent, keeps claims
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)

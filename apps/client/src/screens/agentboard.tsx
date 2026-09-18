@@ -811,6 +811,7 @@ export function AgentboardScreen() {
         dir: folder.dir,
         worktree: true,
         launchClaude: false,
+        pr: null,
         taskId: task.id,
       },
     );
@@ -953,6 +954,7 @@ export function AgentboardScreen() {
             dir: null,
             worktree: true,
             launchClaude: true,
+            pr: null,
             taskId: req.taskId,
           },
         );

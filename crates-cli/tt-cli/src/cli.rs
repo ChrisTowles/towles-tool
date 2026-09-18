@@ -69,9 +69,9 @@ pub struct TaskArgs {
 pub enum TaskCommands {
     /// Create a task: board row + worktree + rendered .env + setup step (the MCP `task_create` params)
     New {
-        /// Task title (also the goal the worktree is created for)
-        #[arg(value_name = "TITLE")]
-        title: String,
+        /// Task title (also the goal the worktree is created for; default with --pr: the PR's)
+        #[arg(value_name = "TITLE", required_unless_present = "pr")]
+        title: Option<String>,
 
         /// Tracked repo (name or absolute dir, as the Agentboard rail shows it)
         #[arg(long, value_name = "NAME|DIR")]
@@ -96,6 +96,10 @@ pub enum TaskCommands {
         /// Base ref for the new branch (default: the main checkout's branch)
         #[arg(long, value_name = "REF")]
         base: Option<String>,
+
+        /// Review an open pull request: check out its existing head branch instead of a new one
+        #[arg(long, value_name = "NUMBER", conflicts_with_all = ["branch", "base"])]
+        pr: Option<u64>,
 
         /// Emit the created task as JSON
         #[arg(long)]
@@ -393,6 +397,14 @@ mod tests {
             let cli = Cli::try_parse_from(*argv).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
             assert_eq!(cli.command.telemetry_name(), *expected, "for {argv:?}");
         }
+    }
+
+    #[test]
+    fn task_new_takes_a_pr_in_place_of_title_and_branch() {
+        assert!(Cli::try_parse_from(["tt", "task", "new", "--pr", "12", "--repo", "r"]).is_ok());
+        assert!(Cli::try_parse_from(["tt", "task", "new", "--repo", "r"]).is_err());
+        let with_branch = ["tt", "task", "new", "--pr", "12", "--repo", "r", "-b", "x"];
+        assert!(Cli::try_parse_from(with_branch).is_err());
     }
 
     #[test]
