@@ -12,6 +12,7 @@
 pub mod bridge;
 pub mod install;
 pub mod user_config;
+pub mod webview_relay;
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -105,6 +106,9 @@ pub struct CodeServerConfig {
     /// Where [`bridge`] goes instead of the shared profile manifest, when there
     /// is one ([`install::builtin_extensions_dir`]).
     pub builtin_extensions_dir: Option<PathBuf>,
+    /// The dist's webview host files, patched by [`webview_relay`] when there
+    /// are any ([`install::webview_pre_dir`]).
+    pub webview_pre_dir: Option<PathBuf>,
     /// The settings and keybindings every checkout shares ([`user_config`]).
     pub shared_user_dir: PathBuf,
     /// Ours, so the user's `~/.config/code-server/config.yaml` — which can pin
@@ -298,6 +302,43 @@ fn seed_user_settings(user_data_dir: &Path) {
     }
 }
 
+/// media-preview's editors, by its own globs. The pane's storage doesn't
+/// outlive a launch under WebKit, so VS Code's editor cache is always cold, and
+/// an image opened at boot resolves before its editor registers. An association
+/// makes the resolver wait for extensions.
+const MEDIA_EDITORS: &[(&str, &str)] = &[
+    ("*.{jpg,jpe,jpeg,png,bmp,gif,ico,webp,avif,svg}", "imagePreview.previewEditor"),
+    ("*.{mp3,wav,ogg,oga}", "vscode.audioPreview"),
+    ("*.{mp4,webm}", "vscode.videoPreview"),
+];
+
+/// VS Code merges object settings across scopes, so the user's associations
+/// still apply, and a value already set for one of these globs is kept.
+fn seed_machine_settings(user_data_dir: &Path) {
+    let file = user_data_dir.join("Machine").join("settings.json");
+    let existing = std::fs::read_to_string(&file).unwrap_or_else(|_| "{}".into());
+    let Ok(serde_json::Value::Object(mut settings)) = serde_json::from_str(&existing) else {
+        tracing::warn!(path = %file.display(), "code-server.machine-settings.unparsable");
+        return;
+    };
+    let associations =
+        settings.entry("workbench.editorAssociations").or_insert_with(|| serde_json::json!({}));
+    let Some(associations) = associations.as_object_mut() else {
+        return;
+    };
+    let before = associations.len();
+    for (glob, editor) in MEDIA_EDITORS {
+        associations.entry(*glob).or_insert_with(|| (*editor).into());
+    }
+    if associations.len() == before {
+        return;
+    }
+    let body = serde_json::to_string_pretty(&settings).expect("a JSON object serializes");
+    if std::fs::create_dir_all(file.parent().expect("Machine has a parent")).is_ok() {
+        let _ = std::fs::write(&file, body + "\n");
+    }
+}
+
 pub struct CodeServerChild {
     child: Child,
     pub port: u16,
@@ -323,6 +364,7 @@ impl CodeServerChild {
             tracing::warn!(error = %e, "code-server.user-config.share-failed");
         }
         seed_user_settings(&cfg.user_data_dir);
+        seed_machine_settings(&cfg.user_data_dir);
         if let Some(parent) = cfg.session_socket.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -332,6 +374,11 @@ impl CodeServerChild {
         if let Err(e) = bridge::install(&cfg.extensions_dir, cfg.builtin_extensions_dir.as_deref())
         {
             tracing::warn!(error = %e, "code-server.bridge.install-failed");
+        }
+        if let Some(pre_dir) = &cfg.webview_pre_dir
+            && let Err(e) = webview_relay::install(pre_dir)
+        {
+            tracing::warn!(error = %e, "code-server.webview-relay.install-failed");
         }
 
         let args = build_args(cfg);
@@ -488,6 +535,42 @@ mod tests {
     use std::os::unix::net::UnixListener;
 
     #[test]
+    fn media_editors_merge_into_machine_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Machine").join("settings.json");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file,
+            r#"{"editor.fontSize": 14, "workbench.editorAssociations": {"*.mp4": "default", "*.{mp4,webm}": "default"}}"#,
+        )
+        .unwrap();
+
+        seed_machine_settings(dir.path());
+        seed_machine_settings(dir.path());
+
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let associations = &settings["workbench.editorAssociations"];
+        assert_eq!(settings["editor.fontSize"], 14);
+        assert_eq!(associations["*.mp4"], "default");
+        assert_eq!(associations["*.{mp4,webm}"], "default");
+        assert_eq!(
+            associations["*.{jpg,jpe,jpeg,png,bmp,gif,ico,webp,avif,svg}"],
+            "imagePreview.previewEditor"
+        );
+    }
+
+    #[test]
+    fn unparsable_machine_settings_are_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("Machine").join("settings.json");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "{ // a comment\n}").unwrap();
+        seed_machine_settings(dir.path());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "{ // a comment\n}");
+    }
+
+    #[test]
     fn user_settings_are_seeded_once_then_left_alone() {
         let dir = tempfile::tempdir().unwrap();
         seed_user_settings(dir.path());
@@ -563,6 +646,7 @@ mod tests {
             user_data_dir: PathBuf::from("/tmp/ud"),
             extensions_dir: PathBuf::from("/tmp/ext"),
             builtin_extensions_dir: None,
+            webview_pre_dir: None,
             shared_user_dir: PathBuf::from("/tmp/shared-user"),
             config_file: PathBuf::from("/tmp/cfg.yaml"),
             session_socket: PathBuf::from("/tmp/cs.sock"),

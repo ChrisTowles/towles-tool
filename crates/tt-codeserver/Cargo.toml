@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+base64 = { workspace = true }
 libc = { workspace = true }
 native-tls = { workspace = true }
 serde = { workspace = true }

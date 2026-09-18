@@ -9252,6 +9252,7 @@ dependencies = [
 name = "tt-codeserver"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "libc",
  "native-tls",
  "serde",
