@@ -23,7 +23,7 @@ use crate::folder_meta::FolderMetaStore;
 use crate::git_info::GitInfo;
 use crate::repos::RepoEntry;
 use crate::sessions::{SessionRecord, SessionStore};
-use crate::tracker::AgentTracker;
+use crate::tracker::{AgentTracker, instance_key};
 use crate::types::{
     AgentEvent, AgentStatus, FolderData, NeedsYouReason, RepoData, RowRecord, SessionData,
 };
@@ -193,7 +193,9 @@ fn build_folder(
         .iter()
         .map(|r| {
             let agents = by_session.remove(&r.id).unwrap_or_default();
-            let agent_state = pick_state(&agents);
+            let agent_state = pick_state(&agents, |e| {
+                tracker.is_pinned(&entry.name, &instance_key(&e.agent, e.thread_id.as_deref()))
+            });
             // An app-spawned Claude found by scanning /proc for this session's
             // TT_SESSION_ID, when the CLI snapshot never reported it. Only fills
             // an otherwise-idle row.
@@ -358,10 +360,13 @@ pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_m
     since.stamps = next;
 }
 
-/// Headline agent state: attention (waiting/error), working, terminal, idle;
-/// ties broken by recency.
-fn pick_state(agents: &[AgentEvent]) -> Option<AgentEvent> {
-    agents.iter().max_by_key(|e| (status_rank(e.status), e.ts)).cloned()
+/// Headline agent state: a thread whose process still runs beats one that ended,
+/// then attention (waiting/error), working, terminal, idle; ties broken by recency.
+/// Liveness leads because a pane that `/clear`ed or relaunched Claude still holds
+/// the ended thread — its stale model, context and cold cache would otherwise
+/// headline over the conversation actually on screen.
+fn pick_state(agents: &[AgentEvent], live: impl Fn(&AgentEvent) -> bool) -> Option<AgentEvent> {
+    agents.iter().max_by_key(|e| (live(e), status_rank(e.status), e.ts)).cloned()
 }
 
 fn status_rank(s: AgentStatus) -> u8 {
@@ -1029,6 +1034,32 @@ mod tests {
         let folder = &payload.repos[0].folders[0];
         let pane = folder.sessions.iter().find(|s| s.id == mine.id).unwrap();
         assert!(pane.agent_state.is_none());
+    }
+
+    #[test]
+    fn a_panes_live_thread_headlines_over_the_one_it_ended() {
+        // The pane `/clear`ed a long session: the ended thread stays tracked, and
+        // its exit status outranks the fresh one's idle — its stale cache must not
+        // headline.
+        let mut tracker = AgentTracker::new();
+        tracker.apply_event(ev("alpha", AgentStatus::Interrupted, "ended"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Idle, "fresh"), false);
+        let pinned = HashMap::from([(
+            "alpha".to_string(),
+            vec![instance_key("claude-code", Some("fresh"))],
+        )]);
+        tracker.set_pinned_instances_multi(&pinned);
+        let mut store = SessionStore::new(None);
+        let pane = store.add("/r/alpha", Some("one"), 1);
+        let git = HashMap::new();
+        let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
+        let target = pane.id.clone();
+        let attribute = move |_: &AgentEvent| Some(target.clone());
+
+        let payload = assemble(&entries, &git, &tracker, &store, &attribute);
+        let s = &payload.repos[0].folders[0].sessions[0];
+        assert_eq!(s.agent_state.as_ref().unwrap().thread_id.as_deref(), Some("fresh"));
+        assert_eq!(s.agents.len(), 2);
     }
 
     #[test]
