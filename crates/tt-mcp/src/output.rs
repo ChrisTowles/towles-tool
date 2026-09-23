@@ -10,7 +10,7 @@
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use serde_json::Value;
-use tt_store::{CalEvent, TaskItem};
+use tt_store::{BranchResync, CalEvent, TaskItem};
 
 #[derive(JsonSchema)]
 #[schemars(rename_all = "camelCase")]
@@ -22,6 +22,14 @@ struct TaskList {
 #[schemars(rename_all = "camelCase")]
 struct OneTask {
     task: TaskItem,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+struct TaskSynced {
+    task: TaskItem,
+    #[schemars(flatten)]
+    resync: BranchResync,
 }
 
 #[derive(JsonSchema)]
@@ -129,6 +137,7 @@ pub fn schema_for(name: &str) -> Option<Value> {
     Some(match name {
         "task_list" => schema::<TaskList>(),
         "task_status" | "task_create" | "task_summary" => schema::<OneTask>(),
+        "task_sync" => schema::<TaskSynced>(),
         "task_delete" => schema::<TaskDeleted>(),
         "task_start" => schema::<TaskStarting>(),
         "preview_file" => schema::<PreviewShowing>(),

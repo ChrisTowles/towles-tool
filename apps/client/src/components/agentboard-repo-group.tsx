@@ -42,7 +42,7 @@ import {
   type SessionData,
   type WindowsPayload,
 } from "@/lib/agentboard";
-import { taskAdoptWorktree, type PrItem, type TaskItem } from "@/lib/data";
+import { taskAdoptWorktree, taskSyncBranch, type PrItem, type TaskItem } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import { railRowMotion } from "@/lib/rail-motion";
@@ -61,6 +61,23 @@ function adoptWorktree(folder: FolderData) {
     uiAction("agentboard.adopt_worktree", "agentboard");
     void taskAdoptWorktree(task.id).then((result) => {
       if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
+    });
+  };
+}
+
+/** The badge itself decides whether it shows — see `folderBranchDrift`. */
+function syncBranch(folder: FolderData) {
+  const task = folderTask(folder);
+  if (!task) return undefined;
+  return () => {
+    uiAction("agentboard.sync_branch", "agentboard");
+    void taskSyncBranch(task.id).then((result) => {
+      if (result.isOk()) {
+        const { previous, current } = result.value;
+        toast.success(`Recorded ${current} on the task${previous ? ` (was ${previous})` : ""}`);
+      } else if (!NotInTauri.is(result.error)) {
+        toast.error(result.error.message);
+      }
     });
   };
 }
@@ -315,6 +332,7 @@ export function RepoGroup({
           active={activeFolderDir === folder.dir}
           deleting={deleting}
           onAdoptWorktree={adoptWorktree(folder)}
+          onSyncBranch={syncBranch(folder)}
           deletingLabel={deletingLabel}
           settingUpSince={settingUpSince}
           actions={actions}
@@ -499,6 +517,7 @@ export function RepoGroup({
                   active={activeFolderDir === folder.dir}
                   deleting={deleting}
                   onAdoptWorktree={adoptWorktree(folder)}
+                  onSyncBranch={syncBranch(folder)}
                   deletingLabel={deletingLabel}
                   settingUpSince={settingUpSince}
                   actions={actions}

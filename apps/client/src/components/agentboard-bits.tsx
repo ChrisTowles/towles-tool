@@ -480,6 +480,33 @@ export function SettingUpBadge({ since, now }: { since: number; now: number }) {
 
 /** A sibling task's re-render rotated a port this pane already bound to. Amber:
  * worth acting on (restart the pane), not a dead state. */
+export function BranchDriftBadge({
+  recorded,
+  live,
+  onSync,
+}: {
+  recorded: string;
+  live: string;
+  onSync: () => void;
+}) {
+  return (
+    <Hint
+      label={`The task still records ${recorded}, but its worktree is on ${live}. Click to record ${live} — the board card and PR linking follow it.`}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onSync();
+        }}
+        className="max-w-40 shrink-0 truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-1 font-mono text-[10px] text-amber-500 hover:bg-amber-500/20"
+      >
+        ⎇ was {recorded}
+      </button>
+    </Hint>
+  );
+}
+
 export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
   if (drift.length === 0) return null;
   return (

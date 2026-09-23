@@ -105,6 +105,16 @@ pub struct RailWorktree {
     pub created_at: i64,
 }
 
+/// What [`crate::Store::resync_task_branch`] replaced. `previous` is `None` for a row that
+/// never recorded a branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchResync {
+    pub previous: Option<String>,
+    pub current: String,
+    pub changed: bool,
+}
+
 /// A task with no PR linked yet — its PR may have merged straight past the open sweep.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnlinkedWorktree {

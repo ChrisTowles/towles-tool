@@ -48,6 +48,7 @@ tt task new "Do the thing" --repo myrepo --goal "..."   # goal shown on the Boar
 tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>         # (Re)render a checkout's .env (or `primary`) — idempotent, keeps claims
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)
+tt task sync [<name>]      # Record the branch a task's worktree is on now (default: cwd's task)
 tt task rm <name>          # Guarded removal
 tt task clean              # Remove every merged/gone task
 tt task nudge <prs|issues|slack:dm>  # Refresh that collector now instead of on the app's next poll
@@ -60,6 +61,11 @@ session started outside the app it reaches every open instance. Add
 `--only-if-tracked` and it skips — successfully — unless the terminal is one
 the app spawned or the cwd sits under a repo on the rail, which is what keeps
 a globally enabled hook from sweeping `gh` for unrelated projects.
+
+Run `sync` (or the MCP `task_sync` tool) after creating or switching branches
+inside a task's worktree: the board card records the branch the task was made
+with, and PR auto-linking follows the record, not the checkout. The folder
+keeps its name. It refuses a detached HEAD and the task's base branch.
 
 `rm`/`clean` run a task's declared `TT_TASK_TEARDOWN` command (from its
 rendered `.env`) against the worktree right before removing it — for

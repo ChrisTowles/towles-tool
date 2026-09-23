@@ -729,6 +729,7 @@ pub fn run() {
             store::store_detach_task_pr,
             store::store_task_set_worktree,
             store::task_adopt_worktree,
+            store::task_sync_branch,
             store::store_set_task_status,
             store::store_update_task,
             store::store_archive_done,

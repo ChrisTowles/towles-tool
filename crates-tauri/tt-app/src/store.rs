@@ -262,6 +262,25 @@ pub fn task_adopt_worktree(app: AppHandle, id: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// The rail's drift badge: record the branch the task's worktree is on now. A refusal
+/// comes back as the error, remedy included.
+#[tauri::command]
+pub fn task_sync_branch(app: AppHandle, id: i64) -> Result<tt_store::BranchResync, String> {
+    let state = app.state::<StoreState>();
+    let resync = with_store(&state, |store| {
+        tt_tasks::ops::sync_task_branch(store, id, "app").map_err(|e| match e.remedy() {
+            Some(remedy) => format!("{e} — {remedy}"),
+            None => e.to_string(),
+        })
+    })?;
+    if resync.changed {
+        emit_snapshot(&app, &state);
+        // The rail row's recorded branch comes from `rail_worktrees`, re-read by the scan.
+        app.state::<crate::agentboard::Ab>().scan.notify_one();
+    }
+    Ok(resync)
+}
+
 #[tauri::command]
 pub fn store_snapshot(state: State<StoreState>) -> Result<Snapshot, String> {
     snapshot_of(&state)

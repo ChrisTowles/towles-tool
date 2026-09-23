@@ -24,6 +24,7 @@ import {
   folderActionableItems,
   folderLanded,
   folderLandedButHasWork,
+  folderBranchDrift,
   folderRecreateBranch,
   folderRemovableTask,
   forceDeleteLabel,
@@ -575,6 +576,30 @@ describe("folderRemovableTask", () => {
     expect(
       folderRemovableTask(folder({ record: taskRow, dirMissing: true, isWorktree: false })),
     ).toBe(true);
+  });
+});
+
+describe("folderBranchDrift", () => {
+  const record = { origin: "task", task: { id: 1, status: "doing", branch: "feat/old" } } as const;
+
+  it("reports a task whose worktree switched branches since the record", () => {
+    expect(folderBranchDrift(folder({ record, branch: "feat/new" }))).toEqual({
+      recorded: "feat/old",
+      live: "feat/new",
+    });
+  });
+
+  it("is quiet when they agree, git can't say, or the directory is gone", () => {
+    expect(folderBranchDrift(folder({ record, branch: "feat/old" }))).toBeUndefined();
+    expect(folderBranchDrift(folder({ record, branch: "" }))).toBeUndefined();
+    expect(folderBranchDrift(folder({ record, branch: "x", dirMissing: true }))).toBeUndefined();
+  });
+
+  it("never offers the task's base branch, nor rows that aren't the user's task", () => {
+    const onBase = folder({ record, branch: "main", taskBaseBranch: "main" });
+    expect(folderBranchDrift(onBase)).toBeUndefined();
+    const detected = { ...record, origin: "detected" } as const;
+    expect(folderBranchDrift(folder({ record: detected, branch: "feat/new" }))).toBeUndefined();
   });
 });
 

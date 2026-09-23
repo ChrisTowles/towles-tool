@@ -22,6 +22,7 @@ tt task ls [--json]                       # fleet: main checkout + tasks, branch
 tt task env <name>                        # (re)render .env — idempotent, keeps claims
 tt task env primary                       # same, for the main checkout
 tt task ports [--probe <port>] [--json]   # repo's port picture: every checkout's claims + registry, each probed for a listener
+tt task sync [<name>] [--json]            # record the worktree's current branch on its board task
 tt task rm <name> [--force]               # guarded removal + docker cleanup
 tt task clean [--dry-run]                 # rm every merged/gone task + sweep stale state
 ```
@@ -64,7 +65,8 @@ Rules when working in a task:
   creates `.claude/worktrees/feat-thing` (the folder is the slugged branch —
   one-way; the branch is always read from git, never parsed back from the
   folder) (`--base` when not branching off the
-  default). A task whose PR merged is done — `tt task rm` it (or
+  default). After a `git switch -c` inside a task the folder keeps its name;
+  `tt task sync` (or the rail's `⎇ was …` badge) records the new branch. A task whose PR merged is done — `tt task rm` it (or
   `tt task clean`, which finds every merged/gone task); commits reachable
   from no branch or remote block removal by design.
 - **Ports come from the rendered `.env`** — `.env.example` is the template

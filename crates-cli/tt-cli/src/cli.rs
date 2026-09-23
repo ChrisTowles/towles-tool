@@ -135,6 +135,20 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
+    /// Record the branch a task's worktree is on now, after a `git switch` inside it
+    Sync {
+        /// Task directory name under .claude/worktrees/ (default: the task containing cwd)
+        name: Option<String>,
+
+        /// Emit the result as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Repo checkout (default: walk up from cwd to the nearest git checkout)
+        #[arg(long, value_name = "DIR")]
+        root: Option<PathBuf>,
+    },
+
     /// Onboard this repo onto the task convention (idempotent): template, gitignore, primary .env
     Init {
         /// Repo checkout (default: walk up from cwd to the nearest git checkout)
@@ -192,6 +206,7 @@ impl TaskCommands {
             TaskCommands::New { .. } => "new",
             TaskCommands::Ls { .. } => "ls",
             TaskCommands::Rm { .. } => "rm",
+            TaskCommands::Sync { .. } => "sync",
             TaskCommands::Init { .. } => "init",
             TaskCommands::Env { .. } => "env",
             TaskCommands::Ports { .. } => "ports",
