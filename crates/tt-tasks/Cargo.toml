@@ -24,6 +24,8 @@ tt-exec = { workspace = true }
 # suggestion fallback can't drift from the issue-branch convention.
 gix = { workspace = true }
 tt-git = { workspace = true }
+# `ops::sync_task_branch` writes the board row it re-reads git for.
+tt-store = { workspace = true }
 
 [dev-dependencies]
 # Property tests for the envfile parse/merge invariants — the seam every

@@ -126,6 +126,18 @@ export function folderRecreateBranch(
   return folder.record.task.branch?.trim() || folder.branch.trim() || undefined;
 }
 
+/** A task row whose worktree switched branches after the record was written. Not
+ * offered on the task's base branch. */
+export function folderBranchDrift(
+  folder: Pick<FolderData, "record" | "branch" | "dirMissing" | "taskBaseBranch">,
+): { recorded: string; live: string } | undefined {
+  if (folder.record.origin !== "task" || folder.dirMissing) return undefined;
+  const recorded = folder.record.task.branch?.trim();
+  const live = folder.branch.trim();
+  if (!recorded || !live || recorded === live || live === folder.taskBaseBranch) return undefined;
+  return { recorded, live };
+}
+
 /** Being created or removed, so it can't be worked in or acted on. */
 export function folderBusy(folder: FolderData): boolean {
   return folder.phase !== undefined;

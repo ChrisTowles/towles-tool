@@ -7,6 +7,7 @@ import { Folder, FolderPlus, FolderX, Plus, Trash2 } from "lucide-react";
 import { Hint } from "@/components/hint";
 import {
   BaseMovedChip,
+  BranchDriftBadge,
   BranchLabel,
   Chevron,
   CollapsedLive,
@@ -40,6 +41,7 @@ import { cn } from "@/lib/utils";
 import {
   branchRedundant,
   comparedBaseLabel,
+  folderBranchDrift,
   folderCreating,
   folderDetached,
   folderIsUnclaimed,
@@ -69,6 +71,7 @@ export function FolderHeader({
   deleting,
   deletingLabel,
   onAdoptWorktree,
+  onSyncBranch,
   settingUpSince,
   actions,
   onToggle,
@@ -106,6 +109,7 @@ export function FolderHeader({
   deletingLabel?: string;
   /** Absent when the row isn't a detected one. */
   onAdoptWorktree?: () => void;
+  onSyncBranch?: () => void;
   /** Epoch ms; absent means nothing is installing. */
   settingUpSince?: number;
   actions: SessionActions;
@@ -144,6 +148,7 @@ export function FolderHeader({
   const showBranchLabel = !branchRedundant(displayTitle, folder.branch);
   const titleHint =
     !showBranchLabel && folder.branch ? folder.branch : humanTitle ? folder.name : undefined;
+  const drift = folderBranchDrift(folder);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   // PR and issue chips sit on the git line, not the title's: at rail widths the
@@ -338,6 +343,9 @@ export function FolderHeader({
             {folderIsUnclaimed(folder) && <NoTaskBadge onAdopt={onAdoptWorktree} />}
             {settingUpSince !== undefined && !deleting && (
               <SettingUpBadge since={settingUpSince} now={now} />
+            )}
+            {drift && onSyncBranch && (
+              <BranchDriftBadge recorded={drift.recorded} live={drift.live} onSync={onSyncBranch} />
             )}
             {folder.hasPortDrift && <PortDriftBadge drift={folderPortDrift(folder)} />}
             <FolderLandedBadge folder={folder} pr={pr} />

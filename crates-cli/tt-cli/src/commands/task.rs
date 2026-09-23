@@ -34,6 +34,7 @@ pub fn run(command: TaskCommands) -> i32 {
         TaskCommands::Rm { name, force, outcome, root } => {
             cmd_rm(&name, force, outcome.as_deref(), root.as_deref())
         }
+        TaskCommands::Sync { name, json, root } => cmd_sync(name.as_deref(), json, root.as_deref()),
         TaskCommands::Init { root } => cmd_init(root.as_deref()),
         TaskCommands::Env { name, root } => cmd_env(&name, root.as_deref()),
         TaskCommands::Ports { probe, json, root } => cmd_ports(probe, json, root.as_deref()),
@@ -62,7 +63,7 @@ fn remove_task_fully(
     outcome: Option<tt_store::TaskOutcome>,
     on_missing: task_removal::MissingDir,
 ) -> Result<task_removal::Outcome, String> {
-    let store = board_store_for_removal(checkout, dir);
+    let store = board_store_holding(checkout, dir);
     let now_ms = now_ms();
     let outcome = outcome.unwrap_or_else(|| {
         store
@@ -98,7 +99,7 @@ fn board_store_for(dir: &Path) -> Option<tt_store::Store> {
 /// hence the ambient cwd fallback. Deliberately *not* `task_scope_from_dir(dir)` —
 /// `state_cleanup` wipes that scope wholesale, so it would find a row a heartbeat
 /// before its database is deleted.
-fn board_store_for_removal(checkout: &Path, dir: &Path) -> Option<tt_store::Store> {
+fn board_store_holding(checkout: &Path, dir: &Path) -> Option<tt_store::Store> {
     let dir_s = dir.to_string_lossy();
     let has_row = |s: &tt_store::Store| matches!(s.task_for_worktree_dir(&dir_s), Ok(Some(_)));
     let primary = board_store_for(checkout);
@@ -544,6 +545,45 @@ fn cmd_rm(
             Err(refusal(&name, &blocked, &messages))
         }
     }
+}
+
+/// Resync the board row's recorded branch to the one `git` reports for the task's worktree.
+fn cmd_sync(name: Option<&str>, json: bool, root: Option<&Path>) -> Result<(), String> {
+    let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
+    let dir = match name {
+        Some(name) => sr.task_dir(name),
+        None => {
+            let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {e}"))?;
+            cwd.ancestors()
+                .find(|d| tt_tasks::main_checkout_for(d) == Some(sr.checkout.as_path()))
+                .map(Path::to_path_buf)
+                .ok_or("not inside a task worktree — name the task: tt task sync <NAME>")?
+        }
+    };
+    let name = tt_tasks::task_name_from_dir(&dir);
+    let dir_s = dir.to_string_lossy();
+    let store = board_store_holding(&sr.checkout, &dir)
+        .ok_or_else(|| "could not open the board store".to_string())?;
+    let task = store
+        .task_for_worktree_dir(&dir_s)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no board task is bound to {dir_s}"))?;
+    let resync = ops::sync_task_branch(&store, task.id, "cli").map_err(|e| match e.remedy() {
+        Some(remedy) => format!("{e}\n    → {remedy}"),
+        None => e.to_string(),
+    })?;
+    if json {
+        let mut value = serde_json::json!(resync);
+        value["taskId"] = task.id.into();
+        value["name"] = name.into();
+        println!("{}", serde_json::to_string_pretty(&value).unwrap_or_default());
+    } else if resync.changed {
+        let from = resync.previous.as_deref().unwrap_or("(none)");
+        ui::success(&format!("{name}: branch {from} → {}", resync.current));
+    } else {
+        ui::success(&format!("{name}: already on {}", resync.current));
+    }
+    Ok(())
 }
 
 /// Render a guard refusal for the terminal: each reason with its remedy, since a reason

@@ -899,6 +899,68 @@ fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
     );
 }
 
+/// Its own `$HOME`, so its board row can't lose a first-open race on the suite's shared db.
+fn tt_isolated(tmp: &Path) -> impl Fn() -> Tt + '_ {
+    move || tt_scoped(&tmp.join("home"), "sync")
+}
+
+#[test]
+fn sync_records_a_branch_switched_inside_the_task() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    let tt = tt_isolated(&tmp);
+    tt().args(["task", "new", "one", "--repo", &root_s, "-b", "feat/one"]).assert().success();
+    let task = task_dir(&checkout, "feat-one");
+    git(&task, &["switch", "-q", "-c", "feat/two"]);
+
+    let out =
+        tt().args(["task", "sync", "feat-one", "--json", "--root", &root_s]).output().unwrap();
+    assert!(out.status.success(), "sync failed: {}", String::from_utf8_lossy(&out.stderr));
+    let synced: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(synced["name"], "feat-one", "the directory keeps its name");
+    assert_eq!(synced["previous"], "feat/one");
+    assert_eq!(synced["current"], "feat/two");
+    assert_eq!(synced["changed"], true);
+
+    // With no NAME, the task is the one cwd sits in.
+    tt().args(["task", "sync"])
+        .current_dir(&task)
+        .assert()
+        .success()
+        .stdout(contains("feat-one: already on feat/two"));
+}
+
+#[test]
+fn sync_refuses_a_detached_head_and_a_cwd_outside_any_task() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    let tt = tt_isolated(&tmp);
+    tt().args([
+        "task",
+        "new",
+        "detach",
+        "--repo",
+        &root_s,
+        "-b",
+        "feat/detach",
+    ])
+    .assert()
+    .success();
+    git(&task_dir(&checkout, "feat-detach"), &["switch", "-q", "--detach"]);
+
+    tt().args(["task", "sync", "feat-detach", "--root", &root_s])
+        .assert()
+        .failure()
+        .stderr(contains("detached HEAD").and(contains("git switch -c")));
+    tt().args(["task", "sync"])
+        .current_dir(&checkout)
+        .assert()
+        .failure()
+        .stderr(contains("not inside a task worktree"));
+}
+
 #[test]
 fn lockfile_detection_installs_without_declared_setup() {
     // A repo with no TT_TASK_SETUP but a package-lock.json: setup_command

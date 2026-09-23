@@ -52,6 +52,9 @@ pub enum Error {
 
     #[error("no task with id {0}")]
     TaskNotFound(i64),
+
+    #[error("{branch} is already recorded on task #{other_task_id}")]
+    BranchTaken { branch: String, other_task_id: i64 },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -855,6 +858,51 @@ mod tests {
         assert_eq!(got.prs[0].state, "merged");
         // Linked now, so it never costs another `gh` call.
         assert!(s.unlinked_worktrees(i64::MAX, 8).unwrap().is_empty());
+    }
+
+    #[test]
+    fn resync_task_branch_replaces_the_record_and_rearms_the_pr_probe() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("drifted", "doing", None, None, 1).unwrap();
+        s.set_task_worktree(t.id, "/r", Some("o/x"), Some("feat/old"), Some("/r/wt")).unwrap();
+        s.mark_pr_probe(&[t.id], 100).unwrap();
+        assert!(s.unlinked_worktrees(50, 10).unwrap().is_empty(), "probed at 100, not due");
+
+        let resync = s.resync_task_branch(t.id, "feat/new").unwrap();
+        assert_eq!(resync.previous.as_deref(), Some("feat/old"));
+        assert!(resync.changed);
+        let wt = s.task_by_id(t.id).unwrap().worktree.unwrap();
+        assert_eq!(wt.branch.as_deref(), Some("feat/new"));
+        assert_eq!(wt.dir.as_deref(), Some("/r/wt"), "only the branch moves");
+        let due = s.unlinked_worktrees(50, 10).unwrap();
+        assert_eq!(due[0].branch, "feat/new", "the new branch is probed on the next pass");
+
+        let again = s.resync_task_branch(t.id, "feat/new").unwrap();
+        assert!(!again.changed);
+    }
+
+    #[test]
+    fn resync_task_branch_refuses_a_branch_another_open_task_records() {
+        let s = Store::open_in_memory().unwrap();
+        let mine = s.add_task("mine", "doing", None, None, 1).unwrap();
+        let theirs = s.add_task("theirs", "doing", None, None, 2).unwrap();
+        s.set_task_worktree(mine.id, "/r", None, Some("feat/a"), Some("/r/a")).unwrap();
+        s.set_task_worktree(theirs.id, "/r", None, Some("feat/b"), Some("/r/b")).unwrap();
+
+        match s.resync_task_branch(mine.id, "feat/b") {
+            Err(Error::BranchTaken { branch, other_task_id }) => {
+                assert_eq!(branch, "feat/b");
+                assert_eq!(other_task_id, theirs.id);
+            }
+            other => panic!("expected BranchTaken, got {other:?}"),
+        }
+        let kept = s.task_by_id(mine.id).unwrap().worktree.unwrap();
+        assert_eq!(kept.branch.as_deref(), Some("feat/a"), "a refusal writes nothing");
+
+        // A closed task's branch is history, not a claim.
+        s.close_task(theirs.id, TaskOutcome::Done, 3).unwrap();
+        assert!(s.resync_task_branch(mine.id, "feat/b").unwrap().changed);
+        assert!(matches!(s.resync_task_branch(999, "x"), Err(Error::TaskNotFound(999))));
     }
 
     #[test]

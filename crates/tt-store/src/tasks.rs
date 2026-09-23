@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 use crate::model::*;
 use crate::{Error, Result, Store};
@@ -235,6 +235,49 @@ impl Store {
             return Err(Error::TaskNotFound(id));
         }
         Ok(())
+    }
+
+    /// Record `branch` as the one task `id`'s worktree is on, replacing whatever was
+    /// recorded — the resync after a `git switch` inside the task. Old PR links stay:
+    /// they are work this task did. A change re-arms the PR probe for the new branch.
+    pub fn resync_task_branch(&self, id: i64, branch: &str) -> Result<BranchResync> {
+        let tx = self.conn.unchecked_transaction()?;
+        let (repo_root, previous): (Option<String>, Option<String>) = tx
+            .query_row(
+                "SELECT worktree_repo_root, worktree_branch FROM tasks WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or(Error::TaskNotFound(id))?;
+        let changed = previous.as_deref() != Some(branch);
+        let resync = BranchResync { previous, current: branch.to_string(), changed };
+        if !changed {
+            return Ok(resync);
+        }
+        // Two open tasks on one branch would both auto-attach its PR.
+        let other: Option<i64> = tx
+            .query_row(
+                &format!(
+                    "SELECT id FROM tasks
+                     WHERE {TASK_KIND_FILTER} AND id != ?1 AND worktree_branch = ?2
+                       AND worktree_repo_root IS ?3
+                       AND outcome IS NULL AND archived_at IS NULL
+                     ORDER BY id LIMIT 1"
+                ),
+                params![id, branch, repo_root],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(other_task_id) = other {
+            return Err(Error::BranchTaken { branch: branch.to_string(), other_task_id });
+        }
+        tx.execute(
+            "UPDATE tasks SET worktree_branch = ?1, pr_probe_ts = NULL WHERE id = ?2",
+            params![branch, id],
+        )?;
+        tx.commit()?;
+        Ok(resync)
     }
 
     /// Open todos in kanban order: not in `done`, not closed with an

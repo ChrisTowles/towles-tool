@@ -272,7 +272,13 @@ impl Handled {
 /// The tools whose success means the transport must repaint: a store write the app's UI has
 /// not seen. Not [`Effect`]'s `readOnlyHint` — `task_start` writes nothing here (the frontend
 /// runs its own start path and repaints) yet is anything but read-only to a client.
-const WRITING_TOOLS: &[&str] = &["task_create", "task_summary", "task_delete", "calendar_set"];
+const WRITING_TOOLS: &[&str] = &[
+    "task_create",
+    "task_summary",
+    "task_sync",
+    "task_delete",
+    "calendar_set",
+];
 
 pub fn tool_writes(name: &str) -> bool {
     WRITING_TOOLS.contains(&name)
@@ -325,6 +331,7 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("task_status", "Task status", Effect::Read),
     ("task_create", "Create board task", Effect::Write),
     ("task_summary", "Record task summary", Effect::Replace),
+    ("task_sync", "Sync task branch", Effect::Replace),
     ("task_delete", "Delete task", Effect::Destroy),
     ("task_start", "Start task", Effect::Write),
     ("preview_file", "Preview file", Effect::Read),
@@ -560,6 +567,7 @@ impl Dispatcher {
             "task_status" => self.task_status(args),
             "task_create" => self.task_create(args, now_ms),
             "task_summary" => self.task_summary(args, now_ms),
+            "task_sync" => self.task_sync(args),
             "task_delete" => self.task_delete(args),
             "task_start" => self.task_start(args),
             "preview_file" => self.preview_file(args, ctx),
@@ -722,6 +730,29 @@ impl Dispatcher {
                 other => format!("could not record the summary for task {id}: {other}"),
             })?;
         Ok(json!({ "task": task }))
+    }
+
+    /// Re-read the branch the task's worktree is on and record it — the fix after a
+    /// `git switch -c` inside the task. Refusals are errors: none has a force to retry with.
+    fn task_sync(&self, args: &Value) -> Result<Value, String> {
+        let id = args
+            .get("id")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| "missing required argument: id".to_string())?;
+        let resync =
+            tt_tasks::ops::sync_task_branch(&self.store, id, "mcp").map_err(|e| {
+                match (&e, e.remedy()) {
+                    (tt_tasks::ops::SyncError::Store(tt_store::Error::TaskNotFound(id)), _) => {
+                        format!("no task with id {id}")
+                    }
+                    (_, Some(remedy)) => format!("{e} — {remedy}"),
+                    (_, None) => e.to_string(),
+                }
+            })?;
+        let task = self.store.task_by_id(id).map_err(|e| e.to_string())?;
+        let mut result = json!(resync);
+        result["task"] = json!(task);
+        Ok(result)
     }
 
     /// The same store path as the Agentboard `+` flow, so the task lands in that repo's swimlane
@@ -1233,6 +1264,17 @@ pub fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "task_sync",
+            "description": "Re-read the branch a task's worktree is actually on and record it on the task. Call it after you create or switch branches inside a task's worktree (e.g. `git switch -c`), so the board card, PR auto-linking and task_list follow the new branch. Idempotent: `changed: false` means the record already matched. The worktree directory keeps its name. Refuses, with the fix in the message, a detached HEAD, the task's base branch, a worktree that is gone, or a branch another open task already records.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "description": "The task's id (from task_list or task_status)." },
+                },
+                "required": ["id"],
+            },
+        },
+        {
             "name": "task_delete",
             "description": "Close a board task and delete everything bound to it — its terminal panes and its git worktree on disk. The board row itself survives, closed with an outcome (done/abandoned) as the record of the work. Guarded: if the worktree has uncommitted changes, commits that reached no branch or remote, or a foreign process on its claimed ports, nothing is deleted and the reasons come back as `status: \"refused\"`. Report those to the user and let them decide; only pass force after they have said so explicitly, since it destroys that work permanently.",
             "inputSchema": {
@@ -1563,6 +1605,7 @@ mod tests {
                 "task_status",
                 "task_create",
                 "task_summary",
+                "task_sync",
                 "task_delete",
                 "task_start",
                 "preview_file",
@@ -2183,6 +2226,67 @@ mod tests {
             json!({ "id": 9999, "summary": "done" }),
         );
         assert!(message.contains("9999"), "error should name the unknown id: {message}");
+    }
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.name=Test", "-c", "user.email=test@test"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    /// A checkout on `main` with a task worktree on `feat/old`, bound to a fresh row.
+    fn drifting_task() -> (tempfile::TempDir, std::path::PathBuf, Dispatcher, i64) {
+        let tmp = tempfile::tempdir().unwrap();
+        let checkout = tmp.path().join("repo");
+        std::fs::create_dir_all(&checkout).unwrap();
+        git(&checkout, &["init", "-q", "-b", "main"]);
+        git(&checkout, &["commit", "-q", "--allow-empty", "-m", "x"]);
+        let dir = checkout.join(".claude/worktrees/feat-old");
+        git(
+            &checkout,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feat/old",
+                dir.to_str().unwrap(),
+            ],
+        );
+        let store = seeded_store();
+        let task = store.add_task("drifting", "doing", None, None, NOW).unwrap();
+        let (root, dir_s) = (checkout.to_str().unwrap(), dir.to_str().unwrap());
+        store.set_task_worktree(task.id, root, None, Some("feat/old"), Some(dir_s)).unwrap();
+        (tmp, dir, Dispatcher::new(store, TEST_VERSION), task.id)
+    }
+
+    #[test]
+    fn task_sync_records_the_branch_the_worktree_moved_to() {
+        let (_tmp, dir, mut dispatcher, id) = drifting_task();
+        git(&dir, &["switch", "-q", "-c", "feat/new"]);
+
+        let result = call_tool(&mut dispatcher, "task_sync", json!({ "id": id }));
+        assert_eq!(result["previous"], "feat/old");
+        assert_eq!(result["current"], "feat/new");
+        assert_eq!(result["changed"], true);
+        assert_eq!(result["task"]["worktree"]["branch"], "feat/new");
+
+        let again = call_tool(&mut dispatcher, "task_sync", json!({ "id": id }));
+        assert_eq!(again["changed"], false);
+    }
+
+    #[test]
+    fn task_sync_needs_a_task_with_a_worktree() {
+        let mut dispatcher = dispatcher();
+        let open = call_tool(&mut dispatcher, "task_list", json!({}))["tasks"][0]["id"].clone();
+        let error = call_tool_err(&mut dispatcher, "task_sync", json!({ "id": open }));
+        assert!(error.contains("has no worktree"), "{error}");
+        let error = call_tool_err(&mut dispatcher, "task_sync", json!({ "id": 9999 }));
+        assert!(error.contains("no task with id 9999"), "{error}");
     }
 
     #[test]

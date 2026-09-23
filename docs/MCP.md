@@ -37,7 +37,8 @@ validate every result against. The app stamps `MCP_PROTOCOL_NEGOTIATION=auto`
 into its terminals beside `TT_MCP_PORT`: Claude Code otherwise probes
 `server/discover` on HTTP only behind a remote feature flag. Tools: `task_list`, `task_status`, `task_create`
 (a #339 board task in a tracked repo's swimlane, same store path as the
-app's `store_add_task`), `task_summary`, `task_start`, `task_delete`,
+app's `store_add_task`), `task_summary`, `task_sync` (re-read a task
+worktree's branch onto its row after a `git switch`), `task_start`, `task_delete`,
 `preview_file`, plus the calendar family `calendar_today`, `calendar_next`
 and the push-model write `calendar_set`.
 `task_summary` is how a finished agent leaves a record: it writes the

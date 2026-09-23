@@ -10,7 +10,7 @@ loopback HTTP by `tt-app`), so any session with this plugin enabled gets these
 tools without manual `claude mcp add` setup:
 
 - **Board** — `task_list`, `task_status` (reads), `task_create`, `task_summary`,
-  `task_start` and
+  `task_sync`, `task_start` and
   `task_delete` (writes). `task_create` adds a board card only; `task_start` is
   what turns one into work in progress — it mints the task's git worktree and
   launches a Claude session in it on the task's goal and notes. It answers
@@ -22,7 +22,9 @@ tools without manual `claude mcp add` setup:
   should call: it writes the wrap-up onto the card, which outlives the worktree
   and its terminal scrollback, so the record is still there when the user comes
   to confirm the work. It records only — closing the task and removing the
-  worktree stay the user's call.
+  worktree stay the user's call. `task_sync` records the branch a task's
+  worktree is on now — call it after a `git switch -c` inside the task, so the
+  card and PR auto-linking follow the new branch.
 - **Preview** — `preview_file`. Puts a file you wrote on screen in the
   app's Preview pane, beside the terminal you're running in: the way to hand
   back something worth *looking at* — a plan laid out for a decision, a table of

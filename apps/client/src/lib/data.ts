@@ -564,6 +564,11 @@ export const storeTaskSetWorktree = (
  * change on the existing row, so it keeps its id and rail position. */
 export const taskAdoptWorktree = (id: number) => invoke<void>("task_adopt_worktree", { id });
 
+export type BranchResync = { previous: string | null; current: string; changed: boolean };
+
+/** Record the branch a task's worktree is on now; a refusal is the error, fix included. */
+export const taskSyncBranch = (id: number) => invoke<BranchResync>("task_sync_branch", { id });
+
 /** Open issues in `dir`'s repo, for the new-task flow's issue picker. */
 export const storeGhIssuesList = (dir: string, assignedToMe: boolean) =>
   invoke<IssueItem[]>("store_gh_issues_list", { dir, assignedToMe });
