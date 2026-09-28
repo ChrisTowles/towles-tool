@@ -292,6 +292,9 @@ fn term_start_blocking(
             let status = session.child.wait().ok();
             let code = status.as_ref().map(|s| s.exit_code() as i32).unwrap_or(0);
             let signal = status.as_ref().and_then(|s| s.signal().map(str::to_string));
+            if code == 0 && signal.is_none() {
+                crate::agentboard::close_exited_session(&app, &term_id);
+            }
             let _ = app.emit_to(MAIN_WINDOW_LABEL, EXIT_EVENT, TermExit { term_id, code, signal });
             notify_agentboard(&app); // shell exited — session no longer live
         }
