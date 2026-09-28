@@ -9,6 +9,8 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 use tt_agentboard::types::RowPhase;
+use tt_claude_code::history::parse_history;
+use tt_tasks::complete::Completer;
 use tt_tasks::guards::RmBlocked;
 use tt_tasks::ops::{self, CreateOpts, RemoveOpts, RemovePhase};
 use tt_tasks::pasted::{self, PastedImage};
@@ -106,6 +108,37 @@ pub fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, St
         branch_exists: check.branch_exists,
         error: check.error,
     })
+}
+
+type CompleterCache = Option<(String, std::time::SystemTime, std::sync::Arc<Completer>)>;
+static COMPLETER: std::sync::Mutex<CompleterCache> = std::sync::Mutex::new(None);
+
+/// Rebuilt only when the history file or the repo changes; the lock guards the
+/// swap, never a query.
+fn goal_completer(repo_dir: &str) -> Option<std::sync::Arc<Completer>> {
+    let path = dirs::home_dir()?.join(".claude").join("history.jsonl");
+    let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?;
+    let mut cache = COMPLETER.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((dir, at, c)) = cache.as_ref()
+        && dir == repo_dir
+        && *at == mtime
+    {
+        return Some(c.clone());
+    }
+    let prompts = parse_history(&std::fs::read_to_string(&path).ok()?);
+    let built = std::sync::Arc::new(Completer::build(&prompts, repo_dir));
+    *cache = Some((repo_dir.to_string(), mtime, built.clone()));
+    Some(built)
+}
+
+/// Goal autocomplete: text to append at the caret, best first. No history → none.
+#[tauri::command]
+pub async fn task_goal_complete(repo_dir: String, before: String) -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        goal_completer(&repo_dir).map(|c| c.complete(&before, 5)).unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// A **prompt improver** button: ask `claude -p` (cwd = `dir` for real repo

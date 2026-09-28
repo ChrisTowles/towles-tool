@@ -719,6 +719,7 @@ pub fn run() {
             task::task_stop_port,
             task::task_run_setup,
             task::task_suggest,
+            task::task_goal_complete,
             task::task_write_pasted_images,
             task::read_clipboard_image,
             store::store_snapshot,

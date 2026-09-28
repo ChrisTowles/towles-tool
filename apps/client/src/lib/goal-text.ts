@@ -80,3 +80,20 @@ export function referencedIssueNumbers(text: string): number[] {
   }
   return [...seen];
 }
+
+/** The trailing space leaves the caret ready for the next word's guess. */
+export function acceptCompletion(
+  text: string,
+  caret: number,
+  suffix: string,
+): { text: string; caret: number } {
+  const after = text.slice(caret);
+  const insert = /^\s/.test(after) ? suffix : `${suffix} `;
+  return { text: text.slice(0, caret) + insert + after, caret: caret + insert.length };
+}
+
+/** The word being completed (or the last whole word and its space), so a row
+ * reads `pl`**ugin** rather than a bare suffix. */
+export function completionLead(before: string): string {
+  return /\S*\s?$/.exec(before)?.[0] ?? "";
+}
