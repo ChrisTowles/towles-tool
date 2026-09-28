@@ -112,6 +112,19 @@ fn prune_dead_shells(
     }
 }
 
+/// A shell that ended itself cleanly (`exit`, Ctrl-D) is done, agent or not;
+/// [`prune_dead_shells`] alone would keep any pane an agent is attributed to.
+/// A kill never reaches here, and a crash keeps its record for the tombstone.
+pub fn close_exited_session(app: &AppHandle, id: &str) {
+    let Some(ab) = app.try_state::<Ab>() else {
+        return;
+    };
+    ab.ever_live.lock().unwrap().remove(id);
+    if ab.engine.lock().unwrap().close_session(id, now_ms()) {
+        tracing::info!(session_id = %id, "session.closed_on_exit");
+    }
+}
+
 /// The agent snapshot (claude CLI + `/proc` + transcript reads) is collected
 /// BEFORE taking the engine lock, so its subprocess work can't stall `ab_*`.
 pub fn stamped_payload(app: &AppHandle) -> StatePayload {
