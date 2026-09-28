@@ -12,6 +12,7 @@
 //! real-world state — git output, bind-tests, docker listings — and hands it here.
 
 pub mod clean;
+pub mod complete;
 pub mod envfile;
 pub mod guards;
 pub mod landed;

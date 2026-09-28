@@ -227,6 +227,7 @@ export function InlineNewTask({
   const [selectedIssues, setSelectedIssues] = useState<IssueItem[]>([]);
 
   const sortedBranches = [...branches].toSorted((a, b) => a.name.localeCompare(b.name));
+
   // The selected branch's honest label (`origin/main` when that's what creation
   // will branch from), falling back to the raw value until the list loads.
   const baseLabel = branches.find((b) => b.name === base)?.label ?? (base || "main");
@@ -521,6 +522,11 @@ export function InlineNewTask({
         issuesError={issuesError}
         onNeedIssues={() => setIssuesWanted(true)}
         onPickIssue={attachIssue}
+        complete={(before) =>
+          invoke<string[]>("task_goal_complete", { repoDir: repo.dir, before }).then((r) =>
+            r.unwrapOr([]),
+          )
+        }
         onPaste={(e) => {
           const items = Array.from(e.clipboardData?.items ?? []);
           const pastedImages = items.filter(

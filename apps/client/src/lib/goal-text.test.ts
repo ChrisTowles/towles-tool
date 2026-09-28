@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  acceptCompletion,
   applyMention,
+  completionLead,
   highlightSegments,
   insertMentionTrigger,
   matchIssues,
@@ -142,5 +144,28 @@ describe("referencedIssueNumbers", () => {
 
   it("ignores a bare # or #word, same as highlightSegments", () => {
     expect(referencedIssueNumbers("# and #nope")).toEqual([]);
+  });
+});
+
+describe("acceptCompletion", () => {
+  it("appends the suffix and a space at the caret", () => {
+    expect(acceptCompletion("fix the pl", 10, "ugin")).toEqual({
+      text: "fix the plugin ",
+      caret: 15,
+    });
+  });
+
+  it("adds no second space mid-text", () => {
+    expect(acceptCompletion("the pl rail", 6, "ugin")).toEqual({
+      text: "the plugin rail",
+      caret: 10,
+    });
+  });
+});
+
+describe("completionLead", () => {
+  it("is the partial word, or the last word and its space", () => {
+    expect(completionLead("fix the pl")).toBe("pl");
+    expect(completionLead("fix the ")).toBe("the ");
   });
 });

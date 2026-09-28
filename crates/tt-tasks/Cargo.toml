@@ -18,6 +18,7 @@ thiserror = { workspace = true }
 # writes are exactly the kind of after-the-fact question ("who claimed 42410
 # and when was it released?") the event log exists to answer.
 tracing = { workspace = true }
+tt-claude-code = { workspace = true }
 tt-config = { workspace = true }
 tt-exec = { workspace = true }
 # For the one shared branch-name slug rule (`branch_name::slug`), so the
