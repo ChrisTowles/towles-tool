@@ -60,6 +60,7 @@ pub enum GitInvalidation {
     FolderFocus,
     BaseBranch,
     WorktreeRemoved,
+    WorktreeCreated,
     WindowFocus,
 }
 
@@ -71,6 +72,7 @@ impl GitInvalidation {
             Self::FolderFocus => "folder_focus",
             Self::BaseBranch => "base_branch",
             Self::WorktreeRemoved => "worktree_removed",
+            Self::WorktreeCreated => "worktree_created",
             Self::WindowFocus => "window_focus",
         }
     }

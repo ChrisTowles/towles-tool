@@ -13,7 +13,7 @@ import {
   type ClaudeLaunchOptions,
   type StartClaudeTarget,
 } from "@/lib/agentboard";
-import { storeSetTaskStatus, storeTaskSetWorktree } from "@/lib/data";
+import { storeAttachTaskPr, storeSetTaskStatus, storeTaskSetWorktree } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
 import { TaskCreatedSchema } from "@/lib/schemas/task";
 import { invoke } from "@/lib/tauri";
@@ -180,6 +180,11 @@ export function useTaskCreation(args: {
         toast(`couldn't bind the task to its repo: ${bound.error.message}`);
       }
     }
+    // Linked explicitly: a fork PR's owner-prefixed branch never matches by name.
+    const prRepo = ownerRepoFromOrigin(repo.originUrl);
+    if (input.pr && taskId !== undefined && prRepo) {
+      void storeAttachTaskPr(taskId, prRepo, input.pr.number, input.pr.url);
+    }
     if (!input.worktree) {
       toast("task added to the board");
       return;
@@ -188,7 +193,13 @@ export function useTaskCreation(args: {
     // 60s covers a fetch (10s server-side cap) plus a worktree add.
     const result = await invoke<TaskCreated>(
       "task_create",
-      { root: repo.dir, branch: input.branch, base: input.base, dir: worktreeDir ?? "" },
+      {
+        root: repo.dir,
+        source: input.pr
+          ? { kind: "pr", number: input.pr.number }
+          : { kind: "branch", branch: input.branch, base: input.base },
+        dir: worktreeDir ?? "",
+      },
       { schema: TaskCreatedSchema, timeoutMs: 60_000 },
     );
     if (result.isErr()) {

@@ -1,6 +1,6 @@
-// A goal and a base branch become a branch-named worktree (`task_create` → tt-tasks
-// ops). Submit hands off and closes without awaiting it, binding the worktree dir so
-// the rail row is on screen before the git work runs.
+// A goal and a base branch (or, reviewing, an open PR's head) become a worktree via
+// `task_create`. Submit hands off without awaiting, binding the worktree dir so the
+// rail row is on screen before the git work runs.
 import { Check, ChevronDown, CircleDot, ImagePlus, Sparkles, Undo2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -37,7 +37,14 @@ import { GoalEditor } from "@/components/goal-editor";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { referencedIssueNumbers } from "@/lib/goal-text";
 import { loadUserSettings, type PromptImprover } from "@/lib/settings";
-import { type BaseBranch, BaseBranchesSchema, PastedImagePathsSchema } from "@/lib/schemas/task";
+import {
+  type BaseBranch,
+  BaseBranchesSchema,
+  PastedImagePathsSchema,
+  type PrCheck,
+  type PullRequest,
+} from "@/lib/schemas/task";
+import { ReviewPrPicker } from "@/components/review-pr-picker";
 import { invoke } from "@/lib/tauri";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
@@ -100,6 +107,8 @@ export type NewTaskSubmit = {
   worktree: boolean;
   /** False leaves the PTY at a bare shell — no `claude` line typed. */
   launchClaude: boolean;
+  /** Set for a review task: `task_create` checks out this PR's head instead. */
+  pr: PullRequest | null;
 };
 
 /** Mirrors the Rust `TaskCreated` payload from `task_create`. */
@@ -171,6 +180,11 @@ export function branchFromIssue(number: number, title: string): string {
   return slug ? `feat/${number}-${slug}` : `feat/${number}`;
 }
 
+/** Seeded into an empty goal on a PR pick; editable like any other goal. */
+export function reviewGoal(pr: PullRequest): string {
+  return `Review PR #${pr.number}: ${pr.title}`;
+}
+
 export function InlineNewTask({
   repo,
   onCancel,
@@ -225,6 +239,9 @@ export function InlineNewTask({
   const [issues, setIssues] = useState<IssueItem[] | null>(null);
   const [issuesError, setIssuesError] = useState<string | null>(null);
   const [selectedIssues, setSelectedIssues] = useState<IssueItem[]>([]);
+  const [mode, setMode] = useState<"new" | "review">("new");
+  const [prCheck, setPrCheck] = useState<PrCheck | null>(null);
+  const reviewing = mode === "review";
 
   const sortedBranches = [...branches].toSorted((a, b) => a.name.localeCompare(b.name));
 
@@ -470,7 +487,49 @@ export function InlineNewTask({
     return additions.length > 0 ? [...selectedIssues, ...additions] : selectedIssues;
   }
 
+  function pickPr(check: PrCheck | null) {
+    setPrCheck(check);
+    if (check && !goal.trim()) setGoal(reviewGoal(check.pr));
+  }
+
+  function switchMode(next: "new" | "review") {
+    if (next === mode) return;
+    uiAction("task.form_mode", "agentboard", next);
+    setMode(next);
+    setNotice(null);
+  }
+
+  function submitReview() {
+    if (!prCheck) {
+      showError("Pick a pull request first.");
+      return;
+    }
+    // Already shown under the picker.
+    if (prCheck.error) return;
+    uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "agentboard");
+    onSubmit({
+      goal: goal.trim(),
+      title: goalToTitle(goal || reviewGoal(prCheck.pr)).replace(/[\s:—–-]+$/, ""),
+      branch: prCheck.branch,
+      base: prCheck.pr.baseBranch,
+      options: {
+        model: model === USE_DEFAULT ? undefined : model,
+        effort: effort === USE_DEFAULT ? undefined : effort,
+      },
+      imagePaths,
+      issues: [],
+      dir: prCheck.dir,
+      worktree: true,
+      launchClaude,
+      pr: prCheck.pr,
+    });
+  }
+
   function submit(worktree = true) {
+    if (reviewing) {
+      submitReview();
+      return;
+    }
     const issuesToAttach = reconcileGoalIssueRefs();
     if (worktree) {
       if (!branch) {
@@ -506,14 +565,39 @@ export function InlineNewTask({
       dir: branchCheck?.dir ?? null,
       worktree,
       launchClaude,
+      pr: null,
     });
   }
 
   return (
     <div className="mx-3 my-1.5 flex flex-col gap-2 rounded-lg border border-border bg-card p-2.5">
-      <span className="text-[11px] font-medium text-muted-foreground">
-        ✦ New task — {repo.name}
-      </span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          ✦ New task — {repo.name}
+        </span>
+        <div className="flex rounded-md border border-border p-px" role="group">
+          {(
+            [
+              ["new", "New work"],
+              ["review", "Review PR"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={mode === value}
+              onClick={() => switchMode(value)}
+              className={cn(
+                "rounded-[5px] px-1.5 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground",
+                mode === value && "bg-accent text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {reviewing && <ReviewPrPicker root={repo.dir} check={prCheck} onCheck={pickPr} />}
       <GoalEditor
         autoFocus
         value={goal}
@@ -568,7 +652,9 @@ export function InlineNewTask({
           }
         }}
         hint="paste or drop a screenshot to attach it"
-        placeholder="what should this task get done?"
+        placeholder={
+          reviewing ? "what should the review focus on?" : "what should this task get done?"
+        }
         rows={2}
       />
       {selectedIssues.length > 0 && (
@@ -640,71 +726,75 @@ export function InlineNewTask({
           <ImagePlus className="size-3" />
           Attach image
         </Button>
-        <Popover
-          open={issuePickerOpen}
-          onOpenChange={(o) => {
-            setIssuePickerOpen(o);
-            if (o) setIssuesWanted(true);
-          }}
-        >
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-6 gap-1 px-1.5 text-[10.5px]">
-              <CircleDot className="size-3" />
-              Pick issue
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 p-0" align="start">
-            <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
-              <span className="text-[10.5px] text-muted-foreground">
-                GitHub issues — {repo.name}
-              </span>
-              <button
-                type="button"
-                onClick={() => setIssueAssignedToMe(!issueAssignedToMe)}
-                className="text-[10.5px] font-medium text-primary hover:underline"
-              >
-                {issueAssignedToMe ? "Show all open issues" : "Show only mine"}
-              </button>
-            </div>
-            {issuesError ? (
-              <p className="p-3 text-[11px] text-red-500">{issuesError}</p>
-            ) : issues === null ? (
-              <p className="p-3 text-[11px] text-muted-foreground">Loading issues…</p>
-            ) : (
-              <Command>
-                <CommandInput placeholder="Search issues…" className="text-xs" />
-                <CommandList className="max-h-64">
-                  <CommandEmpty>No open issues.</CommandEmpty>
-                  {issues.map((issue) => {
-                    const selected = selectedIssues.some(
-                      (i) => i.repo === issue.repo && i.number === issue.number,
-                    );
-                    return (
-                      <CommandItem
-                        key={issue.number}
-                        value={`${issue.number} ${issue.title}`}
-                        onSelect={() => toggleIssue(issue)}
-                        className="flex items-start gap-2"
-                      >
-                        <Check className={cn("mt-0.5 size-3 shrink-0", !selected && "invisible")} />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="w-full truncate text-xs">{issue.title}</span>
-                          <span className="text-[10.5px] text-muted-foreground">
-                            #{issue.number}
-                            {issue.labels.length > 0
-                              ? ` · ${issue.labels.slice(0, 2).join(", ")}`
-                              : ""}
+        {!reviewing && (
+          <Popover
+            open={issuePickerOpen}
+            onOpenChange={(o) => {
+              setIssuePickerOpen(o);
+              if (o) setIssuesWanted(true);
+            }}
+          >
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-6 gap-1 px-1.5 text-[10.5px]">
+                <CircleDot className="size-3" />
+                Pick issue
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="start">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+                <span className="text-[10.5px] text-muted-foreground">
+                  GitHub issues — {repo.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIssueAssignedToMe(!issueAssignedToMe)}
+                  className="text-[10.5px] font-medium text-primary hover:underline"
+                >
+                  {issueAssignedToMe ? "Show all open issues" : "Show only mine"}
+                </button>
+              </div>
+              {issuesError ? (
+                <p className="p-3 text-[11px] text-red-500">{issuesError}</p>
+              ) : issues === null ? (
+                <p className="p-3 text-[11px] text-muted-foreground">Loading issues…</p>
+              ) : (
+                <Command>
+                  <CommandInput placeholder="Search issues…" className="text-xs" />
+                  <CommandList className="max-h-64">
+                    <CommandEmpty>No open issues.</CommandEmpty>
+                    {issues.map((issue) => {
+                      const selected = selectedIssues.some(
+                        (i) => i.repo === issue.repo && i.number === issue.number,
+                      );
+                      return (
+                        <CommandItem
+                          key={issue.number}
+                          value={`${issue.number} ${issue.title}`}
+                          onSelect={() => toggleIssue(issue)}
+                          className="flex items-start gap-2"
+                        >
+                          <Check
+                            className={cn("mt-0.5 size-3 shrink-0", !selected && "invisible")}
+                          />
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <span className="w-full truncate text-xs">{issue.title}</span>
+                            <span className="text-[10.5px] text-muted-foreground">
+                              #{issue.number}
+                              {issue.labels.length > 0
+                                ? ` · ${issue.labels.slice(0, 2).join(", ")}`
+                                : ""}
+                            </span>
                           </span>
-                        </span>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandList>
-              </Command>
-            )}
-          </PopoverContent>
-        </Popover>
-        {preOverwrite && (
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandList>
+                </Command>
+              )}
+            </PopoverContent>
+          </Popover>
+        )}
+        {!reviewing && preOverwrite && (
           <Button
             variant="ghost"
             size="sm"
@@ -717,24 +807,27 @@ export function InlineNewTask({
         )}
         {/* A split button: one per preferred improver, the rest behind the
             chevron segment attached to the last. */}
-        {preferredImprovers.map((improver, i) => (
-          <Button
-            key={improver.id}
-            variant="outline"
-            size="sm"
-            className={cn(
-              "h-6 gap-1 px-1.5 text-[10.5px]",
-              otherImprovers.length > 0 && i === preferredImprovers.length - 1 && "rounded-r-none",
-            )}
-            title={improver.prompt || undefined}
-            disabled={improverDisabled}
-            onClick={() => void runImprover(improver)}
-          >
-            <Sparkles className="size-3" />
-            {suggesting === improver.id ? "Asking claude…" : improver.label}
-          </Button>
-        ))}
-        {otherImprovers.length > 0 && (
+        {!reviewing &&
+          preferredImprovers.map((improver, i) => (
+            <Button
+              key={improver.id}
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-6 gap-1 px-1.5 text-[10.5px]",
+                otherImprovers.length > 0 &&
+                  i === preferredImprovers.length - 1 &&
+                  "rounded-r-none",
+              )}
+              title={improver.prompt || undefined}
+              disabled={improverDisabled}
+              onClick={() => void runImprover(improver)}
+            >
+              <Sparkles className="size-3" />
+              {suggesting === improver.id ? "Asking claude…" : improver.label}
+            </Button>
+          ))}
+        {!reviewing && otherImprovers.length > 0 && (
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -766,61 +859,65 @@ export function InlineNewTask({
           </Popover>
         )}
       </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-[10.5px] text-muted-foreground">title</span>
-        <Input
-          value={title}
-          onChange={(e) => setTitleEdit(e.target.value)}
-          placeholder="auto-generated from your goal"
-          className="min-w-0 text-xs"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-[10.5px] text-muted-foreground">branch</span>
-        <Input
-          value={branch}
-          onChange={(e) => setBranchEdit(e.target.value)}
-          placeholder="auto-generated from your goal"
-          className={cn("min-w-0 font-mono text-xs", branchProblem && "border-red-500")}
-        />
-        {branchProblem && <p className="text-[10.5px] text-red-500">{branchProblem}</p>}
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-[10.5px] text-muted-foreground">base</span>
-        <Popover open={baseOpen} onOpenChange={setBaseOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={baseOpen}
-              className="min-w-0 justify-start truncate font-mono text-xs font-normal"
-            >
-              <span className="truncate">{baseLabel}</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-(--radix-popover-trigger-width) p-0">
-            <Command>
-              <CommandInput placeholder="Search branches…" />
-              <CommandList>
-                <CommandEmpty>No branches found.</CommandEmpty>
-                {sortedBranches.map((b) => (
-                  <CommandItem
-                    key={b.name}
-                    value={b.label}
-                    className="min-w-0 truncate font-mono text-xs"
-                    onSelect={() => {
-                      setBase(b.name);
-                      setBaseOpen(false);
-                    }}
-                  >
-                    <span className="truncate">{b.label}</span>
-                  </CommandItem>
-                ))}
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
+      {!reviewing && (
+        <>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10.5px] text-muted-foreground">title</span>
+            <Input
+              value={title}
+              onChange={(e) => setTitleEdit(e.target.value)}
+              placeholder="auto-generated from your goal"
+              className="min-w-0 text-xs"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10.5px] text-muted-foreground">branch</span>
+            <Input
+              value={branch}
+              onChange={(e) => setBranchEdit(e.target.value)}
+              placeholder="auto-generated from your goal"
+              className={cn("min-w-0 font-mono text-xs", branchProblem && "border-red-500")}
+            />
+            {branchProblem && <p className="text-[10.5px] text-red-500">{branchProblem}</p>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10.5px] text-muted-foreground">base</span>
+            <Popover open={baseOpen} onOpenChange={setBaseOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={baseOpen}
+                  className="min-w-0 justify-start truncate font-mono text-xs font-normal"
+                >
+                  <span className="truncate">{baseLabel}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-(--radix-popover-trigger-width) p-0">
+                <Command>
+                  <CommandInput placeholder="Search branches…" />
+                  <CommandList>
+                    <CommandEmpty>No branches found.</CommandEmpty>
+                    {sortedBranches.map((b) => (
+                      <CommandItem
+                        key={b.name}
+                        value={b.label}
+                        className="min-w-0 truncate font-mono text-xs"
+                        onSelect={() => {
+                          setBase(b.name);
+                          setBaseOpen(false);
+                        }}
+                      >
+                        <span className="truncate">{b.label}</span>
+                      </CommandItem>
+                    ))}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </>
+      )}
       <div className="flex items-center gap-2">
         <Select value={model} onValueChange={(v) => setModel(v as ModelChoice)}>
           <SelectTrigger className="min-w-0 flex-1 font-mono text-xs">
@@ -876,18 +973,26 @@ export function InlineNewTask({
         <Button variant="ghost" size="sm" onClick={cancel}>
           Cancel
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          title="Create the board task without a worktree — attach a task later by starting it again"
-          disabled={!goal.trim() && selectedIssues.length === 0}
-          onClick={() => submit(false)}
-        >
-          Task only
-        </Button>
-        <Button size="sm" disabled={!branch} onClick={() => submit(true)}>
-          Start task
-        </Button>
+        {!reviewing && (
+          <Button
+            variant="outline"
+            size="sm"
+            title="Create the board task without a worktree — attach a task later by starting it again"
+            disabled={!goal.trim() && selectedIssues.length === 0}
+            onClick={() => submit(false)}
+          >
+            Task only
+          </Button>
+        )}
+        {reviewing ? (
+          <Button size="sm" disabled={!prCheck || !!prCheck.error} onClick={() => submit(true)}>
+            Start review
+          </Button>
+        ) : (
+          <Button size="sm" disabled={!branch} onClick={() => submit(true)}>
+            Start task
+          </Button>
+        )}
       </div>
     </div>
   );

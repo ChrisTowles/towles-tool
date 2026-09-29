@@ -20,16 +20,21 @@ use crate::ui;
 
 pub fn run(command: TaskCommands) -> i32 {
     let result = match command {
-        TaskCommands::New { title, repo, status, notes, goal, branch, base, json } => cmd_new(
-            &title,
-            &repo,
-            &status,
-            notes.as_deref(),
-            goal.as_deref(),
-            branch.as_deref(),
-            base.as_deref(),
-            json,
-        ),
+        TaskCommands::New { title, repo, status, notes, goal, branch, base, pr, json } => {
+            let source = match pr {
+                Some(number) => NewSource::Pr(number),
+                None => NewSource::Branch { branch: branch.as_deref(), base: base.as_deref() },
+            };
+            cmd_new(
+                title.as_deref(),
+                &repo,
+                &status,
+                notes.as_deref(),
+                goal.as_deref(),
+                source,
+                json,
+            )
+        }
         TaskCommands::Ls { json, stale, root } => cmd_ls(json, stale, root.as_deref()),
         TaskCommands::Rm { name, force, outcome, root } => {
             cmd_rm(&name, force, outcome.as_deref(), root.as_deref())
@@ -131,22 +136,28 @@ fn after_removal(checkout: &Path, dir: &Path) -> Vec<String> {
     )
 }
 
+enum NewSource<'a> {
+    Branch {
+        branch: Option<&'a str>,
+        base: Option<&'a str>,
+    },
+    Pr(u64),
+}
+
 /// Create a task (the unit of work): a board-task row PLUS its worktree, in one shot.
 /// Same store path as the app's `+` flow and MCP `task_create`, same
 /// `ops::create_task` — those two flows unified behind one verb.
-#[allow(clippy::too_many_arguments)] // mirrors `TaskCommands::New`'s own flags 1:1
 fn cmd_new(
-    title: &str,
+    title: Option<&str>,
     repo: &str,
     status: &str,
     notes: Option<&str>,
     goal: Option<&str>,
-    branch: Option<&str>,
-    base: Option<&str>,
+    source: NewSource<'_>,
     json: bool,
 ) -> Result<(), String> {
-    let title = title.trim();
-    if title.is_empty() {
+    let title = title.map(str::trim).unwrap_or_default();
+    if title.is_empty() && !matches!(source, NewSource::Pr(_)) {
         return Err("a task needs a title".to_string());
     }
 
@@ -163,14 +174,22 @@ fn cmd_new(
     };
 
     // The branch defaults to a slug of the title; the task folder slugs it again.
-    let branch = match branch.map(str::trim).filter(|b| !b.is_empty()) {
-        Some(b) => b.to_string(),
-        None => {
-            let slug = tt_git::branch_name::slug(title);
-            if slug.is_empty() {
-                return Err("cannot derive a branch from the title — pass --branch".to_string());
-            }
-            slug
+    let source = match source {
+        NewSource::Pr(number) => ops::TaskSource::PullRequest(number),
+        NewSource::Branch { branch, base } => {
+            let branch = match branch.map(str::trim).filter(|b| !b.is_empty()) {
+                Some(b) => b.to_string(),
+                None => {
+                    let slug = tt_git::branch_name::slug(title);
+                    if slug.is_empty() {
+                        return Err(
+                            "cannot derive a branch from the title — pass --branch".to_string()
+                        );
+                    }
+                    slug
+                }
+            };
+            ops::TaskSource::NewBranch { branch, base: base.map(str::to_string) }
         }
     };
 
@@ -180,12 +199,7 @@ fn cmd_new(
     let sr = ops::discover_root(Some(Path::new(&repo_dir))).map_err(|e| e.to_string())?;
     let repo_root = sr.checkout.to_string_lossy().to_string();
 
-    let opts = CreateOpts {
-        root: Some(sr.checkout.clone()),
-        branch,
-        base: base.map(str::to_string),
-        run_setup: true,
-    };
+    let opts = CreateOpts { root: Some(sr.checkout.clone()), source, run_setup: true };
     // Text mode only — `ui::info` writes to stdout, which `--json`'s document owns.
     // Worth printing because the setup step can run for minutes in silence.
     let created = ops::create_task(&opts, now_ms(), &mut |phase| {
@@ -199,18 +213,22 @@ fn cmd_new(
     // the caller — as `ui::warning` lines in text mode, as `"warnings"` in `--json`.
     let mut warnings = created.warnings.clone();
     let dir_s = created.dir.to_string_lossy().to_string();
+    let title = match &created.pr {
+        Some(pr) if title.is_empty() => format!("Review #{}: {}", pr.number, pr.title),
+        _ => title.to_string(),
+    };
+    let title = title.as_str();
 
     // A store that can't open (or a rejected status) is a soft failure: the worktree
     // exists and is usable, so warn rather than abort.
-    let task_id =
-        match record_board_task(title, status, notes, goal, &repo_root, &created.branch, &dir_s) {
-            Ok(id) => Some(id),
-            Err(e) => {
-                warnings
-                    .push(format!("worktree created, but the board task was not recorded: {e}"));
-                None
-            }
-        };
+    let task_id = match record_board_task(title, status, notes, goal, &repo_root, &created, &dir_s)
+    {
+        Ok(id) => Some(id),
+        Err(e) => {
+            warnings.push(format!("worktree created, but the board task was not recorded: {e}"));
+            None
+        }
+    };
 
     if json {
         let ports: serde_json::Map<String, serde_json::Value> =
@@ -225,6 +243,7 @@ fn cmd_new(
             "branch": created.branch,
             "base": created.base,
             "baseLabel": created.base_label,
+            "pr": created.pr.as_ref().map(|pr| pr.number),
             "ports": ports,
             "inheritedKeys": created.inherited,
             "warnings": warnings,
@@ -253,22 +272,30 @@ fn cmd_new(
 }
 
 /// Write the #339 board-task row and bind it to `repo_root` + the new worktree. Same
-/// store path as the app's `store_add_task` + `store_task_set_worktree`.
+/// store path as the app's `store_add_task` + `store_task_set_worktree`; a review
+/// task also links its PR, which a fork's owner-prefixed branch can't match on its own.
 fn record_board_task(
     title: &str,
     status: &str,
     notes: Option<&str>,
     goal: Option<&str>,
     repo_root: &str,
-    branch: &str,
+    created: &ops::CreatedTask,
     dir: &str,
 ) -> Result<i64, String> {
     let now_ms = now_ms();
     let store = tt_store::Store::open_default().map_err(|e| e.to_string())?;
     let task = store.add_task(title, status, notes, goal, now_ms).map_err(|e| e.to_string())?;
     store
-        .set_task_worktree(task.id, repo_root, None, Some(branch), Some(dir))
+        .set_task_worktree(task.id, repo_root, None, Some(&created.branch), Some(dir))
         .map_err(|e| e.to_string())?;
+    if let Some(pr) = &created.pr
+        && let Some(repo) = pr.repo()
+    {
+        store
+            .attach_task_pr(task.id, &repo, pr.number as i64, &pr.url)
+            .map_err(|e| e.to_string())?;
+    }
     Ok(task.id)
 }
 

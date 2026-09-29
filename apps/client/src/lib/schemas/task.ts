@@ -20,6 +20,34 @@ export const BaseBranchesSchema = z.array(
 
 export type BaseBranch = z.infer<typeof BaseBranchesSchema>[number];
 
+/** Mirrors `tt_tasks::pr::PullRequest`. */
+export const PullRequestSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string(),
+  url: z.string(),
+  state: z.string(),
+  isDraft: z.boolean(),
+  headBranch: z.string(),
+  baseBranch: z.string(),
+  crossRepository: z.boolean(),
+  headOwner: z.string(),
+  author: z.string(),
+});
+
+export type PullRequest = z.infer<typeof PullRequestSchema>;
+
+export const PullRequestsSchema = z.array(PullRequestSchema);
+
+/** Mirrors `tt_tasks::ops::PrCheck`: where a review task for the PR would land. */
+export const PrCheckSchema = z.object({
+  pr: PullRequestSchema,
+  branch: z.string(),
+  dir: z.string().nullable(),
+  error: z.string().nullable(),
+});
+
+export type PrCheck = z.infer<typeof PrCheckSchema>;
+
 export const PastedImagePathsSchema = z.array(z.string());
 
 /** `kind` stays an open `string`, not an enum: an older frontend can meet a

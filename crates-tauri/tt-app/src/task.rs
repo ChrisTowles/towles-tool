@@ -4,7 +4,7 @@
 //! never reimplements task logic.
 
 use base64::Engine as _;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -12,8 +12,9 @@ use tt_agentboard::types::RowPhase;
 use tt_claude_code::history::parse_history;
 use tt_tasks::complete::Completer;
 use tt_tasks::guards::RmBlocked;
-use tt_tasks::ops::{self, CreateOpts, RemoveOpts, RemovePhase};
+use tt_tasks::ops::{self, CreateOpts, PrCheck, RemoveOpts, RemovePhase, TaskSource};
 use tt_tasks::pasted::{self, PastedImage};
+use tt_tasks::pr::PullRequest;
 use tt_tasks::suggest::Suggested;
 
 /// Worktree operations running right now, keyed by directory — only this process
@@ -175,6 +176,36 @@ pub async fn task_suggest(
     result
 }
 
+/// The review form's picker: the repo's open PRs via `gh`.
+#[tauri::command]
+pub async fn task_list_prs(root: String) -> Result<Vec<PullRequest>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
+        tt_tasks::pr::list_open(&sr.checkout)
+    })
+    .await
+    .map_err(|e| format!("gh pr list task failed: {e}"))?
+}
+
+/// The review form's preflight for one PR — the branch/dir its task would get.
+#[tauri::command]
+pub async fn task_check_pr(root: String, number: u64) -> Result<PrCheck, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
+        ops::check_pr(&sr, number).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("gh pr view task failed: {e}"))?
+}
+
+/// `task_create`'s wire form of [`TaskSource`].
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CreateSource {
+    Branch { branch: String, base: String },
+    Pr { number: u64 },
+}
+
 /// Fetch, worktree add, render `.env`, inherit secrets. Deliberately **not** the
 /// install step — that can run for minutes and this gates the terminal pane; the
 /// caller fires `task_run_setup` once the pane opens.
@@ -182,23 +213,23 @@ pub async fn task_suggest(
 pub async fn task_create(
     app: tauri::AppHandle,
     root: String,
-    branch: String,
-    base: String,
+    source: CreateSource,
     dir: String,
 ) -> Result<TaskCreated, String> {
-    let branch = branch.trim().to_string();
-    if branch.is_empty() {
-        return Err("a task needs a branch — tasks are named after their branch".to_string());
-    }
-    let opts = CreateOpts {
-        root: Some(PathBuf::from(root)),
-        branch,
-        base: {
-            let b = base.trim();
-            (!b.is_empty()).then(|| b.to_string())
-        },
-        run_setup: false,
+    let source = match source {
+        CreateSource::Branch { branch, base } => {
+            let branch = branch.trim().to_string();
+            if branch.is_empty() {
+                return Err(
+                    "a task needs a branch — tasks are named after their branch".to_string()
+                );
+            }
+            let base = base.trim();
+            TaskSource::NewBranch { branch, base: (!base.is_empty()).then(|| base.to_string()) }
+        }
+        CreateSource::Pr { number } => TaskSource::PullRequest(number),
     };
+    let opts = CreateOpts { root: Some(PathBuf::from(root)), source, run_setup: false };
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -231,13 +262,22 @@ pub async fn task_create(
         name = %created.name,
         branch = %created.branch,
         base = %created.base_label,
+        pr = created.pr.as_ref().map(|pr| pr.number),
         warnings = created.warnings.len(),
         "task.created"
     );
+    // The row was bound before the directory existed, and a missing dir has no
+    // fs watch to wake it — so its cached "missing" would otherwise ride the TTL.
+    let dir_s = created.dir.to_string_lossy().to_string();
+    app.state::<crate::agentboard::Ab>()
+        .engine
+        .lock()
+        .unwrap()
+        .invalidate_git(&dir_s, tt_agentboard::GitInvalidation::WorktreeCreated);
     refresh_all_git_info_in_background(&app);
     Ok(TaskCreated {
         name: created.name,
-        dir: created.dir.to_string_lossy().to_string(),
+        dir: dir_s,
         branch: created.branch,
         base: created.base,
         warnings: created.warnings,

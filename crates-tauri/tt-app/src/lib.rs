@@ -715,6 +715,8 @@ pub fn run() {
             task::task_base_branches,
             task::task_check_branch,
             task::task_create,
+            task::task_check_pr,
+            task::task_list_prs,
             task::task_delete,
             task::task_stop_port,
             task::task_run_setup,
