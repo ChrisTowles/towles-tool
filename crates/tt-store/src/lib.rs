@@ -729,6 +729,29 @@ mod tests {
         assert_eq!(s.rail_worktrees().unwrap()[0].kind, TaskKind::Task);
     }
 
+    /// The rail's scan can see a new task's worktree before `task_create` binds
+    /// it, minting a detected row first. Binding must retire that row, or the
+    /// dir has two and removal closes the older, detected one.
+    #[test]
+    fn binding_a_task_retires_the_detected_row_for_its_dir() {
+        let s = Store::open_in_memory().unwrap();
+        let dir = "/repos/x/.claude/worktrees/feat-y";
+        s.record_detected_worktree("/repos/x", dir, Some("feat-y"), 1).unwrap();
+        let t = s.add_task("my work", "doing", None, None, 2).unwrap();
+        s.set_task_worktree(t.id, "/repos/x", None, Some("feat-y"), Some(dir)).unwrap();
+
+        let rows = s.rail_worktrees().unwrap();
+        assert_eq!(rows.len(), 1, "one dir, one row");
+        assert_eq!(rows[0].task_id, t.id);
+        assert_eq!(s.task_for_worktree_dir(dir).unwrap().unwrap().id, t.id);
+
+        // Rebinding an adopted row to its own dir must not delete it.
+        s.record_detected_worktree("/repos/x", "/repos/x/wt/other", None, 3).unwrap();
+        let other = s.rail_worktrees().unwrap()[1].task_id;
+        s.set_task_worktree(other, "/repos/x", None, None, Some("/repos/x/wt/other")).unwrap();
+        assert_eq!(s.rail_worktrees().unwrap().len(), 2);
+    }
+
     /// The asymmetry that makes deletion coherent: a vanished directory retires
     /// a *detected* row and never a task's, because only the second is someone's
     /// work waiting on an answer.
