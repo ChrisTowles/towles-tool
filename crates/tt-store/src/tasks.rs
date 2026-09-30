@@ -214,7 +214,8 @@ impl Store {
     /// then again once `task_create` resolves. A "task only" submit stops after the
     /// first. The optional columns are upserts, never clears — a `None` means
     /// "leave as is", so a repo-only rebind can't erase an established branch/dir.
-    /// The one legitimate detach is [`Store::close_task`].
+    /// The one legitimate detach is [`Store::close_task`]. Binding a dir retires
+    /// any detected row the rail's scan minted for it first, or removal closes that.
     pub fn set_task_worktree(
         &self,
         id: i64,
@@ -223,7 +224,8 @@ impl Store {
         branch: Option<&str>,
         dir: Option<&str>,
     ) -> Result<()> {
-        let affected = self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+        let affected = tx.execute(
             "UPDATE tasks SET worktree_repo_root = ?1,
                               worktree_repo = COALESCE(?2, worktree_repo),
                               worktree_branch = COALESCE(?3, worktree_branch),
@@ -234,6 +236,10 @@ impl Store {
         if affected == 0 {
             return Err(Error::TaskNotFound(id));
         }
+        if let Some(dir) = dir {
+            delete_detected_rows(&tx, dir, Some(id))?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -500,19 +506,9 @@ impl Store {
     /// showing until the user says what happened to it.
     pub fn forget_detected_worktree(&self, dir: &str) -> Result<bool> {
         let tx = self.conn.unchecked_transaction()?;
-        let ids: Vec<i64> = {
-            let mut stmt =
-                tx.prepare("SELECT id FROM tasks WHERE worktree_dir = ?1 AND kind = 'detected'")?;
-            let rows = stmt.query_map(params![dir], |r| r.get::<_, i64>(0))?;
-            rows.collect::<rusqlite::Result<Vec<_>>>()?
-        };
-        for id in &ids {
-            tx.execute("DELETE FROM task_issues WHERE task_id = ?1", params![id])?;
-            tx.execute("DELETE FROM task_prs WHERE task_id = ?1", params![id])?;
-            tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
-        }
+        let deleted = delete_detected_rows(&tx, dir, None)?;
         tx.commit()?;
-        Ok(!ids.is_empty())
+        Ok(deleted)
     }
 
     /// Promote a detected worktree's row to the user's own work. A kind change on
@@ -699,4 +695,27 @@ impl Store {
         let exists = self.conn.prepare("SELECT 1 FROM tasks WHERE id = ?1")?.exists(params![id])?;
         if exists { Ok(()) } else { Err(Error::TaskNotFound(id)) }
     }
+}
+
+/// Delete the detected rows bound to `dir`, sparing `except`, inside the
+/// caller's transaction. Whether any went.
+fn delete_detected_rows(
+    tx: &rusqlite::Transaction<'_>,
+    dir: &str,
+    except: Option<i64>,
+) -> Result<bool> {
+    let ids: Vec<i64> = {
+        let mut stmt = tx.prepare(
+            "SELECT id FROM tasks WHERE worktree_dir = ?1 AND kind = 'detected'
+               AND id IS NOT ?2",
+        )?;
+        let rows = stmt.query_map(params![dir, except], |r| r.get::<_, i64>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for id in &ids {
+        tx.execute("DELETE FROM task_issues WHERE task_id = ?1", params![id])?;
+        tx.execute("DELETE FROM task_prs WHERE task_id = ?1", params![id])?;
+        tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
+    }
+    Ok(!ids.is_empty())
 }
