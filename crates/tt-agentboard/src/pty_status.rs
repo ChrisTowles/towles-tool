@@ -104,23 +104,26 @@ impl PtySignal {
 /// Fold the PTY's direct observation into `backend`, whatever
 /// [`crate::watchers`] concluded. The PTY only speaks where it has evidence:
 /// output right now is unconditionally `Busy`; quiet with attention pending
-/// means the agent wants the user (keeping a more specific `Complete`/`Error`);
+/// means the agent wants the user (keeping a more specific `Complete`/`Error`,
+/// or `Background`, whose turn-end bell is not a question);
 /// silence past [`BUSY_SILENCE_MS`] retracts a `Busy`; otherwise `backend`
 /// stands, because ordinary silence proves nothing.
-pub fn resolve_status(backend: Option<AgentStatus>, pty: &PtySignal, now_ms: i64) -> AgentStatus {
+pub fn resolve_status(backend: AgentStatus, pty: &PtySignal, now_ms: i64) -> AgentStatus {
     if pty.output_active(now_ms) {
         return AgentStatus::Busy;
     }
     if pty.attention_pending(now_ms) {
         return match backend {
-            Some(status @ (AgentStatus::Complete | AgentStatus::Error)) => status,
+            status @ (AgentStatus::Complete | AgentStatus::Error | AgentStatus::Background) => {
+                status
+            }
             _ => AgentStatus::Waiting,
         };
     }
-    if backend == Some(AgentStatus::Busy) && pty.silent_past_busy(now_ms) {
+    if backend == AgentStatus::Busy && pty.silent_past_busy(now_ms) {
         return AgentStatus::Idle;
     }
-    backend.unwrap_or(AgentStatus::Idle)
+    backend
 }
 
 #[cfg(test)]
@@ -158,7 +161,7 @@ mod tests {
     #[test]
     fn live_output_overrides_a_stale_waiting() {
         let pty = working(200);
-        assert_eq!(resolve_status(Some(AgentStatus::Waiting), &pty, NOW), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Waiting, &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]
@@ -171,21 +174,21 @@ mod tests {
             AgentStatus::Error,
             AgentStatus::Interrupted,
         ] {
-            assert_eq!(resolve_status(Some(backend), &pty, NOW), AgentStatus::Busy, "{backend:?}");
+            assert_eq!(resolve_status(backend, &pty, NOW), AgentStatus::Busy, "{backend:?}");
         }
     }
 
     #[test]
     fn a_hidden_pane_at_two_fps_still_counts_as_working() {
         let pty = working(500);
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]
     fn output_older_than_the_threshold_is_not_activity() {
         let pty = working(OUTPUT_ACTIVE_MS);
         assert!(!pty.output_active(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Idle);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, NOW), AgentStatus::Idle);
     }
 
     #[test]
@@ -195,20 +198,20 @@ mod tests {
             AgentStatus::Waiting,
             AgentStatus::Complete,
         ] {
-            assert_eq!(resolve_status(Some(backend), &quiet(), NOW), backend, "{backend:?}");
+            assert_eq!(resolve_status(backend, &quiet(), NOW), backend, "{backend:?}");
         }
     }
 
     #[test]
     fn long_silence_disproves_a_stale_busy() {
         let pty = working(BUSY_SILENCE_MS);
-        assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Idle);
+        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Idle);
     }
 
     #[test]
     fn ordinary_between_paint_silence_does_not_disprove_busy() {
         let pty = working(5_000);
-        assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]
@@ -219,7 +222,7 @@ mod tests {
             AgentStatus::Error,
         ] {
             let pty = working(600_000);
-            assert_eq!(resolve_status(Some(backend), &pty, NOW), backend, "{backend:?}");
+            assert_eq!(resolve_status(backend, &pty, NOW), backend, "{backend:?}");
         }
     }
 
@@ -227,7 +230,7 @@ mod tests {
     fn a_pane_that_never_produced_output_is_not_treated_as_silent() {
         let pty = PtySignal::default();
         assert!(!pty.silent_past_busy(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]
@@ -240,28 +243,33 @@ mod tests {
             ..working(299_000)
         };
         assert!(pty.attention_pending(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Complete), &pty, NOW), AgentStatus::Complete);
+        assert_eq!(resolve_status(AgentStatus::Complete, &pty, NOW), AgentStatus::Complete);
         // `Waiting` beats `Complete` here: `Complete` needs you only while
         // `unseen` holds, so a seen-then-flapping row could still fall out.
-        assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Waiting);
-    }
-
-    #[test]
-    fn no_backend_and_no_signal_is_idle() {
-        assert_eq!(resolve_status(None, &PtySignal::default(), NOW), AgentStatus::Idle);
+        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Waiting);
     }
 
     #[test]
     fn a_pending_notification_means_waiting() {
         let pty = PtySignal { attention_at_ms: Some(NOW - 5_000), ..quiet() };
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Waiting);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, NOW), AgentStatus::Waiting);
     }
 
     #[test]
     fn a_pending_notification_keeps_a_more_specific_terminal_verdict() {
         let pty = PtySignal { attention_at_ms: Some(NOW - 5_000), ..quiet() };
-        assert_eq!(resolve_status(Some(AgentStatus::Complete), &pty, NOW), AgentStatus::Complete);
-        assert_eq!(resolve_status(Some(AgentStatus::Error), &pty, NOW), AgentStatus::Error);
+        assert_eq!(resolve_status(AgentStatus::Complete, &pty, NOW), AgentStatus::Complete);
+        assert_eq!(resolve_status(AgentStatus::Error, &pty, NOW), AgentStatus::Error);
+    }
+
+    /// The turn-end bell rings with background agents still out; the agent is
+    /// not asking anything until their reports have come back.
+    #[test]
+    fn a_turn_end_bell_does_not_turn_background_into_waiting() {
+        let pty = PtySignal { attention_at_ms: Some(NOW - 5_000), ..quiet() };
+        let backend = AgentStatus::Background;
+        assert_eq!(resolve_status(backend, &pty, NOW), AgentStatus::Background);
+        assert_eq!(resolve_status(backend, &working(100), NOW), AgentStatus::Busy);
     }
 
     #[test]
@@ -269,7 +277,7 @@ mod tests {
         // Notify fires ~0.5s before the final frame, so needs-you never latches.
         let pty = PtySignal { attention_at_ms: Some(NOW - 10_000), ..working(9_600) };
         assert!(pty.attention_pending(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Waiting);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, NOW), AgentStatus::Waiting);
     }
 
     #[test]
@@ -280,7 +288,7 @@ mod tests {
             ..working(8_000)
         };
         assert!(!pty.attention_pending(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Idle);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, NOW), AgentStatus::Idle);
     }
 
     #[test]
@@ -297,13 +305,13 @@ mod tests {
     fn an_agent_that_resumes_on_its_own_clears_it() {
         let pty = PtySignal { attention_at_ms: Some(NOW - 60_000), ..working(30_000) };
         assert!(!pty.attention_pending(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, NOW), AgentStatus::Idle);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, NOW), AgentStatus::Idle);
     }
 
     #[test]
     fn working_again_outranks_a_pending_notification() {
         let pty = PtySignal { attention_at_ms: Some(NOW - 3_000), ..working(100) };
-        assert_eq!(resolve_status(Some(AgentStatus::Waiting), &pty, NOW), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Waiting, &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]
@@ -313,21 +321,21 @@ mod tests {
         let at = |secs: f64| (secs * 1000.0) as i64;
         let mut pty = PtySignal::default();
 
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(8.0)), AgentStatus::Idle);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, at(8.0)), AgentStatus::Idle);
 
         pty.input_at_ms = Some(at(9.0));
         pty.output_since_ms = Some(at(9.1));
         pty.last_output_ms = Some(at(12.35));
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(12.6)), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, at(12.6)), AgentStatus::Busy);
 
         pty.attention_at_ms = Some(at(14.219));
         pty.last_output_ms = Some(at(14.685));
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(15.0)), AgentStatus::Busy);
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(17.0)), AgentStatus::Waiting);
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(30.0)), AgentStatus::Waiting);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, at(15.0)), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, at(17.0)), AgentStatus::Waiting);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, at(30.0)), AgentStatus::Waiting);
 
         pty.input_at_ms = Some(at(31.0));
-        assert_eq!(resolve_status(Some(AgentStatus::Idle), &pty, at(31.1)), AgentStatus::Idle);
+        assert_eq!(resolve_status(AgentStatus::Idle, &pty, at(31.1)), AgentStatus::Idle);
     }
 
     /// Reproduced live: a settled `Complete` still alternated `busy`/`complete`
@@ -340,12 +348,12 @@ mod tests {
             let blip = lone_repaint(age);
             assert!(!blip.output_active(NOW), "{age}");
             assert_eq!(
-                resolve_status(Some(AgentStatus::Complete), &blip, NOW),
+                resolve_status(AgentStatus::Complete, &blip, NOW),
                 AgentStatus::Complete,
                 "{age}"
             );
             assert_eq!(
-                resolve_status(Some(AgentStatus::Waiting), &blip, NOW),
+                resolve_status(AgentStatus::Waiting, &blip, NOW),
                 AgentStatus::Waiting,
                 "{age}"
             );
@@ -359,7 +367,7 @@ mod tests {
     fn a_lone_repaint_does_not_count_as_the_agent_resuming() {
         let pty = PtySignal { attention_at_ms: Some(NOW - 30_000), ..lone_repaint(3_000) };
         assert!(pty.attention_pending(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Busy), &pty, NOW), AgentStatus::Waiting);
+        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Waiting);
     }
 
     /// The rule must not swallow real work: output going for
@@ -379,6 +387,6 @@ mod tests {
             ..Default::default()
         };
         assert!(sustained.output_active(NOW));
-        assert_eq!(resolve_status(Some(AgentStatus::Waiting), &sustained, NOW), AgentStatus::Busy);
+        assert_eq!(resolve_status(AgentStatus::Waiting, &sustained, NOW), AgentStatus::Busy);
     }
 }

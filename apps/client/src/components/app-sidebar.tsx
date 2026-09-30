@@ -1,4 +1,4 @@
-import { DotCount } from "@/components/agentboard-bits";
+import { RollupDots } from "@/components/agentboard-bits";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -63,9 +63,7 @@ export function AppSidebar() {
                   {showBadge && (
                     <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground">
                       {rollup.total}
-                      {rollup.busy > 0 && <DotCount status="busy" n={rollup.busy} />}
-                      {rollup.waiting > 0 && <DotCount status="waiting" n={rollup.waiting} />}
-                      {rollup.error > 0 && <DotCount status="error" n={rollup.error} />}
+                      <RollupDots r={rollup} />
                       {rollup.compact > 0 && (
                         <span className="text-sky-500" title="cold sessions worth compacting">
                           ❄{rollup.compact}

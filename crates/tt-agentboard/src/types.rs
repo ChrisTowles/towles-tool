@@ -16,16 +16,19 @@ use serde::{Deserialize, Serialize};
 pub const JOURNAL_IDLE_TIMEOUT_MS: i64 = 120_000;
 
 /// Follows `claude agents`: `busy` = working, `waiting` = blocked on the user,
-/// `idle` = alive at the prompt. The terminals have no CLI equivalent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// `idle` = alive at the prompt. The terminals have no CLI equivalent, and nor
+/// does `background`: at the prompt, but its background agents are still out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentStatus {
+    #[default]
     Idle,
     Busy,
     Complete,
     Error,
     Waiting,
     Interrupted,
+    Background,
 }
 
 /// Notification wording for [`crate::bridge::session_needs`], never an affordance.
@@ -40,6 +43,25 @@ impl AgentStatus {
     /// Finished a turn, awaiting acknowledgement.
     pub fn is_terminal(self) -> bool {
         matches!(self, AgentStatus::Complete | AgentStatus::Error | AgentStatus::Interrupted)
+    }
+
+    /// Work is happening: its own turn, or background agents it launched.
+    pub fn is_working(self) -> bool {
+        matches!(self, AgentStatus::Busy | AgentStatus::Background)
+    }
+
+    /// Headline precedence when one pane holds several threads: attention,
+    /// then work, then terminal, then idle.
+    pub fn rank(self) -> u8 {
+        match self {
+            AgentStatus::Waiting => 6,
+            AgentStatus::Error => 5,
+            AgentStatus::Busy => 4,
+            AgentStatus::Background => 3,
+            AgentStatus::Interrupted => 2,
+            AgentStatus::Complete => 1,
+            AgentStatus::Idle => 0,
+        }
     }
 }
 
@@ -91,6 +113,9 @@ pub struct AgentEventDetails {
     pub subagent_count: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#loop: Option<LoopInfo>,
+    /// Background agents launched and not yet reported back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_agents: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -320,8 +345,8 @@ mod tests {
         for s in [
             AgentStatus::Idle,
             AgentStatus::Busy,
-            AgentStatus::Idle,
             AgentStatus::Waiting,
+            AgentStatus::Background,
         ] {
             assert!(!s.is_terminal());
         }

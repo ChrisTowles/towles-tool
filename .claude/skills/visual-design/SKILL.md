@@ -16,7 +16,8 @@ specimens, token/recipe tables, the ΔE rationale — is
 
 - **Status dots mirror `statusColor()`** (`lib/agentboard.ts`) exactly; a new
   color implies a new state. Busy is cyan (never amber/yellow — that's the
-  needs-you accent); interrupted is orange-800 (orange-500 sits inside both
+  needs-you accent), and background (at the prompt, its background agents
+  still out) is a steady cyan-700; interrupted is orange-800 (orange-500 sits inside both
   amber's and red's confusion radius). Before adding/tuning any hue, check
   OKLab ΔE by hand against every color it can sit next to; under ~15 between
   co-occurring colors is a real risk, not a nitpick.

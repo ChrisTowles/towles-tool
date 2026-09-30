@@ -66,7 +66,7 @@ pub fn stamp_pty_state(
                     && let Some(state) = session.agent_state.as_mut()
                 {
                     state.status =
-                        tt_agentboard::pty_status::resolve_status(Some(state.status), signal, now);
+                        tt_agentboard::pty_status::resolve_status(state.status, signal, now);
                 }
                 // A stopped shell's last-known ports say nothing about now.
                 session.port_drift = if session.live {

@@ -56,6 +56,7 @@ import {
   modelLetter,
   needsCompact,
   statusColor,
+  type AgentRollup,
   type AgentStatus,
   type CommitStat,
   type FolderData,
@@ -192,6 +193,20 @@ export function Dot({ session }: { session: SessionData }) {
       </Hint>
     );
   }
+  if (st === "background") {
+    const n = session.agentState?.details?.backgroundAgents ?? 0;
+    const agents = n > 0 ? `${n} background agent${n > 1 ? "s" : ""}` : "background agents";
+    return (
+      <Hint label={`agent idle — ${agents} still running, not waiting on you`}>
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full ring-2 ring-cyan-700/25",
+            statusColor("background"),
+          )}
+        />
+      </Hint>
+    );
+  }
   return (
     <Hint label={st ? `agent ${st}` : "shell running, no agent"}>
       <span
@@ -218,6 +233,13 @@ export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
       />
       {n}
     </span>
+  );
+}
+
+/** A rollup's per-status counts, in the order both the rail and sidebar show. */
+export function RollupDots({ r }: { r: AgentRollup }) {
+  return (["busy", "background", "waiting", "error"] as const).map(
+    (status) => r[status] > 0 && <DotCount key={status} status={status} n={r[status]} />,
   );
 }
 

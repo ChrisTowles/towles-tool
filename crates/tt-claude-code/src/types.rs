@@ -53,6 +53,135 @@ pub struct TranscriptEntry {
     pub entrypoint: Option<String>,
     #[serde(rename = "sessionKind", default)]
     pub session_kind: Option<String>,
+    /// The fields of a tool result that name a background agent. Any other
+    /// shape (most tools log a string or a big object) reads as the default.
+    #[serde(rename = "toolUseResult", default)]
+    pub tool_use_result: Option<ToolUseResult>,
+    /// A `queue-operation` line's queued text; `None` for any other shape.
+    #[serde(default, deserialize_with = "string_or_none")]
+    pub content: Option<String>,
+}
+
+/// See [`TranscriptEntry::tool_use_result`]. Read field by field, skipping the
+/// rest, so a multi-megabyte `Read` result is never buffered.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ToolUseResult {
+    /// `async_launched` / `teammate_spawned` for a background `Agent` launch.
+    pub status: Option<String>,
+    pub agent_id: Option<String>,
+    pub name: Option<String>,
+    /// `SendMessage`: whether it was delivered.
+    pub success: Option<bool>,
+    pub resumed_agent_id: Option<String>,
+    /// `SendMessage` to a teammate: `@<name>`.
+    pub routing_target: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for ToolUseResult {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(ToolUseResultVisitor)
+    }
+}
+
+struct ToolUseResultVisitor;
+
+/// A visitor's arms for every shape it doesn't read: drained, then `default()`.
+macro_rules! other_shapes_are_default {
+    ($out:ty) => {
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<$out, A::Error> {
+            while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+            Ok(<$out>::default())
+        }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<$out, E> {
+            Ok(<$out>::default())
+        }
+        fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<$out, E> {
+            Ok(<$out>::default())
+        }
+        fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<$out, E> {
+            Ok(<$out>::default())
+        }
+        fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<$out, E> {
+            Ok(<$out>::default())
+        }
+        fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<$out, E> {
+            Ok(<$out>::default())
+        }
+    };
+}
+
+impl<'de> serde::de::Visitor<'de> for ToolUseResultVisitor {
+    type Value = ToolUseResult;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a tool result")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(
+        self,
+        mut map: A,
+    ) -> Result<ToolUseResult, A::Error> {
+        #[derive(Deserialize)]
+        struct Routing {
+            #[serde(default)]
+            target: Option<String>,
+        }
+        let mut r = ToolUseResult::default();
+        while let Some(key) = map.next_key::<std::borrow::Cow<'de, str>>()? {
+            let slot = match key.as_ref() {
+                "status" => &mut r.status,
+                "agentId" => &mut r.agent_id,
+                "name" => &mut r.name,
+                "resumedAgentId" => &mut r.resumed_agent_id,
+                "success" => {
+                    r.success = map.next_value::<Value>()?.as_bool();
+                    continue;
+                }
+                "routing" => {
+                    r.routing_target = map.next_value::<Option<Routing>>()?.and_then(|r| r.target);
+                    continue;
+                }
+                _ => {
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                    continue;
+                }
+            };
+            *slot = map.next_value::<Value>()?.as_str().map(str::to_string);
+        }
+        Ok(r)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<ToolUseResult, E> {
+        Ok(ToolUseResult::default())
+    }
+
+    other_shapes_are_default!(ToolUseResult);
+}
+
+fn string_or_none<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    struct StringVisitor;
+    impl<'de> serde::de::Visitor<'de> for StringVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("anything")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Option<String>, E> {
+            Ok(Some(s.to_string()))
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut m: A,
+        ) -> Result<Option<String>, A::Error> {
+            while m.next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?.is_some() {}
+            Ok(None)
+        }
+
+        other_shapes_are_default!(Option<String>);
+    }
+    d.deserialize_any(StringVisitor)
 }
 
 impl TranscriptEntry {
@@ -201,6 +330,27 @@ impl<'a> ToolUse<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_use_result_reads_agent_fields_and_tolerates_every_other_shape() {
+        let e: TranscriptEntry = serde_json::from_str(
+            r#"{"type":"user","toolUseResult":{"status":"teammate_spawned","name":"t","prompt":"x",
+                "routing":{"target":"@t","sender":"lead"},"success":true,"big":[1,{"a":2}]}}"#,
+        )
+        .unwrap();
+        let r = e.tool_use_result.unwrap();
+        assert_eq!(r.status.as_deref(), Some("teammate_spawned"));
+        assert_eq!(r.name.as_deref(), Some("t"));
+        assert_eq!(r.routing_target.as_deref(), Some("@t"));
+        assert_eq!(r.success, Some(true));
+
+        for other in [r#""Error: exit 1""#, "[1,2]", "null", "true", "3"] {
+            let line = format!(r#"{{"type":"user","toolUseResult":{other},"content":{{"a":1}}}}"#);
+            let e: TranscriptEntry = serde_json::from_str(&line).unwrap();
+            assert_eq!(e.tool_use_result.unwrap_or_default(), ToolUseResult::default(), "{other}");
+            assert_eq!(e.content, None);
+        }
+    }
     use crate::parse::parse_transcript;
 
     #[test]

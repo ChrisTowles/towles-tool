@@ -152,7 +152,6 @@ pub struct Engine {
     /// store-free. **Records, not directories**: an entry puts a row on the rail
     /// whether or not anything exists at its `dir`.
     task_worktrees: Vec<tt_store::RailWorktree>,
-    seeded_once: bool,
     /// Sticky agent→PTY attribution, kept while the tracker holds the thread, so
     /// an exited agent stays on the pane it ran in rather than drifting.
     thread_sessions: HashMap<String, String>,
@@ -266,7 +265,6 @@ impl Engine {
             compact_recommend_percent,
             show_unmanaged_worktrees,
             task_worktrees: Vec::new(),
-            seeded_once: false,
             thread_sessions: HashMap::new(),
             scope,
         }
@@ -505,11 +503,9 @@ impl Engine {
         for watcher in &mut self.watchers {
             watcher.scan(&mut ctx, now);
         }
-        let seed = !self.seeded_once;
         for event in ctx.events {
-            self.tracker.apply_event(event, seed);
+            self.tracker.apply_event(event);
         }
-        self.seeded_once = true;
     }
 
     /// The tracked checkout whose cached `linked_worktree_dirs` lists `dir` — never
@@ -997,7 +993,6 @@ impl Engine {
             compact_recommend_percent: 80,
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
             task_worktrees: Vec::new(),
-            seeded_once: false,
             thread_sessions: HashMap::new(),
             scope: InstanceScope::Any,
         }
