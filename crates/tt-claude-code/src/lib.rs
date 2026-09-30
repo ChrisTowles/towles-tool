@@ -32,5 +32,5 @@ pub use parse::{parse_transcript, parse_transcript_file};
 pub use programmatic::session_is_programmatic;
 pub use prompts::{UserPrompt, user_prompt_blob, user_prompts, user_prompts_with_timestamps};
 pub use title::{session_title, session_title_file, session_title_str};
-pub use types::{CacheCreation, Content, Message, ToolUse, TranscriptEntry, Usage};
+pub use types::{CacheCreation, Content, Message, ToolUse, ToolUseResult, TranscriptEntry, Usage};
 pub use usage::{UsageTotals, usage_totals, usage_totals_file, usage_totals_str};

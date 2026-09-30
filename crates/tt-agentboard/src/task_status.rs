@@ -15,7 +15,6 @@
 use tt_store::Store;
 
 use crate::bridge::StatePayload;
-use crate::types::AgentStatus;
 
 /// Sync every open, worktree-backed task's status to whether its folder
 /// currently has a live, running agent. Returns how many rows changed.
@@ -43,15 +42,13 @@ pub fn sync_worktree_task_statuses(
 }
 
 /// A folder counts as "running" when one of its PTYs is both open (`live`)
-/// and has an attributed agent whose latest status is [`AgentStatus::Busy`]
-/// — idle/waiting/terminal states are not "running work", just a live shell.
+/// and has an attributed agent that [`AgentStatus::is_working`].
 fn folder_has_running_agent(payload: &StatePayload, dir: &str) -> bool {
     payload.repos.iter().flat_map(|r| &r.folders).any(|f| {
         f.dir == dir
-            && f.sessions.iter().any(|s| {
-                s.live
-                    && matches!(s.agent_state.as_ref().map(|e| e.status), Some(AgentStatus::Busy))
-            })
+            && f.sessions
+                .iter()
+                .any(|s| s.live && s.agent_state.as_ref().is_some_and(|e| e.status.is_working()))
     })
 }
 
@@ -60,7 +57,7 @@ mod tests {
     use tt_store::Store;
 
     use super::*;
-    use crate::types::{AgentEvent, FolderData, RepoData, SessionData};
+    use crate::types::{AgentEvent, AgentStatus, FolderData, RepoData, SessionData};
 
     /// A `FolderData` with just the fields this module reads set; the rest
     /// are inert.
@@ -132,6 +129,19 @@ mod tests {
 
         // Idempotent: running it again with the same payload changes nothing.
         assert_eq!(sync_worktree_task_statuses(&s, &p, 11).unwrap(), 0);
+    }
+
+    #[test]
+    fn background_agents_out_keep_a_task_doing() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("ship it", "doing", None, None, 1).unwrap();
+        s.set_task_worktree(t.id, "/repos/x", Some("o/x"), Some("feat/y"), Some("/repos/x/wt"))
+            .unwrap();
+        let p = payload(vec![repo(vec![folder(
+            "/repos/x/wt",
+            vec![session(true, Some(AgentStatus::Background))],
+        )])]);
+        assert_eq!(sync_worktree_task_statuses(&s, &p, 10).unwrap(), 0);
     }
 
     #[test]

@@ -366,18 +366,7 @@ pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_m
 /// the ended thread — its stale model, context and cold cache would otherwise
 /// headline over the conversation actually on screen.
 fn pick_state(agents: &[AgentEvent], live: impl Fn(&AgentEvent) -> bool) -> Option<AgentEvent> {
-    agents.iter().max_by_key(|e| (live(e), status_rank(e.status), e.ts)).cloned()
-}
-
-fn status_rank(s: AgentStatus) -> u8 {
-    match s {
-        AgentStatus::Waiting => 5,
-        AgentStatus::Error => 4,
-        AgentStatus::Busy => 3,
-        AgentStatus::Interrupted => 2,
-        AgentStatus::Complete => 1,
-        AgentStatus::Idle => 0,
-    }
+    agents.iter().max_by_key(|e| (live(e), e.status.rank(), e.ts)).cloned()
 }
 
 /// Start a new top-level [`RepoData`] row: the first entry seen for a `common_dir`
@@ -490,7 +479,7 @@ mod tests {
     #[test]
     fn folders_map_fields_and_seed_sessions() {
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"));
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         store.ensure_default("/r/beta", 1);
@@ -882,6 +871,7 @@ mod tests {
         assert!(!session_needs(&session(true, Some(AgentStatus::Complete), false)));
         assert!(session_needs(&session(true, Some(AgentStatus::Interrupted), true)));
         assert!(!session_needs(&session(true, Some(AgentStatus::Busy), false)));
+        assert!(!session_needs(&session(true, Some(AgentStatus::Background), true)));
         assert!(!session_needs(&session(true, Some(AgentStatus::Idle), false)));
         assert!(!session_needs(&session(true, None, false)));
     }
@@ -890,7 +880,7 @@ mod tests {
     fn assemble_time_needs_is_zero_before_stamping() {
         // live=false at assemble, so even a waiting agent yields needs=0.
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"));
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         let git = HashMap::new();
@@ -903,7 +893,7 @@ mod tests {
     #[test]
     fn recompute_needs_bubbles_folder_to_repo() {
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"));
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         let git = HashMap::new();
@@ -926,7 +916,7 @@ mod tests {
     #[test]
     fn needs_since_stamps_on_entry_holds_and_restamps_on_reentry() {
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Waiting, "ta"));
         let mut store = SessionStore::new(None);
         store.ensure_default("/r/alpha", 1);
         let git = HashMap::new();
@@ -945,7 +935,7 @@ mod tests {
         assert_eq!(p.repos[0].folders[0].sessions[0].needs_since_ms, Some(100));
 
         let mut busy = AgentTracker::new();
-        busy.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
+        busy.apply_event(ev("alpha", AgentStatus::Busy, "ta"));
         let mut p = build(&busy);
         p.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut p, &mut since, 800);
@@ -960,7 +950,7 @@ mod tests {
     #[test]
     fn attribute_routes_agents_to_matching_session() {
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"));
         let mut store = SessionStore::new(None);
         let s1 = store.add("/r/alpha", Some("one"), 1);
         let s2 = store.add("/r/alpha", Some("two"), 2);
@@ -982,7 +972,7 @@ mod tests {
         // pid dies the moment the process does, while the 60s CLI snapshot still
         // lists it — so the agent must stay on pane two.
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Complete, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Complete, "ta"));
         let mut store = SessionStore::new(None);
         let s1 = store.add("/r/alpha", Some("one"), 1);
         let s2 = store.add("/r/alpha", Some("two"), 2);
@@ -1003,7 +993,7 @@ mod tests {
         // Nothing attributed this thread (no `/proc` on macOS); the default
         // beats hiding a running agent.
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Busy, "tz"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Busy, "tz"));
         let mut store = SessionStore::new(None);
         let s1 = store.add("/r/alpha", Some("one"), 1);
         let s2 = store.add("/r/alpha", Some("two"), 2);
@@ -1022,7 +1012,7 @@ mod tests {
         // Two checkouts share the basename `alpha`, so both read the same
         // tracker bucket; this thread is the other checkout's.
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"));
         let mut store = SessionStore::new(None);
         let mine = store.add("/r/one/alpha", Some("one"), 1);
         let theirs = store.add("/r/two/alpha", Some("one"), 2);
@@ -1042,8 +1032,8 @@ mod tests {
         // its exit status outranks the fresh one's idle — its stale cache must not
         // headline.
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Interrupted, "ended"), false);
-        tracker.apply_event(ev("alpha", AgentStatus::Idle, "fresh"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Interrupted, "ended"));
+        tracker.apply_event(ev("alpha", AgentStatus::Idle, "fresh"));
         let pinned = HashMap::from([(
             "alpha".to_string(),
             vec![instance_key("claude-code", Some("fresh"))],
@@ -1068,7 +1058,7 @@ mod tests {
         // records runs in another app instance (sessions.json is shared) — it
         // must not land on the default session, even when there is only one.
         let mut tracker = AgentTracker::new();
-        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"), false);
+        tracker.apply_event(ev("alpha", AgentStatus::Busy, "ta"));
         let mut store = SessionStore::new(None);
         store.add("/r/alpha", Some("one"), 1);
         let git = HashMap::new();
@@ -1111,7 +1101,7 @@ mod tests {
         );
 
         let mut tracker2 = AgentTracker::new();
-        tracker2.apply_event(ev("alpha", AgentStatus::Waiting, "ta"), false);
+        tracker2.apply_event(ev("alpha", AgentStatus::Waiting, "ta"));
         let payload2 = assemble_with(&entries, &git, &tracker2, &store, &no_attr, &supplemental);
         let s2 = &payload2.repos[0].folders[0].sessions[0];
         assert_eq!(s2.agent_state.as_ref().unwrap().status, AgentStatus::Waiting);

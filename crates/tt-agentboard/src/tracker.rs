@@ -6,7 +6,7 @@
 use indexmap::{IndexMap, IndexSet};
 use std::collections::{HashMap, HashSet};
 
-use crate::types::AgentEvent;
+use crate::types::{AgentEvent, AgentStatus};
 
 const TERMINAL_PRUNE_MS: i64 = 5 * 60 * 1000;
 
@@ -26,7 +26,6 @@ pub struct AgentTracker {
     instances: IndexMap<String, IndexMap<String, AgentEvent>>,
     /// Per-instance unseen tracking, keyed by `session\0instanceKey`.
     unseen_instances: IndexSet<String>,
-    active: HashSet<String>,
     /// session → pinned instance keys (agents backed by a live pane process).
     pinned_keys: HashMap<String, HashSet<String>>,
 }
@@ -54,9 +53,8 @@ impl AgentTracker {
         }
     }
 
-    /// Record an event. `seed` marks pre-connection state, which always counts as
-    /// unseen when terminal.
-    pub fn apply_event(&mut self, event: AgentEvent, seed: bool) {
+    /// Record an event. A terminal one is unseen until [`Self::mark_seen`].
+    pub fn apply_event(&mut self, event: AgentEvent) {
         let key = instance_key(&event.agent, event.thread_id.as_deref());
         let session = event.session.clone();
         let status = event.status;
@@ -65,9 +63,7 @@ impl AgentTracker {
 
         let ukey = unseen_key(&session, &key);
         if status.is_terminal() {
-            if seed || !self.active.contains(&session) {
-                self.unseen_instances.insert(ukey);
-            }
+            self.unseen_instances.insert(ukey);
         } else {
             self.unseen_instances.shift_remove(&ukey);
         }
@@ -113,16 +109,14 @@ impl AgentTracker {
         true
     }
 
-    /// Prune "running" instances older than `timeout_ms` (unless pinned).
-    pub fn prune_stuck(&mut self, timeout_ms: i64, now_ms: i64) {
+    /// Remove every unpinned instance `drop` selects, then any emptied session.
+    fn prune_where(&mut self, drop: impl Fn(&Self, &str, &str, &AgentEvent) -> bool) {
         let sessions: Vec<String> = self.instances.keys().cloned().collect();
         for session in sessions {
             let removable: Vec<String> = self.instances[&session]
                 .iter()
                 .filter(|(key, event)| {
-                    event.status == crate::types::AgentStatus::Busy
-                        && now_ms - event.ts > timeout_ms
-                        && !self.is_pinned(&session, key)
+                    !self.is_pinned(&session, key) && drop(self, &session, key, event)
                 })
                 .map(|(key, _)| key.clone())
                 .collect();
@@ -133,38 +127,21 @@ impl AgentTracker {
         }
     }
 
+    /// Prune "running" instances older than `timeout_ms` (unless pinned).
+    pub fn prune_stuck(&mut self, timeout_ms: i64, now_ms: i64) {
+        self.prune_where(|_, _, _, event| {
+            event.status == AgentStatus::Busy && now_ms - event.ts > timeout_ms
+        });
+    }
+
     /// Prune instances whose last activity is older than `timeout_ms`, optionally
     /// restricted to one status; skips pinned.
-    fn prune_by_age(
-        &mut self,
-        timeout_ms: i64,
-        only_status: Option<crate::types::AgentStatus>,
-        now_ms: i64,
-    ) {
-        let sessions: Vec<String> = self.instances.keys().cloned().collect();
-        for session in sessions {
-            let removable: Vec<String> = self.instances[&session]
-                .iter()
-                .filter(|(key, event)| {
-                    if let Some(s) = only_status
-                        && event.status != s
-                    {
-                        return false;
-                    }
-                    if self.is_pinned(&session, key) {
-                        return false;
-                    }
-                    let last_seen =
-                        event.details.as_ref().and_then(|d| d.last_activity_at).unwrap_or(event.ts);
-                    now_ms - last_seen > timeout_ms
-                })
-                .map(|(key, _)| key.clone())
-                .collect();
-            for key in removable {
-                self.remove_instance(&session, &key);
-            }
-            self.drop_if_empty(&session);
-        }
+    fn prune_by_age(&mut self, timeout_ms: i64, only_status: Option<AgentStatus>, now_ms: i64) {
+        self.prune_where(|_, _, _, event| {
+            let last_seen =
+                event.details.as_ref().and_then(|d| d.last_activity_at).unwrap_or(event.ts);
+            only_status.is_none_or(|s| event.status == s) && now_ms - last_seen > timeout_ms
+        });
     }
 
     /// Prune any instance whose last activity is older than `timeout_ms`.
@@ -174,29 +151,17 @@ impl AgentTracker {
 
     /// Prune "idle" instances older than `timeout_ms` unless pinned.
     pub fn prune_idle(&mut self, timeout_ms: i64, now_ms: i64) {
-        self.prune_by_age(timeout_ms, Some(crate::types::AgentStatus::Idle), now_ms);
+        self.prune_by_age(timeout_ms, Some(AgentStatus::Idle), now_ms);
     }
 
     /// Prune terminal instances older than the terminal timeout, but only if seen
     /// and not pinned.
     pub fn prune_terminal(&mut self, now_ms: i64) {
-        let sessions: Vec<String> = self.instances.keys().cloned().collect();
-        for session in sessions {
-            let removable: Vec<String> = self.instances[&session]
-                .iter()
-                .filter(|(key, event)| {
-                    event.status.is_terminal()
-                        && !self.unseen_instances.contains(&unseen_key(&session, key))
-                        && !self.is_pinned(&session, key)
-                        && now_ms - event.ts > TERMINAL_PRUNE_MS
-                })
-                .map(|(key, _)| key.clone())
-                .collect();
-            for key in removable {
-                self.remove_instance(&session, &key);
-            }
-            self.drop_if_empty(&session);
-        }
+        self.prune_where(|t, session, key, event| {
+            event.status.is_terminal()
+                && !t.unseen_instances.contains(&unseen_key(session, key))
+                && now_ms - event.ts > TERMINAL_PRUNE_MS
+        });
     }
 
     /// Whether any instance in the session is unseen.
@@ -257,8 +222,8 @@ mod tests {
     fn get_agents_sorted_newest_first_with_unseen_stamp() {
         let mut t = AgentTracker::new();
         // seed=true → terminal marked unseen.
-        t.apply_event(ev("s", "old", AgentStatus::Complete, 10), true);
-        t.apply_event(ev("s", "new", AgentStatus::Busy, 20), false);
+        t.apply_event(ev("s", "old", AgentStatus::Complete, 10));
+        t.apply_event(ev("s", "new", AgentStatus::Busy, 20));
         let agents = t.get_agents("s");
         assert_eq!(agents[0].agent, "new");
         assert_eq!(agents[1].agent, "old");
@@ -269,18 +234,18 @@ mod tests {
     #[test]
     fn non_terminal_event_clears_unseen() {
         let mut t = AgentTracker::new();
-        t.apply_event(ev("s", "a", AgentStatus::Complete, 1), true);
+        t.apply_event(ev("s", "a", AgentStatus::Complete, 1));
         assert!(t.is_unseen("s"));
         // Same instance goes back to running → seen again.
-        t.apply_event(ev("s", "a", AgentStatus::Busy, 2), false);
+        t.apply_event(ev("s", "a", AgentStatus::Busy, 2));
         assert!(!t.is_unseen("s"));
     }
 
     #[test]
     fn mark_seen_reports_only_the_first_clear() {
         let mut t = AgentTracker::new();
-        t.apply_event(ev("s1", "a", AgentStatus::Complete, 1), true);
-        t.apply_event(ev("s2", "b", AgentStatus::Error, 1), true);
+        t.apply_event(ev("s1", "a", AgentStatus::Complete, 1));
+        t.apply_event(ev("s2", "b", AgentStatus::Error, 1));
         assert!(t.mark_seen("s1"));
         assert!(!t.mark_seen("s1")); // already seen
         assert!(t.mark_seen("s2"));
@@ -289,8 +254,8 @@ mod tests {
     #[test]
     fn prune_stuck_removes_old_running_unless_pinned() {
         let mut t = AgentTracker::new();
-        t.apply_event(ev("s", "a", AgentStatus::Busy, 0), false);
-        t.apply_event(ev("s", "b", AgentStatus::Busy, 0), false);
+        t.apply_event(ev("s", "a", AgentStatus::Busy, 0));
+        t.apply_event(ev("s", "b", AgentStatus::Busy, 0));
         t.set_pinned_instances_multi(&HashMap::from([("s".to_string(), vec!["b".to_string()])]));
         t.prune_stuck(1000, 5000); // both are 5000ms old > 1000
         assert!(has(&t, "s", "b")); // b survived (pinned)
@@ -300,9 +265,9 @@ mod tests {
     #[test]
     fn prune_terminal_keeps_unseen_and_pinned() {
         let mut t = AgentTracker::new();
-        t.apply_event(ev("s", "seen", AgentStatus::Complete, 0), true);
+        t.apply_event(ev("s", "seen", AgentStatus::Complete, 0));
         t.mark_seen("s"); // clears both; the second lands unseen again below
-        t.apply_event(ev("s", "unseen", AgentStatus::Complete, 0), true);
+        t.apply_event(ev("s", "unseen", AgentStatus::Complete, 0));
         t.prune_terminal(10 * 60 * 1000); // > TERMINAL_PRUNE_MS
         assert!(!has(&t, "s", "seen")); // seen terminal pruned
         assert!(has(&t, "s", "unseen")); // unseen kept
@@ -311,8 +276,8 @@ mod tests {
     #[test]
     fn prune_idle_only_targets_idle() {
         let mut t = AgentTracker::new();
-        t.apply_event(ev("s", "idle", AgentStatus::Idle, 0), false);
-        t.apply_event(ev("s", "run", AgentStatus::Busy, 0), false);
+        t.apply_event(ev("s", "idle", AgentStatus::Idle, 0));
+        t.apply_event(ev("s", "run", AgentStatus::Busy, 0));
         t.prune_idle(1000, 5000);
         assert!(!has(&t, "s", "idle")); // idle pruned
         assert!(has(&t, "s", "run")); // running kept
@@ -323,7 +288,7 @@ mod tests {
         let mut t = AgentTracker::new();
         let mut e = ev("s", "a", AgentStatus::Busy, 0);
         e.details = Some(AgentEventDetails { last_activity_at: Some(4500), ..Default::default() });
-        t.apply_event(e, false);
+        t.apply_event(e);
         // event ts is 0 (very old) but lastActivityAt is recent → not stale.
         t.prune_stale(1000, 5000);
         assert!(has(&t, "s", "a"));

@@ -4,7 +4,7 @@
 //! sub-agents, `/loop` wakeups, the first-prompt thread name).
 //!
 //! Per scan: list live agents, resolve each to a session by cwd, then refine
-//! status (`refine_busy`/`refine_idle`). A session that vanished gets one final
+//! status (`backend_status`). A session that vanished gets one final
 //! journal read and a terminal emit. Deliberate limit: one that exited before
 //! the server started never appears at all.
 
@@ -16,8 +16,9 @@ use tt_claude_code::{TranscriptEntry, parse_transcript};
 use crate::claude_cli::CliAgent;
 use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo};
 use crate::watcher::{AgentWatcher, JSONL_SUFFIX, WatcherContext};
+use crate::watchers::background::BackgroundAgents;
 use crate::watchers::claude_usage::{ClaudeUsageSummary, extract_usage_summary};
-use crate::watchers::subagents::{self, SubagentRollup, SubagentUsage};
+use crate::watchers::subagents::{SubagentRollup, SubagentUsage};
 
 const NAME: &str = "claude-code";
 /// Shared CLI snapshot TTL. Consumers tick every 2-3s regardless, so this
@@ -105,11 +106,10 @@ pub fn find_journal(projects_dir: &Path, cwd: &str, session_id: &str) -> Option<
 /// Bounded reads keep large transcripts cheap: the name is near the top, the
 /// status near the bottom.
 pub fn enrich_from_transcript(path: &Path) -> (Option<String>, AgentStatus) {
-    const WINDOW: u64 = 128 * 1024;
-    let head = read_window(path, 0, WINDOW);
+    let head = read_window(path, 0, TAIL_WINDOW);
     let thread_name = parse_transcript(&head).iter().find_map(extract_thread_name);
     let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let tail = read_window(path, len.saturating_sub(WINDOW), WINDOW);
+    let tail = read_window(path, len.saturating_sub(TAIL_WINDOW), TAIL_WINDOW);
     let status = parse_transcript(&tail)
         .iter()
         .rev()
@@ -150,9 +150,12 @@ fn read_from_offset(path: &Path, offset: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
+/// Bytes read for a bounded look at a transcript's head or tail.
+pub(super) const TAIL_WINDOW: u64 = 128 * 1024;
+
 /// Partial JSONL lines at either edge fail to parse and are dropped by
 /// `parse_transcript`, so no newline alignment is needed.
-fn read_window(path: &Path, start: u64, max: u64) -> String {
+pub(super) fn read_window(path: &Path, start: u64, max: u64) -> String {
     use std::io::{Read, Seek, SeekFrom};
     let Ok(mut f) = std::fs::File::open(path) else {
         return String::new();
@@ -230,77 +233,37 @@ fn is_placeholder_model(model: &str) -> bool {
     model.starts_with('<')
 }
 
-fn summary_to_details(s: &ClaudeUsageSummary) -> AgentEventDetails {
-    AgentEventDetails {
-        // Empty means "unknown", so `SessionState`'s known model can fill in.
-        model: Some(s.model.clone()).filter(|m| !m.is_empty()),
-        context_used: Some(s.context_used),
-        context_max: Some(s.context_max),
-        cache_expires_at: s.cache_expires_at,
-        cache_ttl_ms: s.cache_ttl_ms,
-        last_activity_at: Some(s.last_activity_at),
-        last_tool: None,
-        subagents: None,
-        subagent_context_used: None,
-        subagent_count: None,
-        r#loop: None,
-    }
-}
-
-fn build_details(
-    usage: Option<&ClaudeUsageSummary>,
-    last_tool: Option<&str>,
-    subagents: &SubagentRollup,
-    loop_state: Option<&LoopInfo>,
-) -> Option<AgentEventDetails> {
-    let has_subagents = subagents.count > 0;
-    if usage.is_none() && last_tool.is_none() && !has_subagents && loop_state.is_none() {
-        return None;
-    }
-    let mut base = usage.map(summary_to_details).unwrap_or_default();
-    if let Some(t) = last_tool {
-        base.last_tool = Some(t.to_string());
-    }
-    if has_subagents {
-        base.subagent_count = Some(subagents.count);
-        base.subagent_context_used = Some(subagents.total_context);
-        if !subagents.active.is_empty() {
-            base.subagents = Some(subagents.active.clone());
-        }
-    }
-    if let Some(l) = loop_state {
-        base.r#loop = Some(l.clone());
-    }
-    Some(base)
-}
-
-/// A CLI `idle` takes the journal's view where the UI treats it specially:
-/// `complete` (unseen-✓ flow) or `waiting`; anything else is plain `idle`.
-fn refine_idle(journal_status: AgentStatus) -> AgentStatus {
-    match journal_status {
-        AgentStatus::Complete => AgentStatus::Complete,
-        AgentStatus::Waiting => AgentStatus::Waiting,
-        _ => AgentStatus::Idle,
-    }
-}
-
 /// How long a CLI `busy`/`waiting` is trusted past the journal's turn-end:
 /// past ordinary CLI lag, short enough that a stuck session self-heals.
 const STALE_BUSY_JOURNAL_MS: i64 = 60_000;
 
-/// The `busy`-side counterpart to `refine_idle`. Nothing re-derives the CLI's
-/// status while the process stays listed, so bookkeeping that fails to flip
-/// back would show the agent "working" forever. Only a journal that recorded a
-/// plain no-tool-call final response, with nothing appended since, counts.
-fn refine_busy(
-    cli_status: AgentStatus,
-    journal_status: AgentStatus,
+/// The CLI's verdict refined by the journal. A CLI `idle` takes the journal's
+/// `complete` (unseen-✓ flow) or `waiting`. A CLI `busy`/`waiting` is never
+/// re-derived while the process stays listed, so a journal ending in a plain
+/// final response with nothing appended since overrules it. Last, a finished
+/// turn with background agents still out is not waiting on you — their reports
+/// start the next one; a question (`Waiting`) still is.
+fn backend_status(
+    cli: Option<AgentStatus>,
+    journal: AgentStatus,
     journal_silence_ms: i64,
+    background: usize,
 ) -> AgentStatus {
-    if journal_status == AgentStatus::Complete && journal_silence_ms > STALE_BUSY_JOURNAL_MS {
-        AgentStatus::Complete
-    } else {
-        cli_status
+    let status = match cli {
+        Some(AgentStatus::Idle) | None => match journal {
+            AgentStatus::Complete | AgentStatus::Waiting => journal,
+            _ => AgentStatus::Idle,
+        },
+        Some(_)
+            if journal == AgentStatus::Complete && journal_silence_ms > STALE_BUSY_JOURNAL_MS =>
+        {
+            AgentStatus::Complete
+        }
+        Some(cli) => cli,
+    };
+    match status {
+        AgentStatus::Idle | AgentStatus::Complete if background > 0 => AgentStatus::Background,
+        other => other,
     }
 }
 
@@ -311,11 +274,14 @@ fn exit_status(journal_status: AgentStatus) -> AgentStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+/// What the last emit carried; a scan emits again only when this changes.
+type Emitted = (AgentStatus, Option<String>, Option<AgentEventDetails>);
+
+#[derive(Debug, Clone, Default)]
 struct SessionState {
-    emitted_status: Option<AgentStatus>,
+    emitted: Option<Emitted>,
     journal_status: AgentStatus,
-    /// Last scan that consumed new bytes; feeds `refine_busy`'s staleness
+    /// Last scan that consumed new bytes; feeds `backend_status`'s staleness
     /// check. `0` until first read.
     journal_updated_at: i64,
     file_offset: u64,
@@ -337,63 +303,48 @@ struct SessionState {
     context_max: Option<i64>,
     last_tool: Option<String>,
     subagents: SubagentRollup,
-    subagent_sig: String,
     subagent_usage: SubagentUsage,
     loop_state: Option<LoopInfo>,
-    /// Part of the emit gate, so usage deltas broadcast with no status change.
-    last_emit_sig: Option<String>,
+    background: BackgroundAgents,
+    /// `startedAt` of the process now running this session.
+    process_started_at: Option<i64>,
     session: Option<String>,
     cli_name: Option<String>,
 }
 
-impl Default for SessionState {
-    fn default() -> Self {
-        Self {
-            emitted_status: None,
-            journal_status: AgentStatus::Idle,
-            journal_updated_at: 0,
-            file_offset: 0,
-            file_id: None,
-            head: Vec::new(),
-            journal_path: None,
-            thread_name: None,
-            usage: None,
-            model: None,
-            context_max: None,
-            last_tool: None,
-            subagents: SubagentRollup::default(),
-            subagent_sig: String::new(),
-            subagent_usage: SubagentUsage::default(),
-            loop_state: None,
-            last_emit_sig: None,
-            session: None,
-            cli_name: None,
-        }
-    }
-}
-
 impl SessionState {
-    fn details(&self) -> Option<AgentEventDetails> {
-        let from_tail = build_details(
-            self.usage.as_ref(),
-            self.last_tool.as_deref(),
-            &self.subagents,
-            self.loop_state.as_ref(),
-        );
-        // Worth an event alone: after a rotation there is nothing else to
-        // report yet, and `None` would blank a readout we can still answer.
-        let mut d = match from_tail {
-            Some(d) => d,
-            None if self.model.is_some() => AgentEventDetails::default(),
-            None => return None,
-        };
-        if d.model.is_none() {
-            d.model.clone_from(&self.model);
+    fn background_running(&self) -> usize {
+        self.background.running(self.process_started_at)
+    }
+
+    /// `None` only when there is nothing at all to report; a known model alone
+    /// is worth an event, or a rotation would blank a readout we can answer.
+    fn details(&self, background: usize) -> Option<AgentEventDetails> {
+        let sub = &self.subagents;
+        if self.usage.is_none()
+            && self.last_tool.is_none()
+            && sub.count == 0
+            && self.loop_state.is_none()
+            && self.model.is_none()
+            && background == 0
+        {
+            return None;
         }
-        if d.context_max.is_none() {
-            d.context_max = self.context_max;
-        }
-        Some(d)
+        let usage = self.usage.as_ref();
+        Some(AgentEventDetails {
+            model: self.model.clone(),
+            context_used: usage.map(|u| u.context_used),
+            context_max: self.context_max.or(usage.map(|u| u.context_max)),
+            cache_expires_at: usage.and_then(|u| u.cache_expires_at),
+            cache_ttl_ms: usage.and_then(|u| u.cache_ttl_ms),
+            last_activity_at: usage.map(|u| u.last_activity_at),
+            last_tool: self.last_tool.clone(),
+            subagents: (!sub.active.is_empty()).then(|| sub.active.clone()),
+            subagent_context_used: (sub.count > 0).then_some(sub.total_context),
+            subagent_count: (sub.count > 0).then_some(sub.count),
+            r#loop: self.loop_state.clone(),
+            background_agents: (background > 0).then_some(background as i64),
+        })
     }
 
     /// Silence is never an update: a summary naming no usable model leaves the
@@ -468,12 +419,6 @@ impl ClaudeCodeAgentWatcher {
             let dir = PathBuf::from(format!("{base}/subagents"));
             let rollup =
                 state.subagent_usage.scan(&dir, now_ms, crate::types::JOURNAL_IDLE_TIMEOUT_MS);
-            state.subagent_sig = format!(
-                "{}|{}|{}",
-                subagents::signature(&rollup.active),
-                rollup.total_context,
-                rollup.count
-            );
             state.subagents = rollup;
         }
 
@@ -486,8 +431,10 @@ impl ClaudeCodeAgentWatcher {
         // stale, not just the offset. A same-path replacement that grew past
         // the old offset is the same situation, caught by the inode — or, when
         // ext4 reuses the freed inode, by the head (see `SessionState::head`).
+        // Probed only when the file moved: an unchanged size is the idle case.
         let head_changed = !state.head.is_empty()
             && state.file_offset > 0
+            && size != state.file_offset
             && read_head(&path, state.head.len()).is_some_and(|h| h != state.head);
         let rotated = size < state.file_offset
             || (file_id.is_some() && state.file_id.is_some() && file_id != state.file_id)
@@ -499,6 +446,7 @@ impl ClaudeCodeAgentWatcher {
             state.usage = None;
             state.last_tool = None;
             state.loop_state = None;
+            state.background = BackgroundAgents::default();
             state.head.clear();
             // `model`/`context_max` survive: same session, same model, and
             // re-deriving costs a full assistant turn.
@@ -534,6 +482,7 @@ impl ClaudeCodeAgentWatcher {
             if let Some(s) = determine_status(entry) {
                 state.journal_status = s;
             }
+            state.background.observe(entry);
         }
         if let Some(usage) = extract_usage_summary(&parsed) {
             state.remember_identity(&usage);
@@ -547,14 +496,21 @@ impl ClaudeCodeAgentWatcher {
         }
     }
 
+    /// First-prompt text beats the CLI's interactive slugs (`proj-44`);
+    /// background sessions get descriptive CLI names.
+    fn event_parts(state: &SessionState, status: AgentStatus) -> Emitted {
+        let thread_name = state.thread_name.clone().or_else(|| state.cli_name.clone());
+        (status, thread_name, state.details(state.background_running()))
+    }
+
     fn emit(
         ctx: &mut dyn WatcherContext,
-        state: &SessionState,
-        status: AgentStatus,
+        session: &Option<String>,
+        (status, thread_name, details): Emitted,
         session_id: &str,
         now_ms: i64,
     ) {
-        let Some(session) = state.session.clone() else {
+        let Some(session) = session.clone() else {
             return;
         };
         ctx.emit(AgentEvent {
@@ -563,11 +519,9 @@ impl ClaudeCodeAgentWatcher {
             status,
             ts: now_ms,
             thread_id: Some(session_id.to_string()),
-            // First-prompt text beats the CLI's interactive slugs (`proj-44`);
-            // background agents get descriptive CLI names.
-            thread_name: state.thread_name.clone().or_else(|| state.cli_name.clone()),
+            thread_name,
             unseen: None,
-            details: state.details(),
+            details,
         });
     }
 }
@@ -593,35 +547,18 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
             let state = self.sessions.get_mut(&agent.session_id).unwrap();
             state.session = Some(session);
             state.cli_name = agent.name.clone();
+            state.process_started_at = agent.started_at;
 
-            let status = match agent.agent_status() {
-                Some(AgentStatus::Idle) | None => refine_idle(state.journal_status),
-                Some(other) => refine_busy(
-                    other,
-                    state.journal_status,
-                    now_ms.saturating_sub(state.journal_updated_at),
-                ),
-            };
-
-            // Gate: a status change, or a details change caught by signature.
-            let status_changed = state.emitted_status != Some(status);
-            let sig = format!(
-                "{}|{:?}|{:?}|{:?}|{:?}",
-                state.subagent_sig,
-                state.loop_state.as_ref().map(|l| l.next_wake_at),
-                state.usage.as_ref().map(|u| (u.context_used, u.cache_expires_at)),
-                state.thread_name,
-                // Outlives the usage summary it came from, so a newly-learned
-                // model has to open the gate on its own.
-                (&state.model, state.context_max),
+            let status = backend_status(
+                agent.agent_status(),
+                state.journal_status,
+                now_ms.saturating_sub(state.journal_updated_at),
+                state.background_running(),
             );
-            let details_changed = state.last_emit_sig.as_deref() != Some(sig.as_str());
-
-            if status_changed || details_changed {
-                state.emitted_status = Some(status);
-                state.last_emit_sig = Some(sig);
-                let state = state.clone();
-                Self::emit(ctx, &state, status, &agent.session_id, now_ms);
+            let parts = Self::event_parts(state, status);
+            if state.emitted.as_ref() != Some(&parts) {
+                state.emitted = Some(parts.clone());
+                Self::emit(ctx, &state.session, parts, &agent.session_id, now_ms);
             }
         }
 
@@ -633,12 +570,12 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
             let Some(state) = self.sessions.remove(&session_id) else {
                 continue;
             };
-            if state.session.is_none() || state.emitted_status.is_none() {
+            if state.emitted.is_none() {
                 // Never resolved/emitted — nothing on the board to finalize.
                 continue;
             }
-            let status = exit_status(state.journal_status);
-            Self::emit(ctx, &state, status, &session_id, now_ms);
+            let parts = Self::event_parts(&state, exit_status(state.journal_status));
+            Self::emit(ctx, &state.session, parts, &session_id, now_ms);
         }
     }
 }
@@ -705,7 +642,7 @@ mod tests {
     }
 
     fn write_journal(projects: &Path, cwd: &str, sid: &str, lines: &[&str]) -> PathBuf {
-        let dir = projects.join(cwd.replace('/', "-"));
+        let dir = projects.join(encode_project_dir_name(cwd));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("{sid}.jsonl"));
         let mut text = lines.join("\n");
@@ -749,7 +686,7 @@ mod tests {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-n", &[USER_LINE, RUNNING_LINE]);
         *f.agents.lock().unwrap() = vec![CliAgent {
-            // Falls through to `refine_idle`, trusting the journal outright.
+            // A CLI `idle` in `backend_status`, trusting the journal outright.
             status: None,
             ..cli_agent(100, "/home/u/proj", "sid-n", "busy")
         }];
@@ -904,6 +841,32 @@ mod tests {
         assert_eq!(by_thread["sid-done"], AgentStatus::Complete);
         assert_eq!(by_thread["sid-mid"], AgentStatus::Idle);
         assert_eq!(by_thread["sid-perm"], AgentStatus::Waiting);
+    }
+
+    #[test]
+    fn a_finished_turn_with_a_background_agent_out_is_background_until_it_reports() {
+        let mut f = fixture();
+        let launch = r#"{"type":"user","timestamp":"2026-09-30T22:00:00Z","toolUseResult":{"status":"async_launched","agentId":"a1"}}"#;
+        let path =
+            write_journal(&f.projects, "/home/u/a", "sid-bg", &[USER_LINE, launch, DONE_LINE]);
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-bg", "idle")];
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/a".into(), "a".into()));
+
+        f.watcher.scan(&mut ctx, 1_000);
+        let ev = ctx.events.last().unwrap();
+        assert_eq!(ev.status, AgentStatus::Background);
+        assert_eq!(ev.details.as_ref().unwrap().background_agents, Some(1));
+
+        let done = r#"{"type":"queue-operation","timestamp":"2026-09-30T22:05:00Z","content":"<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>"}"#;
+        let mut text = std::fs::read_to_string(&path).unwrap();
+        text.push_str(done);
+        text.push('\n');
+        std::fs::write(&path, text).unwrap();
+        f.watcher.scan(&mut ctx, 2_000);
+        let ev = ctx.events.last().unwrap();
+        assert_eq!(ev.status, AgentStatus::Complete);
+        assert_eq!(ev.details.as_ref().and_then(|d| d.background_agents), None);
     }
 
     #[test]

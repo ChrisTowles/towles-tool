@@ -6,6 +6,7 @@ import {
   folderHoldsNoWork,
   folderLastWorkedAt,
   humanizeFolderName,
+  isWorking,
   liveSessions,
   sessionNeeds,
   sessionSaid,
@@ -66,7 +67,7 @@ export function buildStandby(repos: RepoData[], now: number): Standby {
 
       const needing = folder.sessions.filter(sessionNeeds);
       if (needing.length > 0) rows.push(needsRow(repo, folder, needing, now));
-      else if (liveSessions(folder).some((s) => s.agentState?.status === "busy")) working += 1;
+      else if (liveSessions(folder).some(isWorking)) working += 1;
     }
   }
 

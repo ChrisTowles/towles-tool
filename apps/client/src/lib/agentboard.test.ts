@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agentRollup,
+  rollupAlertColor,
   cacheWarnMs,
   contextBand,
   hasSubagentSpend,
@@ -787,6 +788,11 @@ describe("sessionNeeds", () => {
     expect(sessionNeeds(session({ live: true, agentState: agent("busy") }))).toBe(false);
     expect(sessionNeeds(session({ live: true, agentState: agent("idle") }))).toBe(false);
     expect(sessionNeeds(session({ live: true }))).toBe(false);
+  });
+
+  it("stays calm for an agent whose background agents are still out", () => {
+    const bg = session({ live: true, unseen: true, agentState: agent("background") });
+    expect(sessionNeeds(bg)).toBe(false);
   });
 });
 
@@ -2078,6 +2084,14 @@ describe("agentRollup expiring count", () => {
     const r = agentRollup([repoOf([expiring, warm])], now, 30);
     expect(r.total).toBe(2);
     expect(r.expiring).toBe(1);
+  });
+
+  it("buckets background apart from busy and waiting, and colors it below busy", () => {
+    const bg = session({ live: true, agentState: agent("background") });
+    const r = agentRollup([repoOf([bg])], now, 30);
+    expect(r).toMatchObject({ total: 1, busy: 0, background: 1, waiting: 0 });
+    expect(rollupAlertColor(r)).toBe("bg-cyan-700");
+    expect(rollupAlertColor({ ...r, busy: 1 })).toBe("bg-cyan-500");
   });
 });
 

@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Folder, PanelLeftOpen } from "lucide-react";
 import { Hint } from "@/components/hint";
-import { DotCount } from "@/components/agentboard-bits";
+import { RollupDots } from "@/components/agentboard-bits";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Slider } from "@/components/ui/slider";
@@ -182,9 +182,7 @@ export function RollupChip({
           <span className="text-foreground">
             {r.total} agent{r.total !== 1 && "s"}
           </span>
-          {r.busy > 0 && <DotCount status="busy" n={r.busy} />}
-          {r.waiting > 0 && <DotCount status="waiting" n={r.waiting} />}
-          {r.error > 0 && <DotCount status="error" n={r.error} />}
+          <RollupDots r={r} />
           {r.expiring > 0 && (
             <Hint label="warm prompt caches about to expire — nudge them">
               <span className="text-amber-500">◔{r.expiring}</span>

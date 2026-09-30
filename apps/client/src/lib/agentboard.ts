@@ -26,7 +26,16 @@ export const abSyncRepo = (dir: string) => invoke<RepoSyncResult>("store_sync_re
 export const abSetSessionPurpose = (id: string, text: string | null) =>
   invoke("ab_set_session_purpose", { id, text });
 
-export type AgentStatus = "idle" | "busy" | "complete" | "error" | "waiting" | "interrupted";
+/** `background`: at the prompt, but its background agents are still out —
+ * their reports start the next turn, so it is not waiting on you. */
+export type AgentStatus =
+  | "idle"
+  | "busy"
+  | "complete"
+  | "error"
+  | "waiting"
+  | "interrupted"
+  | "background";
 
 export type SubagentInfo = {
   agentType?: string | null;
@@ -45,6 +54,7 @@ export type AgentEventDetails = {
   subagents?: SubagentInfo[] | null;
   subagentContextUsed?: number | null;
   subagentCount?: number | null;
+  backgroundAgents?: number | null;
 };
 
 export type AgentEvent = {
@@ -611,10 +621,16 @@ export function fmtWaitingAge(sinceMs: number | null | undefined, now: number): 
   return `waiting ${Math.floor(hrs / 24)}d`;
 }
 
+/** Work is happening: the agent's own turn, or background agents it launched. */
+export function isWorking(s: SessionData): boolean {
+  const st = s.agentState?.status;
+  return st === "busy" || st === "background";
+}
+
 /** Free to pick up: an agent that isn't working, or a flagged session. A plain
  * shell stays out — it was never an agent to be idle. */
 export function sessionNotBusy(s: SessionData): boolean {
-  if (s.agentState?.status === "busy") return false;
+  if (isWorking(s)) return false;
   return isAgent(s) || sessionCatchesEye(s);
 }
 
@@ -689,22 +705,7 @@ export function claudeTitleName(raw: string | undefined): string | null {
 /** A one-word status label for a session row. */
 export function sessionStatusText(s: SessionData): string {
   if (!s.live) return "Off";
-  const st = s.agentState;
-  if (!st) return "Idle";
-  switch (st.status) {
-    case "waiting":
-      return "Waiting";
-    case "error":
-      return "Error";
-    case "busy":
-      return "Working";
-    case "complete":
-      return "Done";
-    case "interrupted":
-      return "Paused";
-    default:
-      return "Idle";
-  }
+  return STATUS[s.agentState?.status ?? "idle"].label;
 }
 
 /** True when a repo's single folder should collapse into one rail header. */
@@ -1215,6 +1216,7 @@ export function needsCompact(
 export type AgentRollup = {
   total: number;
   busy: number;
+  background: number;
   waiting: number;
   error: number;
   compact: number;
@@ -1226,29 +1228,41 @@ export function agentRollup(
   now: number,
   compactThresholdPct: number,
 ): AgentRollup {
-  const r: AgentRollup = { total: 0, busy: 0, waiting: 0, error: 0, compact: 0, expiring: 0 };
+  const r: AgentRollup = {
+    total: 0,
+    busy: 0,
+    background: 0,
+    waiting: 0,
+    error: 0,
+    compact: 0,
+    expiring: 0,
+  };
   for (const repo of repos)
     for (const f of repo.folders)
       for (const s of f.sessions) {
         const st = s.agentState?.status;
         if (!st) continue;
         r.total += 1;
-        if (st === "busy") r.busy += 1;
-        else if (st === "waiting") r.waiting += 1;
-        else if (st === "error") r.error += 1;
+        if (isAlertStatus(st)) r[st] += 1;
         if (needsCompact(s.agentState?.details, now, compactThresholdPct)) r.compact += 1;
         if (isCacheExpiring(s.agentState?.details, now)) r.expiring += 1;
       }
   return r;
 }
 
+/** The statuses that tint a rollup or a collapsed row, loudest first. */
+export const ALERT_ORDER = ["error", "waiting", "busy", "background"] as const;
+type AlertStatus = (typeof ALERT_ORDER)[number];
+
+function isAlertStatus(st: AgentStatus): st is AlertStatus {
+  return (ALERT_ORDER as readonly AgentStatus[]).includes(st);
+}
+
 /** Same precedence as a collapsed rail row, so the two never disagree. */
 export function rollupAlertColor(r: AgentRollup): string | null {
-  if (r.error > 0) return "bg-red-500";
-  if (r.waiting > 0) return "bg-blue-500";
-  if (r.busy > 0) return "bg-cyan-500";
-  if (r.total > 0) return "bg-emerald-500";
-  return null;
+  const top = ALERT_ORDER.find((st) => r[st] > 0);
+  if (top) return statusColor(top);
+  return r.total > 0 ? "bg-emerald-500" : null;
 }
 
 /** White reads fine on every fill but cyan-500, where it's nearly illegible. */
@@ -1259,32 +1273,27 @@ export function rollupAlertTextColor(bg: string | null): string {
 /** The live agentboard state, shared across the app from a single subscription. */
 export { useAgentboardState } from "./agentboard-state";
 
-/** Status dot color, mirroring the Rust `AgentStatus::color` intent. */
+const STATUS: Record<AgentStatus, { label: string; color: string }> = {
+  idle: { label: "Idle", color: "bg-muted-foreground/40" },
+  busy: { label: "Working", color: "bg-cyan-500" },
+  background: { label: "Agents", color: "bg-cyan-700" },
+  waiting: { label: "Waiting", color: "bg-blue-500" },
+  error: { label: "Error", color: "bg-red-500" },
+  complete: { label: "Done", color: "bg-green-500" },
+  interrupted: { label: "Paused", color: "bg-orange-800" },
+};
+
 export function statusColor(status: AgentStatus): string {
-  switch (status) {
-    case "busy":
-      return "bg-cyan-500";
-    case "complete":
-      return "bg-green-500";
-    case "error":
-      return "bg-red-500";
-    case "waiting":
-      return "bg-blue-500";
-    case "interrupted":
-      return "bg-orange-800";
-    default:
-      return "bg-muted-foreground/40";
-  }
+  return STATUS[status].color;
 }
 
 /** Ambient color for sessions hidden behind a collapse; emerald means live. */
 export function collapsedLiveColor(sessions: SessionData[]): string | null {
   const live = sessions.filter((s) => s.live);
   if (live.length === 0) return null;
-  if (live.some((s) => s.agentState?.status === "error")) return "bg-red-500";
-  if (live.some((s) => s.agentState?.status === "waiting")) return "bg-blue-500";
-  if (live.some((s) => s.agentState?.status === "busy")) return "bg-cyan-500";
-  return "bg-emerald-500";
+  const present = new Set(live.map((s) => s.agentState?.status));
+  const top = ALERT_ORDER.find((st) => present.has(st));
+  return top ? statusColor(top) : "bg-emerald-500";
 }
 
 // Session PTY writes
