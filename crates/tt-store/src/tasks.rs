@@ -97,12 +97,9 @@ impl Store {
     /// Delete a task permanently, cascading its issue/PR link rows.
     pub fn delete_task(&self, id: i64) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
-        let affected = tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
-        if affected == 0 {
+        if delete_tasks_where(&tx, "id = ?1", params![id])? == 0 {
             return Err(Error::TaskNotFound(id));
         }
-        tx.execute("DELETE FROM task_issues WHERE task_id = ?1", params![id])?;
-        tx.execute("DELETE FROM task_prs WHERE task_id = ?1", params![id])?;
         tx.commit()?;
         Ok(())
     }
@@ -704,18 +701,22 @@ fn delete_detected_rows(
     dir: &str,
     except: Option<i64>,
 ) -> Result<bool> {
-    let ids: Vec<i64> = {
-        let mut stmt = tx.prepare(
-            "SELECT id FROM tasks WHERE worktree_dir = ?1 AND kind = 'detected'
-               AND id IS NOT ?2",
+    let pred = "worktree_dir = ?1 AND kind = 'detected' AND id IS NOT ?2";
+    Ok(delete_tasks_where(tx, pred, params![dir, except])? > 0)
+}
+
+/// Delete the tasks matching `pred` along with their issue/PR link rows — the
+/// one place that knows which tables hang off a task. The count of tasks deleted.
+fn delete_tasks_where(
+    tx: &rusqlite::Transaction<'_>,
+    pred: &str,
+    args: &[&dyn rusqlite::ToSql],
+) -> Result<usize> {
+    for links in ["task_issues", "task_prs"] {
+        tx.execute(
+            &format!("DELETE FROM {links} WHERE task_id IN (SELECT id FROM tasks WHERE {pred})"),
+            args,
         )?;
-        let rows = stmt.query_map(params![dir, except], |r| r.get::<_, i64>(0))?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
-    for id in &ids {
-        tx.execute("DELETE FROM task_issues WHERE task_id = ?1", params![id])?;
-        tx.execute("DELETE FROM task_prs WHERE task_id = ?1", params![id])?;
-        tx.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
     }
-    Ok(!ids.is_empty())
+    Ok(tx.execute(&format!("DELETE FROM tasks WHERE {pred}"), args)?)
 }
