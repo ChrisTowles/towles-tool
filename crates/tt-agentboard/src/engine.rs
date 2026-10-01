@@ -2,15 +2,16 @@
 //! host-agnostic, so every host shares it.
 //!
 //! The engine is synchronous; hosts own scheduling and transport, and guard it
-//! with a `Mutex`. Everything expensive that does NOT need engine state is
-//! deliberately outside `impl Engine` — [`collect_agent_snapshot`] and
-//! [`crate::git_info::compute_git_info`] run unlocked, their results handed to
-//! cheap locked methods.
+//! with a `Mutex`. Everything expensive runs unlocked — the `claude agents`
+//! call, [`collect_agent_snapshot`], an [`AgentScanJob`]'s journal reads and
+//! [`crate::git_info::compute_git_info`] — their results handed to cheap locked
+//! methods.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::bridge::{StatePayload, assemble_state};
+use crate::claude_cli::AgentScan;
 use crate::git_info::GitInfoCache;
 use crate::procenv::InstanceScope;
 use crate::repos::{
@@ -145,7 +146,7 @@ pub struct Engine {
 }
 
 /// What a payload rebuild needs from the system rather than engine state.
-/// Collected outside the lock: it spawns a process and reads transcripts.
+/// Collected outside the lock: it reads `/proc` and transcripts.
 #[derive(Debug, Default)]
 pub struct AgentSnapshot {
     live_threads: HashSet<String>,
@@ -153,19 +154,21 @@ pub struct AgentSnapshot {
     session_agents: HashMap<String, AgentEvent>,
 }
 
-/// Gather the live-agent inputs for a payload rebuild, once per scan — never per
-/// emit. Call it WITHOUT the engine lock so a slow claude CLI can't stall `ab_*`
-/// commands. `scope` must match the engine's, so attribution and admission agree
-/// on what is ours; `shell_pids` are the host's PTY shells.
+/// Gather the live-agent inputs for a payload rebuild from this scan's `cli`
+/// answer, once per scan — never per emit, and WITHOUT the engine lock. `None`
+/// for a failed `cli`, whose empty list would unpin every live agent: keep the
+/// last snapshot. `scope` must match the engine's, so attribution and admission
+/// agree on what is ours; `shell_pids` are the host's PTY shells.
 pub fn collect_agent_snapshot(
     now: i64,
     scope: &InstanceScope,
     shell_pids: &[u32],
-) -> AgentSnapshot {
-    let cli_agents = crate::claude_cli::fetch_agents_cached(std::time::Duration::from_millis(
-        crate::watchers::claude_code::CLI_CACHE_TTL_MS,
-    ))
-    .agents;
+    cli: &AgentScan,
+) -> Option<AgentSnapshot> {
+    if !cli.ok {
+        return None;
+    }
+    let cli_agents = &cli.agents;
     let live_threads: HashSet<String> = cli_agents.iter().map(|a| a.session_id.clone()).collect();
     // Unmapped falls back to the folder's default session; out of `scope` is
     // dropped entirely.
@@ -183,7 +186,33 @@ pub fn collect_agent_snapshot(
         .filter(|p| !cli_covered.contains(&p.session_id) && seen.insert(p.session_id.clone()))
         .collect();
     let session_agents = crate::watchers::claude_code::unlisted_events(&unlisted, now);
-    AgentSnapshot { live_threads, tt_session_by_thread, session_agents }
+    Some(AgentSnapshot { live_threads, tt_session_by_thread, session_agents })
+}
+
+/// The host's one `claude agents` call per scan, shared by the watcher and
+/// [`collect_agent_snapshot`]. Spawns a process: never under the engine lock.
+pub fn fetch_agent_scan() -> AgentScan {
+    crate::claude_cli::fetch_agents_cached(std::time::Duration::from_millis(
+        crate::watchers::claude_code::CLI_CACHE_TTL_MS,
+    ))
+}
+
+/// The watcher, lent out of the engine by [`Engine::begin_agent_scan`] so its
+/// journal reads run unlocked; [`Engine::finish_agent_scan`] takes it back.
+pub struct AgentScanJob {
+    watcher: Option<ClaudeCodeAgentWatcher>,
+    entries: Vec<RepoEntry>,
+    events: Vec<AgentEvent>,
+}
+
+impl AgentScanJob {
+    pub fn run(&mut self, cli: &AgentScan, now: i64) {
+        let Some(watcher) = &mut self.watcher else {
+            return;
+        };
+        let entries = &self.entries;
+        self.events = watcher.scan(&|dir| resolve_session_name(dir, entries), cli, now);
+    }
 }
 
 impl Engine {
@@ -261,11 +290,21 @@ impl Engine {
         }
     }
 
-    pub fn scan_once(&mut self, now: i64) {
+    pub fn begin_agent_scan(&mut self) -> AgentScanJob {
         self.reload_repos();
         let all_paths = self.rail_dirs();
-        let entries = repo_entries(&all_paths);
-        self.scan_once_with_resolver(&|dir| resolve_session_name(dir, &entries), now);
+        AgentScanJob {
+            watcher: self.watcher.take(),
+            entries: repo_entries(&all_paths),
+            events: Vec::new(),
+        }
+    }
+
+    pub fn finish_agent_scan(&mut self, job: AgentScanJob) {
+        self.watcher = job.watcher;
+        for event in job.events {
+            self.tracker.apply_event(event);
+        }
     }
 
     /// Every row the rail should show, in rail order. **Rows come from records,
@@ -467,15 +506,6 @@ impl Engine {
             changed |= self.store_git_info(&dir, info, now);
         }
         changed
-    }
-
-    fn scan_once_with_resolver(&mut self, resolve: &dyn Fn(&str) -> Option<String>, now: i64) {
-        let Some(watcher) = &mut self.watcher else {
-            return;
-        };
-        for event in watcher.scan(resolve, now) {
-            self.tracker.apply_event(event);
-        }
     }
 
     /// The tracked checkout whose cached `linked_worktree_dirs` lists `dir` — never
@@ -1053,6 +1083,12 @@ mod engine_tests {
         e.add_session("/repo/quiet", None, 1001);
         let payload = e.compute_payload(1002);
         assert_eq!(payload.repos[0].folders[0].sessions.len(), 1);
+    }
+
+    #[test]
+    fn a_failed_cli_scan_keeps_the_last_snapshot() {
+        let failed = AgentScan { agents: Vec::new(), ok: false };
+        assert!(collect_agent_snapshot(0, &InstanceScope::Any, &[], &failed).is_none());
     }
 
     #[test]
