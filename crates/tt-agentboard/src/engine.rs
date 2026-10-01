@@ -90,7 +90,6 @@ const RECENT_WINDOW_MS: i64 = 24 * 60 * 60 * 1000;
 /// "behind main" has no reader until focus returns.
 const UNFOCUSED_FETCH_MULT: i64 = 5;
 
-const STUCK_MS: i64 = 3 * 60 * 1000;
 const STALE_MS: i64 = 12 * 60 * 60 * 1000;
 const IDLE_MS: i64 = 30 * 1000;
 
@@ -745,7 +744,6 @@ impl Engine {
         self.thread_sessions
             .retain(|tid, _| snapshot.live_threads.contains(tid) || tracked_threads.contains(tid));
 
-        self.tracker.prune_stuck(STUCK_MS, now);
         self.tracker.prune_terminal(now);
         self.tracker.prune_stale(STALE_MS, now);
         self.tracker.prune_idle(IDLE_MS, now);

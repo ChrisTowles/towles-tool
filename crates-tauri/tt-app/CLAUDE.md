@@ -30,14 +30,14 @@ invariants a single read won't surface: it is the largest crate in the repo
   (`agentboard.rs`). The Tauri-free engine can't see PTYs, so a new command that
   returns a `StatePayload` without the stamp silently reports stale
   `live`/`shellKind`/needs-you counts, and a stale agent *status* too.
-- **Agent status is PTY-first; `claude agents` is only a fallback.**
+- **Agent status is PTY-first; the journal is the fallback.**
   `stamp_pty_state` folds `tt_agentboard::pty_status::resolve_status` over the
-  engine's verdict, which comes from a `claude agents --all --json` snapshot
-  cached for 60s that nothing else could contradict. The terminal can: output
-  that is recent (1.5s) **and has been running for a second** proves the agent is
-  working, and 20s of silence proves it isn't (Claude Code repaints a live
-  elapsed counter throughout a turn — measured max gap 0.27s). Both halves of the
-  working test are load-bearing: a *finished* pane still repaints every second or
+  engine's verdict, which is the session journal's reading (`claude agents` says
+  only which sessions are alive). The journal lands an entry per content block,
+  so it can't see a permission prompt or a turn between entries. The terminal
+  can: output that is recent (1.5s) **and has been running for a second** proves
+  the agent is working; silence proves nothing (a long build paints nothing).
+  Both halves of the working test are load-bearing: a *finished* pane still repaints every second or
   two, so recency alone reads those twitches as work — flickering the needs-you
   banner, discarding the turn-end `OSC 777` as superseded, and flapping
   `busy`/`complete` so `needs_since_ms` resets before the waiting-age counts up.
