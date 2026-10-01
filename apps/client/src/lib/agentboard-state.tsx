@@ -26,7 +26,7 @@ const EMPTY: StatePayload = {
 const AgentboardStateContext = createContext<StatePayload | null>(null);
 const SetOverlayContext = createContext<((id: string, o: Overlay) => void) | null>(null);
 
-/** Covers the gap until the ~2s scan lands. */
+/** A fixed window, not ended by a snapshot: it outlasts the ~2s scan. */
 const OVERLAY_MS = 2_500;
 
 export function AgentboardStateProvider({ children }: { children: ReactNode }) {
@@ -100,7 +100,7 @@ export function useAgentboardState(): StatePayload {
   return ctx;
 }
 
-/** Paint `o` over a session app-wide until the scan confirms or contradicts it. */
+/** Paint `o` over a session app-wide for `OVERLAY_MS`, whatever snapshots say. */
 export function useSetAgentOverlay(): (id: string, o: Overlay) => void {
   const ctx = useContext(SetOverlayContext);
   if (ctx === null) {

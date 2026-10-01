@@ -30,23 +30,23 @@ invariants a single read won't surface: it is the largest crate in the repo
   (`agentboard.rs`). The Tauri-free engine can't see PTYs, so a new command that
   returns a `StatePayload` without the stamp silently reports stale
   `live`/`shellKind`/needs-you counts, and a stale agent *status* too.
-- **Agent status is PTY-first; the journal is the fallback.**
-  `stamp_pty_state` folds `tt_agentboard::pty_status::resolve_status` over the
-  engine's verdict, which is the session journal's reading (`claude agents` says
-  only which sessions are alive). The journal lands an entry per content block,
-  so it can't see a permission prompt or a turn between entries. The terminal
-  can: output that is recent (1.5s) **and has been running for a second** proves
-  the agent is working; silence proves nothing (a long build paints nothing).
-  Both halves of the working test are load-bearing: a *finished* pane still repaints every second or
-  two, so recency alone reads those twitches as work — flickering the needs-you
-  banner, discarding the turn-end `OSC 777` as superseded, and flapping
-  `busy`/`complete` so `needs_since_ms` resets before the waiting-age counts up.
-  Signals come from `PtyActivity` in `terminal.rs`, stamped on the vt sink's
-  `Frame` (output) and `Notify`/`Bell` (Claude Code's `OSC 777`, the fastest
-  evidence of a blocked agent). **Every path that writes to a PTY on the user's
-  behalf must stamp `input_at_ms`** — that marks an attention notification
-  answered; miss it and the session stays badged after the user has replied.
-- **PTY replacement is generation-checked** (`terminal.rs`), so a stale EOF from
+- **Agent status is PTY-first; the journal is the fallback.** `stamp_pty_state`
+  folds `tt_agentboard::pty_status::resolve_status` over the engine's verdict,
+  the session journal's reading (`claude agents` only says which sessions are
+  alive). The journal lands an entry per content block, so it can't see a
+  permission prompt or a turn between entries; the terminal can. Output that is
+  recent (1.5s) **and has been running for a second** proves work; silence proves
+  nothing (a long build paints nothing). Both halves are load-bearing: a
+  *finished* pane still repaints every second or two, and reading those twitches
+  as work flickers the needs-you banner, discards the turn-end `OSC 777` as
+  superseded, and resets `needs_since_ms` before the waiting-age counts up.
+  Signals come from `PtyActivity` (`terminal/session.rs`), stamped on the vt
+  sink's `Frame` (output) and `Notify`/`Bell` (Claude Code's `OSC 777`, the
+  fastest evidence of a blocked agent). **Every path that writes to a PTY on the
+  user's behalf must stamp `input_at_ms`** (`terminal/input.rs`) — that marks an
+  attention notification answered; miss it and the session stays badged after
+  the user has replied.
+- **PTY replacement is generation-checked** (`terminal/session.rs`), so a stale EOF from
   a killed/replaced session can never close its successor. Treat `TermState`'s
   lock as map-surgery-only — never hold it across anything that can block.
 - **`task_delete` kills a folder's PTYs before touching its worktree on disk —
@@ -83,7 +83,7 @@ invariants a single read won't surface: it is the largest crate in the repo
   stops one checkout launching twice and duplicating windows/PTYs/scheduler
   polling. A second launch prints "already running" and exits — a
   resource-duplication guard, not the crash fix.
-- **Nested shells get their env scrubbed and re-stamped** (`terminal.rs`, issue
+- **Nested shells get their env scrubbed and re-stamped** (`terminal/spawn.rs`, issue
   #39), so a `tt-app` or `bun run dev` launched *inside* an embedded terminal
   doesn't collide with the outer instance's port/session identity.
   `CLAUDE_CODE_SSE_PORT` is re-stamped for deterministic IDE pairing even with
@@ -126,7 +126,7 @@ invariants a single read won't surface: it is the largest crate in the repo
   builder. `scripts/dev-drive.mjs` and `scripts/e2e.mjs` set it — test launches,
   never the user sitting down to work. Deliberately a runtime env var, not
   `#[cfg(feature = "wdio")]`, which means "wdio plugins compiled in".
-- **OSC 52 clipboard writes are gated on terminal focus** (`terminal.rs`) — a
+- **OSC 52 clipboard writes are gated on terminal focus** (`terminal/view.rs`) — a
   background agent pane can't hijack the system clipboard.
 - `WEBKIT_DISABLE_DMABUF_RENDERER` (`lib.rs`, Linux-only) works around a
   WebKitGTK/NVIDIA rendering bug (tauri-apps/tauri#9304) — set it only when

@@ -10,6 +10,7 @@ import {
   useAgentboardState,
 } from "@/lib/agentboard";
 import { dmsNeedingAttention, useStoreSnapshot } from "@/lib/data";
+import { useNow } from "@/lib/now";
 import { NAV_SECTIONS, SCREENS } from "@/lib/screens";
 import { Kbd } from "@/components/ui/kbd";
 import { ShortcutBadge } from "@/components/hint";
@@ -17,12 +18,13 @@ import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
-/** Coldness flips at most once per TTL, so recomputing per state event is enough. */
+/** The shared clock, not `Date.now()`: a cache going cold emits no state event. */
 function useAgentRollup() {
   const { repos, compactRecommendPercent } = useAgentboardState();
+  const now = useNow();
   return useMemo(
-    () => agentRollup(repos, Date.now(), compactRecommendPercent),
-    [repos, compactRecommendPercent],
+    () => agentRollup(repos, now, compactRecommendPercent),
+    [repos, now, compactRecommendPercent],
   );
 }
 

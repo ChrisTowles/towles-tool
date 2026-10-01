@@ -64,7 +64,7 @@ impl PtySignal {
     /// Cleared by user input, and by a *run* of output (see
     /// [`SUSTAINED_OUTPUT_MS`]) starting more than [`ATTENTION_GRACE_MS`] after
     /// the notification — never by a lone frame, which used to clear it seconds
-    /// after every turn and left needs-you on the 60s-cached CLI.
+    /// after every turn and left needs-you to the journal alone.
     pub fn attention_pending(&self, now_ms: i64) -> bool {
         let Some(at) = self.attention_at_ms else {
             return false;
@@ -318,8 +318,8 @@ mod tests {
     }
 
     /// The turn-end notification must survive the pane's own idle repaints, or
-    /// the board falls back to the 60s-cached CLI and the agent sits there
-    /// wanting you, unbadged, for up to a minute (measured: 62s).
+    /// the board falls back to the journal, which reads a permission prompt as
+    /// Busy: the agent sits there wanting you, unbadged, with no timer to end it.
     #[test]
     fn a_lone_repaint_does_not_count_as_the_agent_resuming() {
         let pty = PtySignal { attention_at_ms: Some(NOW - 30_000), ..lone_repaint(3_000) };
