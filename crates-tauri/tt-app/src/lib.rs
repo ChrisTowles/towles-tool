@@ -370,6 +370,29 @@ pub fn run() {
                             _ = scan.notified() => {}
                         }
                         let now = now_ms();
+                        // One `claude agents` call per scan, unlocked and ahead
+                        // of the git warm: a hung `claude` must not hold the
+                        // engine. Emits rebuild from this snapshot until the
+                        // next scan, so a PTY burst does no `/proc` I/O.
+                        let shell_pids = store_handle
+                            .try_state::<terminal::TermState>()
+                            .map(|t| t.shell_pids())
+                            .unwrap_or_default();
+                        let (cli, snapshot) = tauri::async_runtime::spawn_blocking(move || {
+                            let cli = tt_agentboard::engine::fetch_agent_scan();
+                            let snapshot = tt_agentboard::engine::collect_agent_snapshot(
+                                now_ms(),
+                                &tt_agentboard::procenv::InstanceScope::this_app(),
+                                &shell_pids,
+                                &cli,
+                            );
+                            (cli, snapshot)
+                        })
+                        .await
+                        .unwrap_or_default();
+                        if let Some(snapshot) = snapshot {
+                            engine.lock().unwrap().set_agent_snapshot(snapshot);
+                        }
                         let warm_engine = engine.clone();
                         let stale = tauri::async_runtime::spawn_blocking(move || {
                             warm_engine.lock().unwrap().stale_git_targets(now)
@@ -428,30 +451,22 @@ pub fn run() {
                             state.reconcile_detected_worktrees(&found, &vanished, now);
                         }
                         let rows = store_state.and_then(|s| s.rail_worktrees());
-                        {
+                        let mut job = {
                             let mut e = engine.lock().unwrap();
                             if let Some(rows) = rows {
                                 e.set_task_worktrees(rows);
                             }
-                            e.scan_once(now);
-                        }
-                        // Once per scan, unlocked: every emit until the next one
-                        // rebuilds from this, so a PTY burst does no `/proc` or
-                        // transcript I/O.
-                        let shell_pids = store_handle
-                            .try_state::<terminal::TermState>()
-                            .map(|t| t.shell_pids())
-                            .unwrap_or_default();
-                        let snapshot = tauri::async_runtime::spawn_blocking(move || {
-                            tt_agentboard::engine::collect_agent_snapshot(
-                                now_ms(),
-                                &tt_agentboard::procenv::InstanceScope::this_app(),
-                                &shell_pids,
-                            )
+                            e.begin_agent_scan()
+                        };
+                        // Journal reads unlocked: a first sight or rotation
+                        // streams a whole journal.
+                        let job = tauri::async_runtime::spawn_blocking(move || {
+                            job.run(&cli, now);
+                            job
                         })
                         .await;
-                        if let Ok(snapshot) = snapshot {
-                            engine.lock().unwrap().set_agent_snapshot(snapshot);
+                        if let Ok(job) = job {
+                            engine.lock().unwrap().finish_agent_scan(job);
                         }
                         // Narrow the accelerant to what's actually polled —
                         // a no-op unless the tracked set moved.
