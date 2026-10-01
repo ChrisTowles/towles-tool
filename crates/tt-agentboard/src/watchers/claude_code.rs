@@ -18,9 +18,9 @@ use tt_claude_code::TranscriptEntry;
 
 use crate::claude_cli::CliAgent;
 use crate::procenv::SessionAgentProc;
-use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo};
-use crate::watchers::background::BackgroundAgents;
+use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo, SubagentInfo};
 use crate::watchers::claude_usage::{ClaudeUsageSummary, usage_summary_of};
+use crate::watchers::ledger::SubagentLedger;
 use crate::watchers::subagents::{SubagentRollup, SubagentUsage};
 
 const NAME: &str = "claude-code";
@@ -213,7 +213,7 @@ fn session_status(
     };
     match status {
         AgentStatus::Idle | AgentStatus::Complete
-            if journal.background.running(process_started_at) > 0 =>
+            if journal.ledger.background_running(process_started_at) > 0 =>
         {
             AgentStatus::Background
         }
@@ -255,7 +255,7 @@ struct Journal {
     context_max: Option<i64>,
     last_tool: Option<String>,
     loop_state: Option<LoopInfo>,
-    background: BackgroundAgents,
+    ledger: SubagentLedger,
 }
 
 impl Journal {
@@ -332,7 +332,7 @@ impl Journal {
         if let Some(s) = determine_status(entry) {
             self.status = s;
         }
-        self.background.observe(entry);
+        self.ledger.observe(entry);
         if let Some(usage) = usage_summary_of(entry) {
             self.remember_identity(&usage);
             self.usage = Some(usage);
@@ -347,16 +347,35 @@ impl Journal {
 
     /// `None` only when there is nothing at all to report; a known model alone
     /// is worth an event, or a rotation would blank a readout we can answer.
-    fn details(&self, sub: &SubagentRollup, background: usize) -> Option<AgentEventDetails> {
+    fn details(
+        &self,
+        threads: &SubagentRollup,
+        process_started_at: Option<i64>,
+    ) -> Option<AgentEventDetails> {
+        let running = self.ledger.running(process_started_at);
+        let count = threads.threads.len() as i64;
         if self.usage.is_none()
             && self.last_tool.is_none()
-            && sub.count == 0
+            && count == 0
             && self.loop_state.is_none()
             && self.model.is_none()
-            && background == 0
+            && running.is_empty()
         {
             return None;
         }
+        let background = running.iter().filter(|l| l.background).count();
+        let subagents: Vec<SubagentInfo> = running
+            .iter()
+            .map(|l| {
+                let thread = threads.thread(l.agent_id.as_deref(), l.tool_use_id.as_deref());
+                let meta = thread.map(|t| &t.meta);
+                SubagentInfo {
+                    agent_type: l.agent_type.clone().or_else(|| meta?.agent_type.clone()),
+                    description: l.description.clone().or_else(|| meta?.description.clone()),
+                    context_used: thread.map(|t| t.context).filter(|c| *c > 0),
+                }
+            })
+            .collect();
         let usage = self.usage.as_ref();
         Some(AgentEventDetails {
             model: self.model.clone(),
@@ -366,9 +385,9 @@ impl Journal {
             cache_ttl_ms: usage.and_then(|u| u.cache_ttl_ms),
             last_activity_at: usage.map(|u| u.last_activity_at),
             last_tool: self.last_tool.clone(),
-            subagents: (!sub.active.is_empty()).then(|| sub.active.clone()),
-            subagent_context_used: (sub.count > 0).then_some(sub.total_context),
-            subagent_count: (sub.count > 0).then_some(sub.count),
+            subagents: (!subagents.is_empty()).then_some(subagents),
+            subagent_context_used: (count > 0).then_some(threads.total_context),
+            subagent_count: (count > 0).then_some(count),
             r#loop: self.loop_state.clone(),
             background_agents: (background > 0).then_some(background as i64),
         })
@@ -455,9 +474,7 @@ impl ClaudeCodeAgentWatcher {
         // journal stays static for minutes — so compute every scan.
         if let Some(base) = path.to_str().and_then(|s| s.strip_suffix(JSONL_SUFFIX)) {
             let dir = PathBuf::from(format!("{base}/subagents"));
-            let rollup =
-                state.subagent_usage.scan(&dir, now_ms, crate::types::JOURNAL_IDLE_TIMEOUT_MS);
-            state.subagents = rollup;
+            state.subagents = state.subagent_usage.scan(&dir);
         }
 
         state.journal.refresh(&path, now_ms);
@@ -468,8 +485,7 @@ impl ClaudeCodeAgentWatcher {
     fn event_parts(state: &SessionState, status: AgentStatus) -> Emitted {
         let journal = &state.journal;
         let thread_name = journal.thread_name.clone().or_else(|| state.cli_name.clone());
-        let background = journal.background.running(state.process_started_at);
-        (status, thread_name, journal.details(&state.subagents, background))
+        (status, thread_name, journal.details(&state.subagents, state.process_started_at))
     }
 
     fn emit(
@@ -570,7 +586,6 @@ pub fn unlisted_events(procs: &[SessionAgentProc], now_ms: i64) -> HashMap<Strin
             journal = journals.remove(path).unwrap_or_default();
             journal.refresh(path, now_ms);
         }
-        let background = journal.background.running(proc.started_at);
         let event = AgentEvent {
             agent: NAME.to_string(),
             session: String::new(),
@@ -579,7 +594,7 @@ pub fn unlisted_events(procs: &[SessionAgentProc], now_ms: i64) -> HashMap<Strin
             thread_id: None,
             thread_name: journal.thread_name.clone(),
             unseen: None,
-            details: journal.details(&SubagentRollup::default(), background),
+            details: journal.details(&SubagentRollup::default(), proc.started_at),
         };
         events.insert(proc.session_id.clone(), event);
         if let Some(path) = &proc.transcript {
@@ -916,6 +931,51 @@ mod tests {
         let ev = ctx.events.last().unwrap();
         assert_eq!(ev.status, AgentStatus::Complete);
         assert_eq!(ev.details.as_ref().and_then(|d| d.background_agents), None);
+    }
+
+    /// A sub-agent whose transcript has been silent for ten minutes is still
+    /// running until the parent journal says otherwise.
+    #[test]
+    fn the_sub_agent_list_and_the_background_count_come_from_one_ledger() {
+        let mut f = fixture();
+        let call = |id: &str| {
+            format!(
+                r#"{{"type":"assistant","timestamp":"2026-09-30T22:00:00Z","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"{id}","name":"Agent","input":{{"description":"look around","subagent_type":"Explore"}}}}]}}}}"#
+            )
+        };
+        let launched = r#"{"type":"user","timestamp":"2026-09-30T22:00:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_bg"}]},"toolUseResult":{"status":"async_launched","agentId":"abg"}}"#;
+        let (fg, bg) = (call("toolu_fg"), call("toolu_bg"));
+        let path =
+            write_journal(&f.projects, "/home/u/a", "sid-l", &[USER_LINE, &bg, launched, &fg]);
+        let subagents = path.with_extension("").join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        let usage = r#"{"type":"assistant","timestamp":"2026-09-30T22:00:05Z","message":{"role":"assistant","usage":{"input_tokens":700}}}"#;
+        std::fs::write(subagents.join("agent-afg.jsonl"), format!("{usage}\n")).unwrap();
+        std::fs::write(subagents.join("agent-afg.meta.json"), r#"{"toolUseId":"toolu_fg"}"#)
+            .unwrap();
+        std::fs::write(subagents.join("agent-old.jsonl"), format!("{usage}\n")).unwrap();
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-l", "busy")];
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/a".into(), "a".into()));
+
+        ctx.scan(&mut f.watcher, 1_000);
+        let d = ctx.events.last().unwrap().details.clone().unwrap();
+        let listed = d.subagents.unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|s| s.agent_type.as_deref() == Some("Explore")));
+        assert_eq!(listed.iter().filter_map(|s| s.context_used).collect::<Vec<_>>(), [700]);
+        assert_eq!(d.background_agents, Some(1));
+        assert_eq!(d.subagent_count, Some(2));
+
+        let fg_done = r#"{"type":"user","timestamp":"2026-09-30T22:20:00Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_fg"}]},"toolUseResult":{"status":"completed","agentId":"afg"}}"#;
+        let bg_done = r#"{"type":"queue-operation","timestamp":"2026-09-30T22:30:00Z","content":"<task-notification><task-id>abg</task-id></task-notification>"}"#;
+        let mut text = std::fs::read_to_string(&path).unwrap();
+        text.push_str(&format!("{fg_done}\n{bg_done}\n"));
+        std::fs::write(&path, text).unwrap();
+        ctx.scan(&mut f.watcher, 2_000);
+        let d = ctx.events.last().unwrap().details.clone().unwrap();
+        assert_eq!((d.subagents, d.background_agents), (None, None));
+        assert_eq!(d.subagent_context_used, Some(1_400));
     }
 
     #[test]

@@ -293,6 +293,15 @@ impl Content {
         })
     }
 
+    /// The `tool_use_id` each `tool_result` block answers.
+    pub fn tool_result_ids(&self) -> impl Iterator<Item = &str> {
+        self.blocks().unwrap_or(&[]).iter().filter_map(|b| {
+            (b.get("type").and_then(Value::as_str) == Some("tool_result"))
+                .then(|| b.get("tool_use_id").and_then(Value::as_str))
+                .flatten()
+        })
+    }
+
     /// Iterator over the `tool_use` blocks as lightweight typed views (empty for
     /// a bare string).
     pub fn tool_uses(&self) -> impl Iterator<Item = ToolUse<'_>> {

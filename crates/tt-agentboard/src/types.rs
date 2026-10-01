@@ -11,8 +11,6 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const JOURNAL_IDLE_TIMEOUT_MS: i64 = 120_000;
-
 /// Follows `claude agents`: `busy` = working, `waiting` = blocked on the user,
 /// `idle` = alive at the prompt. The terminals have no CLI equivalent, and nor
 /// does `background`: at the prompt, but its background agents are still out.
@@ -100,8 +98,7 @@ pub struct AgentEventDetails {
     pub last_tool: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagents: Option<Vec<SubagentInfo>>,
-    /// Every sub-agent spawned, finished included: `subagents` lists only the
-    /// active few, and shedding them on retirement would under-report spend.
+    /// Every sub-agent spawned, finished included; `subagents` is the running.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_context_used: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
