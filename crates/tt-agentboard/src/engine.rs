@@ -140,21 +140,29 @@ pub struct Engine {
     /// Sticky agent→PTY attribution, kept while the tracker holds the thread, so
     /// an exited agent stays on the pane it ran in rather than drifting.
     thread_sessions: HashMap<String, String>,
-    scope: InstanceScope,
+    /// The host's last [`collect_agent_snapshot`], so a payload rebuild does no
+    /// `/proc` or transcript I/O of its own.
+    agent_snapshot: AgentSnapshot,
 }
 
-/// What [`Engine::compute_payload_with`] needs from the system rather than engine
-/// state. Collected outside the lock: it spawns a process and reads transcripts.
+/// What a payload rebuild needs from the system rather than engine state.
+/// Collected outside the lock: it spawns a process and reads transcripts.
+#[derive(Debug, Default)]
 pub struct AgentSnapshot {
     live_threads: HashSet<String>,
     tt_session_by_thread: HashMap<String, String>,
     session_agents: HashMap<String, AgentEvent>,
 }
 
-/// Gather the live-agent inputs for a payload rebuild. Call it WITHOUT the engine
-/// lock so a slow claude CLI can't stall `ab_*` commands. `scope` must match the
-/// engine's, so attribution and admission agree on what is ours.
-pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot {
+/// Gather the live-agent inputs for a payload rebuild, once per scan — never per
+/// emit. Call it WITHOUT the engine lock so a slow claude CLI can't stall `ab_*`
+/// commands. `scope` must match the engine's, so attribution and admission agree
+/// on what is ours; `shell_pids` are the host's PTY shells.
+pub fn collect_agent_snapshot(
+    now: i64,
+    scope: &InstanceScope,
+    shell_pids: &[u32],
+) -> AgentSnapshot {
     let cli_agents = crate::claude_cli::fetch_agents_cached(std::time::Duration::from_millis(
         crate::watchers::claude_code::CLI_CACHE_TTL_MS,
     ))
@@ -171,7 +179,7 @@ pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot 
     // Supplement CLI detection with app-spawned sessions it never enumerated.
     let cli_covered: HashSet<&String> = tt_session_by_thread.values().collect();
     let mut seen: HashSet<String> = HashSet::new();
-    let unlisted: Vec<_> = crate::procenv::scan_session_agents(scope)
+    let unlisted: Vec<_> = crate::procenv::scan_session_agents(shell_pids, scope)
         .into_iter()
         .filter(|p| !cli_covered.contains(&p.session_id) && seen.insert(p.session_id.clone()))
         .collect();
@@ -230,7 +238,7 @@ impl Engine {
             show_unmanaged_worktrees,
             task_worktrees: Vec::new(),
             thread_sessions: HashMap::new(),
-            scope,
+            agent_snapshot: AgentSnapshot::default(),
         }
     }
 
@@ -560,14 +568,11 @@ impl Engine {
             .collect()
     }
 
-    /// Full recompute that collects the agent snapshot itself — one-off reads only;
-    /// hot loops collect unlocked and call [`Engine::compute_payload_with`].
-    fn compute_payload(&mut self, now: i64) -> StatePayload {
-        let snapshot = collect_agent_snapshot(now, &self.scope);
-        self.compute_payload_with(&snapshot, now)
+    pub fn set_agent_snapshot(&mut self, snapshot: AgentSnapshot) {
+        self.agent_snapshot = snapshot;
     }
 
-    pub fn compute_payload_with(&mut self, snapshot: &AgentSnapshot, now: i64) -> StatePayload {
+    pub fn compute_payload(&mut self, now: i64) -> StatePayload {
         self.reload_repos();
         let rows = self.rail_rows();
         // NOT name-sorted: `rail_rows` order is the user's drag order.
@@ -575,7 +580,9 @@ impl Engine {
         let entries = repo_entries(&all_paths);
         let rows_by_dir: HashMap<String, RailRow> =
             rows.into_iter().map(|r| (r.dir.clone(), r)).collect();
-        let payload = self.compute_payload_for_entries(&entries, &rows_by_dir, snapshot, now);
+        let snapshot = std::mem::take(&mut self.agent_snapshot);
+        let payload = self.compute_payload_for_entries(&entries, &rows_by_dir, &snapshot, now);
+        self.agent_snapshot = snapshot;
         // Never on an empty entry set, far likelier a transient glitch than a real
         // config wipe; a genuine remove-all prunes on the next poll.
         if !entries.is_empty() {
@@ -957,7 +964,7 @@ impl Engine {
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
             task_worktrees: Vec::new(),
             thread_sessions: HashMap::new(),
-            scope: InstanceScope::Any,
+            agent_snapshot: AgentSnapshot::default(),
         }
     }
 }
@@ -1040,19 +1047,39 @@ mod engine_tests {
     fn a_tracked_folder_is_listed_with_no_sessions_until_one_is_created() {
         let (_tmp, mut e) = engine();
         assert!(e.add_repo("/repo/quiet"));
-        let snapshot = AgentSnapshot {
-            live_threads: HashSet::new(),
-            tt_session_by_thread: HashMap::new(),
-            session_agents: HashMap::new(),
-        };
 
-        let payload = e.compute_payload_with(&snapshot, 1000);
+        let payload = e.compute_payload(1000);
         assert_eq!(payload.repos[0].folders[0].dir, "/repo/quiet");
         assert!(payload.repos[0].folders[0].sessions.is_empty());
 
         e.add_session("/repo/quiet", None, 1001);
-        let payload = e.compute_payload_with(&snapshot, 1002);
+        let payload = e.compute_payload(1002);
         assert_eq!(payload.repos[0].folders[0].sessions.len(), 1);
+    }
+
+    #[test]
+    fn every_rebuild_reads_the_last_stored_agent_snapshot() {
+        let (_tmp, mut e) = engine();
+        assert!(e.add_repo("/repo/a"));
+        let session = e.add_session("/repo/a", None, 1000);
+        let agent = AgentEvent {
+            agent: "claude-code".to_string(),
+            session: String::new(),
+            status: crate::types::AgentStatus::Busy,
+            ts: 1000,
+            thread_id: None,
+            thread_name: None,
+            unseen: None,
+            details: None,
+        };
+        let session_agents = HashMap::from([(session.id.clone(), agent)]);
+        e.set_agent_snapshot(AgentSnapshot { session_agents, ..AgentSnapshot::default() });
+
+        for now in [1001, 1002] {
+            let payload = e.compute_payload(now);
+            let state = payload.repos[0].folders[0].sessions[0].agent_state.as_ref();
+            assert_eq!(state.map(|s| s.status), Some(crate::types::AgentStatus::Busy));
+        }
     }
 
     #[test]
