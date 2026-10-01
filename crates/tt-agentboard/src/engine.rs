@@ -727,7 +727,7 @@ impl Engine {
         let mut pinned: HashMap<String, Vec<String>> = HashMap::new();
         let mut tracked_threads: HashSet<String> = HashSet::new();
         for entry in entries {
-            for agent in self.tracker.get_agents(&entry.name) {
+            for agent in self.tracker.agents(&entry.name) {
                 let Some(tid) = agent.thread_id.clone() else {
                     continue;
                 };

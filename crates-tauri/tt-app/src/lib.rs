@@ -303,7 +303,7 @@ pub fn run() {
                         emit.notified().await;
                         tokio::time::sleep(Duration::from_millis(200)).await;
                         let rebuild_handle = handle.clone();
-                        let Ok(payload) = tauri::async_runtime::spawn_blocking(move || {
+                        let Ok(mut payload) = tauri::async_runtime::spawn_blocking(move || {
                             agentboard::stamped_payload(&rebuild_handle)
                         })
                         .await
@@ -318,10 +318,8 @@ pub fn run() {
                             store::emit_snapshot_from_app(&handle);
                         }
 
-                        let mut probe = payload.clone();
-                        probe.ts = 0;
-                        if last.as_ref() != Some(&probe) {
-                            last = Some(probe);
+                        let ts = std::mem::take(&mut payload.ts);
+                        if last.as_ref() != Some(&payload) {
                             // An agent's turn ending is the only notice that a
                             // checkout's *working tree* moved — an edit it never
                             // staged touched no watched `.git` file, so without
@@ -341,7 +339,10 @@ pub fn run() {
                             }
                             let edges = needs_watch.observe(&payload);
                             agentboard::notify_needs_you(&handle, &edges);
-                            let _ = handle.emit(STATE_EVENT, payload);
+                            payload.ts = ts;
+                            let _ = handle.emit(STATE_EVENT, &payload);
+                            payload.ts = 0;
+                            last = Some(payload);
                         }
                     }
                 });
