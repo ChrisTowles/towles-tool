@@ -37,8 +37,8 @@ const SCAN_FAILURES_BEFORE_DEGRADED: u32 = 2;
 /// Stamp `SessionData.live`/`shellKind`/`portDrift`/`agentState.status` from the
 /// app's PTY registry — the engine can't see PTYs, and every payload leaving the
 /// app passes through here first. Status is load-bearing: the engine's verdict
-/// rides a 60s-cached `claude agents` snapshot, so the PTY's direct observation
-/// folds over the top.
+/// is the session journal's, which can't see a permission prompt, so the PTY's
+/// direct observation folds over the top.
 pub fn stamp_pty_state(
     payload: &mut StatePayload,
     terms: &crate::terminal::TermState,

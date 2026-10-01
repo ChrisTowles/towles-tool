@@ -1663,7 +1663,7 @@ export function dragCol(n: number, cols: number[] | undefined, i: number, pos: n
   return widths;
 }
 
-/** Painted until the next snapshot confirms it; needs-you clears, since the
+/** Painted over the snapshot for a fixed window; needs-you clears, since the
  * user just acted on this session. */
 export type Overlay = { status: AgentStatus; working: boolean };
 export const OVERLAY_STARTED: Overlay = { status: "busy", working: true };

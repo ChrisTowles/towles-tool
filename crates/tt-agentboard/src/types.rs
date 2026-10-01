@@ -11,9 +11,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Follows `claude agents`: `busy` = working, `waiting` = blocked on the user,
-/// `idle` = alive at the prompt. The terminals have no CLI equivalent, and nor
-/// does `background`: at the prompt, but its background agents are still out.
+/// Read from the journal and the PTY; `claude agents` is liveness only. `busy` =
+/// working, `waiting` = blocked on the user, `idle` = at the prompt, and
+/// `background` = at the prompt with background agents still out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentStatus {
