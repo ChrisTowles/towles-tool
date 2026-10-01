@@ -1,8 +1,8 @@
-//! Agent status derived from the PTY the app already owns, rather than from
-//! polling `claude agents --all --json`. That CLI verdict sits behind a 60s cache,
-//! so nothing could contradict it: a session stuck at `waiting` kept a "needs you"
-//! badge while its terminal was visibly mid-turn. The app hosts the PTY, so it
-//! observes the agent directly and for free — [`tt_vt`] renders only when bytes
+//! Agent status derived from the PTY the app already owns, over the journal's
+//! reading. The journal lands an entry per content block, but a turn can be
+//! blocked on the user with nothing written (a permission prompt) or working
+//! between entries. The app hosts the PTY, so it observes the agent directly
+//! and for free — [`tt_vt`] renders only when bytes
 //! changed the screen, and Claude Code animates a live elapsed counter for a whole
 //! turn. Measured on a real session: output paused at most **0.27s** mid-turn,
 //! then went **15.6s** silent the instant it ended.
@@ -26,13 +26,6 @@ pub const OUTPUT_ACTIVE_MS: i64 = 1_500;
 /// turn's gaps top out at 0.27s, so persistence separates the two — at the cost
 /// of rule 1 of [`resolve_status`] arriving a second into a turn.
 pub const SUSTAINED_OUTPUT_MS: i64 = 1_000;
-
-/// How long a PTY must be silent before a backend `busy` is disbelieved.
-///
-/// Two orders of magnitude past a real repaint gap, so silence this long is
-/// stale bookkeeping. Without it a finished agent alternates `busy`/`complete`
-/// as attribution comes and goes, and each flap re-stamps `needs_since_ms`.
-pub const BUSY_SILENCE_MS: i64 = 20_000;
 
 /// How long after an attention notification its own trailing repaint is still
 /// attributed to that notification rather than to resumed work.
@@ -93,21 +86,14 @@ impl PtySignal {
             _ => false,
         }
     }
-
-    /// Whether this PTY has been silent long enough to disprove a claim that the
-    /// agent is working. A just-started shell has no silence to measure.
-    pub fn silent_past_busy(&self, now_ms: i64) -> bool {
-        self.last_output_ms.is_some_and(|at| now_ms.saturating_sub(at) >= BUSY_SILENCE_MS)
-    }
 }
 
 /// Fold the PTY's direct observation into `backend`, whatever
 /// [`crate::watchers`] concluded. The PTY only speaks where it has evidence:
 /// output right now is unconditionally `Busy`; quiet with attention pending
 /// means the agent wants the user (keeping a more specific `Complete`/`Error`,
-/// or `Background`, whose turn-end bell is not a question);
-/// silence past [`BUSY_SILENCE_MS`] retracts a `Busy`; otherwise `backend`
-/// stands, because ordinary silence proves nothing.
+/// or `Background`, whose turn-end bell is not a question); otherwise
+/// `backend` stands, because silence proves nothing — a long tool run is quiet.
 pub fn resolve_status(backend: AgentStatus, pty: &PtySignal, now_ms: i64) -> AgentStatus {
     if pty.output_active(now_ms) {
         return AgentStatus::Busy;
@@ -119,9 +105,6 @@ pub fn resolve_status(backend: AgentStatus, pty: &PtySignal, now_ms: i64) -> Age
             }
             _ => AgentStatus::Waiting,
         };
-    }
-    if backend == AgentStatus::Busy && pty.silent_past_busy(now_ms) {
-        return AgentStatus::Idle;
     }
     backend
 }
@@ -191,46 +174,20 @@ mod tests {
         assert_eq!(resolve_status(AgentStatus::Idle, &pty, NOW), AgentStatus::Idle);
     }
 
+    /// However long the silence: a ten-minute build paints nothing new.
     #[test]
     fn a_quiet_pty_leaves_the_backend_verdict_alone() {
-        for backend in [
-            AgentStatus::Idle,
-            AgentStatus::Waiting,
-            AgentStatus::Complete,
-        ] {
-            assert_eq!(resolve_status(backend, &quiet(), NOW), backend, "{backend:?}");
+        for pty in [quiet(), working(600_000), PtySignal::default()] {
+            for backend in [
+                AgentStatus::Idle,
+                AgentStatus::Busy,
+                AgentStatus::Waiting,
+                AgentStatus::Complete,
+                AgentStatus::Error,
+            ] {
+                assert_eq!(resolve_status(backend, &pty, NOW), backend, "{backend:?} {pty:?}");
+            }
         }
-    }
-
-    #[test]
-    fn long_silence_disproves_a_stale_busy() {
-        let pty = working(BUSY_SILENCE_MS);
-        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Idle);
-    }
-
-    #[test]
-    fn ordinary_between_paint_silence_does_not_disprove_busy() {
-        let pty = working(5_000);
-        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Busy);
-    }
-
-    #[test]
-    fn silence_only_disproves_busy_never_a_terminal_verdict() {
-        for backend in [
-            AgentStatus::Complete,
-            AgentStatus::Waiting,
-            AgentStatus::Error,
-        ] {
-            let pty = working(600_000);
-            assert_eq!(resolve_status(backend, &pty, NOW), backend, "{backend:?}");
-        }
-    }
-
-    #[test]
-    fn a_pane_that_never_produced_output_is_not_treated_as_silent() {
-        let pty = PtySignal::default();
-        assert!(!pty.silent_past_busy(NOW));
-        assert_eq!(resolve_status(AgentStatus::Busy, &pty, NOW), AgentStatus::Busy);
     }
 
     #[test]

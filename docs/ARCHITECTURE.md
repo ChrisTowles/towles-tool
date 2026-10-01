@@ -92,8 +92,8 @@ the CLI and the app can consume it.
   **[CODE-SERVER.md](CODE-SERVER.md)**.
 - `tt-agentboard` — watchers/engine: repo list, session tracking, needs-you
   synthesis. **Agent status is PTY-first** (`pty_status` folds what the terminal
-  observes over the cached `claude agents` verdict — the thresholds are
-  measured, not guessed). Also **the one home of the task-removal sequence**
+  observes over the session journal's reading; `claude agents` is liveness
+  only — the thresholds are measured, not guessed). Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
 - `tt-claude-code` — transcript/session parsing models.

@@ -36,6 +36,11 @@ pub struct TranscriptEntry {
     /// runs); those user lines are agent-authored, not the human's.
     #[serde(rename = "isSidechain", default)]
     pub is_sidechain: Option<bool>,
+    /// Claude Code's own context (a skill body, a caveat), not something typed.
+    #[serde(rename = "isMeta", default)]
+    pub is_meta: Option<bool>,
+    #[serde(rename = "isCompactSummary", default)]
+    pub is_compact_summary: Option<bool>,
     #[serde(default)]
     pub slug: Option<String>,
     /// The user-set session title (from a `custom-title` line). Authoritative.

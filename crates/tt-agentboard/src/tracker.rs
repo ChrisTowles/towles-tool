@@ -127,13 +127,6 @@ impl AgentTracker {
         }
     }
 
-    /// Prune "running" instances older than `timeout_ms` (unless pinned).
-    pub fn prune_stuck(&mut self, timeout_ms: i64, now_ms: i64) {
-        self.prune_where(|_, _, _, event| {
-            event.status == AgentStatus::Busy && now_ms - event.ts > timeout_ms
-        });
-    }
-
     /// Prune instances whose last activity is older than `timeout_ms`, optionally
     /// restricted to one status; skips pinned.
     fn prune_by_age(&mut self, timeout_ms: i64, only_status: Option<AgentStatus>, now_ms: i64) {
@@ -252,14 +245,14 @@ mod tests {
     }
 
     #[test]
-    fn prune_stuck_removes_old_running_unless_pinned() {
+    fn pruning_skips_a_pinned_instance() {
         let mut t = AgentTracker::new();
-        t.apply_event(ev("s", "a", AgentStatus::Busy, 0));
-        t.apply_event(ev("s", "b", AgentStatus::Busy, 0));
+        t.apply_event(ev("s", "a", AgentStatus::Idle, 0));
+        t.apply_event(ev("s", "b", AgentStatus::Idle, 0));
         t.set_pinned_instances_multi(&HashMap::from([("s".to_string(), vec!["b".to_string()])]));
-        t.prune_stuck(1000, 5000); // both are 5000ms old > 1000
-        assert!(has(&t, "s", "b")); // b survived (pinned)
-        assert!(!has(&t, "s", "a")); // a was pruned
+        t.prune_idle(1000, 5000);
+        assert!(has(&t, "s", "b"));
+        assert!(!has(&t, "s", "a"));
     }
 
     #[test]

@@ -1,12 +1,7 @@
-//! `claude agents --all --json` as the authoritative source for live Claude
-//! Code sessions (phase T7 of the agentboard port; Chris's call,
-//! 2026-07-03: prefer the supported CLI surface over parsing raw
-//! `~/.claude/sessions/<pid>.json` files and inferring status from journals).
-//!
-//! One entry per live process: pid, cwd, kind (interactive/background),
-//! startedAt, sessionId, name, status (`busy` / `waiting` (+waitingFor) /
-//! `idle`). The CLI does NOT expose model/tool/usage/subagents — journal
-//! reads remain for those (enrichment only, in the claude-code watcher).
+//! `claude agents --all --json` as the source of **liveness** for Claude Code
+//! sessions: which processes are up, and the pid, cwd, session id and start
+//! time of each. Its `status` is deliberately not read — it sits behind the
+//! cache below, so busy/not-busy comes from the journal and the PTY instead.
 //!
 //! The parse is pure and fixture-tested; the fetch is a thin subprocess
 //! wrapper with a process-wide cache so the watcher (2s), engine pinning
@@ -15,8 +10,6 @@
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-
-use crate::types::AgentStatus;
 
 /// One live Claude Code process as reported by the CLI.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,24 +21,6 @@ pub struct CliAgent {
     pub started_at: Option<i64>,
     pub session_id: String,
     pub name: Option<String>,
-    /// Raw CLI status: `busy` / `waiting` / `idle`.
-    pub status: Option<String>,
-    /// What a `waiting` session waits for (e.g. `permission prompt`).
-    pub waiting_for: Option<String>,
-}
-
-impl CliAgent {
-    /// The CLI status in the agentboard vocabulary — a 1:1 mapping now that
-    /// the vocabulary follows the CLI's own naming. `idle` callers may
-    /// refine with journal knowledge (a completed turn shows `complete`).
-    pub fn agent_status(&self) -> Option<AgentStatus> {
-        match self.status.as_deref() {
-            Some("busy") => Some(AgentStatus::Busy),
-            Some("waiting") => Some(AgentStatus::Waiting),
-            Some("idle") => Some(AgentStatus::Idle),
-            _ => None,
-        }
-    }
 }
 
 /// Parse the CLI's JSON array. Tolerant: entries missing pid/sessionId are
@@ -66,8 +41,6 @@ pub fn parse_agents(json: &str) -> Vec<CliAgent> {
                 started_at: entry.get("startedAt").and_then(|v| v.as_i64()),
                 session_id,
                 name: entry.get("name").and_then(|v| v.as_str()).map(str::to_string),
-                status: entry.get("status").and_then(|v| v.as_str()).map(str::to_string),
-                waiting_for: entry.get("waitingFor").and_then(|v| v.as_str()).map(str::to_string),
             })
         })
         .collect()
@@ -268,15 +241,6 @@ mod tests {
         assert_eq!(agents[0].kind.as_deref(), Some("interactive"));
         assert_eq!(agents[0].started_at, Some(1_783_087_499_085));
         assert_eq!(agents[1].name.as_deref(), Some("Fix the flaky test"));
-        assert_eq!(agents[1].waiting_for.as_deref(), Some("permission prompt"));
-    }
-
-    #[test]
-    fn status_mapping() {
-        let agents = parse_agents(FIXTURE);
-        assert_eq!(agents[0].agent_status(), Some(AgentStatus::Busy));
-        assert_eq!(agents[1].agent_status(), Some(AgentStatus::Waiting));
-        assert_eq!(agents[2].agent_status(), Some(AgentStatus::Idle));
     }
 
     #[test]

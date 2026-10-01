@@ -1,9 +1,9 @@
 //! Claude Code agent watcher. **Discovery and liveness come from `claude
-//! agents --all --json`** ([`crate::claude_cli`]); **journals are enrichment
-//! only**, supplying what the CLI doesn't expose (model, last tool, usage,
-//! sub-agents, `/loop` wakeups, the first-prompt thread name).
+//! agents --all --json`** ([`crate::claude_cli`]); **the journal says where the
+//! turn stands** — busy or not, and everything else the CLI doesn't expose
+//! (model, last tool, usage, sub-agents, `/loop` wakeups, the thread name).
 //!
-//! Per scan: list live agents, resolve each to a session by cwd, then refine
+//! Per scan: list live agents, resolve each to a session by cwd, then read its
 //! status (`session_status`). A session that vanished gets one final
 //! journal read and a terminal emit. Deliberate limit: one that exited before
 //! the server started never appears at all. Live sessions the CLI doesn't list
@@ -34,8 +34,9 @@ pub fn parse_timestamp_ms(s: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp_millis())
 }
 
-/// With CLI-driven liveness this only informs the `idle` refinement and the
-/// exit-time terminal emit.
+/// Where an entry leaves the turn, `None` for one that doesn't move it. A user
+/// entry starts a turn unless Claude Code wrote it itself (a skill body, a
+/// compaction summary, a local command and its output); an interrupt ends one.
 fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
     let msg = entry.message.as_ref()?;
     let role = msg.role.as_deref().filter(|r| !r.is_empty())?;
@@ -52,10 +53,24 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
             let all_asking = tool_uses.iter().all(|t| t.name() == Some("AskUserQuestion"));
             Some(if all_asking { AgentStatus::Waiting } else { AgentStatus::Busy })
         }
-        "user" => Some(AgentStatus::Busy),
+        "user" if entry.is_meta == Some(true) || entry.is_compact_summary == Some(true) => None,
+        "user" => {
+            let text = msg.content.as_ref().and_then(|c| c.first_text()).unwrap_or_default();
+            let text = text.trim_start();
+            if text.starts_with("[Request interrupted by user") {
+                Some(AgentStatus::Idle)
+            } else if LOCAL_COMMAND_TAGS.iter().any(|tag| text.starts_with(tag)) {
+                None
+            } else {
+                Some(AgentStatus::Busy)
+            }
+        }
         _ => None,
     }
 }
+
+/// A slash command's own entries; a prompt command's turn starts at the reply.
+const LOCAL_COMMAND_TAGS: [&str; 3] = ["<command-name>", "<command-message>", "<local-command-"];
 
 /// `tool_use` means the response also asked for a tool, so the text is
 /// narration and the agent is still `Busy`. A missing `stop_reason` reads as
@@ -178,40 +193,14 @@ fn is_placeholder_model(model: &str) -> bool {
     model.starts_with('<')
 }
 
-/// How long a CLI `busy`/`waiting` is trusted past the journal's turn-end:
-/// past ordinary CLI lag, short enough that a stuck session self-heals.
-const STALE_BUSY_JOURNAL_MS: i64 = 60_000;
-
 /// The one map from what is known about a live session to its status, for the
-/// watcher's CLI-listed sessions and the engine's unlisted ones alike. `cli` is
-/// the CLI's verdict, `None` when it didn't list the session, which leaves the
-/// journal's reading. A CLI `idle` takes the journal's `complete` (unseen-✓
-/// flow) or `waiting`. A CLI `busy`/`waiting` is never re-derived while the
-/// process stays listed, so a journal ending in a plain final response with
-/// nothing appended since overrules it. Last, a finished turn with background
-/// agents still out is not waiting on you — their reports start the next one;
-/// a question (`Waiting`) still is.
-fn session_status(
-    cli: Option<AgentStatus>,
-    journal: &Journal,
-    process_started_at: Option<i64>,
-    now_ms: i64,
-) -> AgentStatus {
-    let silence_ms = now_ms.saturating_sub(journal.updated_at);
-    let status = match cli {
-        None => journal.status,
-        Some(AgentStatus::Idle) => match journal.status {
-            AgentStatus::Complete | AgentStatus::Waiting => journal.status,
-            _ => AgentStatus::Idle,
-        },
-        Some(_)
-            if journal.status == AgentStatus::Complete && silence_ms > STALE_BUSY_JOURNAL_MS =>
-        {
-            AgentStatus::Complete
-        }
-        Some(cli) => cli,
-    };
-    match status {
+/// watcher's CLI-listed sessions and the engine's unlisted ones alike: the
+/// journal's reading, except that a finished turn with background agents still
+/// out is not waiting on you — their reports start the next one; a question
+/// (`Waiting`) still is. The PTY overrides this downstream
+/// ([`crate::pty_status::resolve_status`]).
+fn session_status(journal: &Journal, process_started_at: Option<i64>) -> AgentStatus {
+    match journal.status {
         AgentStatus::Idle | AgentStatus::Complete
             if journal.ledger.background_running(process_started_at) > 0 =>
         {
@@ -235,9 +224,6 @@ type Emitted = (AgentStatus, Option<String>, Option<AgentEventDetails>);
 #[derive(Debug, Clone, Default)]
 struct Journal {
     status: AgentStatus,
-    /// Last refresh that consumed new bytes; feeds `session_status`'s
-    /// staleness check. `0` until first read.
-    updated_at: i64,
     offset: u64,
     /// A same-path replacement that GREW the file passes the shrink check but
     /// invalidates the offset; the inode catches most of those (unix only).
@@ -261,7 +247,7 @@ struct Journal {
 impl Journal {
     /// Consume what was appended to `path` since the last call; an unchanged
     /// length costs one `stat`.
-    fn refresh(&mut self, path: &Path, now_ms: i64) {
+    fn refresh(&mut self, path: &Path) {
         let Ok(meta) = std::fs::metadata(path) else {
             return;
         };
@@ -283,7 +269,6 @@ impl Journal {
             // `model`/`context_max` survive: same session, same model, and
             // re-deriving costs a full assistant turn.
             *self = Journal {
-                updated_at: self.updated_at,
                 model: self.model.take(),
                 context_max: self.context_max,
                 ..Journal::default()
@@ -316,7 +301,6 @@ impl Journal {
                 self.head.extend_from_slice(&line[..take]);
             }
             self.offset += n as u64;
-            self.updated_at = now_ms;
             if let Ok(entry) =
                 serde_json::from_str::<TranscriptEntry>(&String::from_utf8_lossy(&line))
             {
@@ -461,7 +445,7 @@ impl ClaudeCodeAgentWatcher {
         find_journal(&self.projects_dir, cwd, session_id)
     }
 
-    fn enrich_from_journal(&mut self, session_id: &str, cwd: &str, now_ms: i64) {
+    fn enrich_from_journal(&mut self, session_id: &str, cwd: &str) {
         let path = match self.sessions.get(session_id).and_then(|s| s.journal_path.clone()) {
             Some(p) if p.exists() => Some(p),
             _ => self.find_journal(cwd, session_id),
@@ -477,7 +461,7 @@ impl ClaudeCodeAgentWatcher {
             state.subagents = state.subagent_usage.scan(&dir);
         }
 
-        state.journal.refresh(&path, now_ms);
+        state.journal.refresh(&path);
     }
 
     /// First-prompt text beats the CLI's interactive slugs (`proj-44`);
@@ -533,16 +517,13 @@ impl ClaudeCodeAgentWatcher {
                 continue;
             };
 
-            self.enrich_from_journal(&agent.session_id, &agent.cwd, now_ms);
+            self.enrich_from_journal(&agent.session_id, &agent.cwd);
             let state = self.sessions.get_mut(&agent.session_id).unwrap();
             state.session = Some(session);
             state.cli_name = agent.name.clone();
             state.process_started_at = agent.started_at;
 
-            // An unrecognized CLI status reads as `idle`: listed, verdict unknown.
-            let cli = agent.agent_status().unwrap_or(AgentStatus::Idle);
-            let status =
-                session_status(Some(cli), &state.journal, state.process_started_at, now_ms);
+            let status = session_status(&state.journal, state.process_started_at);
             let parts = Self::event_parts(state, status);
             if state.emitted.as_ref() != Some(&parts) {
                 state.emitted = Some(parts.clone());
@@ -554,7 +535,7 @@ impl ClaudeCodeAgentWatcher {
             self.sessions.keys().filter(|id| !live_ids.contains(*id)).cloned().collect();
         for session_id in gone {
             let cwd = String::new();
-            self.enrich_from_journal(&session_id, &cwd, now_ms);
+            self.enrich_from_journal(&session_id, &cwd);
             let Some(state) = self.sessions.remove(&session_id) else {
                 continue;
             };
@@ -584,12 +565,12 @@ pub fn unlisted_events(procs: &[SessionAgentProc], now_ms: i64) -> HashMap<Strin
         let mut journal = Journal::default();
         if let Some(path) = &proc.transcript {
             journal = journals.remove(path).unwrap_or_default();
-            journal.refresh(path, now_ms);
+            journal.refresh(path);
         }
         let event = AgentEvent {
             agent: NAME.to_string(),
             session: String::new(),
-            status: session_status(None, &journal, proc.started_at, now_ms),
+            status: session_status(&journal, proc.started_at),
             ts: now_ms,
             thread_id: None,
             thread_name: journal.thread_name.clone(),
@@ -628,7 +609,7 @@ mod tests {
         }
     }
 
-    fn cli_agent(pid: i32, cwd: &str, sid: &str, status: &str) -> CliAgent {
+    fn cli_agent(pid: i32, cwd: &str, sid: &str) -> CliAgent {
         CliAgent {
             pid,
             cwd: cwd.to_string(),
@@ -636,8 +617,6 @@ mod tests {
             started_at: Some(1),
             session_id: sid.to_string(),
             name: Some(format!("slug-{pid}")),
-            status: Some(status.to_string()),
-            waiting_for: None,
         }
     }
 
@@ -700,11 +679,7 @@ mod tests {
     fn a_narration_entry_does_not_flip_a_working_agent_to_complete() {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-n", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![CliAgent {
-            // Unrecognized, so read as a CLI `idle` that defers to the journal.
-            status: None,
-            ..cli_agent(100, "/home/u/proj", "sid-n", "busy")
-        }];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-n")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
 
@@ -739,7 +714,7 @@ mod tests {
     fn busy_agent_emits_running_with_journal_enrichment() {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-1", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-1", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-1")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
 
@@ -764,7 +739,7 @@ mod tests {
         const SYNTHETIC_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:30.000Z","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"[Request interrupted]"}],"usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#;
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-s", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-s", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-s")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -790,7 +765,7 @@ mod tests {
     fn model_survives_a_journal_rotation() {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-r", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-r", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-r")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -870,41 +845,60 @@ mod tests {
         let (first, rest) = END_TURN_LINE.split_at(40);
         std::fs::write(&path, format!("{USER_LINE}\n{RUNNING_LINE}\n{first}")).unwrap();
         let mut journal = Journal::default();
-        journal.refresh(&path, 1_000);
+        journal.refresh(&path);
         assert_eq!(journal.status, AgentStatus::Busy);
         assert_eq!(journal.offset as usize, USER_LINE.len() + RUNNING_LINE.len() + 2);
         assert_eq!(journal.head, USER_LINE.as_bytes()[..HEAD_PROBE_LEN]);
 
         let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
         std::io::Write::write_all(&mut file, format!("{rest}\n").as_bytes()).unwrap();
-        journal.refresh(&path, 2_000);
+        journal.refresh(&path);
         assert_eq!(journal.status, AgentStatus::Complete);
         assert_eq!(journal.offset, std::fs::metadata(&path).unwrap().len());
         assert_eq!(journal.last_tool.as_deref(), Some("Bash"));
     }
 
     #[test]
-    fn idle_refines_by_journal_and_waiting_maps_to_question() {
+    fn the_journal_says_where_a_listed_session_stands() {
+        const ASK_LINE: &str = r#"{"message":{"role":"assistant","content":[{"type":"tool_use","name":"AskUserQuestion"}]}}"#;
         let mut f = fixture();
-        // Journal ends done → idle process shows Done (unseen-✓ flow).
         write_journal(&f.projects, "/home/u/a", "sid-done", &[USER_LINE, DONE_LINE]);
-        // Journal mid-run → idle process shows Waiting.
         write_journal(&f.projects, "/home/u/b", "sid-mid", &[USER_LINE, RUNNING_LINE]);
+        write_journal(&f.projects, "/home/u/c", "sid-ask", &[USER_LINE, ASK_LINE]);
         *f.agents.lock().unwrap() = vec![
-            cli_agent(1, "/home/u/a", "sid-done", "idle"),
-            cli_agent(2, "/home/u/b", "sid-mid", "idle"),
-            cli_agent(3, "/home/u/a", "sid-perm", "waiting"),
+            cli_agent(1, "/home/u/a", "sid-done"),
+            cli_agent(2, "/home/u/b", "sid-mid"),
+            cli_agent(3, "/home/u/c", "sid-ask"),
+            cli_agent(4, "/home/u/a", "sid-new"),
         ];
         let mut ctx = Ctx::new();
-        ctx.by_dir.push(("/home/u/a".into(), "a".into()));
-        ctx.by_dir.push(("/home/u/b".into(), "b".into()));
+        for dir in ["a", "b", "c"] {
+            ctx.by_dir.push((format!("/home/u/{dir}"), dir.into()));
+        }
 
         ctx.scan(&mut f.watcher, 1_000);
         let by_thread: std::collections::HashMap<&str, AgentStatus> =
             ctx.events.iter().map(|e| (e.thread_id.as_deref().unwrap(), e.status)).collect();
         assert_eq!(by_thread["sid-done"], AgentStatus::Complete);
-        assert_eq!(by_thread["sid-mid"], AgentStatus::Idle);
-        assert_eq!(by_thread["sid-perm"], AgentStatus::Waiting);
+        assert_eq!(by_thread["sid-mid"], AgentStatus::Busy);
+        assert_eq!(by_thread["sid-ask"], AgentStatus::Waiting);
+        assert_eq!(by_thread["sid-new"], AgentStatus::Idle);
+    }
+
+    #[test]
+    fn entries_claude_code_writes_itself_do_not_start_a_turn() {
+        let status = |line: &str| determine_status(&serde_json::from_str(line).unwrap());
+        for line in [
+            r#"{"isMeta":true,"message":{"role":"user","content":"Base directory for this skill"}}"#,
+            r#"{"isCompactSummary":true,"message":{"role":"user","content":"This session is being continued"}}"#,
+            r#"{"message":{"role":"user","content":"<command-name>/clear</command-name>"}}"#,
+            r#"{"message":{"role":"user","content":"<local-command-stdout>ok</local-command-stdout>"}}"#,
+        ] {
+            assert_eq!(status(line), None, "{line}");
+        }
+        let interrupted = r#"{"message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#;
+        assert_eq!(status(interrupted), Some(AgentStatus::Idle));
+        assert_eq!(status(USER_LINE), Some(AgentStatus::Busy));
     }
 
     #[test]
@@ -913,7 +907,7 @@ mod tests {
         let launch = r#"{"type":"user","timestamp":"2026-09-30T22:00:00Z","toolUseResult":{"status":"async_launched","agentId":"a1"}}"#;
         let path =
             write_journal(&f.projects, "/home/u/a", "sid-bg", &[USER_LINE, launch, DONE_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-bg", "idle")];
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-bg")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/a".into(), "a".into()));
 
@@ -954,7 +948,7 @@ mod tests {
         std::fs::write(subagents.join("agent-afg.meta.json"), r#"{"toolUseId":"toolu_fg"}"#)
             .unwrap();
         std::fs::write(subagents.join("agent-old.jsonl"), format!("{usage}\n")).unwrap();
-        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-l", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-l")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/a".into(), "a".into()));
 
@@ -979,37 +973,27 @@ mod tests {
     }
 
     #[test]
-    fn stuck_busy_from_stale_cli_status_self_heals_to_complete() {
-        // The reported bug: the CLI keeps reporting `busy` long after the
-        // transcript recorded the turn's end, and the board pulsed forever.
+    fn a_finished_turn_reads_complete_on_the_first_scan() {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/p", "sid-stuck", &[USER_LINE, DONE_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-stuck", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-stuck")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
 
-        // A brief CLI lag must not flip it immediately, or the dot flaps.
         ctx.scan(&mut f.watcher, 1_000);
-        assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Busy);
-
-        // Nothing new in the journal plus a CLI still insisting past the
-        // window means stuck bookkeeping, not a working agent.
-        ctx.scan(&mut f.watcher, 1_000 + STALE_BUSY_JOURNAL_MS + 1);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
     }
 
     #[test]
     fn busy_with_in_flight_tool_call_never_goes_stale() {
-        // A multi-minute build writes nothing meanwhile, but the journal still
-        // shows Busy — so staleness must never kick in, however long it runs.
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/p", "sid-running", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-running", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-running")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
 
         ctx.scan(&mut f.watcher, 1_000);
-        ctx.scan(&mut f.watcher, 1_000 + STALE_BUSY_JOURNAL_MS * 10);
+        ctx.scan(&mut f.watcher, 1_000 + 3_600_000);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Busy);
     }
 
@@ -1023,8 +1007,8 @@ mod tests {
         write_journal(&projects, "/home/u/proj", "app-sid", &[USER_LINE, RUNNING_LINE]);
         write_journal(&projects, "/home/u/proj", "ext-sid", &[USER_LINE, RUNNING_LINE]);
         let agents = vec![
-            cli_agent(100, "/home/u/proj", "app-sid", "busy"),
-            cli_agent(200, "/home/u/proj", "ext-sid", "busy"),
+            cli_agent(100, "/home/u/proj", "app-sid"),
+            cli_agent(200, "/home/u/proj", "ext-sid"),
         ];
         let mut watcher = ClaudeCodeAgentWatcher::new(
             projects,
@@ -1044,7 +1028,7 @@ mod tests {
     fn no_reemit_without_change_but_usage_delta_reemits() {
         let mut f = fixture();
         let path = write_journal(&f.projects, "/home/u/p", "sid-1", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-1", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-1")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
 
@@ -1072,8 +1056,8 @@ mod tests {
             write_journal(&f.projects, "/home/u/a", "sid-done", &[USER_LINE, RUNNING_LINE]);
         write_journal(&f.projects, "/home/u/b", "sid-mid", &[USER_LINE, RUNNING_LINE]);
         *f.agents.lock().unwrap() = vec![
-            cli_agent(1, "/home/u/a", "sid-done", "busy"),
-            cli_agent(2, "/home/u/b", "sid-mid", "busy"),
+            cli_agent(1, "/home/u/a", "sid-done"),
+            cli_agent(2, "/home/u/b", "sid-mid"),
         ];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/a".into(), "a".into()));
@@ -1103,7 +1087,7 @@ mod tests {
     fn unresolved_agents_never_emit_even_on_exit() {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/x", "sid-x", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/x", "sid-x", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/x", "sid-x")];
         let mut ctx = Ctx::new(); // resolves nothing
         ctx.scan(&mut f.watcher, 1_000);
         f.agents.lock().unwrap().clear();
@@ -1121,7 +1105,7 @@ mod tests {
             "sid-1",
             &[r#"{"message":{"role":"user","content":"<system>boot</system>"}}"#],
         );
-        *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/p", "sid-1", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/p", "sid-1")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -1132,7 +1116,7 @@ mod tests {
     fn shrunk_journal_resets_and_rederives() {
         let mut f = fixture();
         let path = write_journal(&f.projects, "/home/u/p", "sid-1", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/p", "sid-1", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/p", "sid-1")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -1161,7 +1145,7 @@ mod tests {
         let dir = f.projects.join("-home-u-renamed-proj");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("sid-1.jsonl"), format!("{USER_LINE}\n")).unwrap();
-        *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/my-app", "sid-1", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/my-app", "sid-1")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/my-app".into(), "p".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -1173,7 +1157,7 @@ mod tests {
         let mut f = fixture();
         let path =
             write_journal(&f.projects, "/home/u/proj", "sid-inc", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-inc", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-inc")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -1184,7 +1168,7 @@ mod tests {
             let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
             writeln!(file, "{DONE_LINE}").unwrap();
         }
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-inc", "idle")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-inc")];
         ctx.scan(&mut f.watcher, 2_000);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
     }
@@ -1194,7 +1178,7 @@ mod tests {
         let mut f = fixture();
         let path =
             write_journal(&f.projects, "/home/u/proj", "sid-rot", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-rot", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-rot")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -1206,7 +1190,7 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         let new_user = r#"{"timestamp":"2026-07-03T11:00:00.000Z","message":{"role":"user","content":"a rewritten journal with a much longer opening prompt than before"}}"#;
         write_journal(&f.projects, "/home/u/proj", "sid-rot", &[new_user, RUNNING_LINE, DONE_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-rot", "idle")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-rot")];
         ctx.scan(&mut f.watcher, 2_000);
         let ev = ctx.events.last().unwrap();
         assert_eq!(
@@ -1220,7 +1204,7 @@ mod tests {
     fn rewritten_journal_with_same_inode_detected_by_head_change() {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-same", &[USER_LINE, RUNNING_LINE]);
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-same", "busy")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-same")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
         ctx.scan(&mut f.watcher, 1_000);
@@ -1238,7 +1222,7 @@ mod tests {
             "sid-same",
             &[new_user, RUNNING_LINE, DONE_LINE],
         );
-        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-same", "idle")];
+        *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-same")];
         ctx.scan(&mut f.watcher, 2_000);
         let ev = ctx.events.last().unwrap();
         assert_eq!(
