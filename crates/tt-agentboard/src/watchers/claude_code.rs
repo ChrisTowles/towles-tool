@@ -59,7 +59,9 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
             let text = text.trim_start();
             if text.starts_with("[Request interrupted by user") {
                 Some(AgentStatus::Idle)
-            } else if LOCAL_COMMAND_TAGS.iter().any(|tag| text.starts_with(tag)) {
+            } else if LOCAL_ENTRY_PREFIXES.iter().any(|tag| text.starts_with(tag))
+                || is_raw_slash_command(text)
+            {
                 None
             } else {
                 Some(AgentStatus::Busy)
@@ -69,8 +71,24 @@ fn determine_status(entry: &TranscriptEntry) -> Option<AgentStatus> {
     }
 }
 
-/// A slash command's own entries; a prompt command's turn starts at the reply.
-const LOCAL_COMMAND_TAGS: [&str; 3] = ["<command-name>", "<command-message>", "<local-command-"];
+/// Entries no model turn follows: a slash command's own (a prompt command's
+/// turn starts at the reply), `!` bash mode, and an unknown `/skill`.
+const LOCAL_ENTRY_PREFIXES: [&str; 7] = [
+    "<command-name>",
+    "<command-message>",
+    "<local-command-",
+    "<bash-input>",
+    "<bash-stdout>",
+    "<bash-stderr>",
+    "Unknown skill: ",
+];
+
+/// `/compact …` or a backgrounded `/code-review …`, logged as typed; a path
+/// like `/home/u/x.rs` is a prompt.
+fn is_raw_slash_command(text: &str) -> bool {
+    let name = text.split_whitespace().next().and_then(|w| w.strip_prefix('/'));
+    name.is_some_and(|n| n.starts_with(|c: char| c.is_ascii_alphabetic()) && !n.contains('/'))
+}
 
 /// `tool_use` means the response also asked for a tool, so the text is
 /// narration and the agent is still `Busy`. A missing `stop_reason` reads as
@@ -893,12 +911,40 @@ mod tests {
             r#"{"isCompactSummary":true,"message":{"role":"user","content":"This session is being continued"}}"#,
             r#"{"message":{"role":"user","content":"<command-name>/clear</command-name>"}}"#,
             r#"{"message":{"role":"user","content":"<local-command-stdout>ok</local-command-stdout>"}}"#,
+            r#"{"message":{"role":"user","content":"<bash-input>git status</bash-input>"}}"#,
+            r#"{"message":{"role":"user","content":"<bash-stdout></bash-stdout><bash-stderr>fatal</bash-stderr>"}}"#,
+            r#"{"message":{"role":"user","content":"<bash-stderr>(eval):1: not found</bash-stderr>"}}"#,
+            r#"{"message":{"role":"user","content":"Unknown skill: rebase"}}"#,
+            r#"{"message":{"role":"user","content":"/compact keep the plan"}}"#,
+            r#"{"message":{"role":"user","content":"/code-review low --fix"}}"#,
         ] {
             assert_eq!(status(line), None, "{line}");
         }
         let interrupted = r#"{"message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#;
         assert_eq!(status(interrupted), Some(AgentStatus::Idle));
         assert_eq!(status(USER_LINE), Some(AgentStatus::Busy));
+        let path_prompt =
+            r#"{"message":{"role":"user","content":"/home/u/x.rs why does this fail"}}"#;
+        assert_eq!(status(path_prompt), Some(AgentStatus::Busy));
+    }
+
+    #[test]
+    fn a_bash_mode_command_after_a_finished_turn_leaves_it_complete() {
+        let mut f = fixture();
+        let bash_in = r#"{"message":{"role":"user","content":"<bash-input>gs</bash-input>"}}"#;
+        let bash_out = r#"{"message":{"role":"user","content":"<bash-stdout></bash-stdout><bash-stderr>fatal: not a git repository</bash-stderr>"}}"#;
+        write_journal(
+            &f.projects,
+            "/home/u/p",
+            "sid-bash",
+            &[USER_LINE, END_TURN_LINE, bash_in, bash_out],
+        );
+        *f.agents.lock().unwrap() = vec![cli_agent(9, "/home/u/p", "sid-bash")];
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/p".into(), "p".into()));
+
+        ctx.scan(&mut f.watcher, 1_000);
+        assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
     }
 
     #[test]
