@@ -4,16 +4,19 @@
 //! sub-agents, `/loop` wakeups, the first-prompt thread name).
 //!
 //! Per scan: list live agents, resolve each to a session by cwd, then refine
-//! status (`backend_status`). A session that vanished gets one final
+//! status (`session_status`). A session that vanished gets one final
 //! journal read and a terminal emit. Deliberate limit: one that exited before
-//! the server started never appears at all.
+//! the server started never appears at all. Live sessions the CLI doesn't list
+//! go through the same rules via [`unlisted_events`].
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use tt_claude_code::{TranscriptEntry, parse_transcript};
 
 use crate::claude_cli::CliAgent;
+use crate::procenv::SessionAgentProc;
 use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo};
 use crate::watchers::background::BackgroundAgents;
 use crate::watchers::claude_usage::{ClaudeUsageSummary, extract_usage_summary};
@@ -100,22 +103,6 @@ pub fn find_journal(projects_dir: &Path, cwd: &str, session_id: &str) -> Option<
         }
     }
     None
-}
-
-/// `(thread_name, status)` for a live agent detected outside the CLI snapshot.
-/// Bounded reads keep large transcripts cheap: the name is near the top, the
-/// status near the bottom.
-pub fn enrich_from_transcript(path: &Path) -> (Option<String>, AgentStatus) {
-    let head = read_window(path, 0, TAIL_WINDOW);
-    let thread_name = parse_transcript(&head).iter().find_map(extract_thread_name);
-    let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let tail = read_window(path, len.saturating_sub(TAIL_WINDOW), TAIL_WINDOW);
-    let status = parse_transcript(&tail)
-        .iter()
-        .rev()
-        .find_map(determine_status)
-        .unwrap_or(AgentStatus::Idle);
-    (thread_name, status)
 }
 
 #[cfg(unix)]
@@ -237,32 +224,41 @@ fn is_placeholder_model(model: &str) -> bool {
 /// past ordinary CLI lag, short enough that a stuck session self-heals.
 const STALE_BUSY_JOURNAL_MS: i64 = 60_000;
 
-/// The CLI's verdict refined by the journal. A CLI `idle` takes the journal's
-/// `complete` (unseen-✓ flow) or `waiting`. A CLI `busy`/`waiting` is never
-/// re-derived while the process stays listed, so a journal ending in a plain
-/// final response with nothing appended since overrules it. Last, a finished
-/// turn with background agents still out is not waiting on you — their reports
-/// start the next one; a question (`Waiting`) still is.
-fn backend_status(
+/// The one map from what is known about a live session to its status, for the
+/// watcher's CLI-listed sessions and the engine's unlisted ones alike. `cli` is
+/// the CLI's verdict, `None` when it didn't list the session, which leaves the
+/// journal's reading. A CLI `idle` takes the journal's `complete` (unseen-✓
+/// flow) or `waiting`. A CLI `busy`/`waiting` is never re-derived while the
+/// process stays listed, so a journal ending in a plain final response with
+/// nothing appended since overrules it. Last, a finished turn with background
+/// agents still out is not waiting on you — their reports start the next one;
+/// a question (`Waiting`) still is.
+fn session_status(
     cli: Option<AgentStatus>,
-    journal: AgentStatus,
-    journal_silence_ms: i64,
-    background: usize,
+    journal: &Journal,
+    process_started_at: Option<i64>,
+    now_ms: i64,
 ) -> AgentStatus {
+    let silence_ms = now_ms.saturating_sub(journal.updated_at);
     let status = match cli {
-        Some(AgentStatus::Idle) | None => match journal {
-            AgentStatus::Complete | AgentStatus::Waiting => journal,
+        None => journal.status,
+        Some(AgentStatus::Idle) => match journal.status {
+            AgentStatus::Complete | AgentStatus::Waiting => journal.status,
             _ => AgentStatus::Idle,
         },
         Some(_)
-            if journal == AgentStatus::Complete && journal_silence_ms > STALE_BUSY_JOURNAL_MS =>
+            if journal.status == AgentStatus::Complete && silence_ms > STALE_BUSY_JOURNAL_MS =>
         {
             AgentStatus::Complete
         }
         Some(cli) => cli,
     };
     match status {
-        AgentStatus::Idle | AgentStatus::Complete if background > 0 => AgentStatus::Background,
+        AgentStatus::Idle | AgentStatus::Complete
+            if journal.background.running(process_started_at) > 0 =>
+        {
+            AgentStatus::Background
+        }
         other => other,
     }
 }
@@ -277,14 +273,14 @@ fn exit_status(journal_status: AgentStatus) -> AgentStatus {
 /// What the last emit carried; a scan emits again only when this changes.
 type Emitted = (AgentStatus, Option<String>, Option<AgentEventDetails>);
 
+/// What a session's parent journal says, consumed incrementally.
 #[derive(Debug, Clone, Default)]
-struct SessionState {
-    emitted: Option<Emitted>,
-    journal_status: AgentStatus,
-    /// Last scan that consumed new bytes; feeds `backend_status`'s staleness
-    /// check. `0` until first read.
-    journal_updated_at: i64,
-    file_offset: u64,
+struct Journal {
+    status: AgentStatus,
+    /// Last refresh that consumed new bytes; feeds `session_status`'s
+    /// staleness check. `0` until first read.
+    updated_at: i64,
+    offset: u64,
     /// A same-path replacement that GREW the file passes the shrink check but
     /// invalidates the offset; the inode catches most of those (unix only).
     file_id: Option<(u64, u64)>,
@@ -292,35 +288,97 @@ struct SessionState {
     /// the next file created, so remove+recreate at one path can keep its
     /// `(dev, ino)`. Journals are append-only, so a changed head is definitive.
     head: Vec<u8>,
-    journal_path: Option<PathBuf>,
     thread_name: Option<String>,
     usage: Option<ClaudeUsageSummary>,
     /// Session-level, and only ever *stated* inside an assistant `usage`
     /// entry — so the rotation reset would blank the readout until the next
-    /// reply, which on an idle session is never. Carried across like
-    /// `thread_name`: neither changes when the journal is replaced.
+    /// reply, which on an idle session is never.
     model: Option<String>,
     context_max: Option<i64>,
     last_tool: Option<String>,
-    subagents: SubagentRollup,
-    subagent_usage: SubagentUsage,
     loop_state: Option<LoopInfo>,
     background: BackgroundAgents,
-    /// `startedAt` of the process now running this session.
-    process_started_at: Option<i64>,
-    session: Option<String>,
-    cli_name: Option<String>,
 }
 
-impl SessionState {
-    fn background_running(&self) -> usize {
-        self.background.running(self.process_started_at)
+impl Journal {
+    /// Consume what was appended to `path` since the last call; an unchanged
+    /// length costs one `stat`.
+    fn refresh(&mut self, path: &Path, now_ms: i64) {
+        let Ok(meta) = std::fs::metadata(path) else {
+            return;
+        };
+        let size = meta.len();
+        let file_id = metadata_file_id(&meta);
+        // Shrunk file → reset and re-derive: all journal-derived state is
+        // stale, not just the offset. A same-path replacement that grew past
+        // the old offset is the same situation, caught by the inode — or, when
+        // ext4 reuses the freed inode, by the head (see `Journal::head`).
+        // Probed only when the file moved: an unchanged size is the idle case.
+        let head_changed = !self.head.is_empty()
+            && self.offset > 0
+            && size != self.offset
+            && read_head(path, self.head.len()).is_some_and(|h| h != self.head);
+        let rotated = size < self.offset
+            || (file_id.is_some() && self.file_id.is_some() && file_id != self.file_id)
+            || head_changed;
+        if rotated {
+            // `model`/`context_max` survive: same session, same model, and
+            // re-deriving costs a full assistant turn.
+            *self = Journal {
+                updated_at: self.updated_at,
+                model: self.model.take(),
+                context_max: self.context_max,
+                ..Journal::default()
+            };
+        }
+        self.file_id = file_id;
+        if size == self.offset {
+            return;
+        }
+
+        // Journals reach tens of MB and append several times a second while
+        // an agent streams; re-reading the whole file per scan was a hot loop.
+        let Some(fresh) = read_from_offset(path, self.offset) else {
+            return;
+        };
+        let consumed = consumed_len(&fresh);
+        if consumed == 0 {
+            return;
+        }
+        let text = String::from_utf8_lossy(&fresh[..consumed]);
+        let parsed = parse_transcript(&text);
+        if self.offset == 0 {
+            self.head = fresh[..consumed.min(HEAD_PROBE_LEN)].to_vec();
+        }
+        self.offset += consumed as u64;
+        self.updated_at = now_ms;
+
+        for entry in &parsed {
+            if self.thread_name.is_none()
+                && let Some(name) = extract_thread_name(entry)
+            {
+                self.thread_name = Some(name);
+            }
+            if let Some(s) = determine_status(entry) {
+                self.status = s;
+            }
+            self.background.observe(entry);
+        }
+        if let Some(usage) = extract_usage_summary(&parsed) {
+            self.remember_identity(&usage);
+            self.usage = Some(usage);
+        }
+        if let Some(tool) = extract_last_tool(&parsed) {
+            self.last_tool = Some(tool);
+        }
+        if let Some(loop_state) = extract_loop_state(&parsed) {
+            self.loop_state = Some(loop_state);
+        }
     }
 
     /// `None` only when there is nothing at all to report; a known model alone
     /// is worth an event, or a rotation would blank a readout we can answer.
-    fn details(&self, background: usize) -> Option<AgentEventDetails> {
-        let sub = &self.subagents;
+    fn details(&self, sub: &SubagentRollup, background: usize) -> Option<AgentEventDetails> {
         if self.usage.is_none()
             && self.last_tool.is_none()
             && sub.count == 0
@@ -358,6 +416,19 @@ impl SessionState {
         self.model = Some(usage.model.clone());
         self.context_max = Some(usage.context_max);
     }
+}
+
+#[derive(Debug, Clone, Default)]
+struct SessionState {
+    emitted: Option<Emitted>,
+    journal: Journal,
+    journal_path: Option<PathBuf>,
+    subagents: SubagentRollup,
+    subagent_usage: SubagentUsage,
+    /// `startedAt` of the process now running this session.
+    process_started_at: Option<i64>,
+    session: Option<String>,
+    cli_name: Option<String>,
 }
 
 /// CLI discovery, journal enrichment.
@@ -420,85 +491,16 @@ impl ClaudeCodeAgentWatcher {
             state.subagents = rollup;
         }
 
-        let Ok(meta) = std::fs::metadata(&path) else {
-            return;
-        };
-        let size = meta.len();
-        let file_id = metadata_file_id(&meta);
-        // Shrunk file → reset and re-derive: all journal-derived state is
-        // stale, not just the offset. A same-path replacement that grew past
-        // the old offset is the same situation, caught by the inode — or, when
-        // ext4 reuses the freed inode, by the head (see `SessionState::head`).
-        // Probed only when the file moved: an unchanged size is the idle case.
-        let head_changed = !state.head.is_empty()
-            && state.file_offset > 0
-            && size != state.file_offset
-            && read_head(&path, state.head.len()).is_some_and(|h| h != state.head);
-        let rotated = size < state.file_offset
-            || (file_id.is_some() && state.file_id.is_some() && file_id != state.file_id)
-            || head_changed;
-        if rotated {
-            state.file_offset = 0;
-            state.journal_status = AgentStatus::Idle;
-            state.thread_name = None;
-            state.usage = None;
-            state.last_tool = None;
-            state.loop_state = None;
-            state.background = BackgroundAgents::default();
-            state.head.clear();
-            // `model`/`context_max` survive: same session, same model, and
-            // re-deriving costs a full assistant turn.
-        }
-        state.file_id = file_id;
-        if size == state.file_offset {
-            return;
-        }
-
-        // Journals reach tens of MB and append several times a second while
-        // an agent streams; re-reading the whole file per scan was a hot loop.
-        let Some(fresh) = read_from_offset(&path, state.file_offset) else {
-            return;
-        };
-        let consumed = consumed_len(&fresh);
-        if consumed == 0 {
-            return;
-        }
-        let text = String::from_utf8_lossy(&fresh[..consumed]);
-        let parsed = parse_transcript(&text);
-        if state.file_offset == 0 {
-            state.head = fresh[..consumed.min(HEAD_PROBE_LEN)].to_vec();
-        }
-        state.file_offset += consumed as u64;
-        state.journal_updated_at = now_ms;
-
-        for entry in &parsed {
-            if state.thread_name.is_none()
-                && let Some(name) = extract_thread_name(entry)
-            {
-                state.thread_name = Some(name);
-            }
-            if let Some(s) = determine_status(entry) {
-                state.journal_status = s;
-            }
-            state.background.observe(entry);
-        }
-        if let Some(usage) = extract_usage_summary(&parsed) {
-            state.remember_identity(&usage);
-            state.usage = Some(usage);
-        }
-        if let Some(tool) = extract_last_tool(&parsed) {
-            state.last_tool = Some(tool);
-        }
-        if let Some(loop_state) = extract_loop_state(&parsed) {
-            state.loop_state = Some(loop_state);
-        }
+        state.journal.refresh(&path, now_ms);
     }
 
     /// First-prompt text beats the CLI's interactive slugs (`proj-44`);
     /// background sessions get descriptive CLI names.
     fn event_parts(state: &SessionState, status: AgentStatus) -> Emitted {
-        let thread_name = state.thread_name.clone().or_else(|| state.cli_name.clone());
-        (status, thread_name, state.details(state.background_running()))
+        let journal = &state.journal;
+        let thread_name = journal.thread_name.clone().or_else(|| state.cli_name.clone());
+        let background = journal.background.running(state.process_started_at);
+        (status, thread_name, journal.details(&state.subagents, background))
     }
 
     fn emit(
@@ -552,12 +554,10 @@ impl ClaudeCodeAgentWatcher {
             state.cli_name = agent.name.clone();
             state.process_started_at = agent.started_at;
 
-            let status = backend_status(
-                agent.agent_status(),
-                state.journal_status,
-                now_ms.saturating_sub(state.journal_updated_at),
-                state.background_running(),
-            );
+            // An unrecognized CLI status reads as `idle`: listed, verdict unknown.
+            let cli = agent.agent_status().unwrap_or(AgentStatus::Idle);
+            let status =
+                session_status(Some(cli), &state.journal, state.process_started_at, now_ms);
             let parts = Self::event_parts(state, status);
             if state.emitted.as_ref() != Some(&parts) {
                 state.emitted = Some(parts.clone());
@@ -577,11 +577,48 @@ impl ClaudeCodeAgentWatcher {
                 // Never resolved/emitted — nothing on the board to finalize.
                 continue;
             }
-            let parts = Self::event_parts(&state, exit_status(state.journal_status));
+            let parts = Self::event_parts(&state, exit_status(state.journal.status));
             Self::emit(&mut events, &state.session, parts, &session_id, now_ms);
         }
         events
     }
+}
+
+/// Journals of live sessions the CLI didn't list, kept between rebuilds so
+/// they are read incrementally, like the watcher's.
+static UNLISTED: LazyLock<Mutex<HashMap<PathBuf, Journal>>> = LazyLock::new(Default::default);
+
+/// An event per live app-launched session the CLI didn't list, keyed by its
+/// `TT_SESSION_ID`, through the watcher's own [`session_status`]. A journal
+/// not passed again is forgotten.
+pub fn unlisted_events(procs: &[SessionAgentProc], now_ms: i64) -> HashMap<String, AgentEvent> {
+    let mut journals = UNLISTED.lock().unwrap_or_else(|e| e.into_inner());
+    let mut kept = HashMap::new();
+    let mut events = HashMap::new();
+    for proc in procs {
+        let mut journal = Journal::default();
+        if let Some(path) = &proc.transcript {
+            journal = journals.remove(path).unwrap_or_default();
+            journal.refresh(path, now_ms);
+        }
+        let background = journal.background.running(proc.started_at);
+        let event = AgentEvent {
+            agent: NAME.to_string(),
+            session: String::new(),
+            status: session_status(None, &journal, proc.started_at, now_ms),
+            ts: now_ms,
+            thread_id: None,
+            thread_name: journal.thread_name.clone(),
+            unseen: None,
+            details: journal.details(&SubagentRollup::default(), background),
+        };
+        events.insert(proc.session_id.clone(), event);
+        if let Some(path) = &proc.transcript {
+            kept.insert(path.clone(), journal);
+        }
+    }
+    *journals = kept;
+    events
 }
 
 #[cfg(test)]
@@ -680,7 +717,7 @@ mod tests {
         let mut f = fixture();
         write_journal(&f.projects, "/home/u/proj", "sid-n", &[USER_LINE, RUNNING_LINE]);
         *f.agents.lock().unwrap() = vec![CliAgent {
-            // A CLI `idle` in `backend_status`, trusting the journal outright.
+            // Unrecognized, so read as a CLI `idle` that defers to the journal.
             status: None,
             ..cli_agent(100, "/home/u/proj", "sid-n", "busy")
         }];
@@ -784,28 +821,62 @@ mod tests {
         assert_eq!(d.context_used, None);
     }
 
+    fn unlisted(path: &Path, started_at: Option<i64>) -> SessionAgentProc {
+        SessionAgentProc {
+            session_id: "s00tt".into(),
+            pid: 1,
+            transcript: Some(path.to_path_buf()),
+            started_at,
+        }
+    }
+
     #[test]
-    fn enrich_from_transcript_reads_name_and_status() {
+    fn unlisted_session_reads_name_and_status_from_its_journal() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("s.jsonl");
-
-        let mut text = [USER_LINE, DONE_LINE].join("\n");
+        let mut text = [USER_LINE, RUNNING_LINE].join("\n");
         text.push('\n');
         std::fs::write(&path, &text).unwrap();
-        let (name, status) = enrich_from_transcript(&path);
-        assert_eq!(name.as_deref(), Some("fix the flaky test"));
-        assert_eq!(status, AgentStatus::Complete);
+        let ev = &unlisted_events(&[unlisted(&path, None)], 1_000)["s00tt"];
+        assert_eq!(ev.thread_name.as_deref(), Some("fix the flaky test"));
+        assert_eq!(ev.status, AgentStatus::Busy);
+        assert_eq!(ev.details.as_ref().unwrap().model.as_deref(), Some("claude-sonnet-5"));
 
-        let mut running = [USER_LINE, RUNNING_LINE].join("\n");
-        running.push('\n');
-        std::fs::write(&path, &running).unwrap();
-        let (name2, status2) = enrich_from_transcript(&path);
-        assert_eq!(name2.as_deref(), Some("fix the flaky test"));
-        assert_eq!(status2, AgentStatus::Busy);
+        {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+            writeln!(file, "{END_TURN_LINE}").unwrap();
+        }
+        let ev = &unlisted_events(&[unlisted(&path, None)], 2_000)["s00tt"];
+        assert_eq!(ev.thread_name.as_deref(), Some("fix the flaky test"));
+        assert_eq!(ev.status, AgentStatus::Complete);
 
-        let (n3, s3) = enrich_from_transcript(&tmp.path().join("missing.jsonl"));
-        assert_eq!(n3, None);
-        assert_eq!(s3, AgentStatus::Idle);
+        let gone = unlisted(&tmp.path().join("missing.jsonl"), None);
+        let ev = &unlisted_events(&[gone], 3_000)["s00tt"];
+        assert_eq!((ev.thread_name.as_deref(), ev.status), (None, AgentStatus::Idle));
+    }
+
+    /// A bounded tail read lost the launch line once the turn ran long.
+    #[test]
+    fn unlisted_session_sees_a_background_agent_launched_long_before_the_tail() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("s.jsonl");
+        let launch = r#"{"type":"user","timestamp":"2026-09-30T22:00:00Z","toolUseResult":{"status":"async_launched","agentId":"a1"}}"#;
+        let mut lines = vec![USER_LINE, launch];
+        lines.extend(std::iter::repeat_n(NARRATION_LINE, 1_000));
+        lines.push(END_TURN_LINE);
+        let mut text = lines.join("\n");
+        text.push('\n');
+        assert!(text.len() as u64 > TAIL_WINDOW);
+        std::fs::write(&path, &text).unwrap();
+
+        let ev = &unlisted_events(&[unlisted(&path, Some(0))], 1_000)["s00tt"];
+        assert_eq!(ev.status, AgentStatus::Background);
+        assert_eq!(ev.details.as_ref().unwrap().background_agents, Some(1));
+
+        let resumed_later = parse_timestamp_ms("2026-09-30T23:00:00Z");
+        let ev = &unlisted_events(&[unlisted(&path, resumed_later)], 2_000)["s00tt"];
+        assert_eq!(ev.status, AgentStatus::Complete);
     }
 
     #[test]

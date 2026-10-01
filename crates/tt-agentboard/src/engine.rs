@@ -20,7 +20,7 @@ use crate::repos::{
 };
 use crate::sessions::{SessionRecord, SessionStore, default_sessions_path};
 use crate::tracker::{AgentTracker, instance_key};
-use crate::types::{AgentEvent, AgentStatus, RowRecord, RowTask};
+use crate::types::{AgentEvent, RowRecord, RowTask};
 use crate::watchers::claude_code::ClaudeCodeAgentWatcher;
 
 /// One rail row. Its `dir` is where the checkout *should* be, not a claim that
@@ -168,33 +168,14 @@ pub fn collect_agent_snapshot(now: i64, scope: &InstanceScope) -> AgentSnapshot 
             crate::procenv::session_id_in_scope(a.pid, scope).map(|sid| (a.session_id.clone(), sid))
         })
         .collect();
-    // Supplement CLI detection with app-spawned sessions it never enumerated, and
-    // only where `pick_state` came back empty: enriching an already-accounted one
-    // cost two 128 KiB reads per agent per rebuild, then threw it away.
+    // Supplement CLI detection with app-spawned sessions it never enumerated.
     let cli_covered: HashSet<&String> = tt_session_by_thread.values().collect();
-    let mut session_agents: HashMap<String, AgentEvent> = HashMap::new();
-    for proc in crate::procenv::scan_session_agents(scope) {
-        if session_agents.contains_key(&proc.session_id) || cli_covered.contains(&proc.session_id) {
-            continue;
-        }
-        let (thread_name, status) = match &proc.transcript {
-            Some(p) => crate::watchers::claude_code::enrich_from_transcript(p),
-            None => (None, AgentStatus::Idle),
-        };
-        session_agents.insert(
-            proc.session_id.clone(),
-            AgentEvent {
-                agent: "claude-code".to_string(),
-                session: String::new(),
-                status,
-                ts: now,
-                thread_id: None,
-                thread_name,
-                unseen: None,
-                details: None,
-            },
-        );
-    }
+    let mut seen: HashSet<String> = HashSet::new();
+    let unlisted: Vec<_> = crate::procenv::scan_session_agents(scope)
+        .into_iter()
+        .filter(|p| !cli_covered.contains(&p.session_id) && seen.insert(p.session_id.clone()))
+        .collect();
+    let session_agents = crate::watchers::claude_code::unlisted_events(&unlisted, now);
     AgentSnapshot { live_threads, tt_session_by_thread, session_agents }
 }
 
