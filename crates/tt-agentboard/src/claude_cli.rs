@@ -4,9 +4,9 @@
 //! cache below, so busy/not-busy comes from the journal and the PTY instead.
 //!
 //! The parse is pure and fixture-tested; the fetch is a thin subprocess
-//! wrapper with a process-wide cache: the watcher and the agent snapshot, both
-//! once per 2s scan, share one ~170ms CLI call, gated to roughly once a minute
-//! by [`crate::watchers::claude_code::CLI_CACHE_TTL_MS`].
+//! wrapper with a process-wide cache: the host fetches once per 2s scan, off the
+//! engine lock, for the watcher and the agent snapshot; the ~170ms CLI call is
+//! gated to roughly once a minute by [`crate::watchers::claude_code::CLI_CACHE_TTL_MS`].
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -46,9 +46,9 @@ pub fn parse_agents(json: &str) -> Vec<CliAgent> {
         .collect()
 }
 
-/// Wall-clock ceiling for one `claude agents` call. It runs on the 2s scan
-/// thread, so a hung `claude` would otherwise stall every scan after it;
-/// bound it and treat a timeout like any other failure.
+/// Wall-clock ceiling for one `claude agents` call. Each 2s scan waits on it
+/// before anything else, so a hung `claude` would otherwise stall every scan
+/// after it; bound it and treat a timeout like any other failure.
 const CLI_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// One scan's result. **An empty `agents` means nothing unless `ok`** — the

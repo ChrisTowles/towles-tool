@@ -286,10 +286,15 @@ mod tests {
     #[test]
     fn child_pids_lists_a_spawned_child() {
         let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
-        let children = child_pids(std::process::id() as i32);
+        let pid = child.id() as i32;
+        // `children` can miss a child while other test threads fork.
+        let listed = (0..100).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            child_pids(std::process::id() as i32).contains(&pid)
+        });
         let _ = child.kill();
         let _ = child.wait();
-        assert!(children.contains(&(child.id() as i32)));
+        assert!(listed);
     }
 
     #[cfg(target_os = "linux")]
