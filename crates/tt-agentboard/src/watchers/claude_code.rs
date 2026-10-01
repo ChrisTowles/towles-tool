@@ -15,12 +15,12 @@ use tt_claude_code::{TranscriptEntry, parse_transcript};
 
 use crate::claude_cli::CliAgent;
 use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo};
-use crate::watcher::{AgentWatcher, JSONL_SUFFIX, WatcherContext};
 use crate::watchers::background::BackgroundAgents;
 use crate::watchers::claude_usage::{ClaudeUsageSummary, extract_usage_summary};
 use crate::watchers::subagents::{SubagentRollup, SubagentUsage};
 
 const NAME: &str = "claude-code";
+pub const JSONL_SUFFIX: &str = ".jsonl";
 /// Shared CLI snapshot TTL. Consumers tick every 2-3s regardless, so this
 /// alone sets the real spawn cadence for a ~170ms Node process; 60s keeps
 /// liveness fresh enough for pinning while cutting that to once a minute.
@@ -360,8 +360,6 @@ impl SessionState {
     }
 }
 
-// Watcher.
-
 /// CLI discovery, journal enrichment.
 pub struct ClaudeCodeAgentWatcher {
     projects_dir: PathBuf,
@@ -504,7 +502,7 @@ impl ClaudeCodeAgentWatcher {
     }
 
     fn emit(
-        ctx: &mut dyn WatcherContext,
+        events: &mut Vec<AgentEvent>,
         session: &Option<String>,
         (status, thread_name, details): Emitted,
         session_id: &str,
@@ -513,7 +511,7 @@ impl ClaudeCodeAgentWatcher {
         let Some(session) = session.clone() else {
             return;
         };
-        ctx.emit(AgentEvent {
+        events.push(AgentEvent {
             agent: NAME.to_string(),
             session,
             status,
@@ -524,10 +522,15 @@ impl ClaudeCodeAgentWatcher {
             details,
         });
     }
-}
 
-impl AgentWatcher for ClaudeCodeAgentWatcher {
-    fn scan(&mut self, ctx: &mut dyn WatcherContext, now_ms: i64) {
+    /// One full scan at logical time `now_ms`; the caller owns the cadence.
+    /// `resolve` maps an agent's cwd to a board session, `None` if unmatched.
+    pub fn scan(
+        &mut self,
+        resolve: &dyn Fn(&str) -> Option<String>,
+        now_ms: i64,
+    ) -> Vec<AgentEvent> {
+        let mut events = Vec::new();
         let agents = (self.agents_source)();
         let live_ids: HashSet<String> = agents.iter().map(|a| a.session_id.clone()).collect();
 
@@ -539,7 +542,7 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
             if !(self.app_launched)(agent.pid) {
                 continue;
             }
-            let Some(session) = ctx.resolve_session(&agent.cwd) else {
+            let Some(session) = resolve(&agent.cwd) else {
                 continue;
             };
 
@@ -558,7 +561,7 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
             let parts = Self::event_parts(state, status);
             if state.emitted.as_ref() != Some(&parts) {
                 state.emitted = Some(parts.clone());
-                Self::emit(ctx, &state.session, parts, &agent.session_id, now_ms);
+                Self::emit(&mut events, &state.session, parts, &agent.session_id, now_ms);
             }
         }
 
@@ -575,8 +578,9 @@ impl AgentWatcher for ClaudeCodeAgentWatcher {
                 continue;
             }
             let parts = Self::event_parts(&state, exit_status(state.journal_status));
-            Self::emit(ctx, &state.session, parts, &session_id, now_ms);
+            Self::emit(&mut events, &state.session, parts, &session_id, now_ms);
         }
+        events
     }
 }
 
@@ -595,14 +599,11 @@ mod tests {
         fn new() -> Self {
             Self { by_dir: Vec::new(), events: Vec::new() }
         }
-    }
 
-    impl WatcherContext for Ctx {
-        fn resolve_session(&self, project_dir: &str) -> Option<String> {
-            self.by_dir.iter().find(|(d, _)| d == project_dir).map(|(_, s)| s.clone())
-        }
-        fn emit(&mut self, event: AgentEvent) {
-            self.events.push(event);
+        fn scan(&mut self, watcher: &mut ClaudeCodeAgentWatcher, now_ms: i64) {
+            let by_dir = &self.by_dir;
+            let resolve = |dir: &str| by_dir.iter().find(|(d, _)| d == dir).map(|(_, s)| s.clone());
+            self.events.extend(watcher.scan(&resolve, now_ms));
         }
     }
 
@@ -660,10 +661,8 @@ mod tests {
     /// A genuinely finished turn: text, handed back to the user.
     const END_TURN_LINE: &str = r#"{"timestamp":"2026-07-03T10:00:12.000Z","message":{"role":"assistant","content":[{"type":"text","text":"all done"}],"stop_reason":"end_turn"}}"#;
 
-    /// The needs-you flicker at its source: each content block is its own
-    /// entry, so a working agent leaves text-only entries every few seconds.
-    /// Reading those as a finished turn flashed "⚑ Needs you" and a
-    /// notification, then took them away on the next tool call.
+    /// Each content block is its own entry, so a working agent leaves
+    /// text-only entries every few seconds; none of them is a finished turn.
     #[test]
     fn mid_turn_narration_is_not_a_finished_turn() {
         let narration: TranscriptEntry = serde_json::from_str(NARRATION_LINE).unwrap();
@@ -672,15 +671,10 @@ mod tests {
         let ended: TranscriptEntry = serde_json::from_str(END_TURN_LINE).unwrap();
         assert_eq!(determine_status(&ended), Some(AgentStatus::Complete));
 
-        // Older transcripts and partial re-logs keep the original reading
-        // rather than silently dropping a real turn end.
         let bare: TranscriptEntry = serde_json::from_str(DONE_LINE).unwrap();
         assert_eq!(determine_status(&bare), Some(AgentStatus::Complete));
     }
 
-    /// End-to-end: a narration entry mid-tool-run must not change status.
-    /// Before the `stop_reason` check this flipped `busy` → `complete`, and
-    /// every flip is one visible flash of the banner.
     #[test]
     fn a_narration_entry_does_not_flip_a_working_agent_to_complete() {
         let mut f = fixture();
@@ -693,7 +687,7 @@ mod tests {
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
 
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         let before = ctx.events.len();
 
         write_journal(
@@ -702,7 +696,7 @@ mod tests {
             "sid-n",
             &[USER_LINE, RUNNING_LINE, NARRATION_LINE],
         );
-        f.watcher.scan(&mut ctx, 2_000);
+        ctx.scan(&mut f.watcher, 2_000);
         assert!(
             ctx.events[before..].iter().all(|e| e.status != AgentStatus::Complete),
             "narration must not report the turn as finished: {:?}",
@@ -716,7 +710,7 @@ mod tests {
             "sid-n",
             &[USER_LINE, RUNNING_LINE, NARRATION_LINE, END_TURN_LINE],
         );
-        f.watcher.scan(&mut ctx, 3_000);
+        ctx.scan(&mut f.watcher, 3_000);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
     }
 
@@ -728,13 +722,12 @@ mod tests {
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
 
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         assert_eq!(ctx.events.len(), 1);
         let ev = &ctx.events[0];
         assert_eq!(ev.session, "proj");
         assert_eq!(ev.status, AgentStatus::Busy);
         assert_eq!(ev.thread_id.as_deref(), Some("sid-1"));
-        // Journal first prompt beats the CLI slug.
         assert_eq!(ev.thread_name.as_deref(), Some("fix the flaky test"));
         let details = ev.details.as_ref().unwrap();
         assert_eq!(details.model.as_deref(), Some("claude-sonnet-5"));
@@ -753,19 +746,18 @@ mod tests {
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-s", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         let window = ctx.events.last().unwrap().details.as_ref().unwrap().context_max.unwrap();
 
-        // Then the journal is replaced: remembered identity is all that's left.
         write_journal(
             &f.projects,
             "/home/u/proj",
             "sid-s",
             &[USER_LINE, RUNNING_LINE, SYNTHETIC_LINE],
         );
-        f.watcher.scan(&mut ctx, 2_000);
+        ctx.scan(&mut f.watcher, 2_000);
         write_journal(&f.projects, "/home/u/proj", "sid-s", &[USER_LINE]);
-        f.watcher.scan(&mut ctx, 3_000);
+        ctx.scan(&mut f.watcher, 3_000);
 
         let d = ctx.events.last().unwrap().details.as_ref().unwrap();
         assert_eq!(d.model.as_deref(), Some("claude-sonnet-5"));
@@ -780,11 +772,11 @@ mod tests {
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-r", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
 
         // Shorter file with a different head → the rotation reset path.
         write_journal(&f.projects, "/home/u/proj", "sid-r", &[USER_LINE]);
-        f.watcher.scan(&mut ctx, 2_000);
+        ctx.scan(&mut f.watcher, 2_000);
 
         let d = ctx.events.last().unwrap().details.as_ref().unwrap();
         assert_eq!(d.model.as_deref(), Some("claude-sonnet-5"));
@@ -797,7 +789,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("s.jsonl");
 
-        // First user message → thread name; last assistant-complete → Complete.
         let mut text = [USER_LINE, DONE_LINE].join("\n");
         text.push('\n');
         std::fs::write(&path, &text).unwrap();
@@ -805,7 +796,6 @@ mod tests {
         assert_eq!(name.as_deref(), Some("fix the flaky test"));
         assert_eq!(status, AgentStatus::Complete);
 
-        // Mid tool-run → Busy (task name still resolves from the head).
         let mut running = [USER_LINE, RUNNING_LINE].join("\n");
         running.push('\n');
         std::fs::write(&path, &running).unwrap();
@@ -813,7 +803,6 @@ mod tests {
         assert_eq!(name2.as_deref(), Some("fix the flaky test"));
         assert_eq!(status2, AgentStatus::Busy);
 
-        // Missing file → no name, Idle fallback (never panics).
         let (n3, s3) = enrich_from_transcript(&tmp.path().join("missing.jsonl"));
         assert_eq!(n3, None);
         assert_eq!(s3, AgentStatus::Idle);
@@ -835,7 +824,7 @@ mod tests {
         ctx.by_dir.push(("/home/u/a".into(), "a".into()));
         ctx.by_dir.push(("/home/u/b".into(), "b".into()));
 
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         let by_thread: std::collections::HashMap<&str, AgentStatus> =
             ctx.events.iter().map(|e| (e.thread_id.as_deref().unwrap(), e.status)).collect();
         assert_eq!(by_thread["sid-done"], AgentStatus::Complete);
@@ -853,7 +842,7 @@ mod tests {
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/a".into(), "a".into()));
 
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         let ev = ctx.events.last().unwrap();
         assert_eq!(ev.status, AgentStatus::Background);
         assert_eq!(ev.details.as_ref().unwrap().background_agents, Some(1));
@@ -863,7 +852,7 @@ mod tests {
         text.push_str(done);
         text.push('\n');
         std::fs::write(&path, text).unwrap();
-        f.watcher.scan(&mut ctx, 2_000);
+        ctx.scan(&mut f.watcher, 2_000);
         let ev = ctx.events.last().unwrap();
         assert_eq!(ev.status, AgentStatus::Complete);
         assert_eq!(ev.details.as_ref().and_then(|d| d.background_agents), None);
@@ -880,12 +869,12 @@ mod tests {
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
 
         // A brief CLI lag must not flip it immediately, or the dot flaps.
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Busy);
 
         // Nothing new in the journal plus a CLI still insisting past the
         // window means stuck bookkeeping, not a working agent.
-        f.watcher.scan(&mut ctx, 1_000 + STALE_BUSY_JOURNAL_MS + 1);
+        ctx.scan(&mut f.watcher, 1_000 + STALE_BUSY_JOURNAL_MS + 1);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
     }
 
@@ -899,8 +888,8 @@ mod tests {
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
 
-        f.watcher.scan(&mut ctx, 1_000);
-        f.watcher.scan(&mut ctx, 1_000 + STALE_BUSY_JOURNAL_MS * 10);
+        ctx.scan(&mut f.watcher, 1_000);
+        ctx.scan(&mut f.watcher, 1_000 + STALE_BUSY_JOURNAL_MS * 10);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Busy);
     }
 
@@ -925,7 +914,7 @@ mod tests {
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "session-x".into()));
 
-        watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut watcher, 1_000);
 
         assert_eq!(ctx.events.len(), 1, "external agent should be dropped");
         assert_eq!(ctx.events[0].thread_id.as_deref(), Some("app-sid"));
@@ -939,8 +928,8 @@ mod tests {
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
 
-        f.watcher.scan(&mut ctx, 1_000);
-        f.watcher.scan(&mut ctx, 3_000);
+        ctx.scan(&mut f.watcher, 1_000);
+        ctx.scan(&mut f.watcher, 3_000);
         assert_eq!(ctx.events.len(), 1, "steady state must not re-emit");
 
         // Usage growth without a status change re-emits.
@@ -950,7 +939,7 @@ mod tests {
         text.push('\n');
         std::fs::write(&path, text).unwrap();
 
-        f.watcher.scan(&mut ctx, 5_000);
+        ctx.scan(&mut f.watcher, 5_000);
         assert_eq!(ctx.events.len(), 2);
         assert_eq!(ctx.events[1].status, AgentStatus::Busy);
         assert_eq!(ctx.events[1].details.as_ref().unwrap().last_tool.as_deref(), Some("Read"));
@@ -969,7 +958,7 @@ mod tests {
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/a".into(), "a".into()));
         ctx.by_dir.push(("/home/u/b".into(), "b".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         ctx.events.clear();
 
         // sid-done's journal completes before it exits; sid-mid dies mid-run.
@@ -979,14 +968,14 @@ mod tests {
         std::fs::write(&done_path, text).unwrap();
         f.agents.lock().unwrap().clear();
 
-        f.watcher.scan(&mut ctx, 5_000);
+        ctx.scan(&mut f.watcher, 5_000);
         let by_thread: std::collections::HashMap<&str, AgentStatus> =
             ctx.events.iter().map(|e| (e.thread_id.as_deref().unwrap(), e.status)).collect();
         assert_eq!(by_thread["sid-done"], AgentStatus::Complete);
         assert_eq!(by_thread["sid-mid"], AgentStatus::Interrupted);
         // Gone for good: nothing further on later scans.
         ctx.events.clear();
-        f.watcher.scan(&mut ctx, 7_000);
+        ctx.scan(&mut f.watcher, 7_000);
         assert!(ctx.events.is_empty());
     }
 
@@ -996,9 +985,9 @@ mod tests {
         write_journal(&f.projects, "/home/u/x", "sid-x", &[USER_LINE, RUNNING_LINE]);
         *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/x", "sid-x", "busy")];
         let mut ctx = Ctx::new(); // resolves nothing
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         f.agents.lock().unwrap().clear();
-        f.watcher.scan(&mut ctx, 3_000);
+        ctx.scan(&mut f.watcher, 3_000);
         assert!(ctx.events.is_empty());
     }
 
@@ -1015,7 +1004,7 @@ mod tests {
         *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/p", "sid-1", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         assert_eq!(ctx.events[0].thread_name.as_deref(), Some("slug-7"));
     }
 
@@ -1026,20 +1015,18 @@ mod tests {
         *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/p", "sid-1", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/p".into(), "p".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
 
         // Truncate + rewrite with a different prompt: state re-derives.
         let replacement = r#"{"message":{"role":"user","content":"a brand new thread"}}"#;
         std::fs::write(&path, format!("{replacement}\n")).unwrap();
-        f.watcher.scan(&mut ctx, 3_000);
+        ctx.scan(&mut f.watcher, 3_000);
         let last = ctx.events.last().unwrap();
         assert_eq!(last.thread_name.as_deref(), Some("a brand new thread"));
     }
 
     #[test]
     fn encode_project_dir_name_collapses_slash_dot_and_underscore() {
-        // Verified against real `~/.claude/projects` entries, not assumed —
-        // see the doc comment on `encode_project_dir_name`.
         assert_eq!(encode_project_dir_name("/home/u/my.app"), "-home-u-my-app");
         assert_eq!(encode_project_dir_name("/a/b/test_atinotes"), "-a-b-test-atinotes");
         assert_eq!(
@@ -1051,16 +1038,13 @@ mod tests {
     #[test]
     fn journal_found_by_probe_when_the_recorded_cwd_no_longer_matches_the_journal_dir() {
         let mut f = fixture();
-        // A checkout that moved after the session started (or any other way
-        // the encoded guess and the actual directory diverge): the probe
-        // fallback is what still finds it, not the guess.
         let dir = f.projects.join("-home-u-renamed-proj");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("sid-1.jsonl"), format!("{USER_LINE}\n")).unwrap();
         *f.agents.lock().unwrap() = vec![cli_agent(7, "/home/u/my-app", "sid-1", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/my-app".into(), "p".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         assert_eq!(ctx.events[0].thread_name.as_deref(), Some("fix the flaky test"));
     }
 
@@ -1072,18 +1056,16 @@ mod tests {
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-inc", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Busy);
 
-        // Append (same file, same inode): the next scan must parse only the new
-        // tail and still see the completion.
         {
             use std::io::Write;
             let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
             writeln!(file, "{DONE_LINE}").unwrap();
         }
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-inc", "idle")];
-        f.watcher.scan(&mut ctx, 2_000);
+        ctx.scan(&mut f.watcher, 2_000);
         assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
     }
 
@@ -1095,7 +1077,7 @@ mod tests {
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-rot", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         assert_eq!(ctx.events.last().unwrap().thread_name.as_deref(), Some("fix the flaky test"));
 
         // Replace the journal at the same path with a LARGER file (new inode):
@@ -1105,7 +1087,7 @@ mod tests {
         let new_user = r#"{"timestamp":"2026-07-03T11:00:00.000Z","message":{"role":"user","content":"a rewritten journal with a much longer opening prompt than before"}}"#;
         write_journal(&f.projects, "/home/u/proj", "sid-rot", &[new_user, RUNNING_LINE, DONE_LINE]);
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-rot", "idle")];
-        f.watcher.scan(&mut ctx, 2_000);
+        ctx.scan(&mut f.watcher, 2_000);
         let ev = ctx.events.last().unwrap();
         assert_eq!(
             ev.thread_name.as_deref(),
@@ -1121,7 +1103,7 @@ mod tests {
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-same", "busy")];
         let mut ctx = Ctx::new();
         ctx.by_dir.push(("/home/u/proj".into(), "proj".into()));
-        f.watcher.scan(&mut ctx, 1_000);
+        ctx.scan(&mut f.watcher, 1_000);
         assert_eq!(ctx.events.last().unwrap().thread_name.as_deref(), Some("fix the flaky test"));
 
         // Rewrite the journal LARGER, in place (`fs::write` truncates the
@@ -1137,7 +1119,7 @@ mod tests {
             &[new_user, RUNNING_LINE, DONE_LINE],
         );
         *f.agents.lock().unwrap() = vec![cli_agent(100, "/home/u/proj", "sid-same", "idle")];
-        f.watcher.scan(&mut ctx, 2_000);
+        ctx.scan(&mut f.watcher, 2_000);
         let ev = ctx.events.last().unwrap();
         assert_eq!(
             ev.thread_name.as_deref(),

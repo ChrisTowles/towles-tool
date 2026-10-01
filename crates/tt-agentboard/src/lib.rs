@@ -37,7 +37,6 @@ pub mod text;
 pub mod tracker;
 pub mod turn_end;
 pub mod types;
-pub mod watcher;
 pub mod watchers;
 pub mod windows;
 

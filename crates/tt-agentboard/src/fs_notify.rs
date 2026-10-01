@@ -1,5 +1,6 @@
 //! Optional filesystem-change accelerant. Isolated from the deterministic scan
-//! core: polling (the bridge calling [`crate::watcher::AgentWatcher::scan`]) is
+//! core: polling (the bridge calling
+//! [`crate::watchers::claude_code::ClaudeCodeAgentWatcher::scan`]) is
 //! the reliable path; this just lets the bridge trigger an *eager* rescan when a
 //! journal file changes, cutting latency.
 //!
