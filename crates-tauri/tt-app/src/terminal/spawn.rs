@@ -43,11 +43,12 @@ const TERMINAL_IDENTITY_ENV: [(&str, &str); 3] = [
 /// ≥ 1.2.0 turns on OSC 9;4 progress, which nothing here consumes yet.
 const TERMINAL_IDENTITY_ENV_UNSET: [&str; 1] = ["TERM_PROGRAM_VERSION"];
 
+/// Borrowed: up to ~90 a second per pane, so nothing is copied to send one.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TermFrame {
-    term_id: String,
-    frame: Frame,
+struct TermFrame<'a> {
+    term_id: &'a str,
+    frame: &'a Frame,
 }
 
 /// A signal death leaves `code` at portable-pty's placeholder, so the frontend
@@ -191,7 +192,7 @@ fn term_start_blocking(
                 let _ = app.emit_to(
                     MAIN_WINDOW_LABEL,
                     FRAME_EVENT,
-                    TermFrame { term_id: term_id.clone(), frame },
+                    TermFrame { term_id: &term_id, frame: &frame },
                 );
             }
             // A full queue drops the reply; the program times out as on a slow tty.

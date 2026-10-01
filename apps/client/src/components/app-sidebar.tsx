@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { RollupDots } from "@/components/agentboard-bits";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -16,12 +17,19 @@ import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
+/** Coldness flips at most once per TTL, so recomputing per state event is enough. */
+function useAgentRollup() {
+  const { repos, compactRecommendPercent } = useAgentboardState();
+  return useMemo(
+    () => agentRollup(repos, Date.now(), compactRecommendPercent),
+    [repos, compactRecommendPercent],
+  );
+}
+
 export function AppSidebar() {
   const { activeTab, openTab, openTabs } = useWorkspace();
-  const state = useAgentboardState();
+  const rollup = useAgentRollup();
   const { snapshot } = useStoreSnapshot();
-  // Coldness flips at most once per TTL; re-render on each state event is enough.
-  const rollup = agentRollup(state.repos, Date.now(), state.compactRecommendPercent);
   const slackUnread = dmsNeedingAttention(snapshot).length > 0;
 
   return (
@@ -96,9 +104,8 @@ export function AppSidebar() {
  * sidebar never hides "something needs you". */
 export function AppSidebarIcons() {
   const { activeTab, openTab, openTabs } = useWorkspace();
-  const state = useAgentboardState();
+  const rollup = useAgentRollup();
   const { snapshot } = useStoreSnapshot();
-  const rollup = agentRollup(state.repos, Date.now(), state.compactRecommendPercent);
   const badgeColor = rollupAlertColor(rollup);
   const slackUnread = dmsNeedingAttention(snapshot).length > 0;
 

@@ -1,9 +1,9 @@
 //! In-memory agent-instance state machine.
 //!
 //! Pure logic: every prune method takes an explicit `now_ms`, so tests are
-//! deterministic. Insertion order is preserved with `IndexMap`/`IndexSet`.
+//! deterministic. Insertion order is preserved with `IndexMap`.
 
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 use crate::types::{AgentEvent, AgentStatus};
@@ -22,16 +22,11 @@ pub fn instance_key(agent: &str, thread_id: Option<&str>) -> String {
 /// dead/stale/terminal instances.
 #[derive(Debug, Default)]
 pub struct AgentTracker {
-    /// session name → (instance key → latest event), insertion-ordered.
+    /// session name → (instance key → latest event, `unseen` stamped),
+    /// insertion-ordered.
     instances: IndexMap<String, IndexMap<String, AgentEvent>>,
-    /// Per-instance unseen tracking, keyed by `session\0instanceKey`.
-    unseen_instances: IndexSet<String>,
     /// session → pinned instance keys (agents backed by a live pane process).
     pinned_keys: HashMap<String, HashSet<String>>,
-}
-
-fn unseen_key(session: &str, key: &str) -> String {
-    format!("{session}\0{key}")
 }
 
 impl AgentTracker {
@@ -43,7 +38,6 @@ impl AgentTracker {
         if let Some(inner) = self.instances.get_mut(session) {
             inner.shift_remove(key);
         }
-        self.unseen_instances.shift_remove(&unseen_key(session, key));
     }
 
     /// Drop any session whose instance map is now empty.
@@ -54,50 +48,23 @@ impl AgentTracker {
     }
 
     /// Record an event. A terminal one is unseen until [`Self::mark_seen`].
-    pub fn apply_event(&mut self, event: AgentEvent) {
+    pub fn apply_event(&mut self, mut event: AgentEvent) {
         let key = instance_key(&event.agent, event.thread_id.as_deref());
-        let session = event.session.clone();
-        let status = event.status;
-
-        self.instances.entry(session.clone()).or_default().insert(key.clone(), event);
-
-        let ukey = unseen_key(&session, &key);
-        if status.is_terminal() {
-            self.unseen_instances.insert(ukey);
-        } else {
-            self.unseen_instances.shift_remove(&ukey);
-        }
+        event.unseen = event.status.is_terminal().then_some(true);
+        self.instances.entry(event.session.clone()).or_default().insert(key, event);
     }
 
-    /// All instances for a session, unseen flag stamped, newest-first.
+    /// A session's instances, borrowed, in insertion order.
+    pub fn agents(&self, session: &str) -> impl Iterator<Item = &AgentEvent> {
+        self.instances.get(session).into_iter().flat_map(IndexMap::values)
+    }
+
+    /// All instances for a session, owned for a payload, newest-first.
     pub fn get_agents(&self, session: &str) -> Vec<AgentEvent> {
-        let Some(inner) = self.instances.get(session) else {
-            return Vec::new();
-        };
-        let mut out: Vec<AgentEvent> = inner
-            .values()
-            .map(|event| {
-                let key = instance_key(&event.agent, event.thread_id.as_deref());
-                let mut ev = event.clone();
-                if self.unseen_instances.contains(&unseen_key(session, &key)) {
-                    ev.unseen = Some(true);
-                }
-                ev
-            })
-            .collect();
+        let mut out: Vec<AgentEvent> = self.agents(session).cloned().collect();
         // Stable sort by descending ts, so ties keep insertion order.
         out.sort_by_key(|e| std::cmp::Reverse(e.ts));
         out
-    }
-
-    fn clear_unseen(&mut self, session: &str) {
-        let Some(inner) = self.instances.get(session) else {
-            return;
-        };
-        let ukeys: Vec<String> = inner.keys().map(|k| unseen_key(session, k)).collect();
-        for ukey in ukeys {
-            self.unseen_instances.shift_remove(&ukey);
-        }
     }
 
     /// Clear unseen flags for a session. Returns whether anything was unseen.
@@ -105,19 +72,19 @@ impl AgentTracker {
         if !self.is_unseen(session) {
             return false;
         }
-        self.clear_unseen(session);
+        for event in self.instances.get_mut(session).into_iter().flat_map(IndexMap::values_mut) {
+            event.unseen = None;
+        }
         true
     }
 
     /// Remove every unpinned instance `drop` selects, then any emptied session.
-    fn prune_where(&mut self, drop: impl Fn(&Self, &str, &str, &AgentEvent) -> bool) {
+    fn prune_where(&mut self, drop: impl Fn(&AgentEvent) -> bool) {
         let sessions: Vec<String> = self.instances.keys().cloned().collect();
         for session in sessions {
             let removable: Vec<String> = self.instances[&session]
                 .iter()
-                .filter(|(key, event)| {
-                    !self.is_pinned(&session, key) && drop(self, &session, key, event)
-                })
+                .filter(|(key, event)| !self.is_pinned(&session, key) && drop(event))
                 .map(|(key, _)| key.clone())
                 .collect();
             for key in removable {
@@ -130,7 +97,7 @@ impl AgentTracker {
     /// Prune instances whose last activity is older than `timeout_ms`, optionally
     /// restricted to one status; skips pinned.
     fn prune_by_age(&mut self, timeout_ms: i64, only_status: Option<AgentStatus>, now_ms: i64) {
-        self.prune_where(|_, _, _, event| {
+        self.prune_where(|event| {
             let last_seen =
                 event.details.as_ref().and_then(|d| d.last_activity_at).unwrap_or(event.ts);
             only_status.is_none_or(|s| event.status == s) && now_ms - last_seen > timeout_ms
@@ -150,19 +117,16 @@ impl AgentTracker {
     /// Prune terminal instances older than the terminal timeout, but only if seen
     /// and not pinned.
     pub fn prune_terminal(&mut self, now_ms: i64) {
-        self.prune_where(|t, session, key, event| {
+        self.prune_where(|event| {
             event.status.is_terminal()
-                && !t.unseen_instances.contains(&unseen_key(session, key))
+                && event.unseen != Some(true)
                 && now_ms - event.ts > TERMINAL_PRUNE_MS
         });
     }
 
     /// Whether any instance in the session is unseen.
     fn is_unseen(&self, session: &str) -> bool {
-        let Some(inner) = self.instances.get(session) else {
-            return false;
-        };
-        inner.keys().any(|key| self.unseen_instances.contains(&unseen_key(session, key)))
+        self.agents(session).any(|e| e.unseen == Some(true))
     }
 
     /// Set pinned instance keys for multiple sessions at once.

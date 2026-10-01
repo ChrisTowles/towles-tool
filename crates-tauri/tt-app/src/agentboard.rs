@@ -46,8 +46,7 @@ pub fn stamp_pty_state(
     since: &mut tt_agentboard::bridge::NeedsSince,
     now: i64,
 ) {
-    let crate::terminal::PtyEmitState { live, shell_kinds, signals: pty_signals, port_drift } =
-        terms.emit_state();
+    let crate::terminal::PtyEmitState { sessions: ptys, mut port_drift } = terms.emit_state();
     // One failure is a hiccup the retry covers; a run of them means the rows
     // below are missing agents rather than reporting none.
     payload.agent_scan_ok =
@@ -58,21 +57,22 @@ pub fn stamp_pty_state(
             folder.phase = phases.get(&folder.dir);
             let mut has_port_drift = false;
             for session in &mut folder.sessions {
-                session.live = live.contains(&session.id);
-                session.shell_kind = shell_kinds.get(&session.id).cloned();
+                let pty = ptys.get(&session.id);
+                session.live = pty.is_some();
+                session.shell_kind = pty.map(|p| p.shell_kind.clone());
                 // Only sessions this app hosts a PTY for; everything else has no
                 // direct evidence to apply.
-                if let Some(signal) = pty_signals.get(&session.id)
+                if let Some(pty) = pty
                     && let Some(state) = session.agent_state.as_mut()
                 {
                     state.status =
-                        tt_agentboard::pty_status::resolve_status(state.status, signal, now);
+                        tt_agentboard::pty_status::resolve_status(state.status, &pty.signal, now);
                 }
                 session.working =
                     session.agent_state.as_ref().is_some_and(|e| e.status.is_working());
                 // A stopped shell's last-known ports say nothing about now.
                 session.port_drift = if session.live {
-                    port_drift.get(&session.id).cloned().unwrap_or_default()
+                    port_drift.remove(&session.id).unwrap_or_default()
                 } else {
                     Vec::new()
                 };

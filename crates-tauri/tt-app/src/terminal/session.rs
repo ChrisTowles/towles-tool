@@ -95,10 +95,14 @@ pub(super) struct Session {
     pub(super) activity: Arc<PtyActivity>,
 }
 
+pub struct PtySessionState {
+    pub shell_kind: String,
+    pub signal: tt_agentboard::pty_status::PtySignal,
+}
+
 pub struct PtyEmitState {
-    pub live: HashSet<String>,
-    pub shell_kinds: HashMap<String, String>,
-    pub signals: HashMap<String, tt_agentboard::pty_status::PtySignal>,
+    /// Every live PTY, by session id.
+    pub sessions: HashMap<String, PtySessionState>,
     pub port_drift: HashMap<String, Vec<tt_agentboard::env_drift::PortDrift>>,
 }
 
@@ -264,15 +268,20 @@ impl TermState {
     /// **One** pass under **one** lock; the alternative retakes the
     /// keystroke-path lock once per accessor.
     pub fn emit_state(&self) -> PtyEmitState {
-        let (live, shell_kinds, signals) = {
-            let guard = self.sessions.lock().unwrap();
-            let live = guard.keys().cloned().collect();
-            let shell_kinds =
-                guard.iter().map(|(id, s)| (id.clone(), s.shell_kind.clone())).collect();
-            let signals = guard.iter().map(|(id, s)| (id.clone(), s.activity.signal())).collect();
-            (live, shell_kinds, signals)
-        };
-        PtyEmitState { live, shell_kinds, signals, port_drift: self.port_drift() }
+        let sessions = self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, s)| {
+                let state = PtySessionState {
+                    shell_kind: s.shell_kind.clone(),
+                    signal: s.activity.signal(),
+                };
+                (id.clone(), state)
+            })
+            .collect();
+        PtyEmitState { sessions, port_drift: self.port_drift() }
     }
 
     /// What each folder's `.env` claimed at spawn vs now. **The reads happen
