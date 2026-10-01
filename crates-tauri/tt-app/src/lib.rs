@@ -434,6 +434,24 @@ pub fn run() {
                             }
                             e.scan_once(now);
                         }
+                        // Once per scan, unlocked: every emit until the next one
+                        // rebuilds from this, so a PTY burst does no `/proc` or
+                        // transcript I/O.
+                        let shell_pids = store_handle
+                            .try_state::<terminal::TermState>()
+                            .map(|t| t.shell_pids())
+                            .unwrap_or_default();
+                        let snapshot = tauri::async_runtime::spawn_blocking(move || {
+                            tt_agentboard::engine::collect_agent_snapshot(
+                                now_ms(),
+                                &tt_agentboard::procenv::InstanceScope::this_app(),
+                                &shell_pids,
+                            )
+                        })
+                        .await;
+                        if let Ok(snapshot) = snapshot {
+                            engine.lock().unwrap().set_agent_snapshot(snapshot);
+                        }
                         // Narrow the accelerant to what's actually polled —
                         // a no-op unless the tracked set moved.
                         let targets = engine.lock().unwrap().watch_targets();

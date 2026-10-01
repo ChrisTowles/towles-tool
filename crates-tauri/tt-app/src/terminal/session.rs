@@ -300,6 +300,10 @@ impl TermState {
             .collect()
     }
 
+    pub fn shell_pids(&self) -> Vec<u32> {
+        self.sessions.lock().unwrap().values().filter_map(|s| s.child.process_id()).collect()
+    }
+
     pub fn shell_pid_labels(&self) -> Vec<(String, u32, String)> {
         self.sessions
             .lock()

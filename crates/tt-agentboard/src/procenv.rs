@@ -54,21 +54,22 @@ pub struct SessionAgentProc {
     pub started_at: Option<i64>,
 }
 
-/// Scan `/proc` for live `claude` processes carrying `TT_SESSION_ID` and
-/// matching `scope` (the shell + MCP children inherit the vars too, and are
-/// filtered out by process name). Linux-only; empty elsewhere.
+/// Find the live `claude` processes under `shell_pids` (the host's PTY shells,
+/// themselves included) that carry `TT_SESSION_ID` and match `scope`. Walks only
+/// those trees, never all of `/proc`, and stops at the first `claude` on a
+/// branch. Linux-only; empty elsewhere.
 #[cfg(target_os = "linux")]
-pub fn scan_session_agents(scope: &InstanceScope) -> Vec<SessionAgentProc> {
+pub fn scan_session_agents(shell_pids: &[u32], scope: &InstanceScope) -> Vec<SessionAgentProc> {
     let mut out = Vec::new();
-    let Ok(dir) = std::fs::read_dir("/proc") else {
-        return out;
-    };
-    for entry in dir.flatten() {
-        let Some(pid) = entry.file_name().to_str().and_then(|s| s.parse::<i32>().ok()) else {
+    let mut seen = std::collections::HashSet::new();
+    let mut stack: Vec<i32> = shell_pids.iter().filter_map(|&p| i32::try_from(p).ok()).collect();
+    while let Some(pid) = stack.pop() {
+        if !seen.insert(pid) {
             continue;
-        };
+        }
         let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
         if comm.trim() != "claude" {
+            stack.extend(child_pids(pid));
             continue;
         }
         // The shared `claude daemon` also reports `comm == "claude"` and can
@@ -88,6 +89,21 @@ pub fn scan_session_agents(scope: &InstanceScope) -> Vec<SessionAgentProc> {
         }
     }
     out
+}
+
+/// A child is listed under the thread that forked it, so read every thread's.
+#[cfg(target_os = "linux")]
+fn child_pids(pid: i32) -> Vec<i32> {
+    let Ok(tasks) = std::fs::read_dir(format!("/proc/{pid}/task")) else {
+        return Vec::new();
+    };
+    tasks
+        .flatten()
+        .filter_map(|task| std::fs::read_to_string(task.path().join("children")).ok())
+        .flat_map(|list| {
+            list.split_whitespace().filter_map(|s| s.parse::<i32>().ok()).collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Resolve `pid`'s scoped `TT_SESSION_ID` with **no** liveness re-check. Only
@@ -111,7 +127,7 @@ fn is_live_claude_process(pid: i32) -> bool {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn scan_session_agents(_scope: &InstanceScope) -> Vec<SessionAgentProc> {
+pub fn scan_session_agents(_shell_pids: &[u32], _scope: &InstanceScope) -> Vec<SessionAgentProc> {
     Vec::new()
 }
 
@@ -264,6 +280,16 @@ mod tests {
         let started = process_started_at_ms(std::process::id() as i32).unwrap();
         let now = tt_config::now_ms();
         assert!(started <= now && now - started < 24 * 60 * 60 * 1000, "{started} vs {now}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn child_pids_lists_a_spawned_child() {
+        let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let children = child_pids(std::process::id() as i32);
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(children.contains(&(child.id() as i32)));
     }
 
     #[cfg(target_os = "linux")]

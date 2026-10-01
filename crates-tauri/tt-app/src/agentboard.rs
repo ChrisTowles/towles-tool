@@ -127,18 +127,11 @@ pub fn close_exited_session(app: &AppHandle, id: &str) {
     }
 }
 
-/// The agent snapshot (claude CLI + `/proc` + transcript reads) is collected
-/// BEFORE taking the engine lock, so its subprocess work can't stall `ab_*`.
+/// Rebuilds from the engine's cached agent snapshot — the scan task owns the
+/// claude CLI, `/proc` and transcript reads, so an emit does none of them.
 pub fn stamped_payload(app: &AppHandle) -> StatePayload {
-    let snapshot = tt_agentboard::engine::collect_agent_snapshot(
-        now_ms(),
-        &tt_agentboard::procenv::InstanceScope::this_app(),
-    );
     let ab = app.state::<Ab>();
-    let mut payload = {
-        let mut engine = ab.engine.lock().unwrap();
-        engine.compute_payload_with(&snapshot, now_ms())
-    };
+    let mut payload = ab.engine.lock().unwrap().compute_payload(now_ms());
     stamp_pty_state(
         &mut payload,
         &app.state::<crate::terminal::TermState>(),
