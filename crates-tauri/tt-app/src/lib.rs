@@ -381,7 +381,6 @@ pub fn run() {
                         let (cli, snapshot) = tauri::async_runtime::spawn_blocking(move || {
                             let cli = tt_agentboard::engine::fetch_agent_scan();
                             let snapshot = tt_agentboard::engine::collect_agent_snapshot(
-                                now_ms(),
                                 &tt_agentboard::procenv::InstanceScope::this_app(),
                                 &shell_pids,
                                 &cli,

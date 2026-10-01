@@ -8,6 +8,7 @@
 //! engine lock, for the watcher and the agent snapshot; the ~170ms CLI call is
 //! gated to roughly once a minute by [`crate::watchers::claude_code::CLI_CACHE_TTL_MS`].
 
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -29,21 +30,26 @@ pub fn parse_agents(json: &str) -> Vec<CliAgent> {
     let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(json) else {
         return Vec::new();
     };
-    entries
-        .into_iter()
-        .filter_map(|entry| {
-            let pid = entry.get("pid")?.as_i64()? as i32;
-            let session_id = entry.get("sessionId")?.as_str()?.to_string();
-            Some(CliAgent {
-                pid,
-                cwd: entry.get("cwd").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                kind: entry.get("kind").and_then(|v| v.as_str()).map(str::to_string),
-                started_at: entry.get("startedAt").and_then(|v| v.as_i64()),
-                session_id,
-                name: entry.get("name").and_then(|v| v.as_str()).map(str::to_string),
-            })
-        })
-        .collect()
+    entries.iter().filter_map(parse_agent).collect()
+}
+
+fn parse_agent(entry: &serde_json::Value) -> Option<CliAgent> {
+    Some(CliAgent {
+        pid: entry.get("pid")?.as_i64()? as i32,
+        cwd: entry.get("cwd").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        kind: entry.get("kind").and_then(|v| v.as_str()).map(str::to_string),
+        started_at: entry.get("startedAt").and_then(|v| v.as_i64()),
+        session_id: entry.get("sessionId")?.as_str()?.to_string(),
+        name: entry.get("name").and_then(|v| v.as_str()).map(str::to_string),
+    })
+}
+
+/// The entry Claude Code keeps for a live `pid` at `<sessions_dir>/<pid>.json`,
+/// in the CLI's own shape — what the CLI lists, without waiting on its cache.
+pub fn read_session_file(sessions_dir: &Path, pid: i32) -> Option<CliAgent> {
+    let text = std::fs::read_to_string(sessions_dir.join(format!("{pid}.json"))).ok()?;
+    let agent = parse_agent(&serde_json::from_str(&text).ok()?)?;
+    (agent.pid == pid).then_some(agent)
 }
 
 /// Wall-clock ceiling for one `claude agents` call. Each 2s scan waits on it
@@ -241,6 +247,18 @@ mod tests {
         assert_eq!(agents[0].kind.as_deref(), Some("interactive"));
         assert_eq!(agents[0].started_at, Some(1_783_087_499_085));
         assert_eq!(agents[1].name.as_deref(), Some("Fix the flaky test"));
+    }
+
+    #[test]
+    fn a_session_file_reads_as_the_cli_entry_for_its_pid() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = r#"{"pid":100,"sessionId":"aaa-111","cwd":"/home/u/p","startedAt":5,"kind":"interactive","status":"busy"}"#;
+        std::fs::write(dir.path().join("100.json"), entry).unwrap();
+        std::fs::write(dir.path().join("200.json"), entry).unwrap();
+        let agent = read_session_file(dir.path(), 100).unwrap();
+        assert_eq!((agent.session_id.as_str(), agent.cwd.as_str()), ("aaa-111", "/home/u/p"));
+        assert_eq!(read_session_file(dir.path(), 200), None);
+        assert_eq!(read_session_file(dir.path(), 300), None);
     }
 
     #[test]

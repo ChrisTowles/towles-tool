@@ -6,18 +6,16 @@
 //! Per scan: list live agents, resolve each to a session by cwd, then read its
 //! status (`session_status`). A session that vanished gets one final
 //! journal read and a terminal emit. Deliberate limit: one that exited before
-//! the server started never appears at all. Live sessions the CLI doesn't list
-//! go through the same rules via [`unlisted_events`].
+//! the server started never appears at all. A session the cached CLI list
+//! doesn't have yet is passed in from Claude Code's own session file.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
 
 use tt_claude_code::TranscriptEntry;
 
-use crate::claude_cli::AgentScan;
-use crate::procenv::SessionAgentProc;
+use crate::claude_cli::{AgentScan, CliAgent};
 use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo, SubagentInfo};
 use crate::watchers::claude_usage::{ClaudeUsageSummary, usage_summary_of};
 use crate::watchers::ledger::SubagentLedger;
@@ -211,8 +209,7 @@ fn is_placeholder_model(model: &str) -> bool {
     model.starts_with('<')
 }
 
-/// The one map from what is known about a live session to its status, for the
-/// watcher's CLI-listed sessions and the engine's unlisted ones alike: the
+/// The one map from what is known about a live session to its status: the
 /// journal's reading, except that a finished turn with background agents still
 /// out is not waiting on you — their reports start the next one; a question
 /// (`Waiting`) still is. The PTY overrides this downstream
@@ -499,11 +496,13 @@ impl ClaudeCodeAgentWatcher {
 
     /// One full scan of the host's `claude agents` answer at logical time
     /// `now_ms`; the caller owns the cadence and the CLI call. `resolve` maps an
-    /// agent's cwd to a board session, `None` if unmatched.
+    /// agent's cwd to a board session, `None` if unmatched. `unlisted` are live
+    /// sessions `cli` doesn't have yet, taken as listed.
     pub fn scan(
         &mut self,
         resolve: &dyn Fn(&str) -> Option<String>,
         cli: &AgentScan,
+        unlisted: &[CliAgent],
         now_ms: i64,
     ) -> Vec<AgentEvent> {
         let mut events = Vec::new();
@@ -512,9 +511,15 @@ impl ClaudeCodeAgentWatcher {
         if !cli.ok {
             return events;
         }
-        let live_ids: HashSet<&str> = cli.agents.iter().map(|a| a.session_id.as_str()).collect();
+        let mut agents: Vec<&CliAgent> = cli.agents.iter().collect();
+        for agent in unlisted {
+            if !agents.iter().any(|a| a.session_id == agent.session_id) {
+                agents.push(agent);
+            }
+        }
+        let live_ids: HashSet<&str> = agents.iter().map(|a| a.session_id.as_str()).collect();
 
-        for agent in &cli.agents {
+        for agent in agents {
             // A Claude started in an external terminal — even one whose cwd is
             // inside a tracked checkout — or in another instance's PTY is not
             // ours to surface. (Env read is Linux-only; elsewhere nothing is
@@ -559,46 +564,9 @@ impl ClaudeCodeAgentWatcher {
     }
 }
 
-/// Journals of live sessions the CLI didn't list, kept between rebuilds so
-/// they are read incrementally, like the watcher's.
-static UNLISTED: LazyLock<Mutex<HashMap<PathBuf, Journal>>> = LazyLock::new(Default::default);
-
-/// An event per live app-launched session the CLI didn't list, keyed by its
-/// `TT_SESSION_ID`, through the watcher's own [`session_status`]. A journal
-/// not passed again is forgotten.
-pub fn unlisted_events(procs: &[SessionAgentProc], now_ms: i64) -> HashMap<String, AgentEvent> {
-    let mut journals = UNLISTED.lock().unwrap_or_else(|e| e.into_inner());
-    let mut kept = HashMap::new();
-    let mut events = HashMap::new();
-    for proc in procs {
-        let mut journal = Journal::default();
-        if let Some(path) = &proc.transcript {
-            journal = journals.remove(path).unwrap_or_default();
-            journal.refresh(path);
-        }
-        let event = AgentEvent {
-            agent: NAME.to_string(),
-            session: String::new(),
-            status: session_status(&journal, proc.started_at),
-            ts: now_ms,
-            thread_id: None,
-            thread_name: journal.thread_name.clone(),
-            unseen: None,
-            details: journal.details(&SubagentRollup::default(), proc.started_at),
-        };
-        events.insert(proc.session_id.clone(), event);
-        if let Some(path) = &proc.transcript {
-            kept.insert(path.clone(), journal);
-        }
-    }
-    *journals = kept;
-    events
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::claude_cli::CliAgent;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
 
@@ -613,9 +581,19 @@ mod tests {
         }
 
         fn scan(&mut self, watcher: &mut ClaudeCodeAgentWatcher, cli: &AgentScan, now_ms: i64) {
+            self.scan_with(watcher, cli, &[], now_ms);
+        }
+
+        fn scan_with(
+            &mut self,
+            watcher: &mut ClaudeCodeAgentWatcher,
+            cli: &AgentScan,
+            unlisted: &[CliAgent],
+            now_ms: i64,
+        ) {
             let by_dir = &self.by_dir;
             let resolve = |dir: &str| by_dir.iter().find(|(d, _)| d == dir).map(|(_, s)| s.clone());
-            self.events.extend(watcher.scan(&resolve, cli, now_ms));
+            self.events.extend(watcher.scan(&resolve, cli, unlisted, now_ms));
         }
     }
 
@@ -650,8 +628,12 @@ mod tests {
     impl Fixture {
         /// A good `claude agents` answer listing whatever the test set.
         fn scan(&mut self, ctx: &mut Ctx, now_ms: i64) {
+            self.scan_with(ctx, &[], now_ms);
+        }
+
+        fn scan_with(&mut self, ctx: &mut Ctx, unlisted: &[CliAgent], now_ms: i64) {
             let cli = AgentScan { agents: self.agents.lock().unwrap().clone(), ok: true };
-            ctx.scan(&mut self.watcher, &cli, now_ms);
+            ctx.scan_with(&mut self.watcher, &cli, unlisted, now_ms);
         }
     }
 
@@ -811,62 +793,33 @@ mod tests {
         assert_eq!(d.context_used, None);
     }
 
-    fn unlisted(path: &Path, started_at: Option<i64>) -> SessionAgentProc {
-        SessionAgentProc {
-            session_id: "s00tt".into(),
-            pid: 1,
-            transcript: Some(path.to_path_buf()),
-            started_at,
-        }
-    }
-
     #[test]
-    fn unlisted_session_reads_name_and_status_from_its_journal() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("s.jsonl");
-        let mut text = [USER_LINE, RUNNING_LINE].join("\n");
-        text.push('\n');
-        std::fs::write(&path, &text).unwrap();
-        let ev = &unlisted_events(&[unlisted(&path, None)], 1_000)["s00tt"];
-        assert_eq!(ev.thread_name.as_deref(), Some("fix the flaky test"));
+    fn a_session_the_cli_has_not_listed_yet_is_read_like_a_listed_one() {
+        let mut f = fixture();
+        let path = write_journal(&f.projects, "/home/u/p", "sid-new", &[USER_LINE, RUNNING_LINE]);
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/p".into(), "p".into()));
+        let unlisted = [cli_agent(9, "/home/u/p", "sid-new")];
+
+        f.scan_with(&mut ctx, &unlisted, 1_000);
+        let ev = ctx.events.last().unwrap();
         assert_eq!(ev.status, AgentStatus::Busy);
-        assert_eq!(ev.details.as_ref().unwrap().model.as_deref(), Some("claude-sonnet-5"));
+        assert_eq!(ev.thread_name.as_deref(), Some("fix the flaky test"));
 
         {
             use std::io::Write;
             let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
             writeln!(file, "{END_TURN_LINE}").unwrap();
         }
-        let ev = &unlisted_events(&[unlisted(&path, None)], 2_000)["s00tt"];
-        assert_eq!(ev.thread_name.as_deref(), Some("fix the flaky test"));
-        assert_eq!(ev.status, AgentStatus::Complete);
+        f.scan_with(&mut ctx, &unlisted, 2_000);
+        assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
 
-        let gone = unlisted(&tmp.path().join("missing.jsonl"), None);
-        let ev = &unlisted_events(&[gone], 3_000)["s00tt"];
-        assert_eq!((ev.thread_name.as_deref(), ev.status), (None, AgentStatus::Idle));
-    }
-
-    /// A bounded tail read lost the launch line once the turn ran long.
-    #[test]
-    fn unlisted_session_sees_a_background_agent_launched_long_before_the_tail() {
-        let tmp = TempDir::new().unwrap();
-        let path = tmp.path().join("s.jsonl");
-        let launch = r#"{"type":"user","timestamp":"2026-09-30T22:00:00Z","toolUseResult":{"status":"async_launched","agentId":"a1"}}"#;
-        let mut lines = vec![USER_LINE, launch];
-        lines.extend(std::iter::repeat_n(NARRATION_LINE, 1_000));
-        lines.push(END_TURN_LINE);
-        let mut text = lines.join("\n");
-        text.push('\n');
-        assert!(text.len() as u64 > TAIL_WINDOW);
-        std::fs::write(&path, &text).unwrap();
-
-        let ev = &unlisted_events(&[unlisted(&path, Some(0))], 1_000)["s00tt"];
-        assert_eq!(ev.status, AgentStatus::Background);
-        assert_eq!(ev.details.as_ref().unwrap().background_agents, Some(1));
-
-        let resumed_later = parse_timestamp_ms("2026-09-30T23:00:00Z");
-        let ev = &unlisted_events(&[unlisted(&path, resumed_later)], 2_000)["s00tt"];
-        assert_eq!(ev.status, AgentStatus::Complete);
+        // The CLI catching up is the same session, not a new one to announce.
+        let emitted = ctx.events.len();
+        *f.agents.lock().unwrap() = unlisted.to_vec();
+        f.scan_with(&mut ctx, &unlisted, 3_000);
+        f.scan(&mut ctx, 4_000);
+        assert_eq!(ctx.events.len(), emitted);
     }
 
     #[test]
