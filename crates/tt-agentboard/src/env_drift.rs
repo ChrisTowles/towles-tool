@@ -9,8 +9,10 @@
 //! conflict-driven rotation. Diffing the whole `.env` would flag unrelated edits
 //! (a secret filled in later), which isn't drift, just enrichment.
 
-use std::collections::BTreeMap;
-use std::path::Path;
+use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
+
+use crate::persist::FileVersion;
 
 /// One port whose current claim differs from what a session's shell saw at
 /// spawn time.
@@ -32,6 +34,30 @@ pub fn read_current_ports(dir: &Path) -> BTreeMap<String, u16> {
     std::fs::read_to_string(dir.join(".env"))
         .map(|text| tt_tasks::envfile::port_claims_by_key(&text))
         .unwrap_or_default()
+}
+
+/// [`read_current_ports`] memoized per directory on `.env`'s [`FileVersion`]:
+/// every emit asks, and an unchanged file should cost a stat, not a read.
+#[derive(Debug, Default)]
+pub struct PortClaimsCache {
+    by_dir: HashMap<PathBuf, (FileVersion, BTreeMap<String, u16>)>,
+}
+
+impl PortClaimsCache {
+    pub fn current_ports(&mut self, dir: &Path) -> BTreeMap<String, u16> {
+        let Some(version) = crate::persist::file_version(&dir.join(".env")) else {
+            self.by_dir.remove(dir);
+            return BTreeMap::new();
+        };
+        if let Some((seen, ports)) = self.by_dir.get(dir)
+            && *seen == version
+        {
+            return ports.clone();
+        }
+        let ports = read_current_ports(dir);
+        self.by_dir.insert(dir.to_path_buf(), (version, ports.clone()));
+        ports
+    }
 }
 
 /// Diff a session's spawn-time port snapshot against its folder's current
@@ -109,5 +135,28 @@ mod tests {
         let ports = read_current_ports(root.path());
         assert_eq!(ports.get("UI_PORT"), Some(&3001));
         assert_eq!(ports.len(), 1);
+    }
+
+    #[test]
+    fn port_claims_cache_rereads_only_a_changed_env() {
+        use std::io::Write;
+        let root = tempfile::TempDir::new().unwrap();
+        let env = root.path().join(".env");
+        std::fs::write(&env, "UI_PORT=3001\n").unwrap();
+        let mut cache = PortClaimsCache::default();
+        assert_eq!(cache.current_ports(root.path()).get("UI_PORT"), Some(&3001));
+
+        // Same inode, length and mtime: only a re-read could see the new value.
+        let mtime = std::fs::metadata(&env).unwrap().modified().unwrap();
+        let mut f = std::fs::OpenOptions::new().write(true).open(&env).unwrap();
+        f.write_all(b"UI_PORT=3002\n").unwrap();
+        f.set_modified(mtime).unwrap();
+        assert_eq!(cache.current_ports(root.path()).get("UI_PORT"), Some(&3001));
+
+        std::fs::write(&env, "UI_PORT=30077\n").unwrap();
+        assert_eq!(cache.current_ports(root.path()).get("UI_PORT"), Some(&30077));
+
+        std::fs::remove_file(&env).unwrap();
+        assert!(cache.current_ports(root.path()).is_empty());
     }
 }

@@ -106,6 +106,8 @@ pub struct PtyEmitState {
 pub struct TermState {
     sessions: Mutex<HashMap<String, Session>>,
     focused: Mutex<Option<String>>,
+    /// Its own lock, so the `.env` stats never sit under the keystroke path's.
+    port_claims: Mutex<tt_agentboard::env_drift::PortClaimsCache>,
 }
 
 /// The frontend can call into a pane whose shell has already exited.
@@ -287,13 +289,14 @@ impl TermState {
                 })
                 .collect()
         };
+        let mut port_claims = self.port_claims.lock().unwrap();
         let mut current_by_dir: HashMap<PathBuf, BTreeMap<String, u16>> = HashMap::new();
         sessions
             .into_iter()
             .filter_map(|(id, dir, at_spawn)| {
                 let current = current_by_dir
                     .entry(dir.clone())
-                    .or_insert_with(|| tt_agentboard::env_drift::read_current_ports(&dir));
+                    .or_insert_with(|| port_claims.current_ports(&dir));
                 let drift = tt_agentboard::env_drift::diff(&at_spawn, current);
                 (!drift.is_empty()).then_some((id, drift))
             })
