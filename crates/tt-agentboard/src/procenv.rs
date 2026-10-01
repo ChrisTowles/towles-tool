@@ -11,8 +11,6 @@
 //! (no PTYs) to any. Linux reads `/proc/<pid>/environ`; other platforms return
 //! `None` for now.
 
-use std::path::PathBuf;
-
 /// Injected into every agentboard PTY at spawn, read back here to attribute a
 /// detected agent to its session.
 pub const TT_SESSION_ENV: &str = "TT_SESSION_ID";
@@ -42,16 +40,12 @@ impl InstanceScope {
 }
 
 /// A live `claude` process found by scanning `/proc`, tagged with its PTY's
-/// `TT_SESSION_ID` and the transcript it has open. Surfaces an app-spawned
-/// agent even when `claude agents --all --json` fails to enumerate it (e.g. a
-/// `--chrome` interactive session).
+/// `TT_SESSION_ID`. Surfaces an app-spawned agent the cached `claude agents
+/// --all --json` hasn't listed yet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionAgentProc {
     pub session_id: String,
     pub pid: i32,
-    pub transcript: Option<PathBuf>,
-    /// Epoch ms, like the CLI's `startedAt`.
-    pub started_at: Option<i64>,
 }
 
 /// Find the live `claude` processes under `shell_pids` (the host's PTY shells,
@@ -80,12 +74,7 @@ pub fn scan_session_agents(shell_pids: &[u32], scope: &InstanceScope) -> Vec<Ses
         // Deliberately *not* `session_id_in_scope`: this loop just established
         // liveness from `/proc`, so its re-check is pure waste here.
         if let Some(sid) = scoped_session_id_of(pid, scope) {
-            out.push(SessionAgentProc {
-                session_id: sid,
-                pid,
-                transcript: open_transcript(pid),
-                started_at: process_started_at_ms(pid),
-            });
+            out.push(SessionAgentProc { session_id: sid, pid });
         }
     }
     out
@@ -129,31 +118,6 @@ fn is_live_claude_process(pid: i32) -> bool {
 #[cfg(not(target_os = "linux"))]
 pub fn scan_session_agents(_shell_pids: &[u32], _scope: &InstanceScope) -> Vec<SessionAgentProc> {
     Vec::new()
-}
-
-/// The session transcript (`…/<uuid>.jsonl`) open on `/proc/<pid>/fd`, skipping
-/// subagent ones. Derives name + status for an agent the CLI didn't report.
-#[cfg(target_os = "linux")]
-fn open_transcript(pid: i32) -> Option<PathBuf> {
-    let fd_dir = std::fs::read_dir(format!("/proc/{pid}/fd")).ok()?;
-    fd_dir.flatten().find_map(|e| {
-        let target = std::fs::read_link(e.path()).ok()?;
-        let s = target.to_string_lossy();
-        let ok =
-            s.ends_with(".jsonl") && s.contains("/.claude/projects/") && !s.contains("/subagents/");
-        ok.then_some(target)
-    })
-}
-
-/// `pid`'s start time: its `/proc/<pid>/stat` start tick past boot, at the
-/// fixed `USER_HZ` of 100 that `/proc` reports in.
-#[cfg(target_os = "linux")]
-fn process_started_at_ms(pid: i32) -> Option<i64> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let ticks: i64 = stat.rsplit_once(')')?.1.split_whitespace().nth(19)?.parse().ok()?;
-    let boot = std::fs::read_to_string("/proc/stat").ok()?;
-    let btime: i64 = boot.lines().find_map(|l| l.strip_prefix("btime "))?.trim().parse().ok()?;
-    Some(btime * 1000 + ticks * 10)
 }
 
 /// Whether `pid` is the shared `claude daemon` rather than a session.
@@ -272,14 +236,6 @@ mod tests {
         let pid = std::process::id() as i32;
         assert!(!is_live_claude_process(pid));
         assert_eq!(session_id_in_scope(pid, &InstanceScope::Any), None);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn process_start_is_in_the_past_and_after_boot() {
-        let started = process_started_at_ms(std::process::id() as i32).unwrap();
-        let now = tt_config::now_ms();
-        assert!(started <= now && now - started < 24 * 60 * 60 * 1000, "{started} vs {now}");
     }
 
     #[cfg(target_os = "linux")]

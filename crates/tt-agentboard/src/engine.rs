@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::bridge::{StatePayload, assemble_state};
-use crate::claude_cli::AgentScan;
+use crate::claude_cli::{AgentScan, CliAgent};
 use crate::git_info::GitInfoCache;
 use crate::procenv::InstanceScope;
 use crate::repos::{
@@ -151,7 +151,8 @@ pub struct Engine {
 pub struct AgentSnapshot {
     live_threads: HashSet<String>,
     tt_session_by_thread: HashMap<String, String>,
-    session_agents: HashMap<String, AgentEvent>,
+    /// Ours but not in `cli` yet; the watcher takes them as listed.
+    unlisted: Vec<CliAgent>,
 }
 
 /// Gather the live-agent inputs for a payload rebuild from this scan's `cli`
@@ -160,7 +161,6 @@ pub struct AgentSnapshot {
 /// last snapshot. `scope` must match the engine's, so attribution and admission
 /// agree on what is ours; `shell_pids` are the host's PTY shells.
 pub fn collect_agent_snapshot(
-    now: i64,
     scope: &InstanceScope,
     shell_pids: &[u32],
     cli: &AgentScan,
@@ -169,24 +169,33 @@ pub fn collect_agent_snapshot(
         return None;
     }
     let cli_agents = &cli.agents;
-    let live_threads: HashSet<String> = cli_agents.iter().map(|a| a.session_id.clone()).collect();
+    let mut live_threads: HashSet<String> =
+        cli_agents.iter().map(|a| a.session_id.clone()).collect();
     // Unmapped falls back to the folder's default session; out of `scope` is
     // dropped entirely.
-    let tt_session_by_thread: HashMap<String, String> = cli_agents
+    let mut tt_session_by_thread: HashMap<String, String> = cli_agents
         .iter()
         .filter_map(|a| {
             crate::procenv::session_id_in_scope(a.pid, scope).map(|sid| (a.session_id.clone(), sid))
         })
         .collect();
-    // Supplement CLI detection with app-spawned sessions it never enumerated.
-    let cli_covered: HashSet<&String> = tt_session_by_thread.values().collect();
-    let mut seen: HashSet<String> = HashSet::new();
-    let unlisted: Vec<_> = crate::procenv::scan_session_agents(shell_pids, scope)
-        .into_iter()
-        .filter(|p| !cli_covered.contains(&p.session_id) && seen.insert(p.session_id.clone()))
-        .collect();
-    let session_agents = crate::watchers::claude_code::unlisted_events(&unlisted, now);
-    Some(AgentSnapshot { live_threads, tt_session_by_thread, session_agents })
+    // A session started since the cached CLI call, read from the file the CLI
+    // lists it from, so it needn't wait out the cache.
+    let sessions_dir = dirs::home_dir().unwrap_or_default().join(".claude").join("sessions");
+    let mut covered: HashSet<String> = tt_session_by_thread.values().cloned().collect();
+    let mut unlisted = Vec::new();
+    for proc in crate::procenv::scan_session_agents(shell_pids, scope) {
+        if !covered.insert(proc.session_id.clone()) {
+            continue;
+        }
+        let Some(agent) = crate::claude_cli::read_session_file(&sessions_dir, proc.pid) else {
+            continue;
+        };
+        live_threads.insert(agent.session_id.clone());
+        tt_session_by_thread.insert(agent.session_id.clone(), proc.session_id);
+        unlisted.push(agent);
+    }
+    Some(AgentSnapshot { live_threads, tt_session_by_thread, unlisted })
 }
 
 /// The host's one `claude agents` call per scan, shared by the watcher and
@@ -202,6 +211,7 @@ pub fn fetch_agent_scan() -> AgentScan {
 pub struct AgentScanJob {
     watcher: Option<ClaudeCodeAgentWatcher>,
     entries: Vec<RepoEntry>,
+    unlisted: Vec<CliAgent>,
     events: Vec<AgentEvent>,
 }
 
@@ -211,7 +221,8 @@ impl AgentScanJob {
             return;
         };
         let entries = &self.entries;
-        self.events = watcher.scan(&|dir| resolve_session_name(dir, entries), cli, now);
+        let resolve = |dir: &str| resolve_session_name(dir, entries);
+        self.events = watcher.scan(&resolve, cli, &self.unlisted, now);
     }
 }
 
@@ -296,6 +307,7 @@ impl Engine {
         AgentScanJob {
             watcher: self.watcher.take(),
             entries: repo_entries(&all_paths),
+            unlisted: self.agent_snapshot.unlisted.clone(),
             events: Vec::new(),
         }
     }
@@ -796,7 +808,6 @@ impl Engine {
             &self.sessions,
             &self.folder_meta,
             &attribute,
-            &snapshot.session_agents,
             self.compact_recommend_percent,
             now,
         );
@@ -1088,7 +1099,7 @@ mod engine_tests {
     #[test]
     fn a_failed_cli_scan_keeps_the_last_snapshot() {
         let failed = AgentScan { agents: Vec::new(), ok: false };
-        assert!(collect_agent_snapshot(0, &InstanceScope::Any, &[], &failed).is_none());
+        assert!(collect_agent_snapshot(&InstanceScope::Any, &[], &failed).is_none());
     }
 
     #[test]
@@ -1096,22 +1107,29 @@ mod engine_tests {
         let (_tmp, mut e) = engine();
         assert!(e.add_repo("/repo/a"));
         let session = e.add_session("/repo/a", None, 1000);
-        let agent = AgentEvent {
+        let other = e.add_session("/repo/a", None, 1001);
+        e.tracker.apply_event(AgentEvent {
             agent: "claude-code".to_string(),
-            session: String::new(),
+            session: "a".to_string(),
             status: crate::types::AgentStatus::Busy,
             ts: 1000,
-            thread_id: None,
+            thread_id: Some("t1".to_string()),
             thread_name: None,
             unseen: None,
             details: None,
-        };
-        let session_agents = HashMap::from([(session.id.clone(), agent)]);
-        e.set_agent_snapshot(AgentSnapshot { session_agents, ..AgentSnapshot::default() });
+        });
+        e.set_agent_snapshot(AgentSnapshot {
+            live_threads: HashSet::from(["t1".to_string()]),
+            tt_session_by_thread: HashMap::from([("t1".to_string(), other.id.clone())]),
+            unlisted: Vec::new(),
+        });
 
-        for now in [1001, 1002] {
+        for now in [1002, 1003] {
             let payload = e.compute_payload(now);
-            let state = payload.repos[0].folders[0].sessions[0].agent_state.as_ref();
+            let rows = &payload.repos[0].folders[0].sessions;
+            let row = |id: &str| rows.iter().find(|r| r.id == id).unwrap();
+            assert!(row(&session.id).agent_state.is_none());
+            let state = row(&other.id).agent_state.as_ref();
             assert_eq!(state.map(|s| s.status), Some(crate::types::AgentStatus::Busy));
         }
     }
