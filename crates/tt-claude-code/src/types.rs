@@ -65,6 +65,9 @@ pub struct TranscriptEntry {
     /// A `queue-operation` line's queued text; `None` for any other shape.
     #[serde(default, deserialize_with = "string_or_none")]
     pub content: Option<String>,
+    /// A `queue-operation` line's `enqueue`/`dequeue`/`remove`.
+    #[serde(default)]
+    pub operation: Option<String>,
 }
 
 /// See [`TranscriptEntry::tool_use_result`]. Read field by field, skipping the

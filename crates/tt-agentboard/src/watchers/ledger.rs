@@ -33,11 +33,16 @@ pub struct Launch {
 pub struct SubagentLedger {
     /// Foreground launches by tool-use id; background ones as above.
     launches: HashMap<String, Launch>,
+    /// When each `<task-id>` was last queued as a notification. Its dequeue and
+    /// delivery re-log that report, which can land after a resume.
+    queued_at: HashMap<String, i64>,
 }
 
 impl SubagentLedger {
     pub fn observe(&mut self, entry: &TranscriptEntry) {
-        let at = entry.timestamp.as_deref().and_then(parse_timestamp_ms).unwrap_or(0);
+        let stamped = entry.timestamp.as_deref().and_then(parse_timestamp_ms);
+        let at = stamped.unwrap_or(0);
+        let enqueued = stamped.filter(|_| entry.operation.as_deref() == Some("enqueue"));
         let content = entry.message.as_ref().and_then(|m| m.content.as_ref());
         if entry.entry_type == "assistant" {
             for tool in content.into_iter().flat_map(|c| c.tool_uses()) {
@@ -87,7 +92,10 @@ impl SubagentLedger {
             .chain(content.into_iter().flat_map(|c| c.text_blocks()));
         for text in texts {
             for task_id in tag_values(text, "<task-id>", "</task-id>") {
-                self.ended(task_id, None);
+                if let Some(t) = enqueued {
+                    self.queued_at.insert(task_id.to_string(), t);
+                }
+                self.ended(task_id, self.queued_at.get(task_id).copied());
             }
             for (from, idle_at) in idle_notifications(text) {
                 self.ended(&from, idle_at);
@@ -258,6 +266,24 @@ mod tests {
             line(json!({"type": "user", "timestamp": T2, "toolUseResult": {"success": true,
             "message": "Resuming agent x", "resumedAgentId": "a1"}}));
         let mut bg = feed(&[async_launch("a1", T0), task_done("a1", T1), resumed]);
+        assert_eq!(bg.background_running(None), 1);
+        observe(&mut bg, &task_done("a1", T3));
+        assert_eq!(bg.background_running(None), 0);
+    }
+
+    #[test]
+    fn a_report_delivered_after_a_resume_is_not_about_the_resumed_run() {
+        let resumed =
+            line(json!({"type": "user", "timestamp": T2, "toolUseResult": {"success": true,
+            "message": "Resuming agent x", "resumedAgentId": "a1"}}));
+        let report = "<task-notification>\n<task-id>a1</task-id>\n</task-notification>";
+        let removed = line(json!({"type": "queue-operation", "operation": "remove",
+            "timestamp": T3, "content": report}));
+        let delivered = line(json!({"type": "user", "timestamp": T3,
+            "message": {"role": "user", "content": report}}));
+        let mut bg = feed(&[async_launch("a1", T0), task_done("a1", T1), resumed]);
+        observe(&mut bg, &removed);
+        observe(&mut bg, &delivered);
         assert_eq!(bg.background_running(None), 1);
         observe(&mut bg, &task_done("a1", T3));
         assert_eq!(bg.background_running(None), 0);

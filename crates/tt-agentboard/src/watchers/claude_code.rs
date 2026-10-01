@@ -557,8 +557,11 @@ impl ClaudeCodeAgentWatcher {
                 // Never resolved/emitted — nothing on the board to finalize.
                 continue;
             }
+            // A verdict already on the board, perhaps already seen, isn't news.
             let parts = Self::event_parts(&state, exit_status(state.journal.status));
-            Self::emit(&mut events, &state.session, parts, &session_id, now_ms);
+            if state.emitted.as_ref() != Some(&parts) {
+                Self::emit(&mut events, &state.session, parts, &session_id, now_ms);
+            }
         }
         events
     }
@@ -1058,6 +1061,22 @@ mod tests {
         assert_eq!(ctx.events.len(), 2);
         assert_eq!(ctx.events[1].status, AgentStatus::Busy);
         assert_eq!(ctx.events[1].details.as_ref().unwrap().last_tool.as_deref(), Some("Read"));
+    }
+
+    #[test]
+    fn exiting_after_a_finished_turn_does_not_announce_it_again() {
+        let mut f = fixture();
+        write_journal(&f.projects, "/home/u/a", "sid-done", &[USER_LINE, END_TURN_LINE]);
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-done")];
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/a".into(), "a".into()));
+        f.scan(&mut ctx, 1_000);
+        assert_eq!(ctx.events.last().unwrap().status, AgentStatus::Complete);
+        ctx.events.clear();
+
+        f.agents.lock().unwrap().clear();
+        f.scan(&mut ctx, 5_000);
+        assert!(ctx.events.is_empty(), "{:?}", ctx.events);
     }
 
     #[test]
