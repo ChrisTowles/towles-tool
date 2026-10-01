@@ -1,16 +1,11 @@
-//! Sub-agent discovery and token accounting for the claude-code watcher.
+//! Sub-agent token accounting for the claude-code watcher.
 //!
 //! A sub-agent runs its own requests against its own thread, so none of its
 //! spend appears in the parent transcript's `usage` — the pane's context
 //! readout is blind to it. Each one keeps a `<session>/subagents/agent-<id>.jsonl`
 //! transcript of the same shape as the parent's, so the same tail extraction
-//! answers "what is this thread carrying".
-//!
-//! Two different questions, deliberately: `active` is what is running *now*
-//! (the 2-minute window, listed individually), while `total_context` covers
-//! every sub-agent thread the session ever spawned. A total that shed finished
-//! sub-agents would fall as work completed, which is the opposite of what a
-//! spend readout is for.
+//! answers "what is this thread carrying". Which of them are running is the
+//! parent journal's answer ([`super::ledger`]), never these files' mtimes.
 //!
 //! Transcripts are re-read only when `(mtime, len)` moves, so a steady state of
 //! finished sub-agents costs one `stat` each per scan rather than a tail read.
@@ -23,26 +18,51 @@ use tt_claude_code::parse_transcript;
 
 use super::claude_code::{TAIL_WINDOW, read_window};
 use super::claude_usage::extract_usage_summary;
-use crate::types::SubagentInfo;
 use crate::watchers::claude_code::JSONL_SUFFIX;
 
 /// What one scan of a session's `subagents/` dir found.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SubagentRollup {
-    /// Recently-touched sub-agents, most-recent first.
-    pub active: Vec<SubagentInfo>,
-    /// Context across every sub-agent transcript, finished ones included.
+    /// Every sub-agent transcript, finished ones included.
+    pub threads: Vec<SubagentThread>,
+    /// Context across every thread: a total that shed finished sub-agents
+    /// would fall as work completed.
     pub total_context: i64,
-    /// How many threads `total_context` covers.
-    pub count: i64,
 }
 
-#[derive(Deserialize)]
-struct SubagentMeta {
-    #[serde(rename = "agentType", default)]
-    agent_type: Option<String>,
+impl SubagentRollup {
+    /// The transcript of the agent the ledger knows by either id.
+    pub fn thread(
+        &self,
+        agent_id: Option<&str>,
+        tool_use_id: Option<&str>,
+    ) -> Option<&SubagentThread> {
+        self.threads.iter().find(|t| {
+            agent_id.is_some_and(|id| t.agent_id == id)
+                || tool_use_id.is_some_and(|id| t.meta.tool_use_id.as_deref() == Some(id))
+        })
+    }
+}
+
+/// One `agent-<agent_id>.jsonl` and its sibling `.meta.json`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SubagentThread {
+    pub agent_id: String,
+    pub meta: SubagentMeta,
+    pub context: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentMeta {
     #[serde(default)]
-    description: Option<String>,
+    pub agent_type: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// The parent's `Agent` tool call — the join for a foreground agent, whose
+    /// agent id the parent journal only states once it has finished.
+    #[serde(default)]
+    pub tool_use_id: Option<String>,
 }
 
 /// One transcript's last-known context, keyed by the file identity it was read
@@ -53,7 +73,7 @@ struct Cached {
     len: u64,
     context: i64,
     /// Read once: the sibling `.meta.json` never changes.
-    info: Option<SubagentInfo>,
+    meta: SubagentMeta,
 }
 
 /// Per-session memo of every sub-agent transcript's context. Lives on the
@@ -64,58 +84,52 @@ pub struct SubagentUsage {
 }
 
 impl SubagentUsage {
-    /// Scan `dir` for sub-agent transcripts. `idle_timeout_ms` bounds which
-    /// count as active.
-    pub fn scan(&mut self, dir: &Path, now_ms: i64, idle_timeout_ms: i64) -> SubagentRollup {
+    pub fn scan(&mut self, dir: &Path) -> SubagentRollup {
         let Ok(entries) = std::fs::read_dir(dir) else {
             self.seen.clear();
             return SubagentRollup::default();
         };
         let mut rollup = SubagentRollup::default();
-        let mut active: Vec<(SubagentInfo, i64)> = Vec::new();
         let mut present: HashSet<PathBuf> = HashSet::new();
 
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with("agent-") || !name.ends_with(JSONL_SUFFIX) {
+            let Some(agent_id) =
+                name.strip_prefix("agent-").and_then(|n| n.strip_suffix(JSONL_SUFFIX))
+            else {
                 continue;
-            }
+            };
             let path = entry.path();
             let Ok(meta) = entry.metadata() else { continue };
             let Some(mtime) = mtime_ms(&meta) else {
                 continue;
             };
-            let context = self.context_of(&path, mtime, meta.len());
-            rollup.total_context += context;
-            rollup.count += 1;
-
-            if now_ms - mtime <= idle_timeout_ms {
-                let cached = self.seen.get_mut(&path).expect("context_of cached it");
-                let mut info = cached.info.get_or_insert_with(|| read_meta(&path)).clone();
-                info.context_used = (context > 0).then_some(context);
-                active.push((info, mtime));
-            }
+            let cached = self.cached(&path, mtime, meta.len());
+            rollup.total_context += cached.context;
+            rollup.threads.push(SubagentThread {
+                agent_id: agent_id.to_string(),
+                meta: cached.meta.clone(),
+                context: cached.context,
+            });
             present.insert(path);
         }
 
         self.seen.retain(|path, _| present.contains(path));
-        active.sort_by_key(|(_, m)| std::cmp::Reverse(*m));
-        rollup.active = active.into_iter().map(|(info, _)| info).collect();
         rollup
     }
 
     /// Cached context for `path`, re-reading the tail only when the file moved.
-    fn context_of(&mut self, path: &Path, mtime: i64, len: u64) -> i64 {
-        if let Some(hit) = self.seen.get(path)
-            && hit.mtime == mtime
-            && hit.len == len
-        {
-            return hit.context;
+    fn cached(&mut self, path: &Path, mtime: i64, len: u64) -> &Cached {
+        let stale = self.seen.get(path).is_none_or(|hit| hit.mtime != mtime || hit.len != len);
+        if stale {
+            let context = tail_context(path, len);
+            let meta = match self.seen.remove(path) {
+                Some(c) => c.meta,
+                None => read_meta(path),
+            };
+            self.seen.insert(path.to_path_buf(), Cached { mtime, len, context, meta });
         }
-        let context = tail_context(path, len);
-        let info = self.seen.remove(path).and_then(|c| c.info);
-        self.seen.insert(path.to_path_buf(), Cached { mtime, len, context, info });
-        context
+        &self.seen[path]
     }
 }
 
@@ -126,24 +140,14 @@ fn tail_context(path: &Path, len: u64) -> i64 {
 }
 
 /// Sibling `agent-<id>.meta.json`; missing or unreadable meta still counts (as `{}`).
-fn read_meta(jsonl_path: &Path) -> SubagentInfo {
-    let Some(path) = meta_path(jsonl_path) else {
-        return SubagentInfo::default();
+fn read_meta(jsonl_path: &Path) -> SubagentMeta {
+    let Some(base) = jsonl_path.to_str().and_then(|p| p.strip_suffix(JSONL_SUFFIX)) else {
+        return SubagentMeta::default();
     };
-    std::fs::read_to_string(path)
+    std::fs::read_to_string(format!("{base}.meta.json"))
         .ok()
-        .and_then(|t| serde_json::from_str::<SubagentMeta>(&t).ok())
-        .map(|m| SubagentInfo {
-            agent_type: m.agent_type,
-            description: m.description,
-            context_used: None,
-        })
+        .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
-}
-
-fn meta_path(jsonl_path: &Path) -> Option<PathBuf> {
-    let base = jsonl_path.to_str()?.strip_suffix(JSONL_SUFFIX)?;
-    Some(PathBuf::from(format!("{base}.meta.json")))
 }
 
 fn mtime_ms(meta: &std::fs::Metadata) -> Option<i64> {
@@ -158,8 +162,6 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
-
-    const IDLE_MS: i64 = 120_000;
 
     /// A transcript whose last assistant entry states `input`/`cache_read`.
     fn transcript(input: i64, cache_read: i64) -> String {
@@ -184,57 +186,41 @@ mod tests {
         if let Some(t) = agent_type {
             fs::write(
                 dir.join(format!("agent-{id}.meta.json")),
-                serde_json::json!({ "agentType": t, "description": "d" }).to_string(),
+                serde_json::json!({ "agentType": t, "description": "d", "toolUseId": format!("toolu_{id}") })
+                    .to_string(),
             )
             .unwrap();
         }
         path
     }
 
-    /// `now` far enough ahead that nothing written "now" counts as active.
-    fn stale_now(dir: &Path) -> i64 {
-        let newest = fs::read_dir(dir)
-            .unwrap()
-            .flatten()
-            .filter_map(|e| mtime_ms(&e.metadata().ok()?))
-            .max()
-            .unwrap_or(0);
-        newest + IDLE_MS + 1
-    }
-
     #[test]
     fn missing_dir_is_empty_not_an_error() {
         let tmp = TempDir::new().unwrap();
         let mut usage = SubagentUsage::default();
-        assert_eq!(usage.scan(&tmp.path().join("nope"), 0, IDLE_MS), SubagentRollup::default());
+        assert_eq!(usage.scan(&tmp.path().join("nope")), SubagentRollup::default());
     }
 
     #[test]
-    fn active_subagents_carry_their_own_context() {
+    fn every_thread_carries_its_own_context_finished_or_not() {
         let tmp = TempDir::new().unwrap();
         write_subagent(tmp.path(), "a", &transcript(10, 90_000), Some("Explore"));
         write_subagent(tmp.path(), "b", &transcript(5, 40_000), None);
-        let mut usage = SubagentUsage::default();
-        let now = mtime_ms(&fs::metadata(tmp.path().join("agent-a.jsonl")).unwrap()).unwrap();
-
-        let r = usage.scan(tmp.path(), now, IDLE_MS);
-        assert_eq!(r.count, 2);
+        let r = SubagentUsage::default().scan(tmp.path());
+        assert_eq!(r.threads.len(), 2);
         assert_eq!(r.total_context, 90_010 + 40_005);
-        assert_eq!(r.active.len(), 2);
-        let explore = r.active.iter().find(|s| s.agent_type.as_deref() == Some("Explore")).unwrap();
-        assert_eq!(explore.context_used, Some(90_010));
+        let explore = r.thread(Some("a"), None).unwrap();
+        assert_eq!(explore.meta.agent_type.as_deref(), Some("Explore"));
+        assert_eq!(explore.context, 90_010);
     }
 
     #[test]
-    fn finished_subagents_leave_the_active_list_but_stay_in_the_total() {
+    fn a_thread_is_found_by_the_tool_call_that_spawned_it() {
         let tmp = TempDir::new().unwrap();
-        write_subagent(tmp.path(), "a", &transcript(10, 90_000), None);
-        let mut usage = SubagentUsage::default();
-
-        let r = usage.scan(tmp.path(), stale_now(tmp.path()), IDLE_MS);
-        assert!(r.active.is_empty());
-        assert_eq!(r.count, 1);
-        assert_eq!(r.total_context, 90_010);
+        write_subagent(tmp.path(), "a", &transcript(10, 90_000), Some("Explore"));
+        let r = SubagentUsage::default().scan(tmp.path());
+        assert_eq!(r.thread(None, Some("toolu_a")).map(|t| t.agent_id.as_str()), Some("a"));
+        assert_eq!(r.thread(Some("zz"), Some("toolu_zz")), None);
     }
 
     #[test]
@@ -242,8 +228,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = write_subagent(tmp.path(), "a", &transcript(10, 90_000), None);
         let mut usage = SubagentUsage::default();
-        let now = stale_now(tmp.path());
-        assert_eq!(usage.scan(tmp.path(), now, IDLE_MS).total_context, 90_010);
+        assert_eq!(usage.scan(tmp.path()).total_context, 90_010);
 
         // Truncating without touching (mtime, len) would change a fresh read's
         // answer; the cached one must stand.
@@ -252,7 +237,7 @@ mod tests {
         let len = meta.len();
         fs::write(&path, "x".repeat(len as usize)).unwrap();
         filetime::set_file_mtime(&path, stamp).unwrap();
-        assert_eq!(usage.scan(tmp.path(), now, IDLE_MS).total_context, 90_010);
+        assert_eq!(usage.scan(tmp.path()).total_context, 90_010);
     }
 
     #[test]
@@ -260,10 +245,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = write_subagent(tmp.path(), "a", &transcript(10, 90_000), None);
         let mut usage = SubagentUsage::default();
-        assert_eq!(usage.scan(tmp.path(), stale_now(tmp.path()), IDLE_MS).total_context, 90_010);
+        assert_eq!(usage.scan(tmp.path()).total_context, 90_010);
 
         fs::write(&path, transcript(10, 200_000)).unwrap();
-        assert_eq!(usage.scan(tmp.path(), stale_now(tmp.path()), IDLE_MS).total_context, 200_010);
+        assert_eq!(usage.scan(tmp.path()).total_context, 200_010);
     }
 
     #[test]
@@ -271,7 +256,6 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("notes.txt"), "x").unwrap();
         fs::write(tmp.path().join("agent-a.meta.json"), "{}").unwrap();
-        let mut usage = SubagentUsage::default();
-        assert_eq!(usage.scan(tmp.path(), 0, IDLE_MS).count, 0);
+        assert!(SubagentUsage::default().scan(tmp.path()).threads.is_empty());
     }
 }
