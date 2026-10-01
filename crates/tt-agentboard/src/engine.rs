@@ -1,4 +1,4 @@
-//! The agentboard engine: tracker + git cache + watchers behind one struct,
+//! The agentboard engine: tracker + git cache + watcher behind one struct,
 //! host-agnostic, so every host shares it.
 //!
 //! The engine is synchronous; hosts own scheduling and transport, and guard it
@@ -21,7 +21,6 @@ use crate::repos::{
 use crate::sessions::{SessionRecord, SessionStore, default_sessions_path};
 use crate::tracker::{AgentTracker, instance_key};
 use crate::types::{AgentEvent, AgentStatus, RowRecord, RowTask};
-use crate::watcher::{AgentWatcher, WatcherContext};
 use crate::watchers::claude_code::ClaudeCodeAgentWatcher;
 
 /// One rail row. Its `dir` is where the checkout *should* be, not a claim that
@@ -107,20 +106,6 @@ fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &st
 
 pub use tt_config::now_ms;
 
-struct CollectCtx<'a> {
-    resolve: &'a dyn Fn(&str) -> Option<String>,
-    events: Vec<AgentEvent>,
-}
-
-impl WatcherContext for CollectCtx<'_> {
-    fn resolve_session(&self, project_dir: &str) -> Option<String> {
-        (self.resolve)(project_dir)
-    }
-    fn emit(&mut self, event: AgentEvent) {
-        self.events.push(event);
-    }
-}
-
 pub struct Engine {
     projects_dir: PathBuf,
     repos_path: PathBuf,
@@ -143,7 +128,7 @@ pub struct Engine {
     /// tier in [`Self::fetch_targets`]. Repo roots only, never worktrees: one
     /// fetch serves every worktree sharing the `.git`.
     git_fetched: HashMap<String, i64>,
-    watchers: Vec<Box<dyn AgentWatcher + Send>>,
+    watcher: Option<ClaudeCodeAgentWatcher>,
     compact_recommend_percent: u8,
     /// `agentboard.showUnmanagedWorktrees`, off by default — a display filter over
     /// [`RowRecord::Detected`]; the host gates its reconciler on it too.
@@ -259,9 +244,7 @@ impl Engine {
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
             git_fetched: HashMap::new(),
-            watchers: vec![Box::new(ClaudeCodeAgentWatcher::with_defaults(
-                scope.clone(),
-            ))],
+            watcher: Some(ClaudeCodeAgentWatcher::with_defaults(scope.clone())),
             compact_recommend_percent,
             show_unmanaged_worktrees,
             task_worktrees: Vec::new(),
@@ -499,11 +482,10 @@ impl Engine {
     }
 
     fn scan_once_with_resolver(&mut self, resolve: &dyn Fn(&str) -> Option<String>, now: i64) {
-        let mut ctx = CollectCtx { resolve, events: Vec::new() };
-        for watcher in &mut self.watchers {
-            watcher.scan(&mut ctx, now);
-        }
-        for event in ctx.events {
+        let Some(watcher) = &mut self.watcher else {
+            return;
+        };
+        for event in watcher.scan(resolve, now) {
             self.tracker.apply_event(event);
         }
     }
@@ -973,7 +955,7 @@ impl Engine {
 #[cfg(test)]
 impl Engine {
     /// Every persisted store in-memory **except** `repos.json`, which points at a
-    /// tempdir file. No watchers, so a scan is inert.
+    /// tempdir file. No watcher, so a scan is inert.
     fn new_for_test(repos_path: PathBuf) -> Self {
         Self {
             projects_dir: PathBuf::from("/nonexistent/projects"),
@@ -989,7 +971,7 @@ impl Engine {
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
             git_fetched: HashMap::new(),
-            watchers: vec![],
+            watcher: None,
             compact_recommend_percent: 80,
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
             task_worktrees: Vec::new(),

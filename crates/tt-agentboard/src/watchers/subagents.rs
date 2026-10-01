@@ -24,7 +24,7 @@ use tt_claude_code::parse_transcript;
 use super::claude_code::{TAIL_WINDOW, read_window};
 use super::claude_usage::extract_usage_summary;
 use crate::types::SubagentInfo;
-use crate::watcher::JSONL_SUFFIX;
+use crate::watchers::claude_code::JSONL_SUFFIX;
 
 /// What one scan of a session's `subagents/` dir found.
 #[derive(Debug, Clone, Default, PartialEq)]
