@@ -1,6 +1,14 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { invoke } from "./tauri";
-import type { StatePayload, WindowsPayload } from "./agentboard";
+import { applyOverlays, type Overlay, type StatePayload, type WindowsPayload } from "./agentboard";
 
 const EMPTY_WINDOWS: WindowsPayload = { windows: [], activeWindows: {} };
 
@@ -16,9 +24,27 @@ const EMPTY: StatePayload = {
 /** One app-wide subscription to the live agentboard state — screens stay
  * mounted, so per-consumer listeners meant ~5 fetches for one payload. */
 const AgentboardStateContext = createContext<StatePayload | null>(null);
+const SetOverlayContext = createContext<((id: string, o: Overlay) => void) | null>(null);
+
+/** Covers the gap until the ~2s scan lands. */
+const OVERLAY_MS = 2_500;
 
 export function AgentboardStateProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<StatePayload>(EMPTY);
+  const [snapshot, setState] = useState<StatePayload>(EMPTY);
+  // Applied at the source so every reader agrees with the row that asked.
+  const [overlays, setOverlays] = useState<Record<string, Overlay & { at: number }>>({});
+  const setOverlay = useCallback((id: string, o: Overlay) => {
+    const at = Date.now();
+    setOverlays((m) => ({ ...m, [id]: { ...o, at } }));
+    setTimeout(() => {
+      setOverlays((m) => {
+        if (m[id]?.at !== at) return m;
+        const { [id]: _, ...rest } = m;
+        return rest;
+      });
+    }, OVERLAY_MS);
+  }, []);
+  const state = useMemo(() => applyOverlays(snapshot, overlays), [snapshot, overlays]);
 
   useEffect(() => {
     let disposed = false;
@@ -59,7 +85,9 @@ export function AgentboardStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AgentboardStateContext.Provider value={state}>{children}</AgentboardStateContext.Provider>
+    <AgentboardStateContext.Provider value={state}>
+      <SetOverlayContext.Provider value={setOverlay}>{children}</SetOverlayContext.Provider>
+    </AgentboardStateContext.Provider>
   );
 }
 
@@ -68,6 +96,15 @@ export function useAgentboardState(): StatePayload {
   const ctx = useContext(AgentboardStateContext);
   if (ctx === null) {
     throw new Error("useAgentboardState must be used within an AgentboardStateProvider");
+  }
+  return ctx;
+}
+
+/** Paint `o` over a session app-wide until the scan confirms or contradicts it. */
+export function useSetAgentOverlay(): (id: string, o: Overlay) => void {
+  const ctx = useContext(SetOverlayContext);
+  if (ctx === null) {
+    throw new Error("useSetAgentOverlay must be used within an AgentboardStateProvider");
   }
   return ctx;
 }

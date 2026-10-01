@@ -6,9 +6,7 @@ import {
   folderHoldsNoWork,
   folderLastWorkedAt,
   humanizeFolderName,
-  isWorking,
   liveSessions,
-  sessionNeeds,
   sessionSaid,
   type FolderData,
   type RepoData,
@@ -65,9 +63,9 @@ export function buildStandby(repos: RepoData[], now: number): Standby {
       if (!holdsNoWork) holding += 1;
       else if (folder.landed) landed += 1;
 
-      const needing = folder.sessions.filter(sessionNeeds);
+      const needing = folder.sessions.filter((s) => s.needsReason != null);
       if (needing.length > 0) rows.push(needsRow(repo, folder, needing, now));
-      else if (liveSessions(folder).some(isWorking)) working += 1;
+      else if (liveSessions(folder).some((s) => s.working)) working += 1;
     }
   }
 
@@ -94,7 +92,7 @@ function needsRow(
   const oldest = needing.reduce((a, b) =>
     (a.needsSinceMs ?? Infinity) <= (b.needsSinceMs ?? Infinity) ? a : b,
   );
-  const errored = needing.some((s) => s.agentState?.status === "error");
+  const errored = needing.some((s) => s.needsReason === "errored");
   return {
     dir: folder.dir,
     title: folderTitle(folder),

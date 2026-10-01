@@ -40,7 +40,7 @@ export function buildJumpRecall(
 ): JumpRecall {
   const repo = repos.find((r) => r.folders.some((f) => f.dir === folder.dir));
   const title = folder.isWorktree ? humanizeFolderName(folder.name) : "Root";
-  const errored = session.agentState?.status === "error";
+  const errored = session.needsReason === "errored";
   const worked = folderLastWorkedAt(folder);
   return {
     sessionId: session.id,

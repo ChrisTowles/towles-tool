@@ -1,5 +1,5 @@
 import { defaultFilter } from "cmdk";
-import { sessionLabel, sessionNeeds, type RepoData } from "./agentboard";
+import { sessionLabel, type RepoData } from "./agentboard";
 import type { IssueItem, PrItem } from "./data";
 import { SCREENS, type ScreenId } from "./screens";
 
@@ -66,7 +66,7 @@ export function paletteRepoEntries(repos: RepoData[]): PaletteRepoEntry[] {
         repoName: repo.name,
         folderName: folder.name,
         branch: folder.branch,
-        needs: folder.sessions.filter(sessionNeeds).length,
+        needs: folder.needs,
         keywords: [repo.name, folder.name, folder.branch].filter(Boolean),
       });
     }
@@ -90,7 +90,7 @@ export function paletteSessionEntries(repos: RepoData[]): PaletteSessionEntry[] 
           label,
           repoName: repo.name,
           folderName: folder.name,
-          needs: sessionNeeds(s),
+          needs: s.needsReason != null,
           keywords: [label, repo.name, folder.name].filter(Boolean),
         });
       }

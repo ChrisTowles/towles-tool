@@ -11,6 +11,7 @@ function session(overrides: Partial<SessionData>): SessionData {
     createdAt: 0,
     live: false,
     unseen: false,
+    working: false,
     agents: [],
     ...overrides,
   };
@@ -68,6 +69,7 @@ function blocked(name: string, since: number, extra: Partial<SessionData> = {}):
         id: name,
         live: true,
         agentState: agent("waiting"),
+        needsReason: "waitingForInput",
         needsSinceMs: since,
         ...extra,
       }),
@@ -112,7 +114,7 @@ describe("buildStandby", () => {
           folder({
             name: "running",
             dir: "/r",
-            sessions: [session({ live: true, agentState: agent("busy") })],
+            sessions: [session({ live: true, working: true, agentState: agent("busy") })],
           }),
         ]),
       ],
@@ -129,7 +131,14 @@ describe("buildStandby", () => {
           folder({
             name: "broke",
             dir: "/b",
-            sessions: [session({ live: true, agentState: agent("error"), needsSinceMs: NOW })],
+            sessions: [
+              session({
+                live: true,
+                agentState: agent("error"),
+                needsReason: "errored",
+                needsSinceMs: NOW,
+              }),
+            ],
           }),
         ]),
       ],

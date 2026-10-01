@@ -36,7 +36,6 @@ import {
   taskForFolder,
   withoutFolded,
   type FolderData,
-  type Overlay,
   type RepoData,
   type SessionActions,
   type SessionData,
@@ -96,7 +95,6 @@ export function RepoGroup({
   collapsed,
   renaming,
   titles,
-  overlays,
   wins,
   actions,
   onToggle,
@@ -142,7 +140,6 @@ export function RepoGroup({
   collapsed: Record<string, boolean>;
   renaming: string | null;
   titles: Record<string, string>;
-  overlays: Record<string, Overlay>;
   wins: WindowsPayload | null;
   actions: SessionActions;
   onToggle: (key: string) => void;
@@ -202,7 +199,6 @@ export function RepoGroup({
         active={selectedSessionId === s.id}
         hotkey={hotkeys?.get(s.id)}
         renaming={renaming === s.id}
-        overlay={overlays[s.id]}
         actions={actions}
         onSelect={() => onSelect(folder.dir, s.id)}
         onRenameCommit={(name) => onRenameCommit(s.id, name)}

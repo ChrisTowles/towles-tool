@@ -11,6 +11,7 @@ function session(overrides: Partial<SessionData>): SessionData {
     createdAt: 0,
     live: true,
     unseen: false,
+    working: false,
     agents: [],
     ...overrides,
   };
@@ -87,7 +88,11 @@ describe("buildJumpRecall", () => {
     const waiting = buildJumpRecall(
       repos(f),
       f,
-      session({ needsSinceMs: NOW - 12 * 60_000, agentState: agent("waiting") }),
+      session({
+        needsSinceMs: NOW - 12 * 60_000,
+        needsReason: "waitingForInput",
+        agentState: agent("waiting"),
+      }),
       NOW,
       1,
     );
@@ -97,7 +102,11 @@ describe("buildJumpRecall", () => {
     const errored = buildJumpRecall(
       repos(f),
       f,
-      session({ needsSinceMs: NOW - 12 * 60_000, agentState: agent("error") }),
+      session({
+        needsSinceMs: NOW - 12 * 60_000,
+        needsReason: "errored",
+        agentState: agent("error"),
+      }),
       NOW,
       1,
     );

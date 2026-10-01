@@ -65,13 +65,14 @@ import {
   folderTask,
   termWriteRetry,
   useAgentboardState,
+  useSetAgentOverlay,
   waitForFirstFrame,
+  OVERLAY_STARTED,
+  OVERLAY_STOPPED,
   type AgentboardNav,
-  type AgentStatus,
   type FocusLevel,
   type FolderData,
   type ClaudeLaunchOptions,
-  type Overlay,
   type PendingOpenSession,
   type RemoveTarget,
   type RepoData,
@@ -200,10 +201,7 @@ export function AgentboardScreen() {
     setTitles((m) => (m[id] === title ? m : { ...m, [id]: title }));
   // Raised by BEL / OSC 9 since the user last looked at the session.
   const [termAttention, setTermAttention] = useState<Record<string, true>>({});
-  // Optimistic overlays just cover the gap until the 2s watcher scan lands.
-  const [overlays, setOverlays] = useState<Record<string, Overlay>>({});
-  const setOverlay = (id: string, status: AgentStatus) =>
-    setOverlays((m) => ({ ...m, [id]: { status, until: Date.now() + 2_500 } }));
+  const setOverlay = useSetAgentOverlay();
 
   const {
     railRepos,
@@ -836,7 +834,7 @@ export function AgentboardScreen() {
   ) {
     const { folderDir, sessionId, sessionName, restart } = target;
     const shown = label ?? prompt;
-    setOverlay(sessionId, "busy");
+    setOverlay(sessionId, OVERLAY_STARTED);
     const verb = restart ? "starting over — fresh Claude session" : "starting Claude";
     toast(shown ? `✦ ${verb} in ${sessionName}: ${shown}` : `✦ ${verb} in ${sessionName}`);
     await withLiveSession(
@@ -1054,7 +1052,7 @@ export function AgentboardScreen() {
       setStartClaudeTarget({ folderDir, sessionId: s.id, sessionName: s.name, restart: false });
     },
     stopClaude: (s) => {
-      setOverlay(s.id, "interrupted");
+      setOverlay(s.id, OVERLAY_STOPPED);
       toast(`■ interrupting Claude — ${s.name}'s shell stays alive`);
       void withLiveSession(s.id, async () => {
         await termWriteRetry(s.id, "\x03"); // interrupt the current turn
@@ -1063,7 +1061,7 @@ export function AgentboardScreen() {
       });
     },
     compactClaude: (s) => {
-      setOverlay(s.id, "busy");
+      setOverlay(s.id, OVERLAY_STARTED);
       toast(`⤿ compacting ${s.name} — summarize & drop stale turns`);
       void withLiveSession(s.id, () => termWriteRetry(s.id, "/compact\r"));
     },
@@ -1300,7 +1298,6 @@ export function AgentboardScreen() {
                               collapsed={collapsed}
                               renaming={renaming}
                               titles={titles}
-                              overlays={overlays}
                               wins={wins}
                               actions={actions}
                               onToggle={toggleCollapsed}
