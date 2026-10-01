@@ -7,8 +7,9 @@
 //!
 //! Two rules. **Some fields are blank here by construction** — this crate can't
 //! see PTYs, so `live`, `shell_kind`, `port_drift`, `needs`, `needs_since_ms`,
-//! `has_port_drift` and `phase` are stamped by the app on the way out
-//! (`stamp_pty_state`); a new field of that kind belongs on that same seam.
+//! `needs_reason`, `working`, `has_port_drift` and `phase` are stamped by the
+//! app on the way out (`stamp_pty_state`); a new field of that kind belongs on
+//! that same seam.
 //! **A row is on screen because something wrote it down** — see [`RowRecord`].
 
 use serde::{Deserialize, Serialize};
@@ -31,8 +32,10 @@ pub enum AgentStatus {
     Background,
 }
 
-/// Notification wording for [`crate::bridge::session_needs`], never an affordance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why [`crate::bridge::session_needs`] holds — notification wording, and the
+/// client's one needs-you answer. Never an affordance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum NeedsYouReason {
     WaitingForInput,
     Errored,
@@ -155,6 +158,10 @@ pub struct SessionData {
     /// can order oldest-first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_since_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs_reason: Option<NeedsYouReason>,
+    #[serde(default)]
+    pub working: bool,
     pub agent_state: Option<AgentEvent>,
     pub agents: Vec<AgentEvent>,
     /// Echo of the launch prompt, read-only — never user-authored.

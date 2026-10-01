@@ -68,6 +68,8 @@ pub fn stamp_pty_state(
                     state.status =
                         tt_agentboard::pty_status::resolve_status(state.status, signal, now);
                 }
+                session.working =
+                    session.agent_state.as_ref().is_some_and(|e| e.status.is_working());
                 // A stopped shell's last-known ports say nothing about now.
                 session.port_drift = if session.live {
                     port_drift.get(&session.id).cloned().unwrap_or_default()

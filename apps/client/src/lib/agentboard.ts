@@ -67,6 +67,9 @@ export type AgentEvent = {
   details?: AgentEventDetails | null;
 };
 
+/** Why a session needs you — decided by the backend, which also counts `needs`. */
+export type NeedsReason = "waitingForInput" | "errored" | "finished";
+
 /** A port the shell saw in `.env` at spawn that the file now claims differently. */
 export type PortDrift = { key: string; spawnedPort: number; currentPort: number };
 
@@ -79,6 +82,9 @@ export type SessionData = {
   shellKind?: string | null;
   unseen: boolean;
   needsSinceMs?: number | null;
+  needsReason?: NeedsReason | null;
+  /** Its own turn, or background agents it launched. */
+  working: boolean;
   agentState?: AgentEvent | null;
   agents: AgentEvent[];
   /** Echo of the launch prompt, so the rail's tooltip can explain the session. */
@@ -586,18 +592,9 @@ export function isAgent(s: SessionData): boolean {
   return s.agentState != null;
 }
 
-/** Requires a live PTY — anything else is a stale record whose agent status
- * can't be current — plus an agent blocked, errored, or done and unseen. */
-export function sessionNeeds(s: SessionData): boolean {
-  if (!s.live) return false;
-  const st = s.agentState?.status;
-  if (st === "waiting" || st === "error") return true;
-  return s.unseen && (st === "complete" || st === "interrupted");
-}
-
 /** Needs you now, or reached a terminal state you haven't acknowledged. */
 export function sessionCatchesEye(s: SessionData): boolean {
-  return sessionNeeds(s) || s.unseen;
+  return s.needsReason != null || s.unseen;
 }
 
 /** The session in its own words: the thread title Claude gave itself, falling
@@ -621,16 +618,10 @@ export function fmtWaitingAge(sinceMs: number | null | undefined, now: number): 
   return `waiting ${Math.floor(hrs / 24)}d`;
 }
 
-/** Work is happening: the agent's own turn, or background agents it launched. */
-export function isWorking(s: SessionData): boolean {
-  const st = s.agentState?.status;
-  return st === "busy" || st === "background";
-}
-
 /** Free to pick up: an agent that isn't working, or a flagged session. A plain
  * shell stays out — it was never an agent to be idle. */
 export function sessionNotBusy(s: SessionData): boolean {
-  if (isWorking(s)) return false;
+  if (s.working) return false;
   return isAgent(s) || sessionCatchesEye(s);
 }
 
@@ -1240,10 +1231,10 @@ export function agentRollup(
   for (const repo of repos)
     for (const f of repo.folders)
       for (const s of f.sessions) {
-        const st = s.agentState?.status;
-        if (!st) continue;
+        if (!s.agentState) continue;
         r.total += 1;
-        if (isAlertStatus(st)) r[st] += 1;
+        const alert = alertStatus(s);
+        if (alert) r[alert] += 1;
         if (needsCompact(s.agentState?.details, now, compactThresholdPct)) r.compact += 1;
         if (isCacheExpiring(s.agentState?.details, now)) r.expiring += 1;
       }
@@ -1256,6 +1247,13 @@ type AlertStatus = (typeof ALERT_ORDER)[number];
 
 function isAlertStatus(st: AgentStatus): st is AlertStatus {
   return (ALERT_ORDER as readonly AgentStatus[]).includes(st);
+}
+
+/** The backend's flags decide whether a session tints; its status only picks the color. */
+function alertStatus(s: SessionData): AlertStatus | null {
+  const st = s.agentState?.status;
+  if (!st || !(s.working || s.needsReason != null)) return null;
+  return isAlertStatus(st) ? st : null;
 }
 
 /** Same precedence as a collapsed rail row, so the two never disagree. */
@@ -1271,7 +1269,7 @@ export function rollupAlertTextColor(bg: string | null): string {
 }
 
 /** The live agentboard state, shared across the app from a single subscription. */
-export { useAgentboardState } from "./agentboard-state";
+export { useAgentboardState, useSetAgentOverlay } from "./agentboard-state";
 
 const STATUS: Record<AgentStatus, { label: string; color: string }> = {
   idle: { label: "Idle", color: "bg-muted-foreground/40" },
@@ -1291,7 +1289,7 @@ export function statusColor(status: AgentStatus): string {
 export function collapsedLiveColor(sessions: SessionData[]): string | null {
   const live = sessions.filter((s) => s.live);
   if (live.length === 0) return null;
-  const present = new Set(live.map((s) => s.agentState?.status));
+  const present = new Set(live.map(alertStatus));
   const top = ALERT_ORDER.find((st) => present.has(st));
   return top ? statusColor(top) : "bg-emerald-500";
 }
@@ -1667,8 +1665,47 @@ export function dragCol(n: number, cols: number[] | undefined, i: number, pos: n
   return widths;
 }
 
-/** Optimistic status, until the watcher's ground truth catches up. */
-export type Overlay = { status: AgentStatus; until: number };
+/** What a lifecycle action paints until the next snapshot confirms it. `working`
+ * travels with the status rather than being read off it, and needs-you clears:
+ * the user just acted on this session. */
+export type Overlay = { status: AgentStatus; working: boolean };
+export const OVERLAY_STARTED: Overlay = { status: "busy", working: true };
+export const OVERLAY_STOPPED: Overlay = { status: "interrupted", working: false };
+
+/** `state` itself when nothing is overlaid, so consumers' memos hold. */
+export function applyOverlays(
+  state: StatePayload,
+  overlays: Record<string, Overlay & { at: number }>,
+): StatePayload {
+  if (Object.keys(overlays).length === 0) return state;
+  const repos = state.repos.map((repo) => {
+    const folders = repo.folders.map((folder) => {
+      if (!folder.sessions.some((s) => overlays[s.id])) return folder;
+      const sessions = folder.sessions.map((s) => {
+        const o = overlays[s.id];
+        if (!o) return s;
+        return {
+          ...s,
+          live: true,
+          working: o.working,
+          needsReason: null,
+          needsSinceMs: null,
+          agentState: {
+            agent: "claude-code",
+            session: "",
+            ts: o.at,
+            ...s.agentState,
+            status: o.status,
+          },
+        };
+      });
+      return { ...folder, sessions, needs: sessions.filter((s) => s.needsReason != null).length };
+    });
+    if (folders.every((f, i) => f === repo.folders[i])) return repo;
+    return { ...repo, folders, needs: folders.reduce((n, f) => n + f.needs, 0) };
+  });
+  return { ...state, repos };
+}
 
 export type Selected = { folderDir: string; sessionId: string } | null;
 

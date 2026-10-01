@@ -28,7 +28,6 @@ import {
   sessionCatchesEye,
   sessionLabel,
   sessionStatusText,
-  type Overlay,
   type SessionActions,
   type SessionData,
 } from "@/lib/agentboard";
@@ -43,7 +42,6 @@ export function SessionRow({
   cursor,
   hotkey,
   renaming,
-  overlay,
   actions,
   onSelect,
   onRenameCommit,
@@ -59,38 +57,21 @@ export function SessionRow({
   /** 1–9 while the jump chord is held and this row is one of the first nine. */
   hotkey?: number;
   renaming: boolean;
-  overlay?: Overlay;
   actions: SessionActions;
   onSelect: () => void;
   onRenameCommit: (name: string) => void;
 }) {
-  // Apply the optimistic lifecycle overlay (start/stop just happened) until
-  // the watcher's next scan delivers ground truth.
-  const eff: SessionData =
-    overlay && overlay.until > Date.now()
-      ? {
-          ...session,
-          live: true,
-          agentState: {
-            agent: "claude-code",
-            session: "",
-            ts: now,
-            ...session.agentState,
-            status: overlay.status,
-          },
-        }
-      : session;
-  const needs = sessionCatchesEye(eff);
-  const agent = isAgent(eff);
+  const needs = sessionCatchesEye(session);
+  const agent = isAgent(session);
   // Live only: a stopped PTY's last title lingers in the caller's `titles` map
   // and would label a dead shell as a running Claude.
-  const label = (eff.live ? claudeTitleName(title) : null) ?? sessionLabel(eff);
+  const label = (session.live ? claudeTitleName(title) : null) ?? sessionLabel(session);
   // The session's own name rides in the tooltip once a Claude title replaces
   // it on the row, so the title keeps that width.
-  const hint = [eff.purpose && `✦ ${eff.purpose}`, label !== session.name && session.name]
+  const hint = [session.purpose && `✦ ${session.purpose}`, label !== session.name && session.name]
     .filter(Boolean)
     .join(" · ");
-  const age = fmtWaitingAge(eff.needsSinceMs, now);
+  const age = fmtWaitingAge(session.needsSinceMs, now);
   // JS state, not CSS `:hover` — WebKitGTK doesn't reliably update `:hover` on
   // real pointer movement, so `group-hover` never fires.
   const [hovered, setHovered] = useState(false);
@@ -121,7 +102,7 @@ export function SessionRow({
         )}
       >
         {hotkey === undefined ? <Glyph agent={agent} /> : <HotkeyBadge n={hotkey} />}
-        <Dot session={eff} />
+        <Dot session={session} />
         {needs && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
         {renaming ? (
           <input
@@ -140,7 +121,7 @@ export function SessionRow({
             <span
               className={cn(
                 "min-w-0 flex-1 truncate",
-                eff.live ? "text-foreground" : "text-muted-foreground",
+                session.live ? "text-foreground" : "text-muted-foreground",
               )}
             >
               {label}
@@ -153,16 +134,16 @@ export function SessionRow({
               of swapping it out, so hovering never reflows the row. */}
             <span className="ml-auto flex shrink-0 flex-col items-end gap-px font-mono text-[10.5px] leading-none">
               <span className="flex h-3 items-center gap-1.5">
-                {eff.live && <PortDriftBadge drift={eff.portDrift ?? []} />}
-                {!agent && eff.shellKind && (
-                  <span className="text-muted-foreground/50">{eff.shellKind}</span>
+                {session.live && <PortDriftBadge drift={session.portDrift ?? []} />}
+                {!agent && session.shellKind && (
+                  <span className="text-muted-foreground/50">{session.shellKind}</span>
                 )}
-                <ModelBadge session={eff} className="h-3" />
+                <ModelBadge session={session} className="h-3" />
                 <CacheBadge
-                  session={eff}
+                  session={session}
                   now={now}
                   compactPct={compactPct}
-                  onCompact={() => actions.compactClaude(eff)}
+                  onCompact={() => actions.compactClaude(session)}
                 />
                 {age && (
                   <Hint label="how long this has been needing you">
@@ -171,20 +152,20 @@ export function SessionRow({
                 )}
               </span>
               <span className="flex h-3 items-center gap-1.5">
-                {eff.live && (
+                {session.live && (
                   <Hint label="running for">
                     {/* Fixed 6ch slot: elapsed is 4–7 chars ("0:04" ..
                       "1:02:30"); without a reserved width the status word
                       after it drifts per row. */}
                     <span className="inline-block w-[6ch] text-right text-muted-foreground/70">
-                      {fmtElapsed(now - eff.createdAt)}
+                      {fmtElapsed(now - session.createdAt)}
                     </span>
                   </Hint>
                 )}
                 {/* Fixed 7ch slot: the status word is short and uniform
                   ("Waiting", "Working", "Done"), so it lines up across rows. */}
                 <span className="inline-block w-[7ch] truncate font-sans text-[11px] text-muted-foreground">
-                  {sessionStatusText(eff)}
+                  {sessionStatusText(session)}
                 </span>
               </span>
             </span>
@@ -192,7 +173,7 @@ export function SessionRow({
               carries a resting ✕/menu forever, hiding the meta it overlays. */}
             {hovered && (
               <span className="absolute inset-y-0 right-2 z-10 flex items-center gap-1 bg-accent pl-1.5">
-                <RowControls session={eff} folderDir={folderDir} actions={actions} />
+                <RowControls session={session} folderDir={folderDir} actions={actions} />
               </span>
             )}
           </>

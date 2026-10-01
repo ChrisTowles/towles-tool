@@ -1,6 +1,14 @@
 import { defaultFilter } from "cmdk";
 import { describe, expect, it } from "vitest";
-import type { AgentStatus, FolderData, RepoData, SessionData } from "./agentboard";
+import {
+  applyOverlays,
+  OVERLAY_STARTED,
+  type AgentStatus,
+  type FolderData,
+  type RepoData,
+  type SessionData,
+  type StatePayload,
+} from "./agentboard";
 import type { IssueItem, PrItem } from "./data";
 import {
   paletteRepoEntries,
@@ -22,6 +30,7 @@ function session(overrides: Partial<SessionData>): SessionData {
     createdAt: 0,
     live: false,
     unseen: false,
+    working: false,
     agents: [],
     ...overrides,
   };
@@ -96,13 +105,43 @@ describe("paletteRepoEntries", () => {
         folder({
           dir: "/b",
           name: "gizmos",
-          sessions: [session({ live: true, agentState: agent("waiting") })],
+          needs: 1,
+          sessions: [
+            session({ live: true, needsReason: "waitingForInput", agentState: agent("waiting") }),
+          ],
         }),
       ]),
     ];
     const entries = paletteRepoEntries(repos);
     expect(entries[0].folderDir).toBe("/b");
     expect(entries[0].needs).toBe(1);
+  });
+
+  it("drops a checkout's needs while an overlay says the user just acted there", () => {
+    const blocked = session({
+      id: "hot",
+      live: true,
+      needsReason: "waitingForInput",
+      needsSinceMs: 5,
+      agentState: agent("waiting"),
+    });
+    const state: StatePayload = {
+      repos: [
+        {
+          ...repo("octo/gizmos", [folder({ dir: "/b", needs: 1, sessions: [blocked] })]),
+          needs: 1,
+        },
+      ],
+      compactRecommendPercent: 30,
+      windows: { windows: [], activeWindows: {} },
+      collapsed: {},
+      agentScanOk: true,
+      ts: 0,
+    };
+    const overlaid = applyOverlays(state, { hot: { ...OVERLAY_STARTED, at: 10 } });
+    expect(paletteRepoEntries(overlaid.repos)[0].needs).toBe(0);
+    expect(paletteSessionEntries(overlaid.repos)[0].needs).toBe(false);
+    expect(overlaid.repos[0].needs).toBe(0);
   });
 
   it("skips checkouts without an on-disk dir", () => {
@@ -119,7 +158,12 @@ describe("paletteSessionEntries", () => {
           dir: "/a",
           sessions: [
             session({ id: "calm", live: true }),
-            session({ id: "hot", live: true, agentState: agent("waiting") }),
+            session({
+              id: "hot",
+              live: true,
+              needsReason: "waitingForInput",
+              agentState: agent("waiting"),
+            }),
           ],
         }),
       ]),

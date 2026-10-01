@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agentRollup,
+  collapsedLiveColor,
   rollupAlertColor,
   cacheWarnMs,
   contextBand,
@@ -74,7 +75,6 @@ import {
   replacePane,
   IDLE_GRACE_MS,
   sessionCatchesEye,
-  sessionNeeds,
   sessionNotBusy,
   waitForFirstFrame,
   withoutFolded,
@@ -748,6 +748,7 @@ function session(overrides: Partial<SessionData>): SessionData {
     createdAt: 0,
     live: false,
     unseen: false,
+    working: false,
     agents: [],
     ...overrides,
   };
@@ -758,42 +759,6 @@ const agent = (status: AgentStatus) => ({
   session: "",
   status,
   ts: 1,
-});
-
-describe("sessionNeeds", () => {
-  // Mirrors `session_needs` in crates/tt-agentboard/src/bridge.rs — if these
-  // rules change, change both.
-  it("counts a live waiting/errored agent", () => {
-    expect(sessionNeeds(session({ live: true, agentState: agent("waiting") }))).toBe(true);
-    expect(sessionNeeds(session({ live: true, agentState: agent("error") }))).toBe(true);
-  });
-
-  it("ignores a stale waiting status on a session with no shell", () => {
-    expect(sessionNeeds(session({ live: false, agentState: agent("waiting") }))).toBe(false);
-  });
-
-  it("counts an unseen finished turn (it's your move), but not a seen one", () => {
-    expect(sessionNeeds(session({ live: true, unseen: true, agentState: agent("complete") }))).toBe(
-      true,
-    );
-    expect(
-      sessionNeeds(session({ live: true, unseen: true, agentState: agent("interrupted") })),
-    ).toBe(true);
-    expect(
-      sessionNeeds(session({ live: true, unseen: false, agentState: agent("complete") })),
-    ).toBe(false);
-  });
-
-  it("stays calm for busy/idle agents", () => {
-    expect(sessionNeeds(session({ live: true, agentState: agent("busy") }))).toBe(false);
-    expect(sessionNeeds(session({ live: true, agentState: agent("idle") }))).toBe(false);
-    expect(sessionNeeds(session({ live: true }))).toBe(false);
-  });
-
-  it("stays calm for an agent whose background agents are still out", () => {
-    const bg = session({ live: true, unseen: true, agentState: agent("background") });
-    expect(sessionNeeds(bg)).toBe(false);
-  });
 });
 
 describe("folder pane ids", () => {
@@ -1717,7 +1682,12 @@ describe("cycleNeedsYou", () => {
       folder({
         dir: "a/f1",
         sessions: [
-          session({ id: "a1", live: true, agentState: agent("waiting") }),
+          session({
+            id: "a1",
+            live: true,
+            needsReason: "waitingForInput",
+            agentState: agent("waiting"),
+          }),
           session({ id: "a2", live: true }),
         ],
       }),
@@ -1727,7 +1697,7 @@ describe("cycleNeedsYou", () => {
         dir: "b/f1",
         sessions: [
           session({ id: "b1", live: true, unseen: true }),
-          session({ id: "b2", live: true, agentState: agent("error") }),
+          session({ id: "b2", live: true, needsReason: "errored", agentState: agent("error") }),
         ],
       }),
     ]),
@@ -1786,10 +1756,14 @@ describe("sessionNotBusy", () => {
   });
 
   it("leaves out a busy agent, even one flagged unseen", () => {
-    expect(sessionNotBusy(session({ live: true, agentState: agent("busy") }))).toBe(false);
-    expect(sessionNotBusy(session({ live: true, unseen: true, agentState: agent("busy") }))).toBe(
+    expect(sessionNotBusy(session({ live: true, working: true, agentState: agent("busy") }))).toBe(
       false,
     );
+    expect(
+      sessionNotBusy(
+        session({ live: true, unseen: true, working: true, agentState: agent("busy") }),
+      ),
+    ).toBe(false);
   });
 
   it("leaves out a plain shell no agent ever ran in", () => {
@@ -1810,7 +1784,7 @@ describe("cycleNotBusy", () => {
       folder({
         dir: "a/f1",
         sessions: [
-          session({ id: "a1", live: true, agentState: agent("busy") }),
+          session({ id: "a1", live: true, working: true, agentState: agent("busy") }),
           session({ id: "a2", live: true, agentState: agent("idle") }),
         ],
       }),
@@ -1820,7 +1794,12 @@ describe("cycleNotBusy", () => {
         dir: "b/f1",
         sessions: [
           session({ id: "b1", live: true }),
-          session({ id: "b2", live: true, agentState: agent("waiting") }),
+          session({
+            id: "b2",
+            live: true,
+            needsReason: "waitingForInput",
+            agentState: agent("waiting"),
+          }),
         ],
       }),
     ]),
@@ -1841,7 +1820,7 @@ describe("cycleNotBusy", () => {
       repo("a", [
         folder({
           dir: "a/f1",
-          sessions: [session({ id: "a1", live: true, agentState: agent("busy") })],
+          sessions: [session({ id: "a1", live: true, working: true, agentState: agent("busy") })],
         }),
       ]),
     ];
@@ -2087,11 +2066,21 @@ describe("agentRollup expiring count", () => {
   });
 
   it("buckets background apart from busy and waiting, and colors it below busy", () => {
-    const bg = session({ live: true, agentState: agent("background") });
+    const bg = session({ live: true, working: true, agentState: agent("background") });
     const r = agentRollup([repoOf([bg])], now, 30);
     expect(r).toMatchObject({ total: 1, busy: 0, background: 1, waiting: 0 });
     expect(rollupAlertColor(r)).toBe("bg-cyan-700");
     expect(rollupAlertColor({ ...r, busy: 1 })).toBe("bg-cyan-500");
+  });
+
+  it("tints only on the backend's flags, never on a status they don't back", () => {
+    const stale = session({ live: false, agentState: agent("waiting") });
+    const r = agentRollup([repoOf([stale])], now, 30);
+    expect(r).toMatchObject({ total: 1, waiting: 0 });
+    expect(rollupAlertColor(r)).toBe("bg-emerald-500");
+    const unflagged = session({ live: true, agentState: agent("busy") });
+    expect(collapsedLiveColor([unflagged])).toBe("bg-emerald-500");
+    expect(collapsedLiveColor([{ ...unflagged, working: true }])).toBe("bg-cyan-500");
   });
 });
 

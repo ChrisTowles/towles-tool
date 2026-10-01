@@ -209,6 +209,8 @@ fn build_folder(
                 shell_kind: None, // stamped by the app from its PTY registry
                 unseen,
                 needs_since_ms: None, // stamped app-side by `recompute_needs`
+                needs_reason: None,   // stamped app-side by `recompute_needs`
+                working: false,       // stamped by the app after its PTY fold
                 agent_state,
                 agents,
                 purpose: r.purpose.clone(),
@@ -333,9 +335,9 @@ impl NeedsSince {
     }
 }
 
-/// Recompute every folder's and repo's `needs`, and stamp each session's
-/// `needs_since_ms`. The engine assembles `needs` before `live` is stamped, so the
-/// app calls this afterwards. `since` carries the first-entered timestamp forward.
+/// Recompute every folder's and repo's `needs`, and each session's `needs_reason`
+/// and `needs_since_ms`. The engine assembles `needs` before `live` is stamped, so
+/// the app calls this afterwards. `since` carries the first-entered stamp forward.
 pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_ms: i64) {
     let mut next: HashMap<String, i64> = HashMap::new();
     for repo in &mut payload.repos {
@@ -343,7 +345,8 @@ pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_m
         for folder in &mut repo.folders {
             let mut folder_needs = 0;
             for s in &mut folder.sessions {
-                if session_needs(s) {
+                s.needs_reason = needs_reason(s);
+                if s.needs_reason.is_some() {
                     let stamp = since.stamps.get(&s.id).copied().unwrap_or(now_ms);
                     s.needs_since_ms = Some(stamp);
                     next.insert(s.id.clone(), stamp);
@@ -905,12 +908,15 @@ mod tests {
         assert_eq!(payload.repos[0].folders[0].needs, 1);
         assert_eq!(payload.repos[0].needs, 1);
         assert_eq!(payload.repos[0].folders[0].sessions[0].needs_since_ms, Some(1_000));
+        let wire = serde_json::to_value(&payload.repos[0].folders[0].sessions[0]).unwrap();
+        assert_eq!(wire["needsReason"], "waitingForInput");
 
         payload.repos[0].folders[0].sessions[0].live = false;
         recompute_needs(&mut payload, &mut since, 2_000);
         assert_eq!(payload.repos[0].folders[0].needs, 0);
         assert_eq!(payload.repos[0].needs, 0);
         assert_eq!(payload.repos[0].folders[0].sessions[0].needs_since_ms, None);
+        assert_eq!(payload.repos[0].folders[0].sessions[0].needs_reason, None);
     }
 
     #[test]
