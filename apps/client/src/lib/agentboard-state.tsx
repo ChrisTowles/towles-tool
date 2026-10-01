@@ -31,8 +31,7 @@ const OVERLAY_MS = 2_500;
 
 export function AgentboardStateProvider({ children }: { children: ReactNode }) {
   const [snapshot, setState] = useState<StatePayload>(EMPTY);
-  // Applied here, not in the row that asked, so every reader of the state —
-  // rail counts, palette, sidebar rollup — agrees with the row for its duration.
+  // Applied at the source so every reader agrees with the row that asked.
   const [overlays, setOverlays] = useState<Record<string, Overlay & { at: number }>>({});
   const setOverlay = useCallback((id: string, o: Overlay) => {
     const at = Date.now();

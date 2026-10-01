@@ -5,11 +5,8 @@
 //! each [`FolderData`] is a checkout, each [`SessionData`] a PTY. "Agent" is a
 //! badge on a session, not an object of its own.
 //!
-//! Two rules. **Some fields are blank here by construction** — this crate can't
-//! see PTYs, so `live`, `shell_kind`, `port_drift`, `needs`, `needs_since_ms`,
-//! `needs_reason`, `working`, `has_port_drift` and `phase` are stamped by the
-//! app on the way out (`stamp_pty_state`); a new field of that kind belongs on
-//! that same seam.
+//! Two rules. **Fields only the app can see are blank here by construction** —
+//! `stamp_pty_state` fills them on the way out, and a new one belongs there too.
 //! **A row is on screen because something wrote it down** — see [`RowRecord`].
 
 use serde::{Deserialize, Serialize};
@@ -32,8 +29,7 @@ pub enum AgentStatus {
     Background,
 }
 
-/// Why [`crate::bridge::session_needs`] holds — notification wording, and the
-/// client's one needs-you answer. Never an affordance.
+/// The client's one needs-you answer, and notification wording — never an affordance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NeedsYouReason {
@@ -43,18 +39,15 @@ pub enum NeedsYouReason {
 }
 
 impl AgentStatus {
-    /// Finished a turn, awaiting acknowledgement.
     pub fn is_terminal(self) -> bool {
         matches!(self, AgentStatus::Complete | AgentStatus::Error | AgentStatus::Interrupted)
     }
 
-    /// Work is happening: its own turn, or background agents it launched.
     pub fn is_working(self) -> bool {
         matches!(self, AgentStatus::Busy | AgentStatus::Background)
     }
 
-    /// Headline precedence when one pane holds several threads: attention,
-    /// then work, then terminal, then idle.
+    /// Headline precedence when one pane holds several threads.
     pub fn rank(self) -> u8 {
         match self {
             AgentStatus::Waiting => 6,
@@ -68,7 +61,6 @@ impl AgentStatus {
     }
 }
 
-/// State of a self-paced `/loop`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LoopInfo {
@@ -132,19 +124,16 @@ pub struct AgentEvent {
     pub thread_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_name: Option<String>,
-    /// Set by the tracker: the user hasn't seen this terminal state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unseen: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<AgentEventDetails>,
 }
 
-/// One PTY shell. `agent_state`/`agents` fill in when an agent is detected
-/// running here (attributed via `TT_SESSION_ID`).
+/// One PTY shell; `agent_state` fills in when an agent is attributed to it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionData {
-    /// The PTY `term_id`. Persisted in sessions.json.
     pub id: String,
     pub name: String,
     pub created_at: i64,
@@ -154,8 +143,7 @@ pub struct SessionData {
     pub shell_kind: Option<String>,
     /// True when the latest agent event is an unseen terminal state.
     pub unseen: bool,
-    /// When it *first* needed you, held across recomputes so the attention feed
-    /// can order oldest-first.
+    /// First entry into needs-you, held across recomputes for oldest-first order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_since_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -167,15 +155,13 @@ pub struct SessionData {
     /// Echo of the launch prompt, read-only — never user-authored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purpose: Option<String>,
-    /// Ports this shell saw in `.env` at spawn that it now claims differently
-    /// ([`crate::env_drift`]) — e.g. a sibling task's re-render rotated one.
+    /// `.env` ports that changed since spawn ([`crate::env_drift`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub port_drift: Vec<crate::env_drift::PortDrift>,
 }
 
-/// Why a rail row exists — a record, never a fact about the filesystem. Disjoint
-/// by construction (a task worktree is never a `repos.json` entry), so detection
-/// can fill a row in but never retire a task's.
+/// Why a rail row exists — a record, never a fact about the filesystem. Disjoint,
+/// so detection can fill a row in but never retire a task's.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "origin", rename_all = "camelCase")]
 pub enum RowRecord {
@@ -200,22 +186,19 @@ impl RowRecord {
     }
 }
 
-/// Enough of the board row to badge and act on, not the whole
-/// [`tt_store::TaskItem`] — this rides the ~2s emit path.
+/// Not the whole [`tt_store::TaskItem`] — this rides the ~2s emit path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RowTask {
     pub id: i64,
-    /// Kanban column (`backlog`/`doing`/`done`).
     pub status: String,
     /// Known before the worktree exists — exactly when `git` can't answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
 }
 
-/// The worktree operation running **right now** — only the in-flight pair.
-/// "Detached" isn't stored: it is a task plus a missing directory plus nothing
-/// working on it, all three already on the wire.
+/// The worktree operation running **right now**. "Detached" isn't stored: it is
+/// a task plus a missing directory plus nothing working on it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum RowPhase {
@@ -223,21 +206,18 @@ pub enum RowPhase {
     Removing { label: String },
 }
 
-/// One checkout on disk (a clone, a worktree, or a task), holding 1..N sessions.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderData {
     pub name: String,
     pub dir: String,
-    /// How the rail groups a row whose directory doesn't exist yet, since
-    /// `common_dir` needs a directory that is actually there.
+    /// Groups a row whose directory doesn't exist yet, which `common_dir` can't.
     #[serde(default)]
     pub repo_root: String,
     pub record: RowRecord,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<RowPhase>,
-    /// A tracked checkout moved or deleted — a ghost row, still carrying session
-    /// records but unworkable until re-tracked.
+    /// A tracked checkout moved or deleted: a ghost row until re-tracked.
     pub dir_missing: bool,
     pub branch: String,
     pub is_worktree: bool,
@@ -262,19 +242,14 @@ pub struct FolderData {
     pub staged_removed: i64,
     pub commits_ahead: i64,
     pub commits_behind: i64,
-    /// Unlike `committed_files`, which stays nonzero for any real branch even
-    /// once merged, this is the fact a safe-to-delete check needs.
+    /// Unlike `committed_files`, the fact a safe-to-delete check needs.
     pub dirty: bool,
-    /// 0 once every commit is patch-equivalent to something already on the base,
-    /// even across a rebase/squash merge — which `commits_ahead`, being
-    /// SHA-reachability, can never see past.
+    /// 0 once every commit is patch-equivalent to the base, even across a
+    /// rebase/squash merge, which `commits_ahead` can never see past.
     pub commits_unlanded: i64,
-    /// How the work reached `compared_base` (`"merged"`, `"rebase-merged"`,
-    /// `"squash-merged"`, `"upstream gone"`), else `None`. Git evidence, not a
-    /// GitHub PR, which never sees a locally-merged branch.
+    /// Git evidence, not a GitHub PR, which never sees a locally-merged branch.
     pub landed: Option<String>,
     pub sessions: Vec<SessionData>,
-    /// Bubbles to the repo. See `bridge::session_needs`.
     pub needs: i64,
     /// Overrides the origin/main-or-master auto-detect (folder_meta.json).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -286,21 +261,18 @@ pub struct FolderData {
     /// What `committed*`/`commits*` were measured against. Empty until computed.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub compared_base: String,
-    /// So the rail can say *when*, not just "unchanged".
     #[serde(default)]
     pub computed_at_ms: i64,
     /// Newest of `HEAD`'s commit time, `worktree_touched_ms`, and the last pane
     /// opened here; the frontend maxes it against agent events only it sees.
     #[serde(default)]
     pub worked_at_ms: i64,
-    /// Newest mtime among the changed paths (0 when clean). The only field here
-    /// that shifts when an edit leaves the aggregate counts unchanged, so the
-    /// diff pane folds it into its refetch key.
+    /// Changed paths' newest mtime: the one field that moves when an edit leaves
+    /// the counts unchanged, so the diff pane's refetch key needs it.
     #[serde(default)]
     pub worktree_touched_ms: i64,
     #[serde(default)]
     pub has_port_drift: bool,
-    /// Gates the dev-servers button; the configs are fetched on demand.
     #[serde(default)]
     pub has_launch_config: bool,
     /// Forced-quiet override (folder_meta.json), regardless of actual activity.
@@ -308,14 +280,11 @@ pub struct FolderData {
     pub quiet: bool,
 }
 
-/// A checkout and its `git worktree` siblings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoData {
-    /// `"path:<dir>"` of whichever folder `assemble_state` saw first (stable
-    /// across polls: entries are name-sorted).
+    /// `"path:<dir>"` of the folder that leads the row.
     pub key: String,
-    /// The dir in `key`, as a field, so readers never parse it back out.
     pub dir: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

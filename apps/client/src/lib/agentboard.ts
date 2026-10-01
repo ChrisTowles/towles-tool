@@ -67,7 +67,6 @@ export type AgentEvent = {
   details?: AgentEventDetails | null;
 };
 
-/** Why a session needs you — decided by the backend, which also counts `needs`. */
 export type NeedsReason = "waitingForInput" | "errored" | "finished";
 
 /** A port the shell saw in `.env` at spawn that the file now claims differently. */
@@ -83,7 +82,6 @@ export type SessionData = {
   unseen: boolean;
   needsSinceMs?: number | null;
   needsReason?: NeedsReason | null;
-  /** Its own turn, or background agents it launched. */
   working: boolean;
   agentState?: AgentEvent | null;
   agents: AgentEvent[];
@@ -1665,9 +1663,8 @@ export function dragCol(n: number, cols: number[] | undefined, i: number, pos: n
   return widths;
 }
 
-/** What a lifecycle action paints until the next snapshot confirms it. `working`
- * travels with the status rather than being read off it, and needs-you clears:
- * the user just acted on this session. */
+/** Painted until the next snapshot confirms it; needs-you clears, since the
+ * user just acted on this session. */
 export type Overlay = { status: AgentStatus; working: boolean };
 export const OVERLAY_STARTED: Overlay = { status: "busy", working: true };
 export const OVERLAY_STOPPED: Overlay = { status: "interrupted", working: false };
