@@ -55,33 +55,25 @@ pub fn cache_ttl_ms(u: &Usage) -> Option<i64> {
 /// The usage summary from the newest assistant entry that has a `usage` block and
 /// a parseable timestamp.
 pub fn extract_usage_summary(entries: &[TranscriptEntry]) -> Option<ClaudeUsageSummary> {
-    for entry in entries.iter().rev() {
-        let Some(msg) = &entry.message else {
-            continue;
-        };
-        if msg.role.as_deref() != Some("assistant") {
-            continue;
-        }
-        let Some(usage) = &msg.usage else {
-            continue;
-        };
-        let Some(ts) = entry.timestamp.as_deref().and_then(super::claude_code::parse_timestamp_ms)
-        else {
-            continue;
-        };
+    entries.iter().rev().find_map(usage_summary_of)
+}
 
-        let model = msg.model.clone().unwrap_or_default();
-        let ttl = cache_ttl_ms(usage);
-        return Some(ClaudeUsageSummary {
-            context_used: context_used(usage),
-            context_max: context_max(&model, usage),
-            cache_ttl_ms: ttl,
-            cache_expires_at: ttl.map(|t| ts + t),
-            last_activity_at: ts,
-            model,
-        });
-    }
-    None
+/// `entry`'s usage summary, if it is an assistant entry with a `usage` block
+/// and a parseable timestamp.
+pub fn usage_summary_of(entry: &TranscriptEntry) -> Option<ClaudeUsageSummary> {
+    let msg = entry.message.as_ref().filter(|m| m.role.as_deref() == Some("assistant"))?;
+    let usage = msg.usage.as_ref()?;
+    let ts = entry.timestamp.as_deref().and_then(super::claude_code::parse_timestamp_ms)?;
+    let model = msg.model.clone().unwrap_or_default();
+    let ttl = cache_ttl_ms(usage);
+    Some(ClaudeUsageSummary {
+        context_used: context_used(usage),
+        context_max: context_max(&model, usage),
+        cache_ttl_ms: ttl,
+        cache_expires_at: ttl.map(|t| ts + t),
+        last_activity_at: ts,
+        model,
+    })
 }
 
 #[cfg(test)]

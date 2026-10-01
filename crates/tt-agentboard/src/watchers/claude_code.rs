@@ -10,16 +10,17 @@
 //! go through the same rules via [`unlisted_events`].
 
 use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
-use tt_claude_code::{TranscriptEntry, parse_transcript};
+use tt_claude_code::TranscriptEntry;
 
 use crate::claude_cli::CliAgent;
 use crate::procenv::SessionAgentProc;
 use crate::types::{AgentEvent, AgentEventDetails, AgentStatus, LoopInfo};
 use crate::watchers::background::BackgroundAgents;
-use crate::watchers::claude_usage::{ClaudeUsageSummary, extract_usage_summary};
+use crate::watchers::claude_usage::{ClaudeUsageSummary, usage_summary_of};
 use crate::watchers::subagents::{SubagentRollup, SubagentUsage};
 
 const NAME: &str = "claude-code";
@@ -126,17 +127,6 @@ fn read_head(path: &Path, len: usize) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-fn read_from_offset(path: &Path, offset: u64) -> Option<Vec<u8>> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut f = std::fs::File::open(path).ok()?;
-    if offset > 0 {
-        f.seek(SeekFrom::Start(offset)).ok()?;
-    }
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf).ok()?;
-    Some(buf)
-}
-
 /// Bytes read for a bounded look at a transcript's head or tail.
 pub(super) const TAIL_WINDOW: u64 = 128 * 1024;
 
@@ -157,59 +147,27 @@ pub(super) fn read_window(path: &Path, start: u64, max: u64) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
-fn extract_last_tool(entries: &[TranscriptEntry]) -> Option<String> {
-    for entry in entries.iter().rev() {
-        let Some(msg) = &entry.message else { continue };
-        if msg.role.as_deref() != Some("assistant") {
-            continue;
-        }
-        let Some(content) = &msg.content else {
-            continue;
-        };
-        for tool in content.tool_uses() {
-            let Some(name) = tool.name() else { continue };
-            if name == "AskUserQuestion" {
-                continue;
-            }
-            return Some(name.to_string());
-        }
-    }
-    None
+fn assistant_tool_uses(
+    entry: &TranscriptEntry,
+) -> impl Iterator<Item = tt_claude_code::ToolUse<'_>> {
+    let msg = entry.message.as_ref().filter(|m| m.role.as_deref() == Some("assistant"));
+    msg.and_then(|m| m.content.as_ref()).into_iter().flat_map(|c| c.tool_uses())
 }
 
-fn extract_loop_state(entries: &[TranscriptEntry]) -> Option<LoopInfo> {
-    for entry in entries.iter().rev() {
-        let Some(msg) = &entry.message else { continue };
-        if msg.role.as_deref() != Some("assistant") {
-            continue;
-        }
-        let Some(content) = &msg.content else {
-            continue;
-        };
-        for tool in content.tool_uses() {
-            if tool.name() != Some("ScheduleWakeup") {
-                continue;
-            }
-            let input = tool.input();
-            let delay = input.and_then(|i| i.get("delaySeconds")).and_then(|v| v.as_f64());
-            let scheduled_at = entry.timestamp.as_deref().and_then(parse_timestamp_ms);
-            let (Some(delay), Some(ts)) = (delay, scheduled_at) else {
-                return None;
-            };
-            let reason =
-                input.and_then(|i| i.get("reason")).and_then(|v| v.as_str()).map(str::to_string);
-            return Some(LoopInfo { next_wake_at: ts + (delay * 1000.0) as i64, reason });
-        }
-    }
-    None
+fn last_tool_of(entry: &TranscriptEntry) -> Option<String> {
+    assistant_tool_uses(entry)
+        .filter_map(|tool| tool.name())
+        .find(|name| *name != "AskUserQuestion")
+        .map(str::to_string)
 }
 
-/// Where the next read resumes, so a partial trailing line is never consumed.
-fn consumed_len(bytes: &[u8]) -> usize {
-    match bytes.iter().rposition(|&b| b == b'\n') {
-        Some(i) => i + 1,
-        None => 0,
-    }
+fn loop_state_of(entry: &TranscriptEntry) -> Option<LoopInfo> {
+    let tool = assistant_tool_uses(entry).find(|t| t.name() == Some("ScheduleWakeup"))?;
+    let input = tool.input();
+    let delay = input.and_then(|i| i.get("delaySeconds")).and_then(|v| v.as_f64())?;
+    let scheduled_at = entry.timestamp.as_deref().and_then(parse_timestamp_ms)?;
+    let reason = input.and_then(|i| i.get("reason")).and_then(|v| v.as_str()).map(str::to_string);
+    Some(LoopInfo { next_wake_at: scheduled_at + (delay * 1000.0) as i64, reason })
 }
 
 /// Claude Code labels its own generated entries with a bracketed model id, and
@@ -336,42 +294,53 @@ impl Journal {
             return;
         }
 
-        // Journals reach tens of MB and append several times a second while
-        // an agent streams; re-reading the whole file per scan was a hot loop.
-        let Some(fresh) = read_from_offset(path, self.offset) else {
+        // Journals reach tens of MB, so this streams a line at a time from
+        // the last offset; a partial trailing line waits for the next refresh.
+        let Ok(file) = std::fs::File::open(path) else {
             return;
         };
-        let consumed = consumed_len(&fresh);
-        if consumed == 0 {
+        let mut reader = BufReader::new(file);
+        if reader.seek(SeekFrom::Start(self.offset)).is_err() {
             return;
         }
-        let text = String::from_utf8_lossy(&fresh[..consumed]);
-        let parsed = parse_transcript(&text);
-        if self.offset == 0 {
-            self.head = fresh[..consumed.min(HEAD_PROBE_LEN)].to_vec();
-        }
-        self.offset += consumed as u64;
-        self.updated_at = now_ms;
-
-        for entry in &parsed {
-            if self.thread_name.is_none()
-                && let Some(name) = extract_thread_name(entry)
+        let capture_head = self.offset == 0;
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let n = match reader.read_until(b'\n', &mut line) {
+                Ok(n) if n > 0 && line.ends_with(b"\n") => n,
+                _ => break,
+            };
+            if capture_head && self.head.len() < HEAD_PROBE_LEN {
+                let take = (HEAD_PROBE_LEN - self.head.len()).min(n);
+                self.head.extend_from_slice(&line[..take]);
+            }
+            self.offset += n as u64;
+            self.updated_at = now_ms;
+            if let Ok(entry) =
+                serde_json::from_str::<TranscriptEntry>(&String::from_utf8_lossy(&line))
             {
-                self.thread_name = Some(name);
+                self.observe(&entry);
             }
-            if let Some(s) = determine_status(entry) {
-                self.status = s;
-            }
-            self.background.observe(entry);
         }
-        if let Some(usage) = extract_usage_summary(&parsed) {
+    }
+
+    fn observe(&mut self, entry: &TranscriptEntry) {
+        if self.thread_name.is_none() {
+            self.thread_name = extract_thread_name(entry);
+        }
+        if let Some(s) = determine_status(entry) {
+            self.status = s;
+        }
+        self.background.observe(entry);
+        if let Some(usage) = usage_summary_of(entry) {
             self.remember_identity(&usage);
             self.usage = Some(usage);
         }
-        if let Some(tool) = extract_last_tool(&parsed) {
+        if let Some(tool) = last_tool_of(entry) {
             self.last_tool = Some(tool);
         }
-        if let Some(loop_state) = extract_loop_state(&parsed) {
+        if let Some(loop_state) = loop_state_of(entry) {
             self.loop_state = Some(loop_state);
         }
     }
@@ -877,6 +846,26 @@ mod tests {
         let resumed_later = parse_timestamp_ms("2026-09-30T23:00:00Z");
         let ev = &unlisted_events(&[unlisted(&path, resumed_later)], 2_000)["s00tt"];
         assert_eq!(ev.status, AgentStatus::Complete);
+    }
+
+    #[test]
+    fn a_partial_trailing_line_waits_for_its_newline() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("s.jsonl");
+        let (first, rest) = END_TURN_LINE.split_at(40);
+        std::fs::write(&path, format!("{USER_LINE}\n{RUNNING_LINE}\n{first}")).unwrap();
+        let mut journal = Journal::default();
+        journal.refresh(&path, 1_000);
+        assert_eq!(journal.status, AgentStatus::Busy);
+        assert_eq!(journal.offset as usize, USER_LINE.len() + RUNNING_LINE.len() + 2);
+        assert_eq!(journal.head, USER_LINE.as_bytes()[..HEAD_PROBE_LEN]);
+
+        let mut file = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut file, format!("{rest}\n").as_bytes()).unwrap();
+        journal.refresh(&path, 2_000);
+        assert_eq!(journal.status, AgentStatus::Complete);
+        assert_eq!(journal.offset, std::fs::metadata(&path).unwrap().len());
+        assert_eq!(journal.last_tool.as_deref(), Some("Bash"));
     }
 
     #[test]
