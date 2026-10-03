@@ -174,9 +174,21 @@ jobs:
         with:
           key: nightly-e2e
 
+      # The runner has no task-rendered .env, so claim two free ports from the
+      # OS; shell env overrides .env in scripts/task-port.mjs.
+      - name: Claim e2e ports
+        run: |
+          python3 - >> "$GITHUB_ENV" <<'EOF'
+          import socket
+          socks = [socket.socket() for _ in range(2)]
+          for s in socks:
+              s.bind(("127.0.0.1", 0))
+          dev, wd = (s.getsockname()[1] for s in socks)
+          print(f"TT_DEV_PORT={dev}\nTT_E2E_WEBDRIVER_PORT={wd}")
+          EOF
+
       # `bun run e2e` builds the wdio-featured app and runs the WebdriverIO
-      # specs; xvfb-run supplies the headless X display WebKitGTK needs. Ports
-      # come from the task-rendered .env (nothing hardcoded).
+      # specs; xvfb-run supplies the headless X display WebKitGTK needs.
       - name: e2e (bun run e2e under xvfb)
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
