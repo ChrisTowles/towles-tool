@@ -1206,11 +1206,6 @@ function InsightsTab({ days, nonce, active }: { days: string; nonce: number; act
 export function ClaudeSessionsScreen() {
   const [days, setDays] = useState("30");
   const [tab, setTab] = useState("overview");
-  // Radix fires onValueChange twice per pointer click (mousedown, then focus) — dedupe the event.
-  const emittedTab = useRef(tab);
-  useEffect(() => {
-    emittedTab.current = tab;
-  }, [tab]);
   const [summary, setSummary] = useState<ClaudeSessionsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -1322,8 +1317,7 @@ export function ClaudeSessionsScreen() {
             orientation="vertical"
             value={tab}
             onValueChange={(v) => {
-              if (emittedTab.current !== v) uiAction("claude_sessions.tab", "claude-sessions", v);
-              emittedTab.current = v;
+              uiAction("claude_sessions.tab", "claude-sessions", v);
               setTab(v as typeof tab);
             }}
             className="min-h-0 flex-1 gap-0"

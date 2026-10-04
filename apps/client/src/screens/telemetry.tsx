@@ -362,15 +362,9 @@ export function TelemetryScreen() {
     if (days?.includes(point.day)) setDay(point.day);
   }
 
-  // Radix fires onValueChange twice per pointer click (mousedown, then focus) — dedupe the event.
-  const emittedTab = useRef(tab);
-  useEffect(() => {
-    emittedTab.current = tab;
-  }, [tab]);
   function switchTab(next: string) {
-    if (emittedTab.current !== next) uiAction("telemetry.tab", "telemetry", next);
-    emittedTab.current = next;
     setTab(next);
+    uiAction("telemetry.tab", "telemetry", next);
   }
 
   /** Opens a record's drill-down dialog, from either the Log or Insights tab. */
