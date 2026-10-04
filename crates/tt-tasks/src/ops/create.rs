@@ -12,6 +12,7 @@ use super::{
     fast_forward_base_if_behind, git_checkout, git_checkout_timeout, note_if_slow, run_setup,
     validate_branch_name,
 };
+use crate::issue::{self, Issue};
 use crate::pr::{self, PullRequest};
 use crate::{envfile, layout};
 
@@ -118,6 +119,70 @@ pub fn check_pr(sr: &TaskRoot, number: u64) -> Result<PrCheck> {
     };
     let dir = dir.map(|d| d.to_string_lossy().to_string());
     Ok(PrCheck { pr, branch, dir, error })
+}
+
+/// What a task started from an issue is called, decided before anything is created:
+/// an explicit title replaces the issue's, and the branch — unless given — slugs
+/// whichever title won, the same rule a plain `tt task new` applies to TITLE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueTask {
+    pub issue: Issue,
+    pub title: String,
+    pub branch: String,
+    /// Carries the issue's title and URL so the agent started in the task sees
+    /// what it is for.
+    pub goal: String,
+}
+
+impl IssueTask {
+    pub fn plan(
+        issue: Issue,
+        title: Option<&str>,
+        branch: Option<&str>,
+        goal: Option<&str>,
+    ) -> Result<Self> {
+        if !issue.is_open() {
+            return Err(OpsError::Issue(format!(
+                "#{} is {}, not open",
+                issue.number,
+                issue.state.to_lowercase()
+            )));
+        }
+        let title = given(title).unwrap_or(&issue.title).to_string();
+        let branch = match given(branch) {
+            Some(b) => b.to_string(),
+            None => {
+                let slug = tt_git::branch_name::slug(&title);
+                if slug.is_empty() {
+                    return Err(OpsError::Issue(format!(
+                        "cannot derive a branch from #{}'s title — pass --branch",
+                        issue.number
+                    )));
+                }
+                slug
+            }
+        };
+        let goal = given(goal)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{} (#{}) {}", issue.title, issue.number, issue.url));
+        Ok(Self { issue, title, branch, goal })
+    }
+}
+
+fn given(s: Option<&str>) -> Option<&str> {
+    s.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Look up issue `number` in `sr`'s repo and name its task ([`IssueTask::plan`]).
+pub fn issue_task(
+    sr: &TaskRoot,
+    number: u64,
+    title: Option<&str>,
+    branch: Option<&str>,
+    goal: Option<&str>,
+) -> Result<IssueTask> {
+    let issue = issue::view(&sr.checkout, number).map_err(OpsError::Issue)?;
+    IssueTask::plan(issue, title, branch, goal)
 }
 
 fn new_branch_target(
@@ -409,6 +474,60 @@ mod tests {
             .unwrap();
         assert_eq!(git(&dir, &["log", "-1", "--format=%s"]), "pr work");
         assert_eq!(warnings.len(), 1);
+    }
+
+    fn issue(state: &str) -> Issue {
+        Issue {
+            number: 42,
+            title: "Fix the thing!".into(),
+            url: "https://github.com/o/r/issues/42".into(),
+            state: state.into(),
+        }
+    }
+
+    #[test]
+    fn an_issue_task_is_named_after_the_issue() {
+        let planned = IssueTask::plan(issue("OPEN"), None, None, None).unwrap();
+        assert_eq!(planned.title, "Fix the thing!");
+        assert_eq!(planned.branch, "fix-the-thing");
+        assert_eq!(planned.goal, "Fix the thing! (#42) https://github.com/o/r/issues/42");
+        assert_eq!(planned.issue.repo().as_deref(), Some("o/r"));
+    }
+
+    #[test]
+    fn an_explicit_title_names_the_branch_too_but_an_explicit_branch_wins() {
+        let planned = IssueTask::plan(issue("OPEN"), Some(" Custom name "), None, None).unwrap();
+        assert_eq!(planned.title, "Custom name");
+        assert_eq!(planned.branch, "custom-name");
+        assert_eq!(planned.issue.number, 42, "the issue stays attached under a custom title");
+
+        let planned =
+            IssueTask::plan(issue("OPEN"), Some("Custom"), Some("feat/mine"), Some("why")).unwrap();
+        assert_eq!(planned.branch, "feat/mine");
+        assert_eq!(planned.goal, "why");
+    }
+
+    #[test]
+    fn a_blank_override_falls_back_to_the_issue() {
+        let planned = IssueTask::plan(issue("OPEN"), Some("  "), Some(""), Some(" ")).unwrap();
+        assert_eq!(planned.title, "Fix the thing!");
+        assert_eq!(planned.branch, "fix-the-thing");
+        assert!(planned.goal.contains("#42"));
+    }
+
+    #[test]
+    fn a_closed_issue_is_refused() {
+        let err = IssueTask::plan(issue("CLOSED"), None, None, None).unwrap_err();
+        assert_eq!(err.to_string(), "issue: #42 is closed, not open");
+    }
+
+    #[test]
+    fn an_unsluggable_title_needs_an_explicit_branch() {
+        let mut unsluggable = issue("OPEN");
+        unsluggable.title = "???".into();
+        let err = IssueTask::plan(unsluggable.clone(), None, None, None).unwrap_err();
+        assert!(err.to_string().contains("pass --branch"), "{err}");
+        assert!(IssueTask::plan(unsluggable, None, Some("feat/x"), None).is_ok());
     }
 
     #[test]

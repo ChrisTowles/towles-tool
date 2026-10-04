@@ -43,10 +43,7 @@ impl PullRequest {
 
     /// `owner/name`, read off the PR's URL — the board's PR-link key.
     pub fn repo(&self) -> Option<String> {
-        let path = self.url.split("://").nth(1)?.split_once('/')?.1;
-        let mut parts = path.split('/');
-        let (owner, name) = (parts.next()?, parts.next()?);
-        (!owner.is_empty() && !name.is_empty()).then(|| format!("{owner}/{name}"))
+        repo_of(&self.url)
     }
 
     pub fn is_open(&self) -> bool {
@@ -54,7 +51,15 @@ impl PullRequest {
     }
 }
 
-fn str_field(value: &serde_json::Value, key: &str) -> String {
+/// `owner/name` from a GitHub item URL (`https://github.com/o/r/pull/42`, `.../issues/7`).
+pub(crate) fn repo_of(url: &str) -> Option<String> {
+    let path = url.split("://").nth(1)?.split_once('/')?.1;
+    let mut parts = path.split('/');
+    let (owner, name) = (parts.next()?, parts.next()?);
+    (!owner.is_empty() && !name.is_empty()).then(|| format!("{owner}/{name}"))
+}
+
+pub(crate) fn str_field(value: &serde_json::Value, key: &str) -> String {
     value.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string()
 }
 
@@ -84,7 +89,7 @@ pub fn parse_pr(value: &serde_json::Value) -> Option<PullRequest> {
     })
 }
 
-fn gh_json(checkout: &Path, args: &[&str]) -> Result<serde_json::Value, String> {
+pub(crate) fn gh_json(checkout: &Path, args: &[&str]) -> Result<serde_json::Value, String> {
     let out = tt_exec::run_in_dir_with_timeout("gh", args, checkout, GH_TIMEOUT)
         .map_err(|e| format!("could not run gh: {e}"))?;
     if !out.ok() {

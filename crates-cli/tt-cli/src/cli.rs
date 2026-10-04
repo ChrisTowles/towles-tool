@@ -69,8 +69,8 @@ pub struct TaskArgs {
 pub enum TaskCommands {
     /// Create a task: board row + worktree + rendered .env + setup step (the MCP `task_create` params)
     New {
-        /// Task title (also the goal the worktree is created for; default with --pr: the PR's)
-        #[arg(value_name = "TITLE", required_unless_present = "pr")]
+        /// Task title (default with --pr: "Review #N: <PR title>"; with --issue: the issue's)
+        #[arg(value_name = "TITLE", required_unless_present_any = ["pr", "issue"])]
         title: Option<String>,
 
         /// Tracked repo (name or absolute dir, as the Agentboard rail shows it)
@@ -100,6 +100,10 @@ pub enum TaskCommands {
         /// Review an open pull request: check out its existing head branch instead of a new one
         #[arg(long, value_name = "NUMBER", conflicts_with_all = ["branch", "base"])]
         pr: Option<u64>,
+
+        /// Start a task for an open issue: titled after it (TITLE overrides), attached on the board
+        #[arg(long, value_name = "NUMBER", conflicts_with = "pr")]
+        issue: Option<u64>,
 
         /// Emit the created task as JSON
         #[arg(long)]
@@ -405,6 +409,20 @@ mod tests {
         assert!(Cli::try_parse_from(["tt", "task", "new", "--repo", "r"]).is_err());
         let with_branch = ["tt", "task", "new", "--pr", "12", "--repo", "r", "-b", "x"];
         assert!(Cli::try_parse_from(with_branch).is_err());
+    }
+
+    #[test]
+    fn task_new_takes_an_issue_in_place_of_title_but_never_beside_a_pr() {
+        let issue = [
+            "tt", "task", "new", "--issue", "7", "--repo", "r", "-b", "x", "--base", "y",
+        ];
+        assert!(Cli::try_parse_from(issue).is_ok());
+        let titled = ["tt", "task", "new", "Custom", "--issue", "7", "--repo", "r"];
+        assert!(Cli::try_parse_from(titled).is_ok());
+        let both = [
+            "tt", "task", "new", "--issue", "7", "--pr", "12", "--repo", "r",
+        ];
+        assert!(Cli::try_parse_from(both).is_err());
     }
 
     #[test]

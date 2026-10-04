@@ -471,6 +471,97 @@ fn new_records_the_main_checkout_as_the_repo_even_when_repo_points_inside_a_task
     assert_eq!(created["dir"], task_dir(&checkout, "feat-second").to_string_lossy().as_ref());
 }
 
+/// A `gh` on PATH answering every call with `json`, so `--issue` runs end to end without
+/// GitHub. Returns the PATH to hand the `tt` under test.
+fn path_with_fake_gh(dir: &Path, json: &str) -> std::ffi::OsString {
+    let bin = dir.join("fake-bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("gh");
+    std::fs::write(&script, format!("#!/bin/sh\nprintf '%s\\n' '{json}'\n")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let mut path = bin.into_os_string();
+    path.push(":");
+    path.push(std::env::var_os("PATH").unwrap_or_default());
+    path
+}
+
+fn issue_json(state: &str) -> String {
+    format!(
+        r#"{{"number":7,"title":"Do the thing","url":"https://github.com/o/r/issues/7","state":"{state}"}}"#
+    )
+}
+
+/// `--issue` names the task after the issue and attaches it to the board row; an explicit
+/// TITLE renames (and re-slugs) it, but the issue stays attached.
+#[test]
+fn new_from_an_issue_is_titled_after_it_and_attached() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    let home = tmp.join("home");
+    let path = path_with_fake_gh(&tmp, &issue_json("OPEN"));
+    let new = |args: &[&str]| {
+        let mut cmd = tt_scoped(&home, "issue-task");
+        cmd.env("PATH", &path).args(["task", "new", "--issue", "7", "--repo", &root_s, "--json"]);
+        cmd.args(args);
+        let out = cmd.output().unwrap();
+        assert!(out.status.success(), "new failed: {}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+
+    let created = new(&[]);
+    assert_eq!(created["title"], "Do the thing");
+    assert_eq!(created["branch"], "do-the-thing");
+    assert_eq!(created["issue"], 7);
+    assert!(task_dir(&checkout, "do-the-thing").join(".env").is_file());
+
+    let titled = new(&["Custom name"]);
+    assert_eq!(titled["title"], "Custom name");
+    assert_eq!(titled["branch"], "custom-name");
+    assert_eq!(titled["issue"], 7);
+
+    let db = data_home(&home).join("towles-tool").join("tasks").join("issue-task").join("tt.db");
+    let store = tt_store::Store::open(&db).unwrap();
+    for task in ["do-the-thing", "custom-name"] {
+        let dir = task_dir(&checkout, task).to_string_lossy().to_string();
+        let row = store.task_for_worktree_dir(&dir).unwrap().expect("board row for the task");
+        assert_eq!(row.issues.len(), 1, "{task}: {:?}", row.issues);
+        assert_eq!((row.issues[0].repo.as_str(), row.issues[0].number), ("o/r", 7));
+        assert!(row.goal.as_deref().is_some_and(|g| g.contains("https://github.com/o/r/issues/7")));
+    }
+}
+
+#[test]
+fn new_refuses_a_closed_issue_and_creates_nothing() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    let path = path_with_fake_gh(&tmp, &issue_json("CLOSED"));
+
+    tt().env("PATH", &path)
+        .args(["task", "new", "--issue", "7", "--repo", &root_s])
+        .assert()
+        .failure()
+        .stderr(contains("issue: #7 is closed, not open"));
+    assert!(!task_dir(&checkout, "do-the-thing").exists());
+}
+
+#[test]
+fn new_rejects_issue_beside_pr_and_help_lists_both() {
+    tt().args(["task", "new", "--issue", "7", "--pr", "12", "--repo", "r"])
+        .assert()
+        .failure()
+        .stderr(contains("--issue").and(contains("cannot be used with")));
+    tt().args(["task", "new", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--issue <NUMBER>").and(contains("--pr <NUMBER>")));
+}
+
 /// `--base <non-default>` records *that* ref in both `${tt:base}` and the `.tt-task`
 /// marker, not the checkout's current branch — and a later re-render must not drift.
 #[test]

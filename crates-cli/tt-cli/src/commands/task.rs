@@ -20,10 +20,12 @@ use crate::ui;
 
 pub fn run(command: TaskCommands) -> i32 {
     let result = match command {
-        TaskCommands::New { title, repo, status, notes, goal, branch, base, pr, json } => {
-            let source = match pr {
-                Some(number) => NewSource::Pr(number),
-                None => NewSource::Branch { branch: branch.as_deref(), base: base.as_deref() },
+        TaskCommands::New { title, repo, status, notes, goal, branch, base, pr, issue, json } => {
+            let (branch, base) = (branch.as_deref(), base.as_deref());
+            let source = match (pr, issue) {
+                (Some(number), _) => NewSource::Pr(number),
+                (None, Some(number)) => NewSource::Issue { number, branch, base },
+                (None, None) => NewSource::Branch { branch, base },
             };
             cmd_new(
                 title.as_deref(),
@@ -142,6 +144,11 @@ enum NewSource<'a> {
         base: Option<&'a str>,
     },
     Pr(u64),
+    Issue {
+        number: u64,
+        branch: Option<&'a str>,
+        base: Option<&'a str>,
+    },
 }
 
 /// Create a task (the unit of work): a board-task row PLUS its worktree, in one shot.
@@ -157,7 +164,7 @@ fn cmd_new(
     json: bool,
 ) -> Result<(), String> {
     let title = title.map(str::trim).unwrap_or_default();
-    if title.is_empty() && !matches!(source, NewSource::Pr(_)) {
+    if title.is_empty() && matches!(source, NewSource::Branch { .. }) {
         return Err("a task needs a title".to_string());
     }
 
@@ -173,9 +180,24 @@ fn cmd_new(
         }
     };
 
-    // The branch defaults to a slug of the title; the task folder slugs it again.
+    // `--repo` may name any dir inside the checkout, including one of its own worktrees.
+    // Bind the row to the main checkout as `ops::create_task` does: a nested path in
+    // `worktree_repo_root` keys the card to a Board swimlane matching no repo.
+    let sr = ops::discover_root(Some(Path::new(&repo_dir))).map_err(|e| e.to_string())?;
+    let repo_root = sr.checkout.to_string_lossy().to_string();
+
+    // The branch defaults to a slug of the title; the task folder slugs it again. An
+    // issue task is a new branch like any other — only its naming comes from `gh`.
+    let mut issue = None;
     let source = match source {
         NewSource::Pr(number) => ops::TaskSource::PullRequest(number),
+        NewSource::Issue { number, branch, base } => {
+            let planned = ops::issue_task(&sr, number, Some(title), branch, goal)
+                .map_err(|e| e.to_string())?;
+            let branch = planned.branch.clone();
+            issue = Some(planned);
+            ops::TaskSource::NewBranch { branch, base: base.map(str::to_string) }
+        }
         NewSource::Branch { branch, base } => {
             let branch = match branch.map(str::trim).filter(|b| !b.is_empty()) {
                 Some(b) => b.to_string(),
@@ -193,12 +215,6 @@ fn cmd_new(
         }
     };
 
-    // `--repo` may name any dir inside the checkout, including one of its own worktrees.
-    // Bind the row to the main checkout as `ops::create_task` does: a nested path in
-    // `worktree_repo_root` keys the card to a Board swimlane matching no repo.
-    let sr = ops::discover_root(Some(Path::new(&repo_dir))).map_err(|e| e.to_string())?;
-    let repo_root = sr.checkout.to_string_lossy().to_string();
-
     let opts = CreateOpts { root: Some(sr.checkout.clone()), source, run_setup: true };
     // Text mode only — `ui::info` writes to stdout, which `--json`'s document owns.
     // Worth printing because the setup step can run for minutes in silence.
@@ -213,16 +229,18 @@ fn cmd_new(
     // the caller — as `ui::warning` lines in text mode, as `"warnings"` in `--json`.
     let mut warnings = created.warnings.clone();
     let dir_s = created.dir.to_string_lossy().to_string();
-    let title = match &created.pr {
-        Some(pr) if title.is_empty() => format!("Review #{}: {}", pr.number, pr.title),
+    let title = match (&created.pr, &issue) {
+        (Some(pr), _) if title.is_empty() => format!("Review #{}: {}", pr.number, pr.title),
+        (_, Some(planned)) => planned.title.clone(),
         _ => title.to_string(),
     };
     let title = title.as_str();
+    let goal = issue.as_ref().map(|planned| planned.goal.as_str()).or(goal);
 
     // A store that can't open (or a rejected status) is a soft failure: the worktree
     // exists and is usable, so warn rather than abort.
-    let task_id = match record_board_task(title, status, notes, goal, &repo_root, &created, &dir_s)
-    {
+    let issue = issue.as_ref().map(|planned| &planned.issue);
+    let task_id = match record_board_task(title, status, notes, goal, &repo_root, &created, issue) {
         Ok(id) => Some(id),
         Err(e) => {
             warnings.push(format!("worktree created, but the board task was not recorded: {e}"));
@@ -244,6 +262,7 @@ fn cmd_new(
             "base": created.base,
             "baseLabel": created.base_label,
             "pr": created.pr.as_ref().map(|pr| pr.number),
+            "issue": issue.map(|issue| issue.number),
             "ports": ports,
             "inheritedKeys": created.inherited,
             "warnings": warnings,
@@ -273,7 +292,8 @@ fn cmd_new(
 
 /// Write the #339 board-task row and bind it to `repo_root` + the new worktree. Same
 /// store path as the app's `store_add_task` + `store_task_set_worktree`; a review
-/// task also links its PR, which a fork's owner-prefixed branch can't match on its own.
+/// task also links its PR, which a fork's owner-prefixed branch can't match on its own,
+/// and an issue task links its issue the way the app's `+` flow does.
 fn record_board_task(
     title: &str,
     status: &str,
@@ -281,19 +301,27 @@ fn record_board_task(
     goal: Option<&str>,
     repo_root: &str,
     created: &ops::CreatedTask,
-    dir: &str,
+    issue: Option<&tt_tasks::issue::Issue>,
 ) -> Result<i64, String> {
     let now_ms = now_ms();
+    let dir = created.dir.to_string_lossy();
     let store = tt_store::Store::open_default().map_err(|e| e.to_string())?;
     let task = store.add_task(title, status, notes, goal, now_ms).map_err(|e| e.to_string())?;
     store
-        .set_task_worktree(task.id, repo_root, None, Some(&created.branch), Some(dir))
+        .set_task_worktree(task.id, repo_root, None, Some(&created.branch), Some(&dir))
         .map_err(|e| e.to_string())?;
     if let Some(pr) = &created.pr
         && let Some(repo) = pr.repo()
     {
         store
             .attach_task_pr(task.id, &repo, pr.number as i64, &pr.url)
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(issue) = issue
+        && let Some(repo) = issue.repo()
+    {
+        store
+            .attach_task_issue(task.id, &repo, issue.number as i64, &issue.url)
             .map_err(|e| e.to_string())?;
     }
     Ok(task.id)

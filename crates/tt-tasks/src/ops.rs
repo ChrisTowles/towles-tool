@@ -47,6 +47,9 @@ pub enum OpsError {
     #[error("pull request: {0}")]
     Pr(String),
 
+    #[error("issue: {0}")]
+    Issue(String),
+
     #[error("env template {path}: {source}")]
     Template { path: String, source: TemplateError },
 
@@ -511,7 +514,8 @@ mod render;
 pub use branch::{BranchRefused, SyncError, live_task_branch, sync_task_branch};
 pub use claims::{PortClaim, PortRegistry, PortStatus, port_occupied, port_report};
 pub use create::{
-    CreateOpts, CreatePhase, CreatedTask, PrCheck, TaskSource, check_pr, create_task,
+    CreateOpts, CreatePhase, CreatedTask, IssueTask, PrCheck, TaskSource, check_pr, create_task,
+    issue_task,
 };
 pub use init::{InitReport, init_repo};
 pub use remove::{
