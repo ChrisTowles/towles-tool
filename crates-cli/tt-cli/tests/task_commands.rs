@@ -480,7 +480,18 @@ fn path_with_fake_gh(dir: &Path, state: &str) -> std::ffi::OsString {
     let json = format!(
         r#"{{"number":%s,"title":"Do the thing","url":"https://github.com/o/r/issues/%s","state":"{state}"}}"#
     );
-    std::fs::write(&script, format!("#!/bin/sh\nprintf '{json}\\n' \"$3\" \"$3\"\n")).unwrap();
+    // Answers only the call `--issue` is specified to make, so a `gh pr view` or a
+    // short field list fails the black-box tests instead of passing by accident.
+    let script_body = format!(
+        "#!/bin/sh\n\
+         if [ \"$1 $2\" != \"issue view\" ]; then echo \"fake gh: unexpected call: $*\" >&2; exit 2; fi\n\
+         fields=\"\"; prev=\"\"\n\
+         for a in \"$@\"; do if [ \"$prev\" = \"--json\" ]; then fields=\"$a\"; fi; prev=\"$a\"; done\n\
+         for f in number title url state; do \
+         case \",$fields,\" in *\",$f,\"*) ;; *) echo \"fake gh: --json lacks $f: $*\" >&2; exit 2;; esac; done\n\
+         printf '{json}\\n' \"$3\" \"$3\"\n"
+    );
+    std::fs::write(&script, script_body).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

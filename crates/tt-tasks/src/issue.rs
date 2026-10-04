@@ -33,11 +33,12 @@ impl Issue {
 
     /// `feat/<n>-<slug>` — the app's `branchFromIssue` rule, so one issue yields one
     /// branch whichever surface starts it. The slug reads the title's opening
-    /// [`BRANCH_SLUG_SOURCE_CHARS`] like the dialog's; a title with nothing to slug
-    /// still names a branch.
+    /// [`BRANCH_SLUG_SOURCE_CHARS`] counted as the dialog's `slice` counts them, in
+    /// UTF-16 units, so an emoji moves the cut the same way on both surfaces; a title
+    /// with nothing to slug still names a branch.
     pub fn branch(&self) -> String {
-        let opening: String = self.title.chars().take(BRANCH_SLUG_SOURCE_CHARS).collect();
-        let slug = tt_git::branch_name::slug(&opening);
+        let units: Vec<u16> = self.title.encode_utf16().take(BRANCH_SLUG_SOURCE_CHARS).collect();
+        let slug = tt_git::branch_name::slug(&String::from_utf16_lossy(&units));
         if slug.is_empty() {
             format!("feat/{}", self.number)
         } else {
@@ -99,6 +100,12 @@ mod tests {
             "feat/615-agentboard-the-rail-should-number-its-rows-while"
         );
         assert_eq!(issue(9, "???").branch(), "feat/9");
+        assert_eq!(
+            issue(702, "🚀 Ship it: the rail numbers its rows while the jump chord is held")
+                .branch(),
+            "feat/702--ship-it-the-rail-numbers-its-rows-while-the-ju",
+            "an emoji is two UTF-16 units, as the app's slice counts"
+        );
     }
 
     #[test]
