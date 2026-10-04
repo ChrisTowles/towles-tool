@@ -9,8 +9,8 @@ export type BoardAgentStatus = {
   sessionCount: number;
 };
 
-/** Needs-you first (longest wait wins), then the rail's own `ALERT_ORDER`, then
- * live over dead, agent over plain shell, newest last. */
+/** Needs-you first (longest wait wins), then the rail's `ALERT_ORDER`, then whoever is
+ * still working whatever its status word, then live over dead, agent over shell, newest last. */
 function urgencyKey(s: SessionData): number[] {
   const st = s.agentState?.status;
   const alert = st ? (ALERT_ORDER as readonly string[]).indexOf(st) : -1;
@@ -18,6 +18,7 @@ function urgencyKey(s: SessionData): number[] {
     sessionCatchesEye(s) ? 0 : 1,
     s.needsSinceMs ?? Number.MAX_SAFE_INTEGER,
     alert === -1 ? ALERT_ORDER.length : alert,
+    s.working ? 0 : 1,
     s.live ? 0 : 1,
     isAgent(s) ? 0 : 1,
     -s.createdAt,

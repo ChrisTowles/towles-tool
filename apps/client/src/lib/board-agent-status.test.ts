@@ -88,6 +88,22 @@ describe("mostUrgentSession", () => {
     expect(mostUrgentSession([shell, idle])?.id).toBe("idle");
   });
 
+  it("a session still working at the prompt beats a newer idle one, whatever its status word", () => {
+    const agentsOut = session("agents-out", {
+      agentState: agent("idle"),
+      working: true,
+      createdAt: 1,
+    });
+    const idle = session("idle", { agentState: agent("idle"), createdAt: 2 });
+    expect(mostUrgentSession([idle, agentsOut])?.id).toBe("agents-out");
+  });
+
+  it("an alert status outranks a plain idle agent", () => {
+    const idle = session("idle", { agentState: agent("idle") });
+    const waiting = session("waiting", { agentState: agent("waiting") });
+    expect(mostUrgentSession([idle, waiting])?.id).toBe("waiting");
+  });
+
   it("a live shell outranks a dead one; among equals the newest wins", () => {
     const dead = session("dead", { live: false, createdAt: 9 });
     const live = session("live", { createdAt: 1 });
