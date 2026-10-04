@@ -3,6 +3,7 @@ import {
   CircleAlert,
   CircleCheck,
   CircleX,
+  FolderGit2,
   KeyRound,
   Layers,
   Puzzle,
@@ -34,6 +35,7 @@ type AgentBoardCheck = {
 };
 type StaleTaskCheck = { name: string; branch: string; reason: string };
 type PortHealthCheck = { port: number; owner: string; var: string; finding: string; hint: string };
+type CheckoutCheck = { name: string; value: string; ok: boolean; warning?: string; hint?: string };
 type DoctorReport = {
   result: {
     timestamp: string;
@@ -46,6 +48,7 @@ type DoctorReport = {
   agentboard: AgentBoardCheck[];
   staleTasks: StaleTaskCheck[];
   portHealth: PortHealthCheck[];
+  checkout: CheckoutCheck[];
 };
 
 export function DoctorScreen() {
@@ -66,7 +69,8 @@ export function DoctorScreen() {
     report.plugins.every((c) => c.ok) &&
     report.agentboard.every((c) => c.ok || c.warning) &&
     report.staleTasks.length === 0 &&
-    report.portHealth.length === 0;
+    report.portHealth.length === 0 &&
+    report.checkout.every((c) => c.ok || c.warning);
 
   return (
     <div className="flex flex-col gap-4">
@@ -108,22 +112,37 @@ export function DoctorScreen() {
         <p className="text-sm text-muted-foreground">Not available outside the app.</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          <Panel
-            title="Tools"
-            note={`${report.result.tools.filter((c) => c.ok).length}/${report.result.tools.length}`}
-            icon={<Wrench className="size-4" />}
-          >
-            {report.result.tools.map((c) => (
-              <CheckRow
-                key={c.name}
-                ok={c.ok}
-                warned={Boolean(c.warning)}
-                name={c.name}
-                value={c.version ?? "not found"}
-                detail={c.warning}
-              />
-            ))}
-          </Panel>
+          <div className="flex flex-col gap-4">
+            <Panel
+              title="Tools"
+              note={`${report.result.tools.filter((c) => c.ok).length}/${report.result.tools.length}`}
+              icon={<Wrench className="size-4" />}
+            >
+              {report.result.tools.map((c) => (
+                <CheckRow
+                  key={c.name}
+                  ok={c.ok}
+                  warned={Boolean(c.warning)}
+                  name={c.name}
+                  value={c.version ?? "not found"}
+                  detail={c.warning}
+                />
+              ))}
+            </Panel>
+
+            <Panel title="This checkout" icon={<FolderGit2 className="size-4" />}>
+              {report.checkout.map((c) => (
+                <CheckRow
+                  key={c.name}
+                  ok={c.ok}
+                  warned={Boolean(c.warning)}
+                  name={c.name}
+                  value={c.value}
+                  detail={c.hint ?? c.warning}
+                />
+              ))}
+            </Panel>
+          </div>
 
           <div className="flex flex-col gap-4">
             <Panel title="GitHub" icon={<KeyRound className="size-4" />}>

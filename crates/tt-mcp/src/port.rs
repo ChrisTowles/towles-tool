@@ -32,9 +32,6 @@ pub fn resolve_port(
 /// the checkout the *calling process* runs in (`None` outside one). The app calls it to
 /// decide what to bind and the CLI to decide what to dial; both run from the same checkout,
 /// which is why one function answers both.
-///
-/// The `.env` value is read as a **port claim** ([`tt_tasks::envfile::port_claims_by_key`])
-/// rather than parsed here — a value the claim scanner skips is one no sibling avoids.
 pub fn for_this_checkout() -> u16 {
     let settings_port =
         tt_config::load().map(|s| s.mcp.port).unwrap_or(tt_config::DEFAULT_MCP_PORT);
@@ -42,7 +39,7 @@ pub fn for_this_checkout() -> u16 {
         .ok()
         .and_then(|dir| tt_config::checkout_root_from_dir(&dir))
         .and_then(|root| std::fs::read_to_string(root.join(".env")).ok())
-        .and_then(|text| tt_tasks::envfile::port_claims_by_key(&text).get(MCP_PORT_ENV).copied());
+        .and_then(|text| claim_in_dotenv(&text));
     resolve_port(std::env::var(MCP_PORT_ENV).ok().as_deref(), dotenv_claim, settings_port)
 }
 
@@ -81,13 +78,19 @@ pub fn for_serving(session_id: Option<&str>) -> BindPort {
         .ok()
         .and_then(|dir| tt_config::checkout_root_from_dir(&dir))
         .and_then(|root| std::fs::read_to_string(root.join(".env")).ok())
-        .and_then(|text| tt_tasks::envfile::port_claims_by_key(&text).get(MCP_PORT_ENV).copied());
+        .and_then(|text| claim_in_dotenv(&text));
     resolve_bind_port(
         std::env::var(MCP_PORT_ENV).ok().as_deref(),
         session_id,
         dotenv_claim,
         settings_port,
     )
+}
+
+/// A **port claim** ([`tt_tasks::envfile::port_claims_by_key`]), never parsed here: a value
+/// the claim scanner skips is one no sibling avoids. The doctor probes this same claim.
+pub fn claim_in_dotenv(text: &str) -> Option<u16> {
+    tt_tasks::envfile::port_claims_by_key(text).get(MCP_PORT_ENV).copied()
 }
 
 #[cfg(test)]
@@ -99,8 +102,7 @@ mod tests {
         assert_eq!(resolve_port(None, Some(8801), 8787), 8801);
     }
 
-    /// An explicit env var is a deliberate override (a script, a hand-run
-    /// binary), so it outranks the file.
+    /// An explicit env var is a deliberate override, so it outranks the file.
     #[test]
     fn the_process_environment_wins_over_the_dotenv() {
         assert_eq!(resolve_port(Some("9000"), Some(8801), 8787), 9000);
@@ -113,9 +115,8 @@ mod tests {
         assert_eq!(resolve_port(None, None, 9191), 9191);
     }
 
-    /// Falling *through* to the next source keeps the app on a sane port. `0` is
-    /// the one that parses and still has to be rejected. The `.env` side needs no
-    /// equivalent — it arrives already validated by `envfile::port_claims_by_key`.
+    /// `0` parses and still has to be rejected; the `.env` side arrives already
+    /// validated by `envfile::port_claims_by_key`.
     #[test]
     fn an_unusable_override_falls_through_instead_of_binding_nonsense() {
         for bad in [

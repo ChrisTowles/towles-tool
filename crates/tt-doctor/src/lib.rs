@@ -9,7 +9,11 @@
 //! tmux agentboard was removed (2026-07-04, hard cutover), so `tmux`/`ttyd`
 //! are no longer checked.
 
+mod checkout;
+
 use serde::{Deserialize, Serialize};
+
+pub use checkout::CheckoutCheck;
 
 /// Result of probing one tool. Matches the TS `CheckResult`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +44,6 @@ pub struct DoctorRunResult {
     pub agentboard: Vec<NameOk>,
 }
 
-/// One required Claude plugin check, with an install hint when missing.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginCheck {
@@ -116,6 +119,7 @@ pub struct DoctorReport {
     pub stale_tasks: Vec<StaleTaskCheck>,
     /// Port claims whose `.env` and registry views have drifted apart.
     pub port_health: Vec<PortHealthCheck>,
+    pub checkout: Vec<CheckoutCheck>,
 }
 
 /// Run every check. Spawns a handful of `--version`/auth subprocesses, so run
@@ -128,6 +132,7 @@ pub fn run_report() -> DoctorReport {
     let agentboard = check_agentboard();
     let stale_tasks = check_stale_tasks();
     let port_health = check_port_health();
+    let checkout = checkout::check_checkout();
 
     let result = DoctorRunResult {
         timestamp: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
@@ -136,7 +141,7 @@ pub fn run_report() -> DoctorReport {
         plugins: plugins.iter().map(|p| NameOk { name: p.name.clone(), ok: p.ok }).collect(),
         agentboard: agentboard.iter().map(|a| NameOk { name: a.name.clone(), ok: a.ok }).collect(),
     };
-    DoctorReport { result, plugins, agentboard, stale_tasks, port_health }
+    DoctorReport { result, plugins, agentboard, stale_tasks, port_health, checkout }
 }
 
 /// Read-only like every doctor probe ([`tt_tasks::ops::port_report`] neither
@@ -217,7 +222,6 @@ fn classify_stale_task(
     })
 }
 
-/// Probe one tool's presence + version.
 fn check_tool(name: &str, version_arg: &str, optional: bool) -> CheckResult {
     match tt_exec::run(name, &[version_arg]) {
         Ok(output) if output.ok() => {
@@ -257,7 +261,7 @@ pub fn check_vt_parser(optimize_mode: &str) -> CheckResult {
 }
 
 /// The first version-like token in arbitrary `--version` output.
-fn extract_version(text: &str) -> Option<String> {
+pub(crate) fn extract_version(text: &str) -> Option<String> {
     let start = text.find(|c: char| c.is_ascii_digit())?;
     let version: String =
         text[start..].chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
@@ -307,7 +311,6 @@ fn tt_mcp_registered(list_output: &str) -> bool {
     })
 }
 
-/// Whether `gh auth status` reports an authenticated account.
 fn check_gh_auth() -> bool {
     matches!(tt_exec::run("gh", &["auth", "status"]), Ok(out) if out.ok())
 }
@@ -316,7 +319,6 @@ struct RequiredPlugin {
     /// Fully-qualified, e.g. `towles-tool-app@towles-tool`.
     id: &'static str,
     name: &'static str,
-    /// Shown when missing.
     install_hint: &'static str,
 }
 

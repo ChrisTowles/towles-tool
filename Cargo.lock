@@ -9307,9 +9307,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tt-agentboard",
+ "tt-browser",
+ "tt-codeserver",
  "tt-config",
  "tt-exec",
+ "tt-mcp",
  "tt-tasks",
+ "ureq",
 ]
 
 [[package]]

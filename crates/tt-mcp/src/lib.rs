@@ -30,7 +30,7 @@ pub const PROTOCOL_VERSION: &str = "2026-07-28";
 pub const META_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 pub const META_CLIENT_INFO: &str = "io.modelcontextprotocol/clientInfo";
 pub const META_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
-const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
+pub const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
 /// Streamable HTTP mirrors body fields into these; a mismatch is refused ([`HEADER_MISMATCH`]).
 pub const PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
 pub const METHOD_HEADER: &str = "mcp-method";
