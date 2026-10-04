@@ -93,7 +93,11 @@ the CLI and the app can consume it.
 - `tt-agentboard` — watchers/engine: repo list, session tracking, needs-you
   synthesis. **Agent status is PTY-first** (`pty_status` folds what the terminal
   observes over the session journal's reading; `claude agents` is liveness
-  only — the thresholds are measured, not guessed). Also **the one home of the task-removal sequence**
+  only — the thresholds are measured, not guessed). The status set is the CLI's
+  (`idle`/`busy`/`waiting`) plus the terminal states; **background agents still
+  out are a count beside it** (`details.background_agents`), which the shared
+  `working` and needs-you rules read — a prompt with agents out is working, not
+  free. Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
 - `tt-claude-code` — transcript/session parsing models.

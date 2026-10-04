@@ -55,9 +55,11 @@ import {
   modelContextLabel,
   modelLetter,
   needsCompact,
+  alertColor,
+  sessionBackgroundAgents,
   statusColor,
   type AgentRollup,
-  type AgentStatus,
+  type AlertStatus,
   type CommitStat,
   type FolderData,
   type LandedVia,
@@ -173,6 +175,16 @@ export function Dot({ session }: { session: SessionData }) {
       </Hint>
     );
   }
+  const n = sessionBackgroundAgents(session);
+  return (
+    <>
+      <StatusDot session={session} />
+      {n > 0 && <BackgroundAgentsBadge n={n} />}
+    </>
+  );
+}
+
+function StatusDot({ session }: { session: SessionData }) {
   const st = session.agentState?.status;
   if (st === "waiting") {
     return (
@@ -193,20 +205,6 @@ export function Dot({ session }: { session: SessionData }) {
       </Hint>
     );
   }
-  if (st === "background") {
-    const n = session.agentState?.details?.backgroundAgents ?? 0;
-    const agents = n > 0 ? `${n} background agent${n > 1 ? "s" : ""}` : "background agents";
-    return (
-      <Hint label={`agent idle — ${agents} still running, not waiting on you`}>
-        <span
-          className={cn(
-            "size-2 shrink-0 rounded-full ring-2 ring-cyan-700/25",
-            statusColor("background"),
-          )}
-        />
-      </Hint>
-    );
-  }
   return (
     <Hint label={st ? `agent ${st}` : "shell running, no agent"}>
       <span
@@ -219,8 +217,20 @@ export function Dot({ session }: { session: SessionData }) {
   );
 }
 
+/** A fact, so bare mono type and no box; the same tiny dot + count the rollup uses. */
+function BackgroundAgentsBadge({ n }: { n: number }) {
+  return (
+    <Hint label={`${n} background agent${n > 1 ? "s" : ""} still running — not waiting on you`}>
+      <span className="flex shrink-0 items-center gap-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+        <span className={cn("size-1.5 rounded-full", alertColor("background"))} />
+        {n}
+      </span>
+    </Hint>
+  );
+}
+
 /** Shape and color derive from `Dot`, so the buckets can't drift from it. */
-export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
+export function DotCount({ status, n }: { status: AlertStatus; n: number }) {
   return (
     <span className="flex items-center gap-1 text-muted-foreground">
       <span
@@ -228,7 +238,7 @@ export function DotCount({ status, n }: { status: AgentStatus; n: number }) {
           "size-1.5 rounded-full",
           status === "waiting"
             ? "border-[1.5px] border-blue-500 bg-transparent"
-            : statusColor(status),
+            : alertColor(status),
         )}
       />
       {n}

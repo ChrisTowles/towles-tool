@@ -3,11 +3,12 @@
 //! turn stands** — busy or not, and everything else the CLI doesn't expose
 //! (model, last tool, usage, sub-agents, `/loop` wakeups, the thread name).
 //!
-//! Per scan: list live agents, resolve each to a session by cwd, then read its
-//! status (`session_status`). A session that vanished gets one final
-//! journal read and a terminal emit. Deliberate limit: one that exited before
-//! the server started never appears at all. A session the cached CLI list
-//! doesn't have yet is passed in from Claude Code's own session file.
+//! Per scan: list live agents, resolve each to a session by cwd, then emit the
+//! journal's status with the count of background agents still out beside it.
+//! A session that vanished gets one final journal read and a terminal emit.
+//! Deliberate limit: one that exited before the server started never appears
+//! at all. A session the cached CLI list doesn't have yet is passed in from
+//! Claude Code's own session file.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -207,22 +208,6 @@ fn loop_state_of(entry: &TranscriptEntry) -> Option<LoopInfo> {
 /// are never bracketed, so this rejects placeholders but not an unknown model.
 fn is_placeholder_model(model: &str) -> bool {
     model.starts_with('<')
-}
-
-/// The one map from what is known about a live session to its status: the
-/// journal's reading, except that a finished turn with background agents still
-/// out is not waiting on you — their reports start the next one; a question
-/// (`Waiting`) still is. The PTY overrides this downstream
-/// ([`crate::pty_status::resolve_status`]).
-fn session_status(journal: &Journal, process_started_at: Option<i64>) -> AgentStatus {
-    match journal.status {
-        AgentStatus::Idle | AgentStatus::Complete
-            if journal.ledger.background_running(process_started_at) > 0 =>
-        {
-            AgentStatus::Background
-        }
-        other => other,
-    }
 }
 
 fn exit_status(journal_status: AgentStatus) -> AgentStatus {
@@ -472,6 +457,17 @@ impl ClaudeCodeAgentWatcher {
         (status, thread_name, journal.details(&state.subagents, state.process_started_at))
     }
 
+    /// A process that exited took its background agents with it, whatever the
+    /// ledger still holds — else the pane would read as working for good.
+    fn exit_parts(state: &SessionState) -> Emitted {
+        let (status, name, mut details) =
+            Self::event_parts(state, exit_status(state.journal.status));
+        if let Some(d) = details.as_mut() {
+            d.background_agents = None;
+        }
+        (status, name, details)
+    }
+
     fn emit(
         events: &mut Vec<AgentEvent>,
         session: &Option<String>,
@@ -537,8 +533,7 @@ impl ClaudeCodeAgentWatcher {
             state.cli_name = agent.name.clone();
             state.process_started_at = agent.started_at;
 
-            let status = session_status(&state.journal, state.process_started_at);
-            let parts = Self::event_parts(state, status);
+            let parts = Self::event_parts(state, state.journal.status);
             if state.emitted.as_ref() != Some(&parts) {
                 state.emitted = Some(parts.clone());
                 Self::emit(&mut events, &state.session, parts, &agent.session_id, now_ms);
@@ -558,7 +553,7 @@ impl ClaudeCodeAgentWatcher {
                 continue;
             }
             // A verdict already on the board, perhaps already seen, isn't news.
-            let parts = Self::event_parts(&state, exit_status(state.journal.status));
+            let parts = Self::exit_parts(&state);
             if state.emitted.as_ref() != Some(&parts) {
                 Self::emit(&mut events, &state.session, parts, &session_id, now_ms);
             }
@@ -917,7 +912,7 @@ mod tests {
     }
 
     #[test]
-    fn a_finished_turn_with_a_background_agent_out_is_background_until_it_reports() {
+    fn a_finished_turn_with_a_background_agent_out_counts_it_until_it_reports() {
         let mut f = fixture();
         let launch = r#"{"type":"user","timestamp":"2026-09-30T22:00:00Z","toolUseResult":{"status":"async_launched","agentId":"a1"}}"#;
         let path =
@@ -928,8 +923,9 @@ mod tests {
 
         f.scan(&mut ctx, 1_000);
         let ev = ctx.events.last().unwrap();
-        assert_eq!(ev.status, AgentStatus::Background);
+        assert_eq!(ev.status, AgentStatus::Complete);
         assert_eq!(ev.details.as_ref().unwrap().background_agents, Some(1));
+        assert!(ev.is_working());
 
         let done = r#"{"type":"queue-operation","timestamp":"2026-09-30T22:05:00Z","content":"<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>"}"#;
         let mut text = std::fs::read_to_string(&path).unwrap();
@@ -940,6 +936,26 @@ mod tests {
         let ev = ctx.events.last().unwrap();
         assert_eq!(ev.status, AgentStatus::Complete);
         assert_eq!(ev.details.as_ref().and_then(|d| d.background_agents), None);
+        assert!(!ev.is_working());
+    }
+
+    #[test]
+    fn an_exit_takes_its_background_agents_with_it() {
+        let mut f = fixture();
+        let launch = r#"{"type":"user","timestamp":"2026-09-30T22:00:00Z","toolUseResult":{"status":"async_launched","agentId":"a1"}}"#;
+        write_journal(&f.projects, "/home/u/a", "sid-gone", &[USER_LINE, launch, DONE_LINE]);
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/a", "sid-gone")];
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/a".into(), "a".into()));
+        f.scan(&mut ctx, 1_000);
+        assert!(ctx.events.last().unwrap().is_working());
+
+        f.agents.lock().unwrap().clear();
+        f.scan(&mut ctx, 2_000);
+        let ev = ctx.events.last().unwrap();
+        assert_eq!(ev.status, AgentStatus::Complete);
+        assert_eq!(ev.details.as_ref().and_then(|d| d.background_agents), None);
+        assert!(!ev.is_working());
     }
 
     /// A sub-agent whose transcript has been silent for ten minutes is still
