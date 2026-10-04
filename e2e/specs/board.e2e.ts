@@ -88,19 +88,43 @@ describe("Board screen", () => {
     const decoy = `e2e-decoy-${stamp}`;
     const seeded: number[] = [];
 
+    // A run aborted before `after` leaves its cards behind; purge them first.
+    before(async () => {
+      const snapshot = expectObject<{ tasks: { id: number; text: string }[] }>(
+        await browser.tauri.execute(({ core }) => core.invoke("store_snapshot")),
+        "store_snapshot",
+      );
+      for (const t of snapshot.tasks) {
+        if (/^e2e-(needle|decoy)-/.test(t.text)) await purgeTask(t.id);
+      }
+    });
+
     after(async () => {
-      const filter = await browser.$(FILTER);
-      if (await filter.isExisting()) await filter.setValue("");
-      for (const id of seeded.splice(0)) await purgeTask(id);
+      const failures: string[] = [];
+      try {
+        for (const id of [...seeded]) {
+          try {
+            await purgeTask(id);
+          } catch (e) {
+            failures.push(`${id}: ${String(e)}`);
+          }
+        }
+        seeded.splice(0);
+      } finally {
+        const filter = await browser.$(FILTER);
+        if (await filter.isExisting()) await filter.setValue("");
+      }
+      if (failures.length > 0) throw new Error(`purge failed for ${failures.join("; ")}`);
     });
 
     it("shows only the matching card and counts the rest as hidden", async () => {
       const baseline = await browser.$$(CARD).length;
-      seeded.push(await addTask(needle), await addTask(decoy));
+      seeded.push(await addTask(needle));
+      seeded.push(await addTask(decoy));
       await waitForCardCount(baseline + 2, "after seeding two tasks");
 
       const filter = await browser.$(FILTER);
-      await filter.setValue(needle.slice(0, 14));
+      await filter.setValue(needle);
       await waitForCardCount(1, "with the needle typed");
       expect(await cardTitles()).toEqual([needle]);
 

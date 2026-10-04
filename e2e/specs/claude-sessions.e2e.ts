@@ -37,14 +37,30 @@ describe("Claude Sessions screen", () => {
     await search.waitForDisplayed({ timeout: 10000 });
   });
 
-  it("answers the 7-day ledger over claude_sessions_summary IPC", async () => {
-    const summary = expectObject<ClaudeSessionsSummary>(
-      await browser.tauri.execute(({ core }) => core.invoke("claude_sessions_summary", { days: 7 })),
+  it("answers the 7-day ledger over IPC, or settles on its empty state without one", async () => {
+    type Outcome = { ok: true; summary: unknown } | { ok: false; error: string };
+    const outcome = expectObject<Outcome>(
+      await browser.tauri.execute(({ core }) =>
+        core.invoke("claude_sessions_summary", { days: 7 }).then(
+          (summary) => ({ ok: true, summary }),
+          (error: unknown) => ({ ok: false, error: String(error) }),
+        ),
+      ),
       "claude_sessions_summary",
     );
-    expect(summary.totals).toBeDefined();
-    expect(Array.isArray(summary.days)).toBe(true);
-    expect(Array.isArray(summary.byProject)).toBe(true);
-    expect(Array.isArray(summary.topSessions)).toBe(true);
+    if (outcome.ok) {
+      const summary = expectObject<ClaudeSessionsSummary>(outcome.summary, "claude_sessions_summary");
+      expect(summary.totals).toBeDefined();
+      expect(Array.isArray(summary.days)).toBe(true);
+      expect(Array.isArray(summary.byProject)).toBe(true);
+      expect(Array.isArray(summary.topSessions)).toBe(true);
+      return;
+    }
+    // No ~/.claude/projects on this machine (the nightly runner): the screen stays
+    // mounted, is done scanning, and shows no stat tiles.
+    expect(outcome.error).toContain("Claude projects");
+    await browser.$("h2=Claude Sessions").waitForDisplayed({ timeout: 10000 });
+    expect(await browser.$$("p=Scanning sessions…").length).toBe(0);
+    expect(await browser.$$("div.lg\\:grid-cols-5").length).toBe(0);
   });
 });

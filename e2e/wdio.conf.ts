@@ -3,6 +3,11 @@ import { requireDevPort, resolveWebdriverPort } from "../scripts/task-port.mjs";
 
 // Never a hardcoded 1420: concurrent worktrees would collide, so ports resolve
 // from this checkout's rendered `.env` (scripts/e2e.mjs injects them).
+// The forced scope is all that keeps `store_add_task` off this checkout's real board.
+if (!(process.env.TT_STATE_SCOPE ?? "").startsWith("e2e-")) {
+  throw new Error("e2e needs TT_STATE_SCOPE=e2e-<checkout>: run `bun run e2e`, not wdio directly");
+}
+
 const repoRoot = process.cwd();
 const devPort = requireDevPort(repoRoot, { tag: "wdio" });
 const wdPort = resolveWebdriverPort(devPort);
