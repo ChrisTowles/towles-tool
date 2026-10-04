@@ -16,6 +16,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { ShortcutBadge } from "@/components/hint";
 import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +69,9 @@ export function AppSidebar() {
                     active && "bg-accent text-accent-foreground",
                   )}
                   onClick={() => {
-                    uiAction("sidebar.navigate", activeTab, id);
+                    if (tabId) mouseAction(tabId, activeTab);
+                    else if (id === "settings") mouseAction("settings", activeTab);
+                    else uiAction("sidebar.navigate", activeTab, id);
                     openTab(id);
                   }}
                 >
@@ -136,7 +139,9 @@ export function AppSidebarIcons() {
                       aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                       aria-current={active || undefined}
                       onClick={() => {
-                        uiAction("sidebar.navigate", activeTab, id);
+                        if (tabId) mouseAction(tabId, activeTab);
+                        else if (id === "settings") mouseAction("settings", activeTab);
+                        else uiAction("sidebar.navigate", activeTab, id);
                         openTab(id);
                       }}
                       className={cn(
