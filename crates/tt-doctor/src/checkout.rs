@@ -1,9 +1,9 @@
 //! What fails for *one checkout* while every machine-wide tool is fine: the MCP
 //! server its app instance serves, the code-server behind its Files pane and the
-//! Chrome behind its browser pane. "The MCP tools aren't there" means the app for
-//! this checkout isn't up, so the probe is one loopback `server/discover` — the
-//! same request a session's `.mcp.json` ends up making — against the port the
-//! checkout's rendered `.env` claims, read exactly as the app reads it to bind.
+//! Chrome behind its browser pane. The doctor runs inside the app, so the MCP
+//! probe is one loopback `server/discover` — the same request a session's
+//! `.mcp.json` ends up making — against the port this instance actually bound,
+//! with the checkout's rendered `.env` claim as a second signal when they differ.
 //!
 //! The socket call is one thin function; everything that decides what to report
 //! takes plain values, so the classifiers are tested without a server.
@@ -29,6 +29,7 @@ pub struct CheckoutCheck {
 }
 
 const MCP_ROW: &str = "MCP server";
+const MCP_CLAIM_ROW: &str = "MCP port claim";
 const CODE_SERVER_ROW: &str = "code-server";
 const CHROME_ROW: &str = "Chrome";
 
@@ -36,12 +37,17 @@ const CHROME_ROW: &str = "Chrome";
 /// hold the whole report.
 const MCP_PROBE_TIMEOUT: Duration = Duration::from_secs(1);
 
-pub fn check_checkout() -> Vec<CheckoutCheck> {
-    vec![check_mcp_server(), check_code_server(), check_chrome()]
+pub fn check_checkout(bound_mcp_port: Option<u16>) -> Vec<CheckoutCheck> {
+    let mut rows = check_mcp_server(bound_mcp_port);
+    rows.push(check_code_server());
+    rows.push(check_chrome());
+    rows
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum McpPortSource {
+    /// A packaged app runs from no checkout, so there is no `.env` to render.
+    NoCheckout,
     NoDotenv,
     /// An `.env` with no usable `TT_MCP_PORT` — an unrendered `${tt:port …}` token
     /// is the common shape.
@@ -64,17 +70,67 @@ enum Probe {
     Unreachable,
 }
 
-fn check_mcp_server() -> CheckoutCheck {
+/// `bound` is the port this instance serves on, `None` when it lost the bind — the
+/// app passes it, since only the app knows.
+fn check_mcp_server(bound: Option<u16>) -> Vec<CheckoutCheck> {
     let root = std::env::current_dir().ok().and_then(|dir| tt_config::checkout_root_from_dir(&dir));
-    let Some(root) = root else {
-        // A packaged app runs from no checkout and serves the settings port.
-        let port = tt_mcp::port::for_this_checkout();
-        return classify_mcp_probe(port, &probe_mcp(port));
+    let (source, env_hint) = match &root {
+        Some(root) => {
+            let dotenv = std::fs::read_to_string(root.join(".env")).ok();
+            (mcp_port_source(dotenv.as_deref()), render_env_hint(root))
+        }
+        None => (McpPortSource::NoCheckout, String::new()),
     };
-    let dotenv = std::fs::read_to_string(root.join(".env")).ok();
-    match mcp_port_source(dotenv.as_deref()) {
-        McpPortSource::Claimed(port) => classify_mcp_probe(port, &probe_mcp(port)),
-        source => mcp_unclaimed(source, &render_env_hint(&root)),
+    let probe = bound.map(probe_mcp);
+    mcp_rows(bound, probe.as_ref(), source, &env_hint)
+}
+
+fn mcp_rows(
+    bound: Option<u16>,
+    probe: Option<&Probe>,
+    source: McpPortSource,
+    env_hint: &str,
+) -> Vec<CheckoutCheck> {
+    let mut rows = vec![match (bound, probe) {
+        (Some(port), Some(probe)) => classify_mcp_probe(port, probe),
+        _ => mcp_not_serving(),
+    }];
+    match source {
+        McpPortSource::Claimed(claim) => {
+            if let Some(port) = bound.filter(|&port| port != claim) {
+                rows.push(mcp_claim_mismatch(port, claim));
+            }
+        }
+        McpPortSource::NoCheckout => {}
+        source => rows.push(mcp_unclaimed(source, env_hint)),
+    }
+    rows
+}
+
+fn mcp_not_serving() -> CheckoutCheck {
+    CheckoutCheck {
+        name: MCP_ROW.to_string(),
+        value: "this instance isn't serving".to_string(),
+        ok: false,
+        warning: None,
+        hint: Some(
+            "the bind failed — the MCP screen says why (another instance may hold the port); \
+             restart with `bun start`"
+                .to_string(),
+        ),
+    }
+}
+
+fn mcp_claim_mismatch(bound: u16, claim: u16) -> CheckoutCheck {
+    CheckoutCheck {
+        name: MCP_CLAIM_ROW.to_string(),
+        value: format!("bound {bound} · claims {claim}"),
+        ok: false,
+        warning: Some("the bound port is not this checkout's claim".to_string()),
+        hint: Some(format!(
+            "bound {bound} from the environment; this checkout claims {claim} — `tt task ports` \
+             lists every claim"
+        )),
     }
 }
 
@@ -94,7 +150,7 @@ fn mcp_unclaimed(source: McpPortSource, hint: &str) -> CheckoutCheck {
         _ => "no TT_MCP_PORT in .env",
     };
     CheckoutCheck {
-        name: MCP_ROW.to_string(),
+        name: MCP_CLAIM_ROW.to_string(),
         value: value.to_string(),
         ok: false,
         warning: Some(
@@ -151,15 +207,15 @@ fn classify_mcp_probe(port: u16, probe: &Probe) -> CheckoutCheck {
         warning: None,
         hint: hint.map(str::to_string),
     };
-    let foreign = "something else holds the port — `tt task ports` lists every claim";
+    let foreign = "something else answers on the port this instance bound — `tt task ports` \
+                   lists every claim";
     match probe {
         Probe::Unreachable => row(
             format!("nobody serving on {port}"),
             false,
-            Some(
-                "no app instance serves this checkout's port — start one with `bun start`; if \
-                 this app is already up, the MCP screen shows why it didn't bind",
-            ),
+            Some(&format!(
+                "this instance bound {port} but doesn't answer — restart it with `bun start`"
+            )),
         ),
         Probe::Answered { status: 200, body } => match discover_server(body) {
             Some(server) => row(format!("serving on {port} · {server}"), true, None),
@@ -357,6 +413,70 @@ mod tests {
         let task = PathBuf::from("/repo/.claude/worktrees/feat-doctor");
         assert_eq!(render_env_hint(&task), "tt task env feat-doctor");
         assert_eq!(render_env_hint(Path::new("/repo")), "tt task env primary");
+    }
+
+    fn serving_probe() -> Probe {
+        let body =
+            discover_body(Some(serde_json::json!({ "name": "towles-tool", "version": "1" })));
+        Probe::Answered { status: 200, body }
+    }
+
+    #[test]
+    fn a_bound_port_matching_the_claim_is_one_green_row() {
+        let rows = mcp_rows(Some(8791), Some(&serving_probe()), McpPortSource::Claimed(8791), "h");
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].ok && rows[0].warning.is_none());
+        assert_eq!(rows[0].value, "serving on 8791 · towles-tool 1");
+    }
+
+    /// The #687 drive scenario: the instance was up on an inherited 8787 while the
+    /// checkout's `.env` claimed 8791 — serving, but not where sessions expect it.
+    #[test]
+    fn a_bound_port_differing_from_the_claim_adds_an_amber_mismatch_row() {
+        let rows = mcp_rows(Some(8787), Some(&serving_probe()), McpPortSource::Claimed(8791), "h");
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].ok, "serving is still green");
+        let mismatch = &rows[1];
+        assert!(!mismatch.ok && mismatch.warning.is_some(), "amber");
+        assert_eq!(mismatch.name, MCP_CLAIM_ROW);
+        assert_eq!(mismatch.value, "bound 8787 · claims 8791");
+        let hint = mismatch.hint.as_deref().unwrap_or_default();
+        assert!(
+            hint.contains("bound 8787 from the environment; this checkout claims 8791"),
+            "{hint}"
+        );
+        assert!(hint.contains("tt task ports"), "{hint}");
+    }
+
+    #[test]
+    fn no_bound_port_is_one_red_row_with_the_start_hint() {
+        let rows = mcp_rows(None, None, McpPortSource::Claimed(8791), "h");
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].ok && rows[0].warning.is_none(), "red");
+        assert_eq!(rows[0].value, "this instance isn't serving");
+        assert!(rows[0].hint.as_deref().unwrap_or_default().contains("bun start"));
+    }
+
+    #[test]
+    fn no_claim_keeps_the_amber_render_row_beside_the_serving_one() {
+        let rows = mcp_rows(
+            Some(8787),
+            Some(&serving_probe()),
+            McpPortSource::Unclaimed,
+            "tt task env primary",
+        );
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].ok);
+        assert_eq!(rows[1].name, MCP_CLAIM_ROW);
+        assert_eq!(rows[1].value, "no TT_MCP_PORT in .env");
+        assert!(rows[1].hint.as_deref().unwrap_or_default().contains("tt task env primary"));
+    }
+
+    #[test]
+    fn outside_a_checkout_there_is_no_claim_row() {
+        let rows = mcp_rows(Some(8787), Some(&serving_probe()), McpPortSource::NoCheckout, "");
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].ok);
     }
 
     #[test]

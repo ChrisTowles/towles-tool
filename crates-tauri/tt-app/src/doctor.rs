@@ -6,7 +6,7 @@
 pub async fn doctor_run() -> Result<tt_doctor::DoctorReport, String> {
     tracing::info!("doctor.run");
     tauri::async_runtime::spawn_blocking(|| {
-        let mut report = tt_doctor::run_report();
+        let mut report = tt_doctor::run_report(crate::mcp_http::serving_port());
         // App-only check: it inspects the VT parser linked into *this*
         // process, so it can't live inside run_report (the `tt` CLI has no
         // VT engine and would report nothing meaningful).

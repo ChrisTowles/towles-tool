@@ -122,9 +122,9 @@ pub struct DoctorReport {
     pub checkout: Vec<CheckoutCheck>,
 }
 
-/// Run every check. Spawns a handful of `--version`/auth subprocesses, so run
-/// it off any latency-sensitive thread.
-pub fn run_report() -> DoctorReport {
+/// Spawns a handful of `--version`/auth subprocesses, so run it off any latency-sensitive
+/// thread. `bound_mcp_port` is the port this process serves MCP on, `None` when it isn't.
+pub fn run_report(bound_mcp_port: Option<u16>) -> DoctorReport {
     let mut tools: Vec<CheckResult> =
         TOOLS.iter().map(|(name, arg, optional)| check_tool(name, arg, *optional)).collect();
     tools.push(check_zig());
@@ -132,7 +132,7 @@ pub fn run_report() -> DoctorReport {
     let agentboard = check_agentboard();
     let stale_tasks = check_stale_tasks();
     let port_health = check_port_health();
-    let checkout = checkout::check_checkout();
+    let checkout = checkout::check_checkout(bound_mcp_port);
 
     let result = DoctorRunResult {
         timestamp: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
