@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   CircleAlert,
@@ -112,9 +112,15 @@ export function McpScreen() {
   const newest = calls[0]?.ts;
   const active = newest !== undefined && now - newest < ACTIVE_WINDOW_MS;
 
+  // Radix fires onValueChange twice per pointer click (mousedown, then focus) — dedupe the event.
+  const emittedTab = useRef(tab);
+  useEffect(() => {
+    emittedTab.current = tab;
+  }, [tab]);
   function switchTab(next: string) {
+    if (emittedTab.current !== next) uiAction("mcp.tab", "mcp", next);
+    emittedTab.current = next;
     setTab(next);
-    uiAction("mcp.tab", "mcp", next);
   }
 
   return (

@@ -77,6 +77,11 @@ export function SettingsScreen() {
   const [initialTarget] = useState(() => settingsTargetStore.consume());
   const initialResolved = resolveTarget(initialTarget);
   const [tab, setTab] = useState(initialResolved.tab);
+  // Radix fires onValueChange twice per pointer click (mousedown, then focus) — dedupe the event.
+  const emittedTab = useRef(tab);
+  useEffect(() => {
+    emittedTab.current = tab;
+  }, [tab]);
   const [query, setQuery] = useState(initialResolved.filter);
   const filterRef = useRef<HTMLInputElement>(null);
 
@@ -136,7 +141,8 @@ export function SettingsScreen() {
         orientation="vertical"
         value={tab}
         onValueChange={(v) => {
-          uiAction("settings.tab", "settings", v);
+          if (emittedTab.current !== v) uiAction("settings.tab", "settings", v);
+          emittedTab.current = v;
           setTab(v);
         }}
         className="min-h-0 flex-1 gap-0"
