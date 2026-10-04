@@ -74,56 +74,88 @@ mod tests {
     use crate::schema::{MIN_SUPPORTED_VERSION, SCHEMA_VERSION};
     use chrono::{DateTime, FixedOffset};
 
-    fn ci_run(repo: &str, workflow: &str, conclusion: &str, updated_ms: i64) -> CiRun {
+    fn ci_run(repo: &str, workflow: &str, conclusion: &str, created_ms: i64) -> CiRun {
         CiRun {
             repo: repo.to_string(),
             workflow: workflow.to_string(),
             status: if conclusion.is_empty() { "in_progress" } else { "completed" }.to_string(),
             conclusion: conclusion.to_string(),
-            created_ms: updated_ms - 60_000,
-            updated_ms,
-            url: format!("https://github.com/{repo}/actions/runs/{updated_ms}"),
+            created_ms,
+            updated_ms: created_ms + 60_000,
+            url: format!("https://github.com/{repo}/actions/runs/{created_ms}"),
             head_sha: "abc123".to_string(),
             event: "schedule".to_string(),
         }
     }
 
+    fn ci_keys(s: &Store) -> Vec<(String, String)> {
+        s.ci_runs().unwrap().into_iter().map(|r| (r.repo, r.workflow)).collect()
+    }
+
     #[test]
-    fn ci_runs_replace_reads_back_one_row_per_workflow_in_order() {
+    fn ci_runs_read_back_one_row_per_workflow_in_order() {
         let s = Store::open_in_memory().unwrap();
-        s.replace_ci_runs(&[
-            ci_run("o/r", "Nightly", "failure", 2_000),
-            ci_run("o/a", "CI", "success", 1_000),
-            ci_run("o/r", "CI", "", 3_000),
-        ])
-        .unwrap();
+        let written = s
+            .upsert_ci_runs(&[
+                ci_run("o/r", "Nightly", "failure", 2_000),
+                ci_run("o/a", "CI", "success", 1_000),
+                ci_run("o/r", "CI", "", 3_000),
+            ])
+            .unwrap();
+        assert_eq!(written, 3);
         let runs = s.ci_runs().unwrap();
         let keys: Vec<(&str, &str)> =
             runs.iter().map(|r| (r.repo.as_str(), r.workflow.as_str())).collect();
         assert_eq!(keys, [("o/a", "CI"), ("o/r", "CI"), ("o/r", "Nightly")]);
         assert_eq!(runs[1].status, "in_progress");
         assert_eq!(runs[2].conclusion, "failure");
-
-        // A later sweep's row for the same (repo, workflow) replaces, never duplicates.
-        s.replace_ci_runs(&[ci_run("o/r", "Nightly", "success", 4_000)]).unwrap();
-        let runs = s.ci_runs().unwrap();
-        assert_eq!(runs.len(), 1);
-        assert_eq!((runs[0].conclusion.as_str(), runs[0].updated_ms), ("success", 4_000));
+        assert_eq!(s.snapshot().unwrap().ci_runs, runs, "the snapshot carries the same rows");
     }
 
     #[test]
-    fn ci_runs_scoped_replace_keeps_other_repos_rows() {
+    fn ci_runs_upsert_takes_a_newer_run_and_ignores_an_older_one() {
         let s = Store::open_in_memory().unwrap();
-        s.replace_ci_runs(&[
+        s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "failure", 2_000)]).unwrap();
+
+        let stale = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "success", 1_000)]).unwrap();
+        assert_eq!(stale, 0, "an older run never rolls the row back");
+        assert_eq!(s.ci_runs().unwrap()[0].conclusion, "failure");
+
+        let same = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "cancelled", 2_000)]).unwrap();
+        assert_eq!(same, 1, "the same run's changed verdict lands");
+        assert_eq!(s.ci_runs().unwrap()[0].conclusion, "cancelled");
+
+        let newer = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "success", 3_000)]).unwrap();
+        assert_eq!(newer, 1);
+        let runs = s.ci_runs().unwrap();
+        assert_eq!(runs.len(), 1, "one row per workflow, never a duplicate");
+        assert_eq!((runs[0].conclusion.as_str(), runs[0].created_ms), ("success", 3_000));
+    }
+
+    #[test]
+    fn ci_runs_absent_workflow_survives_and_prune_drops_untracked_repos() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert_ci_runs(&[
+            ci_run("o/a", "Nightly", "failure", 1),
             ci_run("o/a", "CI", "success", 1),
-            ci_run("o/b", "CI", "failure", 1),
+            ci_run("o/gone", "CI", "success", 1),
         ])
         .unwrap();
-        s.replace_ci_runs_for_repos(&["o/b".to_string()], &[]).unwrap();
-        let runs = s.ci_runs().unwrap();
-        assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].repo, "o/a");
-        assert_eq!(s.snapshot().unwrap().ci_runs, runs, "the snapshot carries the same rows");
+
+        // A sweep whose page held only o/a's CI: Nightly is not in it and must stay.
+        s.upsert_ci_runs(&[ci_run("o/a", "CI", "success", 2)]).unwrap();
+        let pruned = s.prune_ci_runs_except(&["o/a".to_string()]).unwrap();
+        assert_eq!(pruned, 1, "only the repo no longer tracked loses its rows");
+        assert_eq!(
+            ci_keys(&s),
+            [
+                ("o/a".into(), "CI".into()),
+                ("o/a".into(), "Nightly".into())
+            ]
+        );
+
+        assert_eq!(s.prune_ci_runs_except(&[]).unwrap(), 2, "no tracked repos means no rows");
+        assert!(ci_keys(&s).is_empty());
     }
     use rusqlite::params;
 

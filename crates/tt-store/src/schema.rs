@@ -158,8 +158,8 @@ CREATE TABLE IF NOT EXISTS item_dismissals (
 ";
 
 /// v20: the latest default-branch Actions run per workflow, per tracked repo — the
-/// Cockpit's CI-health chips. One row per `(repo, workflow)`, swapped by the `ci`
-/// collector like `pr_status`.
+/// Cockpit's CI-health chips. One row per `(repo, workflow)`, upserted by the `ci`
+/// collector: a workflow keeps its last known run until a newer one lands.
 const SCHEMA_CI_RUNS_V20: &str = "\
 CREATE TABLE IF NOT EXISTS ci_runs (
     repo TEXT NOT NULL,

@@ -14,9 +14,9 @@ use crate::prs::{parse_iso_ms, str_field};
 const RUN_LIST_FIELDS: &str =
     "workflowName,name,status,conclusion,createdAt,updatedAt,url,headSha,event";
 
-/// Newest first from `gh`, so a page this deep carries every workflow's latest run
-/// for any repo with a handful of workflows.
-const RUN_LIST_LIMIT: &str = "20";
+/// Newest first from `gh`. Deep enough that a once-a-day workflow still shows up
+/// behind a busy day's pushes; when it doesn't, the store keeps its last known run.
+const RUN_LIST_LIMIT: &str = "50";
 
 /// The latest run of every workflow on `dir`'s default branch, with the repo's
 /// `owner/name`. A repo without Actions is an empty result, not an error.

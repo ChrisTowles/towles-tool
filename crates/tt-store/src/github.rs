@@ -31,30 +31,6 @@ fn insert_prs(tx: &rusqlite::Transaction<'_>, prs: &[PrInput]) -> Result<()> {
     Ok(())
 }
 
-/// `OR REPLACE` on `(repo, workflow)`: two checkouts of one repo in a sweep yield
-/// the same row, and the later write must not fail on it.
-fn insert_ci_runs(tx: &rusqlite::Transaction<'_>, runs: &[CiRun]) -> Result<()> {
-    let mut stmt = tx.prepare(
-        "INSERT OR REPLACE INTO ci_runs
-           (repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-    )?;
-    for r in runs {
-        stmt.execute(params![
-            r.repo,
-            r.workflow,
-            r.status,
-            r.conclusion,
-            r.created_ms,
-            r.updated_ms,
-            r.url,
-            r.head_sha,
-            r.event,
-        ])?;
-    }
-    Ok(())
-}
-
 impl Store {
     /// Replace only the named repos' issue rows, leaving other repos' rows
     /// intact. Collectors use this when a sweep partially failed: repos that
@@ -343,28 +319,56 @@ impl Store {
         Ok(out)
     }
 
-    /// Full-snapshot replace of the CI rows — a clean `ci` sweep.
-    pub fn replace_ci_runs(&self, runs: &[CiRun]) -> Result<usize> {
+    /// Upsert by `(repo, workflow)`: a fetched run lands only when it is at least as
+    /// new as the stored one, so a stale page never rolls a row back and a workflow
+    /// missing from a page keeps its last known run. Returns the rows written.
+    pub fn upsert_ci_runs(&self, runs: &[CiRun]) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute("DELETE FROM ci_runs", [])?;
-        insert_ci_runs(&tx, runs)?;
-        tx.commit()?;
-        Ok(runs.len())
-    }
-
-    /// Replace only `repos`' CI rows, so a repo that errored keeps its last-known
-    /// runs — the same partial-sweep rule as [`Store::replace_prs_for_repos`].
-    pub fn replace_ci_runs_for_repos(&self, repos: &[String], runs: &[CiRun]) -> Result<usize> {
-        let tx = self.conn.unchecked_transaction()?;
+        let mut written = 0;
         {
-            let mut del = tx.prepare("DELETE FROM ci_runs WHERE repo = ?1")?;
-            for repo in repos {
-                del.execute(params![repo])?;
+            let mut stmt = tx.prepare(
+                "INSERT INTO ci_runs
+                   (repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(repo, workflow) DO UPDATE SET
+                   status = excluded.status,
+                   conclusion = excluded.conclusion,
+                   created_ms = excluded.created_ms,
+                   updated_ms = excluded.updated_ms,
+                   url = excluded.url,
+                   head_sha = excluded.head_sha,
+                   event = excluded.event
+                 WHERE excluded.created_ms >= ci_runs.created_ms",
+            )?;
+            for r in runs {
+                written += stmt.execute(params![
+                    r.repo,
+                    r.workflow,
+                    r.status,
+                    r.conclusion,
+                    r.created_ms,
+                    r.updated_ms,
+                    r.url,
+                    r.head_sha,
+                    r.event,
+                ])?;
             }
-            insert_ci_runs(&tx, runs)?;
         }
         tx.commit()?;
-        Ok(runs.len())
+        Ok(written)
+    }
+
+    /// Drop the rows of every repo not in `tracked` — only after a sweep that reached
+    /// every tracked repo, since a repo that merely errored must keep its rows.
+    pub fn prune_ci_runs_except(&self, tracked: &[String]) -> Result<usize> {
+        if tracked.is_empty() {
+            return Ok(self.conn.execute("DELETE FROM ci_runs", [])?);
+        }
+        let placeholders = vec!["?"; tracked.len()].join(", ");
+        let mut del = self
+            .conn
+            .prepare(&format!("DELETE FROM ci_runs WHERE repo NOT IN ({placeholders})"))?;
+        Ok(del.execute(rusqlite::params_from_iter(tracked))?)
     }
 
     /// Every workflow's latest default-branch run, by repo then workflow.
