@@ -61,6 +61,17 @@ describe("paletteTaskEntries", () => {
     expect(entry.repo).toBe("octo/widgets");
     expect(entry.branch).toBe("feat/palette");
     expect(entry.meta).toBe("widgets · feat/palette");
+    expect(entry.value).toBe("task 7 jump to a task octo/widgets feat/palette");
+  });
+
+  it("keys two same-titled quick todos on distinct values", () => {
+    const [a, b] = paletteTaskEntries([
+      task({ id: 11, text: "fix tests" }),
+      task({ id: 12, text: "fix tests", position: 1 }),
+    ]);
+    expect(a.value).not.toBe(b.value);
+    expect(a.value).toContain(" 11 ");
+    expect(b.value).toContain(" 12 ");
   });
 
   it("makes repo, short name, branch and linked numbers searchable", () => {

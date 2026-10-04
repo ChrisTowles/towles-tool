@@ -226,7 +226,7 @@ export function CommandPalette() {
                 {taskEntries.map((entry) => (
                   <CommandItem
                     key={entry.key}
-                    value={`task ${entry.title} ${entry.repo ?? ""} ${entry.branch ?? ""}`}
+                    value={entry.value}
                     keywords={entry.keywords}
                     onSelect={() => jumpToTask(entry.target)}
                   >
