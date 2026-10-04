@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 const CLAUDE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Mirrors the dialog's own `BRANCH_SLUG_SOURCE_CHARS`.
-const BRANCH_SLUG_SOURCE_CHARS: usize = 50;
+pub(crate) const BRANCH_SLUG_SOURCE_CHARS: usize = 50;
 
 /// Short enough to read as a card label, not a sentence.
 const TITLE_MAX_CHARS: usize = 60;

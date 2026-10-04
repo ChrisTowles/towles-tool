@@ -8,6 +8,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::pr::{gh_json, repo_of, str_field};
+use crate::suggest::BRANCH_SLUG_SOURCE_CHARS;
 
 const VIEW_FIELDS: &str = "number,title,url,state";
 
@@ -28,6 +29,20 @@ impl Issue {
 
     pub fn is_open(&self) -> bool {
         self.state.eq_ignore_ascii_case("open")
+    }
+
+    /// `feat/<n>-<slug>` — the app's `branchFromIssue` rule, so one issue yields one
+    /// branch whichever surface starts it. The slug reads the title's opening
+    /// [`BRANCH_SLUG_SOURCE_CHARS`] like the dialog's; a title with nothing to slug
+    /// still names a branch.
+    pub fn branch(&self) -> String {
+        let opening: String = self.title.chars().take(BRANCH_SLUG_SOURCE_CHARS).collect();
+        let slug = tt_git::branch_name::slug(&opening);
+        if slug.is_empty() {
+            format!("feat/{}", self.number)
+        } else {
+            format!("feat/{}-{slug}", self.number)
+        }
     }
 }
 
@@ -66,6 +81,24 @@ mod tests {
         assert_eq!(issue.number, 7);
         assert!(issue.is_open());
         assert_eq!(issue.repo().as_deref(), Some("o/r"));
+    }
+
+    fn issue(number: u64, title: &str) -> Issue {
+        Issue { number, title: title.into(), url: String::new(), state: "OPEN".into() }
+    }
+
+    /// Expected strings come from the app's `branchFromIssue` (`inline-new-task.tsx`).
+    #[test]
+    fn branch_matches_the_apps_issue_picker() {
+        assert_eq!(
+            issue(123, "Fix bug: @User reported $100 issue!").branch(),
+            "feat/123-fix-bug-user-reported-100-issue"
+        );
+        assert_eq!(
+            issue(615, "Agentboard: the rail should number its rows while the jump chord is held, then land").branch(),
+            "feat/615-agentboard-the-rail-should-number-its-rows-while"
+        );
+        assert_eq!(issue(9, "???").branch(), "feat/9");
     }
 
     #[test]

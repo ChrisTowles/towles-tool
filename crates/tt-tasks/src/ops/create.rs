@@ -122,8 +122,8 @@ pub fn check_pr(sr: &TaskRoot, number: u64) -> Result<PrCheck> {
 }
 
 /// What a task started from an issue is called, decided before anything is created:
-/// an explicit title replaces the issue's, and the branch — unless given — slugs
-/// whichever title won, the same rule a plain `tt task new` applies to TITLE.
+/// an explicit title replaces the issue's; the branch, unless given, is the issue's own
+/// [`Issue::branch`] either way, so renaming the card never forks the branch name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueTask {
     pub issue: Issue,
@@ -149,19 +149,7 @@ impl IssueTask {
             )));
         }
         let title = given(title).unwrap_or(&issue.title).to_string();
-        let branch = match given(branch) {
-            Some(b) => b.to_string(),
-            None => {
-                let slug = tt_git::branch_name::slug(&title);
-                if slug.is_empty() {
-                    return Err(OpsError::Issue(format!(
-                        "cannot derive a branch from #{}'s title — pass --branch",
-                        issue.number
-                    )));
-                }
-                slug
-            }
-        };
+        let branch = given(branch).map_or_else(|| issue.branch(), str::to_string);
         let goal = given(goal)
             .map(str::to_string)
             .unwrap_or_else(|| format!("{} (#{}) {}", issue.title, issue.number, issue.url));
@@ -489,16 +477,16 @@ mod tests {
     fn an_issue_task_is_named_after_the_issue() {
         let planned = IssueTask::plan(issue("OPEN"), None, None, None).unwrap();
         assert_eq!(planned.title, "Fix the thing!");
-        assert_eq!(planned.branch, "fix-the-thing");
+        assert_eq!(planned.branch, "feat/42-fix-the-thing");
         assert_eq!(planned.goal, "Fix the thing! (#42) https://github.com/o/r/issues/42");
         assert_eq!(planned.issue.repo().as_deref(), Some("o/r"));
     }
 
     #[test]
-    fn an_explicit_title_names_the_branch_too_but_an_explicit_branch_wins() {
+    fn an_explicit_title_keeps_the_issues_branch_but_an_explicit_branch_wins() {
         let planned = IssueTask::plan(issue("OPEN"), Some(" Custom name "), None, None).unwrap();
         assert_eq!(planned.title, "Custom name");
-        assert_eq!(planned.branch, "custom-name");
+        assert_eq!(planned.branch, "feat/42-fix-the-thing");
         assert_eq!(planned.issue.number, 42, "the issue stays attached under a custom title");
 
         let planned =
@@ -511,7 +499,7 @@ mod tests {
     fn a_blank_override_falls_back_to_the_issue() {
         let planned = IssueTask::plan(issue("OPEN"), Some("  "), Some(""), Some(" ")).unwrap();
         assert_eq!(planned.title, "Fix the thing!");
-        assert_eq!(planned.branch, "fix-the-thing");
+        assert_eq!(planned.branch, "feat/42-fix-the-thing");
         assert!(planned.goal.contains("#42"));
     }
 
@@ -522,12 +510,10 @@ mod tests {
     }
 
     #[test]
-    fn an_unsluggable_title_needs_an_explicit_branch() {
+    fn an_unsluggable_title_still_names_a_branch_after_the_number() {
         let mut unsluggable = issue("OPEN");
         unsluggable.title = "???".into();
-        let err = IssueTask::plan(unsluggable.clone(), None, None, None).unwrap_err();
-        assert!(err.to_string().contains("pass --branch"), "{err}");
-        assert!(IssueTask::plan(unsluggable, None, Some("feat/x"), None).is_ok());
+        assert_eq!(IssueTask::plan(unsluggable, None, None, None).unwrap().branch, "feat/42");
     }
 
     #[test]

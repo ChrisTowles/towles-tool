@@ -101,7 +101,7 @@ pub enum TaskCommands {
         #[arg(long, value_name = "NUMBER", conflicts_with_all = ["branch", "base"])]
         pr: Option<u64>,
 
-        /// Start a task for an open issue: titled after it (TITLE overrides), attached on the board
+        /// Start a task for an open issue on feat/<N>-<slug>: titled after it, attached on the board
         #[arg(long, value_name = "NUMBER", conflicts_with = "pr")]
         issue: Option<u64>,
 

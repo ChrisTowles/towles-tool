@@ -21,7 +21,7 @@ tt task new "<title>" --repo <name|dir> [-b feat/thing] [--base <ref>] [--status
 tt task new --pr <number> --repo <name|dir>
                                           # review task on an open PR's existing head branch
 tt task new --issue <number> --repo <name|dir> [TITLE] [-b feat/thing]
-                                          # new branch for an open issue: titled after it, issue linked on the board
+                                          # feat/<n>-<slug> for an open issue (the app's rule): titled after it, linked on the board
 tt task ls [--json]                       # fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>                        # (re)render .env — idempotent, keeps claims
 tt task env primary                       # same, for the main checkout
