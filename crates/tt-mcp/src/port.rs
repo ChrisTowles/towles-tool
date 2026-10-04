@@ -12,12 +12,9 @@
 /// plugin's `.mcp.json` expands it as `${TT_MCP_PORT:-8787}`.
 pub const MCP_PORT_ENV: &str = "TT_MCP_PORT";
 
-/// The port this instance should serve on, most specific source first: an explicit
-/// `TT_MCP_PORT` in the process env (a nested app inherits none — the PTY scrub drops
-/// `TT_*`), the checkout's `.env` claim, then settings `mcp.port`.
-///
-/// Pure so the precedence is tested directly: getting it wrong points every session at one
-/// instance again. `0` is rejected — it binds an ephemeral port no `.mcp.json` could name.
+/// Most specific source first: `TT_MCP_PORT` in the process env, the checkout's `.env`
+/// claim, then settings `mcp.port`. Pure so the precedence is tested directly; `0` is
+/// rejected — it binds an ephemeral port no `.mcp.json` could name.
 pub fn resolve_port(
     process_env: Option<&str>,
     dotenv_claim: Option<u16>,
@@ -47,6 +44,50 @@ pub fn for_this_checkout() -> u16 {
         .and_then(|root| std::fs::read_to_string(root.join(".env")).ok())
         .and_then(|text| tt_tasks::envfile::port_claims_by_key(&text).get(MCP_PORT_ENV).copied());
     resolve_port(std::env::var(MCP_PORT_ENV).ok().as_deref(), dotenv_claim, settings_port)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BindPort {
+    pub port: u16,
+    /// A `TT_MCP_PORT` inherited beside a `TT_SESSION_ID`: a parent app's stamp, not an override.
+    pub ignored_stamp: Option<u16>,
+}
+
+/// [`resolve_port`] for the *serving* side: the stamp travels with the session id, so an app
+/// launched from an app terminal inherits both and must not bind the parent's port. The
+/// dialing side ([`for_this_checkout`]) differs on purpose — a client wants that very app.
+pub fn resolve_bind_port(
+    process_env: Option<&str>,
+    session_id: Option<&str>,
+    dotenv_claim: Option<u16>,
+    settings_port: u16,
+) -> BindPort {
+    let inherited = session_id.is_some_and(|id| !id.trim().is_empty());
+    if !inherited {
+        let port = resolve_port(process_env, dotenv_claim, settings_port);
+        return BindPort { port, ignored_stamp: None };
+    }
+    BindPort {
+        port: resolve_port(None, dotenv_claim, settings_port),
+        ignored_stamp: process_env.and_then(|v| v.trim().parse().ok()).filter(|&p| p > 0),
+    }
+}
+
+/// `session_id` is the caller's own `TT_SESSION_ID`; its name belongs to `tt-agentboard`.
+pub fn for_serving(session_id: Option<&str>) -> BindPort {
+    let settings_port =
+        tt_config::load().map(|s| s.mcp.port).unwrap_or(tt_config::DEFAULT_MCP_PORT);
+    let dotenv_claim = std::env::current_dir()
+        .ok()
+        .and_then(|dir| tt_config::checkout_root_from_dir(&dir))
+        .and_then(|root| std::fs::read_to_string(root.join(".env")).ok())
+        .and_then(|text| tt_tasks::envfile::port_claims_by_key(&text).get(MCP_PORT_ENV).copied());
+    resolve_bind_port(
+        std::env::var(MCP_PORT_ENV).ok().as_deref(),
+        session_id,
+        dotenv_claim,
+        settings_port,
+    )
 }
 
 #[cfg(test)]
@@ -94,5 +135,40 @@ mod tests {
     #[test]
     fn surrounding_whitespace_is_tolerated() {
         assert_eq!(resolve_port(Some(" 9000 "), None, 8787), 9000);
+    }
+
+    /// The bug: a dev app started in an app terminal bound the parent's 8787, lost, served nothing.
+    #[test]
+    fn a_stamp_beside_a_session_id_yields_to_the_checkouts_claim() {
+        let bind = resolve_bind_port(Some("8787"), Some("s00abc"), Some(8796), 8787);
+        assert_eq!(bind, BindPort { port: 8796, ignored_stamp: Some(8787) });
+    }
+
+    #[test]
+    fn env_without_a_session_id_is_still_a_shell_override() {
+        let bind = resolve_bind_port(Some("9000"), None, Some(8796), 8787);
+        assert_eq!(bind, BindPort { port: 9000, ignored_stamp: None });
+        let bind = resolve_bind_port(Some("9000"), Some("  "), Some(8796), 8787);
+        assert_eq!(bind.port, 9000);
+    }
+
+    #[test]
+    fn neither_env_nor_session_takes_the_claim() {
+        assert_eq!(resolve_bind_port(None, None, Some(8796), 8787).port, 8796);
+        assert_eq!(resolve_bind_port(None, Some("s00abc"), Some(8796), 8787).port, 8796);
+    }
+
+    #[test]
+    fn no_claim_anywhere_keeps_the_settings_fallback() {
+        let bind = resolve_bind_port(Some("8787"), Some("s00abc"), None, 9191);
+        assert_eq!(bind, BindPort { port: 9191, ignored_stamp: Some(8787) });
+        assert_eq!(resolve_bind_port(None, None, None, 9191).port, 9191);
+    }
+
+    #[test]
+    fn an_unparsable_inherited_stamp_is_not_reported() {
+        let bind =
+            resolve_bind_port(Some("${tt:port 8787-8986}"), Some("s00abc"), Some(8796), 8787);
+        assert_eq!(bind, BindPort { port: 8796, ignored_stamp: None });
     }
 }

@@ -101,6 +101,7 @@ export function McpScreen() {
   const status = useMcpStatus();
   const port = status?.port ?? DEFAULT_MCP_PORT;
   const endpoint = endpointFor(port);
+  const ignoredStamp = status?.ignoredStamp ?? null;
   const wire: McpWire = {
     protocolVersion: status?.protocolVersion ?? "",
     version: status?.version ?? "",
@@ -153,11 +154,14 @@ export function McpScreen() {
           value={serverLabel(status, active)}
           // Each checkout claims its own port, so not-serving is a collision.
           detail={
-            status && !status.serving
+            (status && !status.serving
               ? `port ${port} taken — this app serves no MCP`
               : status
                 ? `127.0.0.1:${port} · MCP ${status.protocolVersion}`
-                : `127.0.0.1:${port}`
+                : `127.0.0.1:${port}`) +
+            (ignoredStamp === null
+              ? ""
+              : ` · ignored inherited TT_MCP_PORT=${ignoredStamp} (a parent app's stamp)`)
           }
         />
         <StatTile

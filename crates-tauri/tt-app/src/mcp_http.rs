@@ -23,13 +23,17 @@ use tt_store::Store;
 static SERVING: AtomicBool = AtomicBool::new(false);
 /// The port [`spawn`] attempted, bound or not — the UI needs it either way.
 static PORT: AtomicU16 = AtomicU16::new(0);
+/// The parent app's `TT_MCP_PORT` this instance inherited and declined to bind; `0` = none.
+static IGNORED_STAMP: AtomicU16 = AtomicU16::new(0);
 
 /// The real bind outcome, not an inference from call recency.
 #[tauri::command]
 pub fn mcp_status() -> serde_json::Value {
+    let ignored = IGNORED_STAMP.load(Ordering::Relaxed);
     serde_json::json!({
         "serving": SERVING.load(Ordering::Relaxed),
         "port": PORT.load(Ordering::Relaxed),
+        "ignoredStamp": (ignored > 0).then_some(ignored),
         "protocolVersion": tt_mcp::PROTOCOL_VERSION,
         "version": env!("CARGO_PKG_VERSION"),
     })
@@ -199,8 +203,13 @@ pub async fn mcp_test_call(
 }
 
 /// Never errors to the caller: failing to serve MCP must not stop startup.
-pub fn spawn(app: AppHandle, port: u16) {
+pub fn spawn(app: AppHandle, bind: tt_mcp::port::BindPort) {
+    let port = bind.port;
     PORT.store(port, Ordering::Relaxed);
+    if let Some(stamp) = bind.ignored_stamp {
+        IGNORED_STAMP.store(stamp, Ordering::Relaxed);
+        tracing::info!(stamp, port, "mcp.http: inherited TT_MCP_PORT is a parent's stamp; ignored");
+    }
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let listener = match StdTcpListener::bind(addr) {
         Ok(listener) => listener,

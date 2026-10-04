@@ -110,11 +110,13 @@ Rules when working in a task:
   A bare `pkill -f "tauri dev"` or `killall` matches every task's processes,
   which is why `.claude/hooks/guard-task-pkill.sh` rejects the unscoped forms.
 
-  **"The MCP tools aren't there"** now means what it looks like — the app for
-  *your* checkout isn't running. Each instance serves its own MCP on its own
-  `${tt:port 8787-8986}` claim (`TT_MCP_PORT` in the rendered `.env`), stamps
-  that port into every terminal it spawns, and the plugin's `.mcp.json` expands
-  `${TT_MCP_PORT:-8787}` — so a session talks to the app that spawned it.
+  **"The MCP tools aren't there"** means the app for *your* checkout isn't
+  running. Each instance serves its own `${tt:port 8787-8986}` claim
+  (`TT_MCP_PORT` in the rendered `.env`), stamps it beside `TT_SESSION_ID` into
+  every terminal it spawns, and the plugin's `.mcp.json` expands
+  `${TT_MCP_PORT:-8787}`, so a session talks to the app that spawned it. An app
+  launched *from* such a terminal ignores the inherited stamp — the session id
+  marks it as a parent's, not a shell override — and binds its own claim.
 
   ```sh
   curl -s -m 5 -X POST "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp" -H "Content-Type: application/json" \
@@ -123,12 +125,10 @@ Rules when working in a task:
   tt task ports                                           # every checkout's claims
   ```
 
-  A session started *outside* an app terminal has no `TT_MCP_PORT` and falls
-  back to `8787`, reaching whichever checkout claimed it — usually the main one.
+  Outside an app terminal there is no stamp; `.mcp.json` falls back to `8787`.
 
-  **Don't reintroduce a shared port.** A machine-wide `8787` makes the instance
-  that binds first answer every session from *its own* `tt.db`, so a
-  `task_create` in one worktree silently lands on another checkout's board.
+  **Don't reintroduce a shared port.** A machine-wide `8787` makes whichever
+  instance binds first answer every session from *its own* `tt.db`.
 - Task logic lives in `crates/tt-tasks` (template grammar, removal guards,
   pure decisions) with shared orchestration in `tt_tasks::ops`; the CLI and
   the app's `task_create` command are thin shells over it. Change behavior

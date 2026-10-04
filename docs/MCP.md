@@ -121,8 +121,9 @@ deleted). The plugin still ships a **static checked-in `.mcp.json`**,
 because the port rides the environment rather than the file:
 `"http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp"`, expanded by Claude Code from
 the stamp the app put on the terminal. Precedence for the app's own port is
-process env → the checkout's rendered `.env` → settings `mcp.port`
-(`mcp_http::resolve_port`, unit-tested). The pre-2026-07-26 shared-8787
+process env → the checkout's rendered `.env` → settings `mcp.port`, except
+that an env port arriving beside `TT_SESSION_ID` is a parent app's stamp and
+is skipped (`tt_mcp::port::resolve_bind_port`). The pre-2026-07-26 shared-8787
 singleton is described in the Worktree tasks section — read that before
 proposing a shared port again; it cross-wired tool writes between
 checkouts' boards.
