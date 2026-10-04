@@ -59,6 +59,22 @@ async function clickNavButton(title: string): Promise<void> {
 }
 
 /**
+ * `browser.$` returns the first DOM match, which on a shared selector is often a
+ * still-mounted hidden screen's copy; this passes on any displayed match.
+ */
+export async function waitForAnyDisplayed(selector: string, why: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      for (const el of await browser.$$(selector)) {
+        if (await el.isDisplayed()) return true;
+      }
+      return false;
+    },
+    { timeout: 10000, timeoutMsg: `${why}: no displayed "${selector}"` },
+  );
+}
+
+/**
  * Matches on trimmed visible text so triggers from other still-mounted screens
  * (App.tsx hides rather than unmounts) don't collide — their `getText()` is empty.
  */

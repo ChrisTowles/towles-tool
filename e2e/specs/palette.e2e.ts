@@ -115,4 +115,38 @@ describe("Command palette navigation", () => {
     await navigateTo("Agentboard");
     await expectActiveTab("Agentboard");
   });
+
+  it("narrows the list to items matching a typed query", async () => {
+    await openPalette();
+    const unfiltered = await browser.$$('[data-slot="command-item"]').length;
+    expect(unfiltered).toBeGreaterThan(1);
+
+    const input = await browser.$('[data-slot="command-input"]');
+    await input.setValue("Cockpit");
+    await browser.waitUntil(
+      async () => {
+        const titles = await itemTitles();
+        return titles.includes("Cockpit") && !titles.includes("Board");
+      },
+      { timeout: 10000, timeoutMsg: "typing Cockpit never dropped the non-matching rows" },
+    );
+    expect(await browser.$$('[data-slot="command-item"]').length).toBeLessThan(unfiltered);
+    await browser.keys([Key.Escape]);
+  });
+
+  it("closes on Escape", async () => {
+    await openPalette();
+    await browser.keys([Key.Escape]);
+    await browser
+      .$('[data-slot="command-input"]')
+      .waitForExist({ reverse: true, timeout: 10000 });
+  });
 });
+
+async function itemTitles(): Promise<string[]> {
+  const out: string[] = [];
+  for (const item of await browser.$$('[data-slot="command-item"]')) {
+    out.push((await item.getText()).trim());
+  }
+  return out;
+}

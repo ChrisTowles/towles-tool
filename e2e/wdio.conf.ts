@@ -7,8 +7,11 @@ const repoRoot = process.cwd();
 const devPort = requireDevPort(repoRoot, { tag: "wdio" });
 const wdPort = resolveWebdriverPort(devPort);
 
-// Debug binary built with `--features wdio`. Run from repo root, so resolve cwd.
-const appBinary = path.resolve(process.cwd(), "target/debug/tt-app");
+// Debug binary built with `--features wdio`, in the same target dir cargo just
+// wrote to: a shared `CARGO_TARGET_DIR` (several worktrees, one warm cache) has
+// no `target/` under the repo root.
+const targetDir = process.env.CARGO_TARGET_DIR ?? path.resolve(process.cwd(), "target");
+const appBinary = path.resolve(targetDir, "debug/tt-app");
 
 export const config: WebdriverIO.Config = {
   runner: "local",

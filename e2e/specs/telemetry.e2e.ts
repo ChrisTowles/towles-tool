@@ -7,15 +7,14 @@
 /// <reference types="@wdio/mocha-framework" />
 
 import { expectArray } from "../ipc.js";
-import { bootReady, clickTab, gotoScreen } from "./nav.js";
+import { bootReady, clickTab, gotoScreen, waitForAnyDisplayed } from "./nav.js";
 
 describe("Telemetry screen", () => {
   before(bootReady);
 
   it("navigates to Telemetry and renders the day picker", async () => {
     await gotoScreen("Telemetry");
-    const dayPicker = await browser.$('[data-slot="select-trigger"]');
-    await dayPicker.waitForDisplayed({ timeout: 10000 });
+    await waitForAnyDisplayed('[data-slot="select-trigger"]', "telemetry day picker");
   });
 
   it("renders the Overview/Log/Insights tabs", async () => {
