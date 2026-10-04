@@ -53,9 +53,9 @@ the CLI and the app can consume it.
   the sort key — never sort or range on the authored column. See
   [`crates/tt-store/CLAUDE.md`](../crates/tt-store/CLAUDE.md).
 - `tt-collect` — collectors that fill tt.db: calendar via `claude -p` (**off by
-  default** — it burns tokens per tick), issues + PRs via `gh`, a watched Slack
-  DM. Collector keys are `claude:calendar`, `issues`, `prs`, `slack:dm` — the
-  frontend matches on them. See
+  default** — it burns tokens per tick), issues + PRs + CI runs via `gh`, a watched
+  Slack DM. Collector keys are `claude:calendar`, `issues`, `prs`, `ci`, `slack:dm`
+  — the frontend matches on them. See
   [`crates/tt-collect/CLAUDE.md`](../crates/tt-collect/CLAUDE.md).
 - `tt-mcp` — the transport-free MCP server: the task family, `preview_file`,
   `file_open`, and the calendar family. Served one per app instance over

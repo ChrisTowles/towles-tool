@@ -1,5 +1,5 @@
 //! Data-hub collectors for the towles-tool personal dashboard. Each gathers one
-//! slice of state — calendar events, cross-repo issues, pull-request status — and
+//! slice of state — calendar events, cross-repo issues, pull-request status, CI runs — and
 //! writes it into the shared [`tt_store::Store`]. The calendar collector shells out
 //! to `claude -p` once per configured [`tt_config::CalendarSource`], each writing
 //! its own store lane; issues and PRs shell out to `gh`. Tauri-free, so both the CLI
@@ -9,6 +9,7 @@
 //! failure becomes a [`CollectSummary`] with `ok = false`, recorded via `record_run`
 //! under a stable key.
 
+mod ci;
 mod gh;
 pub mod issues;
 pub mod nudge;
@@ -459,6 +460,24 @@ pub fn collect_prs_merged(
     summary
 }
 
+/// The latest default-branch Actions run per workflow for every tracked repo, under
+/// the `ci` key. Rides the open-PR tick (same `reuse_ms`), so it has no cadence of its
+/// own; a clean sweep replaces the table, a partial one only its repos' rows.
+pub fn collect_ci(
+    store: &Store,
+    repo_dirs: &[PathBuf],
+    reuse_ms: i64,
+    now_ms: i64,
+) -> CollectSummary {
+    let repos = dedupe_repo_dirs(repo_dirs);
+    let outcome = sweep_repos_shared(&repos, "ci", reuse_ms, now_ms, ci::collect_repo_ci);
+    let write = |all: &[tt_store::CiRun], repos: Option<&[String]>| match repos {
+        None => store.replace_ci_runs(all),
+        Some(repos) => store.replace_ci_runs_for_repos(repos, all),
+    };
+    finish_sweep(store, "ci", outcome, write, |r| (r.repo.clone(), r.workflow.clone()), now_ms)
+}
+
 /// Upsert the watched Slack DM's latest state. Missing credentials is a recorded
 /// failure, not a silent no-op: the caller already gated on `enabled`.
 pub fn collect_slack_dm(store: &Store, config: &SlackDmConfig, now_ms: i64) -> CollectSummary {
@@ -677,12 +696,12 @@ where
 /// Apply a sweep's results and record the run. `write(all, None)` is a full-table
 /// replace, `Some(repos)` a scoped one; `key_of` yields the identity that dedups
 /// items collected from two checkouts of one repo.
-fn finish_sweep<T>(
+fn finish_sweep<T, K: std::hash::Hash + Eq>(
     store: &Store,
     key: &str,
     sweep: Sweep<T>,
     write: impl Fn(&[T], Option<&[String]>) -> tt_store::Result<usize>,
-    key_of: impl Fn(&T) -> (String, i64),
+    key_of: impl Fn(&T) -> K,
     now_ms: i64,
 ) -> CollectSummary {
     let Sweep { successes, errors, skipped } = sweep;
@@ -698,7 +717,7 @@ fn finish_sweep<T>(
     }
 
     let repos: Vec<String> = successes.iter().map(|(repo, _)| repo.clone()).collect();
-    let mut by_key: std::collections::HashMap<(String, i64), T> = std::collections::HashMap::new();
+    let mut by_key: std::collections::HashMap<K, T> = std::collections::HashMap::new();
     for (_, items) in successes {
         for item in items {
             by_key.insert(key_of(&item), item);
@@ -718,9 +737,9 @@ fn finish_sweep<T>(
     finish(store, key, errors.is_empty(), count, message, now_ms)
 }
 
-/// What a manual "refresh now" fires: issues, PRs, and the watched DM when `slack`
-/// is configured. Calendar is excluded — every run spends `claude` tokens. Asks
-/// GitHub itself, since stale data reads as the button doing nothing.
+/// What a manual "refresh now" fires: issues, PRs, CI runs, and the watched DM when
+/// `slack` is configured. Calendar is excluded — every run spends `claude` tokens.
+/// Asks GitHub itself, since stale data reads as the button doing nothing.
 pub fn collect_manual(
     store: &Store,
     repo_dirs: &[PathBuf],
@@ -730,6 +749,7 @@ pub fn collect_manual(
     let mut summaries = vec![
         collect_issues(store, repo_dirs, FETCH_NOW, now_ms),
         collect_prs(store, repo_dirs, now_ms),
+        collect_ci(store, repo_dirs, FETCH_NOW, now_ms),
     ];
     if let Some(config) = slack {
         summaries.push(collect_slack_dm(store, config, now_ms));
@@ -960,7 +980,11 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let summaries = collect_manual(&store, &[], None, 1);
         let keys: Vec<&str> = summaries.iter().map(|s| s.collector.as_str()).collect();
-        assert_eq!(keys, ["issues", "prs"], "manual refresh runs issues + PRs, skips calendar");
+        assert_eq!(
+            keys,
+            ["issues", "prs", "ci"],
+            "manual refresh runs issues + PRs + CI, skips calendar"
+        );
         assert!(!keys.contains(&"claude:calendar"), "calendar is never manually triggered");
     }
 
@@ -977,7 +1001,7 @@ mod tests {
             .into_iter()
             .map(|s| s.collector)
             .collect();
-        assert_eq!(keys, ["issues", "prs", "slack:dm"]);
+        assert_eq!(keys, ["issues", "prs", "ci", "slack:dm"]);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # CLAUDE.md — crates/tt-collect
 
 Collectors that fill `tt-store`'s `tt.db`: calendar (via `claude -p`), issues
-+ PRs (via `gh`), and the pure protocol logic for a watched Slack DM (via
++ PRs + CI runs (via `gh`), and the pure protocol logic for a watched Slack DM (via
 Socket Mode). Tauri-free — both `tt collect` (CLI) and the app's scheduler
 drive the same [`CollectSummary`] contract.
 
@@ -11,7 +11,7 @@ Every public `collect_*` function returns a [`CollectSummary`] (`ok`,
 `count`, `message`) — never a `Result::Err`, never a panic. A missing
 `claude`/`gh` binary, a non-zero exit, or unparseable output all become
 `ok: false` with a message, recorded via `Store::record_run` under a stable
-key (`claude:calendar`, `issues`, `prs`, `slack:dm` — the frontend matches on
+key (`claude:calendar`, `issues`, `prs`, `ci`, `slack:dm` — the frontend matches on
 these). Keep new collectors inside this contract rather than propagating
 `Result` upward: the app's scheduler awaits collectors in sequence, so one
 `Err`/panic would take out every collector behind it in the batch, not just

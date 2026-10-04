@@ -73,6 +73,58 @@ mod tests {
     use crate::model::{MCP_CALL_RETAIN, MCP_CALL_SNAPSHOT_LIMIT, utc_key};
     use crate::schema::{MIN_SUPPORTED_VERSION, SCHEMA_VERSION};
     use chrono::{DateTime, FixedOffset};
+
+    fn ci_run(repo: &str, workflow: &str, conclusion: &str, updated_ms: i64) -> CiRun {
+        CiRun {
+            repo: repo.to_string(),
+            workflow: workflow.to_string(),
+            status: if conclusion.is_empty() { "in_progress" } else { "completed" }.to_string(),
+            conclusion: conclusion.to_string(),
+            created_ms: updated_ms - 60_000,
+            updated_ms,
+            url: format!("https://github.com/{repo}/actions/runs/{updated_ms}"),
+            head_sha: "abc123".to_string(),
+            event: "schedule".to_string(),
+        }
+    }
+
+    #[test]
+    fn ci_runs_replace_reads_back_one_row_per_workflow_in_order() {
+        let s = Store::open_in_memory().unwrap();
+        s.replace_ci_runs(&[
+            ci_run("o/r", "Nightly", "failure", 2_000),
+            ci_run("o/a", "CI", "success", 1_000),
+            ci_run("o/r", "CI", "", 3_000),
+        ])
+        .unwrap();
+        let runs = s.ci_runs().unwrap();
+        let keys: Vec<(&str, &str)> =
+            runs.iter().map(|r| (r.repo.as_str(), r.workflow.as_str())).collect();
+        assert_eq!(keys, [("o/a", "CI"), ("o/r", "CI"), ("o/r", "Nightly")]);
+        assert_eq!(runs[1].status, "in_progress");
+        assert_eq!(runs[2].conclusion, "failure");
+
+        // A later sweep's row for the same (repo, workflow) replaces, never duplicates.
+        s.replace_ci_runs(&[ci_run("o/r", "Nightly", "success", 4_000)]).unwrap();
+        let runs = s.ci_runs().unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!((runs[0].conclusion.as_str(), runs[0].updated_ms), ("success", 4_000));
+    }
+
+    #[test]
+    fn ci_runs_scoped_replace_keeps_other_repos_rows() {
+        let s = Store::open_in_memory().unwrap();
+        s.replace_ci_runs(&[
+            ci_run("o/a", "CI", "success", 1),
+            ci_run("o/b", "CI", "failure", 1),
+        ])
+        .unwrap();
+        s.replace_ci_runs_for_repos(&["o/b".to_string()], &[]).unwrap();
+        let runs = s.ci_runs().unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].repo, "o/a");
+        assert_eq!(s.snapshot().unwrap().ci_runs, runs, "the snapshot carries the same rows");
+    }
     use rusqlite::params;
 
     fn issue_link(repo: &str, number: i64, state: &str) -> TaskIssueLink {

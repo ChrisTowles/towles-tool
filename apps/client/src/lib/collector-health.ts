@@ -1,12 +1,13 @@
 import type { CollectRun } from "./data";
 
-export type CollectorKey = "prs" | "issues" | "claude:calendar" | "slack:dm";
+export type CollectorKey = "prs" | "issues" | "ci" | "claude:calendar" | "slack:dm";
 
 export type CollectorState = "fresh" | "stale" | "failing" | "never-ran";
 
 export const KNOWN_COLLECTORS: readonly CollectorKey[] = [
   "prs",
   "issues",
+  "ci",
   "claude:calendar",
   "slack:dm",
 ];
@@ -31,6 +32,7 @@ export const COLLECTOR_STATE_LABEL: Record<CollectorState, string> = {
 export const COLLECTOR_LABELS: Record<CollectorKey, string> = {
   prs: "Pull requests",
   issues: "Issues",
+  ci: "CI runs",
   "claude:calendar": "Calendar",
   "slack:dm": "Slack DM",
 };
@@ -39,6 +41,7 @@ export const COLLECTOR_LABELS: Record<CollectorKey, string> = {
 export const DEFAULT_STALE_MS: Record<CollectorKey, number> = {
   prs: 20 * 60_000,
   issues: 30 * 60_000,
+  ci: 20 * 60_000,
   "claude:calendar": 60 * 60_000,
   "slack:dm": 5 * 60_000,
 };
@@ -80,11 +83,11 @@ export function collectorHealth(
 }
 
 /** Exactly what `storeCollectNow` kicks off; calendar spends claude tokens a tick. */
-export const REFRESH_COLLECTORS: readonly CollectorKey[] = ["prs", "issues"];
+export const REFRESH_COLLECTORS: readonly CollectorKey[] = ["prs", "issues", "ci"];
 
 /** What the header's freshness dot may judge: collectors that run unattended every
  * tick. A deliberately-disabled one's perpetual `never-ran` must not drag it. */
-export const ALWAYS_ON_COLLECTORS: readonly CollectorKey[] = ["prs", "issues"];
+export const ALWAYS_ON_COLLECTORS: readonly CollectorKey[] = ["prs", "issues", "ci"];
 
 /** Ranking `never-ran` over `stale` is about which state {@link worstCollectorState}
  * surfaces, not tint — {@link COLLECTOR_STATE_DOT} paints it the quieter of the two. */

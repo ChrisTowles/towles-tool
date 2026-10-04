@@ -46,10 +46,10 @@ fn watched_collectors(collectors: &tt_config::CollectorsSettings) -> Vec<Watched
     }
     let mut watched = Vec::new();
     if collectors.prs.enabled {
-        watched.push(WatchedCollector {
-            key: "prs".to_string(),
-            stale_after_ms: threshold(collectors.prs.refresh_seconds.max(30) as i64 * 1000),
-        });
+        let stale_after_ms = threshold(collectors.prs.refresh_seconds.max(30) as i64 * 1000);
+        watched.push(WatchedCollector { key: "prs".to_string(), stale_after_ms });
+        // `ci` runs on the open-PR tick, so it shares that cadence and toggle.
+        watched.push(WatchedCollector { key: "ci".to_string(), stale_after_ms });
     }
     if collectors.issues.enabled {
         watched.push(WatchedCollector {
@@ -74,7 +74,7 @@ fn watched_collectors(collectors: &tt_config::CollectorsSettings) -> Vec<Watched
 
 #[derive(Clone)]
 enum Batch {
-    /// Fast cadence: authored + review-requested open PRs.
+    /// Fast cadence: authored + review-requested open PRs, then the `ci` sweep.
     PrsOpen {
         reuse_ms: i64,
     },
@@ -392,6 +392,8 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
         Batch::PrsOpen { reuse_ms } => {
             let repos = tt_collect::tracked_repo_dirs();
             log_failure(tt_collect::collect_prs_open(&store, &repos, reuse_ms, now));
+            // CI health has no cadence of its own: it is read beside the PRs.
+            log_failure(tt_collect::collect_ci(&store, &repos, reuse_ms, now));
         }
         Batch::PrsMerged { reuse_ms } => {
             let repos = tt_collect::tracked_repo_dirs();
@@ -536,6 +538,7 @@ fn notify_stale_collector(app: &AppHandle, edge: &tt_store::StaleCollectorEdge) 
 fn collector_label(key: &str) -> &str {
     match key {
         "prs" => "PRs",
+        "ci" => "CI runs",
         "issues" => "issues",
         "claude:calendar" => "calendar",
         "slack:dm" => "Slack",
@@ -822,13 +825,15 @@ mod tests {
         c.slack.enabled = false;
         let watched = watched_collectors(&c);
         let keys: Vec<&str> = watched.iter().map(|w| w.key.as_str()).collect();
-        assert_eq!(keys, vec!["prs", "issues"]);
+        assert_eq!(keys, vec!["prs", "ci", "issues"]);
         // issues: 15m cadence * 4 = 60m.
         let issues = watched.iter().find(|w| w.key == "issues").unwrap();
         assert_eq!(issues.stale_after_ms, 60 * 60_000);
         // prs: 1200s (20m) cadence * 4 = 80m.
         let prs = watched.iter().find(|w| w.key == "prs").unwrap();
         assert_eq!(prs.stale_after_ms, 80 * 60_000);
+        let ci = watched.iter().find(|w| w.key == "ci").unwrap();
+        assert_eq!(ci.stale_after_ms, prs.stale_after_ms, "ci rides the PR cadence");
     }
 
     #[test]

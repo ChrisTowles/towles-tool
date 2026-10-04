@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 19;
+pub(crate) const SCHEMA_VERSION: i64 = 20;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::check_version_floor`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -157,6 +157,24 @@ CREATE TABLE IF NOT EXISTS item_dismissals (
 );
 ";
 
+/// v20: the latest default-branch Actions run per workflow, per tracked repo — the
+/// Cockpit's CI-health chips. One row per `(repo, workflow)`, swapped by the `ci`
+/// collector like `pr_status`.
+const SCHEMA_CI_RUNS_V20: &str = "\
+CREATE TABLE IF NOT EXISTS ci_runs (
+    repo TEXT NOT NULL,
+    workflow TEXT NOT NULL,
+    status TEXT NOT NULL,
+    conclusion TEXT NOT NULL,
+    created_ms INTEGER NOT NULL,
+    updated_ms INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    head_sha TEXT NOT NULL,
+    event TEXT NOT NULL,
+    PRIMARY KEY (repo, workflow)
+);
+";
+
 impl Store {
     /// Open (creating if needed) the store at `path`, running migrations.
     pub fn open(path: &Path) -> Result<Store> {
@@ -210,6 +228,7 @@ impl Store {
         self.migrate_collect_runs_v6()?;
         self.conn.execute_batch(SCHEMA_REPOS_V12)?;
         self.conn.execute_batch(SCHEMA_ITEM_DISMISSALS_V15)?;
+        self.conn.execute_batch(SCHEMA_CI_RUNS_V20)?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -254,7 +273,7 @@ impl Store {
     fn migrate_collect_runs_v6(&self) -> Result<()> {
         self.conn.execute(
             "DELETE FROM collect_runs
-             WHERE collector NOT IN ('claude:calendar', 'issues', 'prs', 'slack:dm')",
+             WHERE collector NOT IN ('claude:calendar', 'issues', 'prs', 'ci', 'slack:dm')",
             [],
         )?;
         Ok(())

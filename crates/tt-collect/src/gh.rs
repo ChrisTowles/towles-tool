@@ -124,6 +124,34 @@ pub(crate) fn repo_name_with_owner(dir: &Path) -> Result<String, String> {
     Ok(name)
 }
 
+/// The default branch of the repo rooted at `dir`, via `gh repo view` — the branch
+/// whose Actions runs are a repo's CI health. Cached like [`repo_name_with_owner`],
+/// and for the same reason.
+pub(crate) fn repo_default_branch(dir: &Path) -> Result<String, String> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, String>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+
+    if let Ok(map) = cache.lock()
+        && let Some(branch) = map.get(dir)
+    {
+        return Ok(branch.clone());
+    }
+
+    let value = run_json(dir, &["repo", "view", "--json", "defaultBranchRef"])?;
+    let branch = value
+        .pointer("/defaultBranchRef/name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            format!("gh repo view returned no defaultBranchRef for {}", dir.display())
+        })?;
+    if let Ok(mut map) = cache.lock() {
+        map.insert(dir.to_path_buf(), branch.clone());
+    }
+    Ok(branch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

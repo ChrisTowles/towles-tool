@@ -1,4 +1,4 @@
-//! GitHub caches: the issues and PR tables (full-swap and state-scoped
+//! GitHub caches: the issues, PR and CI-run tables (full-swap and scoped
 //! writes), the tracked-repo identity cache, and their dismissal-aware reads.
 
 use rusqlite::params;
@@ -26,6 +26,30 @@ fn insert_prs(tx: &rusqlite::Transaction<'_>, prs: &[PrInput]) -> Result<()> {
             p.review_state,
             p.url,
             p.updated_ts,
+        ])?;
+    }
+    Ok(())
+}
+
+/// `OR REPLACE` on `(repo, workflow)`: two checkouts of one repo in a sweep yield
+/// the same row, and the later write must not fail on it.
+fn insert_ci_runs(tx: &rusqlite::Transaction<'_>, runs: &[CiRun]) -> Result<()> {
+    let mut stmt = tx.prepare(
+        "INSERT OR REPLACE INTO ci_runs
+           (repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+    )?;
+    for r in runs {
+        stmt.execute(params![
+            r.repo,
+            r.workflow,
+            r.status,
+            r.conclusion,
+            r.created_ms,
+            r.updated_ms,
+            r.url,
+            r.head_sha,
+            r.event,
         ])?;
     }
     Ok(())
@@ -317,6 +341,52 @@ impl Store {
             });
         }
         Ok(out)
+    }
+
+    /// Full-snapshot replace of the CI rows — a clean `ci` sweep.
+    pub fn replace_ci_runs(&self, runs: &[CiRun]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM ci_runs", [])?;
+        insert_ci_runs(&tx, runs)?;
+        tx.commit()?;
+        Ok(runs.len())
+    }
+
+    /// Replace only `repos`' CI rows, so a repo that errored keeps its last-known
+    /// runs — the same partial-sweep rule as [`Store::replace_prs_for_repos`].
+    pub fn replace_ci_runs_for_repos(&self, repos: &[String], runs: &[CiRun]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut del = tx.prepare("DELETE FROM ci_runs WHERE repo = ?1")?;
+            for repo in repos {
+                del.execute(params![repo])?;
+            }
+            insert_ci_runs(&tx, runs)?;
+        }
+        tx.commit()?;
+        Ok(runs.len())
+    }
+
+    /// Every workflow's latest default-branch run, by repo then workflow.
+    pub fn ci_runs(&self) -> Result<Vec<CiRun>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event
+             FROM ci_runs ORDER BY repo, workflow",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(CiRun {
+                repo: r.get(0)?,
+                workflow: r.get(1)?,
+                status: r.get(2)?,
+                conclusion: r.get(3)?,
+                created_ms: r.get(4)?,
+                updated_ms: r.get(5)?,
+                url: r.get(6)?,
+                head_sha: r.get(7)?,
+                event: r.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     fn query_prs(&self, sql: &str, params: impl rusqlite::Params) -> Result<Vec<PrItem>> {
