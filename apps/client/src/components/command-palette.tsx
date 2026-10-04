@@ -5,6 +5,7 @@ import {
   FolderGit2,
   GitPullRequest,
   ListPlus,
+  ListTodo,
   Moon,
   PanelLeft,
   PenLine,
@@ -36,13 +37,15 @@ import {
   paletteFilter,
   paletteRecentScreens,
 } from "@/lib/palette";
+import { paletteTaskEntries, type PaletteTaskTarget } from "@/lib/palette-tasks";
 import { SCREENS } from "@/lib/screens";
 import { shortcutHint } from "@/lib/shortcuts";
+import { uiAction } from "@/lib/ui-action";
 import { useWorkspace } from "@/lib/workspace";
 
 /** ⌘K launcher. Live sections — recent screens, Agentboard checkouts and
- * sessions, open PRs and issues — come from the same read-only hooks the screens
- * use; `shortcutHint()` keeps glyphs platform-correct rather than hardcoded. */
+ * sessions, Board tasks, open PRs and issues — come from the same read-only hooks
+ * the screens use; `shortcutHint()` keeps glyphs platform-correct, not hardcoded. */
 export function CommandPalette() {
   const {
     paletteOpen,
@@ -50,6 +53,7 @@ export function CommandPalette() {
     recent,
     activeTab,
     openTab,
+    openTabWithFocus,
     openSettingsTab,
     toggleSidebar,
   } = useWorkspace();
@@ -84,6 +88,16 @@ export function CommandPalette() {
       openTab("agentboard");
       requestAgentboardNav({ kind: "session", folderDir, sessionId });
     });
+  const jumpToTask = (target: PaletteTaskTarget) =>
+    run(() => {
+      uiAction("palette.board_task", activeTab, target.kind);
+      if (target.kind === "worktree") {
+        openTab("agentboard");
+        requestAgentboardNav({ kind: "folder", folderDir: target.folderDir });
+      } else {
+        openTabWithFocus({ screen: "board", kind: "todo", id: String(target.taskId) });
+      }
+    });
 
   // MRU shortcut — empty while a query is typed, so the exact-title match in
   // "Go to" keeps the initial selection (see `paletteRecentScreens`).
@@ -91,6 +105,7 @@ export function CommandPalette() {
 
   const repoEntries = paletteRepoEntries(repos);
   const sessionEntries = paletteSessionEntries(repos);
+  const taskEntries = paletteTaskEntries(snapshot.tasks);
   const prEntries = palettePrEntries(snapshot.prs);
   const issueEntries = paletteIssueEntries(snapshot.issues);
   const quickAdd = paletteQuickAddEntry(query);
@@ -113,7 +128,7 @@ export function CommandPalette() {
         <CommandInput
           value={query}
           onValueChange={setQuery}
-          placeholder="Search screens, repos, sessions, PRs, issues…"
+          placeholder="Search screens, repos, sessions, tasks, PRs, issues…"
         />
         <CommandList>
           <CommandEmpty>Nothing matches.</CommandEmpty>
@@ -190,6 +205,27 @@ export function CommandPalette() {
                     <span className="ml-1 truncate text-muted-foreground">{entry.repoName}</span>
                     {entry.needs && (
                       <CommandShortcut className="text-blue-500">needs you</CommandShortcut>
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </>
+          )}
+          {taskEntries.length > 0 && (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading="Board tasks">
+                {taskEntries.map((entry) => (
+                  <CommandItem
+                    key={entry.key}
+                    value={`task ${entry.title} ${entry.repo ?? ""} ${entry.branch ?? ""}`}
+                    keywords={entry.keywords}
+                    onSelect={() => jumpToTask(entry.target)}
+                  >
+                    <ListTodo />
+                    <span className="truncate">{entry.title}</span>
+                    {entry.meta && (
+                      <span className="ml-1 truncate text-muted-foreground">{entry.meta}</span>
                     )}
                   </CommandItem>
                 ))}
