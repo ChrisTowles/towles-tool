@@ -162,7 +162,7 @@ export function CockpitScreen() {
     () => snapshot.issues.filter((i) => !isItemDismissed(i)),
     [snapshot.issues],
   );
-  const repoList = cockpitRepos(openPrs, openIssues);
+  const repoList = cockpitRepos(openPrs, openIssues, snapshot.ciRuns);
   const activeRepo = repoFilter !== null && repoList.includes(repoFilter) ? repoFilter : null;
   const visiblePrs = filterByRepo(openPrs, activeRepo);
   const visibleIssues = filterByRepo(openIssues, activeRepo);

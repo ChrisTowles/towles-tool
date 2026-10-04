@@ -2,7 +2,7 @@
  * Client-side repo filter for the Cockpit. The same functions feed the PR and
  * issue panels and their note counts, so the two never drift.
  */
-import type { IssueItem, PrItem } from "@/lib/data";
+import type { CiRun, IssueItem, PrItem } from "@/lib/data";
 
 /** localStorage key for the remembered repo selection. Mirrors ACTIVE_TAB_KEY
  * in workspace-persistence.ts — frontend-owned UI state, not a setting. */
@@ -18,17 +18,17 @@ export function loadRepoFilter(raw: string | null): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-/**
- * The distinct repos present across the Cockpit's PRs and issues, sorted for a
- * stable chip order. Empty when nothing has been collected yet.
- */
+/** The distinct repos across the Cockpit's PRs, issues and CI runs, sorted for a
+ * stable chip order, so a repo that is only red in CI still gets a chip. */
 export function cockpitRepos(
   prs: readonly Pick<PrItem, "repo">[],
   issues: readonly Pick<IssueItem, "repo">[],
+  ciRuns: readonly Pick<CiRun, "repo">[],
 ): string[] {
   const set = new Set<string>();
   for (const p of prs) set.add(p.repo);
   for (const i of issues) set.add(i.repo);
+  for (const r of ciRuns) set.add(r.repo);
   return [...set].toSorted();
 }
 

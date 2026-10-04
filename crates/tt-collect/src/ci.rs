@@ -45,11 +45,12 @@ pub(crate) fn collect_repo_ci(dir: &Path) -> Result<(String, Vec<CiRun>), String
     }
 }
 
-/// GitHub answers a repo that never enabled Actions with a 404, which `gh` relays
-/// as a failure; that is "no runs", not a broken sweep.
+/// A repo with Actions switched off answers `gh run list` with an HTTP 404 from the
+/// runs endpoint. This is only reached after `gh repo view` answered for the same
+/// dir, so the repo itself is readable and the 404 is "no runs", not a broken sweep;
+/// an unreadable or missing repo fails earlier, on the view. Nothing looser counts.
 fn no_actions(error: &str) -> bool {
-    let e = error.to_ascii_lowercase();
-    e.contains("http 404") || e.contains("not found") || e.contains("could not find any workflows")
+    error.to_ascii_lowercase().contains("http 404")
 }
 
 /// One [`CiRun`] per workflow name, keeping the most recently created run, sorted by
@@ -144,10 +145,13 @@ mod tests {
     }
 
     #[test]
-    fn a_repo_without_actions_is_not_an_error() {
+    fn only_the_runs_endpoint_404_reads_as_no_actions() {
         assert!(no_actions(
-            "gh run failed in /x: HTTP 404: Not Found (https://api.github.com/...)"
+            "gh run failed in /x: HTTP 404: Not Found (https://api.github.com/repos/o/r/actions/runs)"
         ));
         assert!(!no_actions("gh run failed in /x: HTTP 401: Bad credentials"));
+        assert!(!no_actions("gh run failed in /x: HTTP 403: Resource not accessible"));
+        assert!(!no_actions("gh: command not found"));
+        assert!(!no_actions("could not find any workflows"));
     }
 }

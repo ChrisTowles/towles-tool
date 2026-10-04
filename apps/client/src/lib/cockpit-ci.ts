@@ -60,6 +60,14 @@ export function groupCiRunsByRepo(ordered: readonly CiRun[]): [string, CiRun[]][
   return [...groups.entries()];
 }
 
+/** Why the panel is empty: no shell, nothing collected, or a repo chip with no
+ * CI rows — never "nothing collected" while other repos have chips. */
+export function ciEmptyCopy(live: boolean, collected: number, repo: string | null): string {
+  if (!live) return "Not connected yet.";
+  if (collected === 0) return "No default-branch workflow runs collected yet.";
+  return repo === null ? "No workflow runs." : `No workflow runs for ${repo}.`;
+}
+
 /** Hover text: `Nightly · completed · failure · schedule · 2981502e`. */
 export function ciRunTitle(run: CiRun): string {
   const parts = [run.workflow, run.status];

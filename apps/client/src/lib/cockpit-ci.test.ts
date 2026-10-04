@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CiRun } from "@/lib/data";
 import {
+  ciEmptyCopy,
   ciRunTitle,
   ciTone,
   groupCiRunsByRepo,
@@ -74,6 +75,17 @@ describe("groupCiRunsByRepo", () => {
       ["o/b", ["Nightly", "CI"]],
       ["o/a", ["CI"]],
     ]);
+  });
+});
+
+describe("ciEmptyCopy", () => {
+  it("names the reason: no shell, nothing collected, or a filtered repo without CI", () => {
+    expect(ciEmptyCopy(false, 0, null)).toBe("Not connected yet.");
+    expect(ciEmptyCopy(true, 0, "octo/widgets")).toBe(
+      "No default-branch workflow runs collected yet.",
+    );
+    expect(ciEmptyCopy(true, 4, "octo/dotfiles")).toBe("No workflow runs for octo/dotfiles.");
+    expect(ciEmptyCopy(true, 4, null)).toBe("No workflow runs.");
   });
 });
 

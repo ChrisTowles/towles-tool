@@ -1,6 +1,6 @@
 import { Activity } from "lucide-react";
 import { Empty, Panel } from "@/components/store-bits";
-import { ciRunTitle, ciTone, groupCiRunsByRepo, orderCiRuns } from "@/lib/cockpit-ci";
+import { ciEmptyCopy, ciRunTitle, ciTone, groupCiRunsByRepo, orderCiRuns } from "@/lib/cockpit-ci";
 import { filterByRepo } from "@/lib/cockpit-filter";
 import { type CiRun, fmtAge } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
@@ -30,9 +30,7 @@ export function CockpitCiHealth({
     <div className="lg:col-span-2">
       <Panel title="CI health" note={note} icon={<Activity className="size-4" />}>
         {visible.length === 0 ? (
-          <Empty>
-            {live ? "No default-branch workflow runs collected yet." : "Not connected yet."}
-          </Empty>
+          <Empty>{ciEmptyCopy(live, runs.length, repo)}</Empty>
         ) : (
           groupCiRunsByRepo(visible).map(([repoName, repoRuns]) => (
             <div key={repoName} className="flex flex-wrap items-center gap-2 px-3 py-2">
