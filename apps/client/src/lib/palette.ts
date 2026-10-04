@@ -132,6 +132,12 @@ export function paletteIssueEntries(issues: IssueItem[]): PaletteIssueEntry[] {
     }));
 }
 
+/** The `ui.action` detail for a checkout/session jump: did it go to something
+ * waiting on the user? Never the name — that is content. */
+export function paletteNeedsDetail(needs: boolean): "needs" | undefined {
+  return needs ? "needs" : undefined;
+}
+
 /** `null` for an empty query — nothing to name a todo. The trimmed query is
  * the title verbatim; long text and internal whitespace stay intact. */
 export function paletteQuickAddEntry(query: string): PaletteQuickAddEntry | null {
