@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EMOJI_GROUPS, QUICK_REACTIONS, emojiChar, searchEmoji } from "@/lib/emoji";
 import { cn } from "@/lib/utils";
+import { uiAction } from "@/lib/ui-action";
 
 /** Emoji picker popover. `onPick` receives a bare Slack shortcode, which is what
  * `reactions.add` takes — the character never leaves this file. */
@@ -32,6 +33,7 @@ export function EmojiPicker({
     <Popover
       open={open}
       onOpenChange={(next) => {
+        if (next) uiAction("slack.emoji_picker_open", "slack");
         setOpen(next);
         if (!next) setQuery("");
       }}

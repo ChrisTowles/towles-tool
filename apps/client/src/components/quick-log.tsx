@@ -6,6 +6,7 @@ import { journalLog, storeAddTask } from "@/lib/data";
 import { NotInTauri, type IpcError } from "@/lib/errors";
 import { formatLogLine, parseQuickLog } from "@/lib/quick-log-format";
 import { useWorkspace } from "@/lib/workspace";
+import { uiAction } from "@/lib/ui-action";
 
 /** Surface a failed capture. Browser dev gets the "not wired" note rather than
  * an error, since nothing is actually broken there. */
@@ -33,6 +34,7 @@ export function QuickLog() {
 
   function submit() {
     if (!parsed.body) return;
+    uiAction("quick_log.capture", activeTab, routesToTodo ? "todo" : "log");
     if (routesToTodo) {
       // Same add-task path the Board uses — a plain todo in the backlog column.
       void storeAddTask(parsed.body).then((added) =>

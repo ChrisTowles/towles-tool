@@ -124,8 +124,12 @@ export function DevServersButton({
             <ConfigRow
               key={cfg.name}
               cfg={cfg}
-              onLaunch={() => actions.launchDevServer(folder.dir, cfg)}
+              onLaunch={() => {
+                uiAction("dev_servers.launch", "agentboard");
+                actions.launchDevServer(folder.dir, cfg);
+              }}
               onFocus={(sessionId) => {
+                uiAction("dev_servers.focus_session", "agentboard");
                 setOpen(false);
                 actions.focusSession(folder.dir, sessionId);
               }}
@@ -233,7 +237,11 @@ function ConfigRow({
             variant="ghost"
             size="icon-xs"
             aria-label={`Open localhost:${cfg.port} in the browser`}
-            onClick={() => cfg.port != null && void openExternalUrl(devServerUrl(cfg.port))}
+            onClick={() => {
+              if (cfg.port == null) return;
+              uiAction("dev_servers.open_url", "agentboard");
+              void openExternalUrl(devServerUrl(cfg.port));
+            }}
           >
             <Globe className="size-3.5" />
           </Button>

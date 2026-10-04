@@ -16,6 +16,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { ShortcutBadge } from "@/components/hint";
 import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
+import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
 /** The shared clock, not `Date.now()`: a cache going cold emits no state event. */
@@ -66,7 +67,10 @@ export function AppSidebar() {
                     "justify-start font-normal",
                     active && "bg-accent text-accent-foreground",
                   )}
-                  onClick={() => openTab(id)}
+                  onClick={() => {
+                    uiAction("sidebar.navigate", activeTab, id);
+                    openTab(id);
+                  }}
                 >
                   <screen.icon className="text-muted-foreground" />
                   {screen.title}
@@ -131,7 +135,10 @@ export function AppSidebarIcons() {
                       aria-label={screen.title}
                       aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                       aria-current={active || undefined}
-                      onClick={() => openTab(id)}
+                      onClick={() => {
+                        uiAction("sidebar.navigate", activeTab, id);
+                        openTab(id);
+                      }}
                       className={cn(
                         "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-muted-foreground hover:bg-accent/50",
                         active && "border-l-violet-500 bg-accent text-foreground",

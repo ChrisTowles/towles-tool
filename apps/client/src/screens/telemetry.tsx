@@ -571,12 +571,13 @@ export function TelemetryScreen() {
               events={events}
               levelCounts={levelCounts}
               day={day}
-              onOpenLog={() =>
+              onOpenLog={() => {
+                uiAction("telemetry.log_opened", "telemetry", "errors");
                 applyLogFilters({
                   days: 1,
                   filters: [{ field: "level", op: "eq", value: "ERROR" }],
-                })
-              }
+                });
+              }}
             />
           </TabsContent>
 

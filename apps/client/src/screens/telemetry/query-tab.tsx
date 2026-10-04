@@ -295,7 +295,14 @@ function QueryRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onStartRename}>Rename</DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              uiAction("telemetry.query_rename_start", "telemetry");
+              onStartRename();
+            }}
+          >
+            Rename
+          </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onSelect={onDelete}>
             Delete
           </DropdownMenuItem>

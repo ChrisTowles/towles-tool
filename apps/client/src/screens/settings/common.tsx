@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { isEmptyQuery, matchesFilter } from "@/lib/settings-filter";
 import { slackListUsers, type SlackUser } from "@/lib/slack";
 import type { UserSettings } from "@/lib/settings";
+import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
 /** Set `defer` for anything the user types into, not for one-click choices. */
@@ -105,12 +106,15 @@ export function FieldRow({
 
 /** Toggle row: label + description on the left, a Switch on the right. */
 export function ToggleRow({
+  id,
   label,
   description,
   checked,
   onCheckedChange,
   extra,
 }: {
+  /** Stable key for the `settings.toggle` event — labels repeat ("Enabled"). */
+  id: string;
   label: string;
   description: string;
   checked: boolean;
@@ -119,7 +123,13 @@ export function ToggleRow({
 }) {
   return (
     <SettingRow label={label} description={description} extra={extra}>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <Switch
+        checked={checked}
+        onCheckedChange={(v) => {
+          uiAction("settings.toggle", "settings", `${id} ${v ? "on" : "off"}`);
+          onCheckedChange(v);
+        }}
+      />
     </SettingRow>
   );
 }
@@ -200,7 +210,10 @@ export function RevealInput({
       />
       <button
         type="button"
-        onClick={() => setShown((s) => !s)}
+        onClick={() => {
+          uiAction("settings.secret_reveal", "settings", shown ? "hide" : "show");
+          setShown((s) => !s);
+        }}
         aria-label={shown ? "Hide token" : "Show token"}
         className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
       >
@@ -221,6 +234,7 @@ export function WeekdayChips({
   onChange: (days: number[]) => void;
 }) {
   const toggle = (day: number) => {
+    uiAction("settings.weekday_toggle", "settings", `${day} ${value.includes(day) ? "off" : "on"}`);
     const next = value.includes(day) ? value.filter((d) => d !== day) : [...value, day];
     next.sort((a, b) => a - b);
     onChange(next);
@@ -323,6 +337,7 @@ export function SlackUserPicker({
                   key={u.id}
                   value={`${u.name} ${u.id}`}
                   onSelect={() => {
+                    uiAction("settings.slack_user_pick", "settings");
                     onPick(u);
                     setOpen(false);
                   }}

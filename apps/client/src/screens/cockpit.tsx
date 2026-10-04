@@ -221,6 +221,7 @@ export function CockpitScreen() {
                       "bg-amber-500 text-white hover:bg-amber-500/90 dark:bg-amber-500 dark:text-white",
                   )}
                   onClick={() => {
+                    uiAction("cockpit.meeting_join", "cockpit");
                     if (nextEvent.joinUrl) void openExternalUrl(nextEvent.joinUrl);
                   }}
                 >
@@ -245,7 +246,10 @@ export function CockpitScreen() {
             {hiddenLaterCount > 0 ? (
               <button
                 type="button"
-                onClick={() => setLaterExpanded(true)}
+                onClick={() => {
+                  uiAction("cockpit.later_toggle", "cockpit", "more");
+                  setLaterExpanded(true);
+                }}
                 className="rounded-md px-2 py-0.5 font-medium text-foreground hover:bg-accent"
               >
                 +{hiddenLaterCount} more
@@ -253,7 +257,10 @@ export function CockpitScreen() {
             ) : laterExpanded && later.length > LATER_INLINE ? (
               <button
                 type="button"
-                onClick={() => setLaterExpanded(false)}
+                onClick={() => {
+                  uiAction("cockpit.later_toggle", "cockpit", "less");
+                  setLaterExpanded(false);
+                }}
                 className="rounded-md px-2 py-0.5 font-medium text-foreground hover:bg-accent"
               >
                 Show less
@@ -267,7 +274,10 @@ export function CockpitScreen() {
             <TooltipTrigger asChild>
               <button
                 type="button"
-                onClick={() => void refresh()}
+                onClick={() => {
+                  uiAction("cockpit.refresh", "cockpit");
+                  void refresh();
+                }}
                 disabled={refreshing}
                 className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-muted-foreground hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-60"
                 aria-label="Refresh PRs and issues"
@@ -412,6 +422,7 @@ export function CockpitScreen() {
 
 /** Run an issue-dispatch command; the Rust side's message is authoritative. */
 async function runIssueCommand(cmd: string, args: Record<string, unknown>) {
+  uiAction("cockpit.issue_dispatch", "cockpit", cmd);
   (await invoke<string>(cmd, args)).match({
     ok: (msg) => toast.success(msg),
     err: (e) => toast.error(e.message),
@@ -420,6 +431,7 @@ async function runIssueCommand(cmd: string, args: Record<string, unknown>) {
 
 /** Copy text to the clipboard, naming what was copied in the confirmation. */
 async function copyToClipboard(text: string, what: string) {
+  uiAction("cockpit.copy", "cockpit", what);
   try {
     await navigator.clipboard.writeText(text);
     toast.success(`Copied ${what}`);
@@ -451,7 +463,12 @@ function IssueActions({ issue, tasks }: { issue: IssueItem; tasks: TaskTarget[] 
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuItem onSelect={() => void openExternalUrl(issue.url)}>
+        <DropdownMenuItem
+          onSelect={() => {
+            uiAction("cockpit.open_external", "cockpit", "issue");
+            void openExternalUrl(issue.url);
+          }}
+        >
           <ExternalLink className="size-4" />
           Open in browser
         </DropdownMenuItem>
@@ -509,11 +526,21 @@ function PrActions({ pr }: { pr: PrItem }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuItem onSelect={() => void openExternalUrl(pr.url)}>
+        <DropdownMenuItem
+          onSelect={() => {
+            uiAction("cockpit.open_external", "cockpit", "pr");
+            void openExternalUrl(pr.url);
+          }}
+        >
           <ExternalLink className="size-4" />
           Open in browser
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void openExternalUrl(`${pr.url}/checks`)}>
+        <DropdownMenuItem
+          onSelect={() => {
+            uiAction("cockpit.open_external", "cockpit", "pr_checks");
+            void openExternalUrl(`${pr.url}/checks`);
+          }}
+        >
           <ListChecks className="size-4" />
           Open checks
         </DropdownMenuItem>

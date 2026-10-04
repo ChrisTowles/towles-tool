@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { openExternalUrl } from "@/lib/open-url";
+import { uiAction } from "@/lib/ui-action";
+import { useWorkspace } from "@/lib/workspace";
 import { useUpdateCheck } from "@/lib/update";
 
 /** Full-width strip announcing a newer GitHub release. Dismiss is session-only —
@@ -9,6 +11,7 @@ import { useUpdateCheck } from "@/lib/update";
  * app is actually updated. */
 export function UpdateBanner() {
   const update = useUpdateCheck();
+  const { activeTab } = useWorkspace();
   const [dismissed, setDismissed] = useState(false);
 
   if (!update || dismissed) return null;
@@ -27,7 +30,10 @@ export function UpdateBanner() {
         variant="outline"
         size="xs"
         className="border-sky-500/40 text-sky-600 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-400"
-        onClick={() => void openExternalUrl(update.releaseUrl)}
+        onClick={() => {
+          uiAction("update_banner.open_release", activeTab);
+          void openExternalUrl(update.releaseUrl);
+        }}
       >
         View release
       </Button>
@@ -35,7 +41,10 @@ export function UpdateBanner() {
         variant="ghost"
         size="xs"
         className="text-muted-foreground"
-        onClick={() => setDismissed(true)}
+        onClick={() => {
+          uiAction("update_banner.dismiss", activeTab);
+          setDismissed(true);
+        }}
       >
         <X className="size-3.5" />
       </Button>

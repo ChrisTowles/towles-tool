@@ -174,6 +174,7 @@ export function BrowserPane({
   };
 
   const dismissHint = () => {
+    uiAction("browser.hint_dismiss", "agentboard");
     localStorage.setItem(HINT_KEY, "1");
     setShowHint(false);
   };
@@ -239,14 +240,20 @@ export function BrowserPane({
             <IconBtn
               title="back"
               disabled={!state?.canGoBack}
-              onClick={() => void browserNavigate(paneId, { action: "back" })}
+              onClick={() => {
+                uiAction("browser.history", "agentboard", "back");
+                void browserNavigate(paneId, { action: "back" });
+              }}
             >
               <ArrowLeft className="size-3" />
             </IconBtn>
             <IconBtn
               title="forward"
               disabled={!state?.canGoForward}
-              onClick={() => void browserNavigate(paneId, { action: "forward" })}
+              onClick={() => {
+                uiAction("browser.history", "agentboard", "forward");
+                void browserNavigate(paneId, { action: "forward" });
+              }}
             >
               <ArrowRight className="size-3" />
             </IconBtn>
@@ -254,7 +261,10 @@ export function BrowserPane({
               title="reload"
               disabled={phase !== "live"}
               className="hover:text-sky-500"
-              onClick={() => void browserNavigate(paneId, { action: "reload" })}
+              onClick={() => {
+                uiAction("browser.reload", "agentboard");
+                void browserNavigate(paneId, { action: "reload" });
+              }}
             >
               <RotateCw className="size-3" />
             </IconBtn>
@@ -273,7 +283,10 @@ export function BrowserPane({
               title="close pane"
               shortcut={focused ? "ab-close-pane" : undefined}
               className="hover:text-sky-500"
-              onClick={onClose}
+              onClick={() => {
+                if (!focused) uiAction("browser.close", "agentboard");
+                onClose();
+              }}
             >
               <X className="size-3" />
             </IconBtn>
@@ -312,7 +325,10 @@ export function BrowserPane({
                 size="sm"
                 variant="outline"
                 className="mt-2"
-                onClick={() => setOpenNonce((n) => n + 1)}
+                onClick={() => {
+                  uiAction("browser.open", "agentboard", "relaunch");
+                  setOpenNonce((n) => n + 1);
+                }}
               >
                 Relaunch
               </Button>
@@ -324,7 +340,10 @@ export function BrowserPane({
                 size="sm"
                 variant="outline"
                 className="mt-2"
-                onClick={() => setOpenNonce((n) => n + 1)}
+                onClick={() => {
+                  uiAction("browser.open", "agentboard", "reattach");
+                  setOpenNonce((n) => n + 1);
+                }}
               >
                 Reattach here
               </Button>
