@@ -358,7 +358,24 @@ impl Store {
         Ok(written)
     }
 
-    /// Drop the rows of every repo not in `tracked` — only after a sweep that reached
+    /// After a successful fetch of `repo`: drop its workflows missing from `present`
+    /// whose last run predates `stale_before_ms`, so a deleted or renamed workflow
+    /// ages out while a rarely-run one keeps its row for a while.
+    pub fn prune_absent_ci_workflows(
+        &self,
+        repo: &str,
+        present: &[&str],
+        stale_before_ms: i64,
+    ) -> Result<usize> {
+        let present = serde_json::to_string(present)?;
+        Ok(self.conn.execute(
+            "DELETE FROM ci_runs WHERE repo = ?1 AND created_ms < ?2
+               AND workflow NOT IN (SELECT value FROM json_each(?3))",
+            params![repo, stale_before_ms, present],
+        )?)
+    }
+
+    /// Drop the rows of every repo not in `tracked`— only after a sweep that reached
     /// every tracked repo, since a repo that merely errored must keep its rows.
     pub fn prune_ci_runs_except(&self, tracked: &[String]) -> Result<usize> {
         if tracked.is_empty() {

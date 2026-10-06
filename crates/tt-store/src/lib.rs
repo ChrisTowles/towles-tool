@@ -157,6 +157,33 @@ mod tests {
         assert_eq!(s.prune_ci_runs_except(&[]).unwrap(), 2, "no tracked repos means no rows");
         assert!(ci_keys(&s).is_empty());
     }
+
+    #[test]
+    fn ci_runs_prune_absent_drops_only_old_missing_workflows_of_that_repo() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert_ci_runs(&[
+            ci_run("o/a", "CI", "success", 1),
+            ci_run("o/a", "Deleted", "failure", 1),
+            ci_run("o/a", "Weekly", "failure", 50),
+            ci_run("o/b", "Old", "failure", 1),
+        ])
+        .unwrap();
+
+        let pruned = s.prune_absent_ci_workflows("o/a", &["CI"], 10).unwrap();
+        assert_eq!(pruned, 1);
+        assert_eq!(
+            ci_keys(&s),
+            [
+                ("o/a".into(), "CI".into()),
+                ("o/a".into(), "Weekly".into()),
+                ("o/b".into(), "Old".into())
+            ],
+            "present or recent rows stay, as does every other repo's"
+        );
+
+        assert_eq!(s.prune_absent_ci_workflows("o/a", &[], 100).unwrap(), 2, "empty page");
+        assert_eq!(ci_keys(&s), [("o/b".into(), "Old".into())]);
+    }
     use rusqlite::params;
 
     fn issue_link(repo: &str, number: i64, state: &str) -> TaskIssueLink {

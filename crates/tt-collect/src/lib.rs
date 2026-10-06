@@ -474,15 +474,25 @@ pub fn collect_ci(
     finish_ci_sweep(store, sweep, now_ms)
 }
 
-/// CI rows are upserted, never swapped: a workflow missing from this page — it last
-/// ran before the newest `RUN_LIST_LIMIT` runs, or `gh` answered empty — keeps its
-/// last known run, which is the week-old red Nightly the panel exists to show. Only a
-/// sweep that reached every tracked repo prunes, and only repos no longer tracked.
+/// How long a workflow missing from a successful fetch keeps its last run: long
+/// enough for a weekly Nightly behind a busy page, short enough that a deleted or
+/// renamed workflow's red chip ages out.
+const CI_ABSENT_KEEP_MS: i64 = 14 * 24 * 60 * 60 * 1000;
+
+/// CI rows are upserted, never swapped: a workflow missing from this page keeps its
+/// last known run until [`CI_ABSENT_KEEP_MS`] old. Only a sweep that reached every
+/// tracked repo prunes whole repos, and only repos no longer tracked.
 fn finish_ci_sweep(store: &Store, sweep: Sweep<tt_store::CiRun>, now_ms: i64) -> CollectSummary {
     let clean = sweep.errors.is_empty() && sweep.skipped.is_empty();
     let tracked: Vec<String> = sweep.successes.iter().map(|(repo, _)| repo.clone()).collect();
+    let stale_before_ms = now_ms.saturating_sub(CI_ABSENT_KEEP_MS);
     let write = |all: &[tt_store::CiRun], _scope: Option<&[String]>| {
         let written = store.upsert_ci_runs(all)?;
+        for repo in &tracked {
+            let present: Vec<&str> =
+                all.iter().filter(|r| &r.repo == repo).map(|r| r.workflow.as_str()).collect();
+            store.prune_absent_ci_workflows(repo, &present, stale_before_ms)?;
+        }
         if clean {
             store.prune_ci_runs_except(&tracked)?;
         }
@@ -719,15 +729,14 @@ fn finish_sweep<T, K: std::hash::Hash + Eq>(
 ) -> CollectSummary {
     let Sweep { successes, errors, skipped } = sweep;
 
-    if successes.is_empty() {
-        // Nothing succeeded: never touch existing rows. Any error fails the run.
-        let ok = errors.is_empty();
-        let mut notes: Vec<String> = errors.into_iter().chain(skipped).collect();
-        if notes.is_empty() {
-            notes.push("no repos configured".to_string());
-        }
-        return finish(store, key, ok, 0, Some(notes.join("; ")), now_ms);
+    let clean_sweep = errors.is_empty() && skipped.is_empty();
+    if successes.is_empty() && !clean_sweep {
+        // Repos were tracked but none answered: keep every row. No repos at all is a
+        // clean sweep of nothing, which clears them.
+        let notes: Vec<String> = errors.iter().cloned().chain(skipped).collect();
+        return finish(store, key, errors.is_empty(), 0, Some(notes.join("; ")), now_ms);
     }
+    let untracked = successes.is_empty();
 
     let repos: Vec<String> = successes.iter().map(|(repo, _)| repo.clone()).collect();
     let mut by_key: std::collections::HashMap<K, T> = std::collections::HashMap::new();
@@ -739,14 +748,19 @@ fn finish_sweep<T, K: std::hash::Hash + Eq>(
     let all: Vec<T> = by_key.into_values().collect();
     let count = all.len();
 
-    let clean_sweep = errors.is_empty() && skipped.is_empty();
     let scope = if clean_sweep { None } else { Some(repos.as_slice()) };
     if let Err(e) = write(&all, scope) {
         return finish(store, key, false, count, Some(e.to_string()), now_ms);
     }
 
     let notes: Vec<String> = errors.iter().cloned().chain(skipped).collect();
-    let message = if notes.is_empty() { None } else { Some(notes.join("; ")) };
+    let message = if untracked {
+        Some("no repos configured".to_string())
+    } else if notes.is_empty() {
+        None
+    } else {
+        Some(notes.join("; "))
+    };
     finish(store, key, errors.is_empty(), count, message, now_ms)
 }
 
@@ -1451,6 +1465,68 @@ mod tests {
             ],
             "an empty page keeps o/a's row; only the untracked repo is gone"
         );
+    }
+
+    #[test]
+    fn ci_sweep_ages_out_a_workflow_gone_from_a_fetched_repo() {
+        let store = Store::open_in_memory().unwrap();
+        let now = CI_ABSENT_KEEP_MS * 2;
+        let old = now - CI_ABSENT_KEEP_MS - 1;
+        store
+            .upsert_ci_runs(&[
+                ci_run("o/a", "Deleted", "failure", old),
+                ci_run("o/a", "Weekly", "failure", now - 1),
+                ci_run("o/b", "Gone", "failure", old),
+            ])
+            .unwrap();
+
+        let sweep = Sweep {
+            successes: vec![("o/a".to_string(), vec![ci_run("o/a", "CI", "success", now)])],
+            errors: vec!["o/b: gh exploded".to_string()],
+            skipped: vec![],
+        };
+        finish_ci_sweep(&store, sweep, now);
+
+        let keys: Vec<(String, String)> =
+            store.ci_runs().unwrap().into_iter().map(|r| (r.repo, r.workflow)).collect();
+        assert_eq!(
+            keys,
+            [
+                ("o/a".to_string(), "CI".to_string()),
+                ("o/a".to_string(), "Weekly".to_string()),
+                ("o/b".to_string(), "Gone".to_string())
+            ],
+            "the old absent workflow ages out; a recent one and a failed repo's rows stay"
+        );
+    }
+
+    #[test]
+    fn ci_sweep_with_no_tracked_repos_clears_the_rows() {
+        let store = Store::open_in_memory().unwrap();
+        store.upsert_ci_runs(&[ci_run("o/a", "CI", "failure", 1)]).unwrap();
+
+        let empty = Sweep { successes: vec![], errors: vec![], skipped: vec![] };
+        let summary = finish_ci_sweep(&store, empty, 5);
+
+        assert!(summary.ok);
+        assert_eq!(summary.message.as_deref(), Some("no repos configured"));
+        assert!(store.ci_runs().unwrap().is_empty(), "untracking every repo clears CI");
+    }
+
+    #[test]
+    fn ci_sweep_where_every_fetch_failed_keeps_the_rows() {
+        let store = Store::open_in_memory().unwrap();
+        store.upsert_ci_runs(&[ci_run("o/a", "CI", "failure", 1)]).unwrap();
+
+        let failed = Sweep {
+            successes: vec![],
+            errors: vec!["o/a: rate limited".to_string()],
+            skipped: vec![],
+        };
+        let summary = finish_ci_sweep(&store, failed, 5);
+
+        assert!(!summary.ok);
+        assert_eq!(store.ci_runs().unwrap().len(), 1, "a dead sweep isn't an untracked one");
     }
 
     #[test]

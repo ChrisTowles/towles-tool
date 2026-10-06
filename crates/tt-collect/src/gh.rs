@@ -124,15 +124,19 @@ pub(crate) fn repo_name_with_owner(dir: &Path) -> Result<String, String> {
     Ok(name)
 }
 
+/// How long a resolved default branch is trusted before `gh` is asked again.
+const DEFAULT_BRANCH_TTL: Duration = Duration::from_secs(60 * 60);
+
 /// The default branch of the repo rooted at `dir`, via `gh repo view` — the branch
-/// whose Actions runs are a repo's CI health. Cached like [`repo_name_with_owner`],
-/// and for the same reason.
+/// whose Actions runs are a repo's CI health. Cached per directory for
+/// [`DEFAULT_BRANCH_TTL`], since a repo can rename its default branch.
 pub(crate) fn repo_default_branch(dir: &Path) -> Result<String, String> {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, String>>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, (String, Instant)>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
 
     if let Ok(map) = cache.lock()
-        && let Some(branch) = map.get(dir)
+        && let Some((branch, at)) = map.get(dir)
+        && at.elapsed() < DEFAULT_BRANCH_TTL
     {
         return Ok(branch.clone());
     }
@@ -147,7 +151,7 @@ pub(crate) fn repo_default_branch(dir: &Path) -> Result<String, String> {
             format!("gh repo view returned no defaultBranchRef for {}", dir.display())
         })?;
     if let Ok(mut map) = cache.lock() {
-        map.insert(dir.to_path_buf(), branch.clone());
+        map.insert(dir.to_path_buf(), (branch.clone(), Instant::now()));
     }
     Ok(branch)
 }
