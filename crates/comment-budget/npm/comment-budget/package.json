@@ -1,7 +1,7 @@
 {
   "name": "@towles-tool/comment-budget",
-  "version": "0.3.0",
-  "description": "A budget for comment volume: AI writes comments faster than anyone can review them, so cap how much commentary a reader wades through to reach the code.",
+  "version": "1.0.0",
+  "description": "A zero-config ratchet on comment volume: a change may not grow a file's comment excess, nor add a wall of comment.",
   "keywords": ["comments", "ai", "ci", "code-quality"],
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -23,8 +23,8 @@
     "access": "public"
   },
   "optionalDependencies": {
-    "@towles-tool/comment-budget-linux-x64-gnu": "0.3.0",
-    "@towles-tool/comment-budget-linux-arm64-gnu": "0.3.0",
-    "@towles-tool/comment-budget-darwin-arm64": "0.3.0"
+    "@towles-tool/comment-budget-linux-x64-gnu": "1.0.0",
+    "@towles-tool/comment-budget-linux-arm64-gnu": "1.0.0",
+    "@towles-tool/comment-budget-darwin-arm64": "1.0.0"
   }
 }

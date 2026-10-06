@@ -1,17 +1,13 @@
 name: Comment budget
 
-# Judges every file a PR touches, whole (`--whole-files`) — not only the lines it
-# adds. Touch a file and you own its comment volume: that is the point, and it is
-# what drains the backlog instead of merely holding it. The cost is real and
-# deliberate — a one-line fix in a prose-heavy legacy file means cleaning that
-# file first, so budget for it. `--all` is the whole-repo backlog view, run by
-# hand — never wire it to `pull_request`, and never lower the budgets to make
-# either one pass.
+# The ratchet: a PR fails only if it grows a touched file's comment excess or
+# adds a 13+ line comment block. The base is the PR's own (`GITHUB_BASE_REF`,
+# which the binary reads), so a stacked PR is judged against what it branched
+# from. `--all` is the backlog view, run by hand; never wire it here.
 #
-# It is its own workflow rather than a step in `rust`/`frontend` because it is
-# the one gate spanning both: `rust` is paths-ignored for apps/client and
-# scripts, and `frontend` has no cargo toolchain. Split across the two, a
-# TS-only PR would run no comment budget at all.
+# Its own workflow rather than a step in `rust`/`frontend` because it is the one
+# gate spanning both: `rust` is paths-ignored for apps/client and scripts, and
+# `frontend` has no cargo toolchain.
 on:
   pull_request:
   workflow_dispatch:
@@ -34,6 +30,4 @@ jobs:
       - name: Provision pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      # The PR's own base, not `main` — a stacked PR is judged against what it
-      # actually branched from.
-      - run: cargo comment-budget --whole-files --new-from-merge-base "${{ github.base_ref || 'main' }}"
+      - run: cargo comment-budget

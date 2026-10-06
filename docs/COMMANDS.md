@@ -11,32 +11,30 @@ cargo run -p tt-cli -- task ls      # e.g. task, journal, collect
 cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
-cargo comment-budget                # comment volume on the lines this branch adds — what CI runs
-cargo comment-budget --all          # every file in the repo: the standing backlog
-cargo comment-budget --all --report                  # the backlog as surfaces + worst files
-cargo comment-budget --all --surface client-logic    # one surface, for a session spent fixing it
+cargo comment-budget                # comment-volume ratchet vs the merge-base with main — what CI runs
+cargo comment-budget --all          # every file judged as if new: the standing backlog
 ```
 
 `comment-budget` is the one gate on comment sprawl, and the only one spanning
-Rust and frontend (oxlint implements no comment-volume rule at all). Budgets are
-per *surface* in **`comment-budget.toml`**; the mechanics live in
+Rust and frontend (oxlint implements no comment-volume rule at all). It has no
+config file; the rule lives in
 [`crates/comment-budget`](../crates/comment-budget/README.md), which is a
 published package rather than repo-local tooling — see **Releasing
-comment-budget** below. Three rules shape how you write:
+comment-budget** below. For each file a change touches:
 
-- **`//!` is exempt, `///` and `//` are counted** — but only for a kind's first
-  `exempt_free` lines (12, for Rust). Module docs are where the hard-won why
-  lives; past that they count like anything else, so moving prose into `//!`
-  buys nothing.
-- **No baseline, no per-file exceptions** — a list of files allowed to fail is a
-  ledger of debt nobody pays. The only escape is `comment-budget: allow(<reason>)`
-  at the top of a file, and the reason is mandatory.
-- **A file no surface claims is an error**, not a quiet skip: a tree nobody
-  noticed was exempt reads exactly like passing.
+- **Growth fails.** A file's excess is its comment lines past a 15% share. A
+  change fails if it grows that by 5+ lines and leaves the file more than 10
+  over. Old debt alone never fails, and a new file starts from 0.
+- **Walls fail.** Adding an unbroken comment block of 13+ lines fails. Editing
+  inside an existing one does not.
+- **Every comment syntax counts**, `//!` included. The only escape is
+  `comment-budget: allow(<reason>)` in the file's header, reason mandatory.
+  Vendored and generated code is excluded via `.gitattributes`
+  (`linguist-vendored`/`linguist-generated`), ignored files are never read.
 
-CI judges only the lines a branch adds. `--all` is the repo-wide backlog, at
-~500 errors — never wire it to `pull_request`, and never lower a budget to make
-it pass.
+CI runs the bare command; the base comes from `GITHUB_BASE_REF`. `--all` is the
+backlog (about 100 failures across 83 files at the cutover). Never wire it to
+`pull_request`.
 
 ## Releasing comment-budget
 

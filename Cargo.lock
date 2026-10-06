@@ -1973,14 +1973,10 @@ dependencies = [
 
 [[package]]
 name = "comment-budget"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "gix",
- "glob",
- "serde",
  "serde_json",
- "thiserror 2.0.18",
- "toml 1.1.4+spec-1.1.0",
  "tree-sitter",
  "tree-sitter-hcl",
  "tree-sitter-rust",
