@@ -113,23 +113,23 @@ Rules when working in a task:
   which is why `.claude/hooks/guard-task-pkill.sh` rejects the unscoped forms.
 
   **"The MCP tools aren't there"** means the app for *your* checkout isn't
-  running. Each instance serves its own `${tt:port 8787-8986}` claim
+  running. Each instance serves its own `${tt:port 47870-48069}` claim
   (`TT_MCP_PORT` in the rendered `.env`), stamps it beside `TT_SESSION_ID` into
   every terminal it spawns, and the plugin's `.mcp.json` expands
-  `${TT_MCP_PORT:-8787}`, so a session talks to the app that spawned it. An app
+  `${TT_MCP_PORT:-47870}`, so a session talks to the app that spawned it. An app
   launched *from* such a terminal ignores the inherited stamp — the session id
   marks it as a parent's, not a shell override — and binds its own claim.
 
   ```sh
-  curl -s -m 5 -X POST "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp" -H "Content-Type: application/json" \
+  curl -s -m 5 -X POST "http://127.0.0.1:${TT_MCP_PORT:-47870}/mcp" -H "Content-Type: application/json" \
     -H "MCP-Protocol-Version: 2026-07-28" -H "Mcp-Method: server/discover" \
     -d '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}'  # empty => nobody serving
   tt task ports                                           # every checkout's claims
   ```
 
-  Outside an app terminal there is no stamp; `.mcp.json` falls back to `8787`.
+  Outside an app terminal there is no stamp; `.mcp.json` falls back to `47870`.
 
-  **Don't reintroduce a shared port.** A machine-wide `8787` makes whichever
+  **Don't reintroduce a shared port.** A machine-wide port makes whichever
   instance binds first answer every session from *its own* `tt.db`.
 - Task logic lives in `crates/tt-tasks` (template grammar, removal guards,
   pure decisions) with shared orchestration in `tt_tasks::ops`; the CLI and

@@ -113,17 +113,17 @@ call the endpoint** — its `fetch` carries an `Origin` — so the MCP screen's
 tool tester issues its request from Rust (`mcp_test_call`). Both crates'
 module docs carry the full threat model.
 
-Served **one per app instance**, each on its own `${tt:port 8787-8986}`
+Served **one per app instance**, each on its own `${tt:port 47870-48069}`
 claim (`TT_MCP_PORT`) like every other port here — no exception to the
 no-hardcoded-ports rule any more. App closed = that checkout's MCP down;
 there is no headless fallback (the stdio server and `tt mcp serve` were
 deleted). The plugin still ships a **static checked-in `.mcp.json`**,
 because the port rides the environment rather than the file:
-`"http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp"`, expanded by Claude Code from
+`"http://127.0.0.1:${TT_MCP_PORT:-47870}/mcp"`, expanded by Claude Code from
 the stamp the app put on the terminal. Precedence for the app's own port is
 process env → the checkout's rendered `.env` → settings `mcp.port`, except
 that an env port arriving beside `TT_SESSION_ID` is a parent app's stamp and
-is skipped (`tt_mcp::port::resolve_bind_port`). The pre-2026-07-26 shared-8787
+is skipped (`tt_mcp::port::resolve_bind_port`). The pre-2026-07-26 shared-port
 singleton is described in the Worktree tasks section — read that before
 proposing a shared port again; it cross-wired tool writes between
 checkouts' boards.

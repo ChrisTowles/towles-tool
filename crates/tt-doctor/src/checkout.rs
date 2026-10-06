@@ -335,14 +335,14 @@ mod tests {
 
     #[test]
     fn port_source_reads_a_rendered_claim() {
-        let text = "# rendered\nTT_DEV_PORT=1424\nTT_MCP_PORT=8791\n";
-        assert_eq!(mcp_port_source(Some(text)), McpPortSource::Claimed(8791));
+        let text = "# rendered\nTT_DEV_PORT=1424\nTT_MCP_PORT=47874\n";
+        assert_eq!(mcp_port_source(Some(text)), McpPortSource::Claimed(47874));
     }
 
     /// A value the claim scanner skips is not a port the app binds either.
     #[test]
     fn port_source_rejects_what_the_claim_scanner_rejects() {
-        for bad in ["${tt:port 8787-8986}", "eight", "0", "70000", ""] {
+        for bad in ["${tt:port 47870-48069}", "eight", "0", "70000", ""] {
             let text = format!("TT_MCP_PORT={bad}\n");
             assert_eq!(mcp_port_source(Some(&text)), McpPortSource::Unclaimed, "{bad:?}");
         }
@@ -354,24 +354,24 @@ mod tests {
             "name": "towles-tool",
             "version": "0.4.2",
         })));
-        let row = classify_mcp_probe(8791, &Probe::Answered { status: 200, body });
+        let row = classify_mcp_probe(47874, &Probe::Answered { status: 200, body });
         assert!(row.ok);
         assert!(row.warning.is_none() && row.hint.is_none());
-        assert_eq!(row.value, "serving on 8791 · towles-tool 0.4.2");
+        assert_eq!(row.value, "serving on 47874 · towles-tool 0.4.2");
     }
 
     #[test]
     fn a_discover_answer_without_server_info_still_counts_as_serving() {
         let row =
-            classify_mcp_probe(8791, &Probe::Answered { status: 200, body: discover_body(None) });
+            classify_mcp_probe(47874, &Probe::Answered { status: 200, body: discover_body(None) });
         assert!(row.ok);
-        assert_eq!(row.value, "serving on 8791 · MCP server");
+        assert_eq!(row.value, "serving on 47874 · MCP server");
     }
 
     #[test]
     fn a_200_that_is_not_a_json_rpc_result_is_a_foreign_listener() {
         let body = "<html>hello</html>".to_string();
-        let row = classify_mcp_probe(8791, &Probe::Answered { status: 200, body });
+        let row = classify_mcp_probe(47874, &Probe::Answered { status: 200, body });
         assert!(!row.ok);
         assert!(row.warning.is_none(), "a wrong listener renders red, not amber");
         assert!(row.value.contains("not as an MCP server"), "{}", row.value);
@@ -381,18 +381,18 @@ mod tests {
     #[test]
     fn a_non_200_names_the_status_and_points_at_the_claims() {
         let body = "not found".to_string();
-        let row = classify_mcp_probe(8791, &Probe::Answered { status: 404, body });
+        let row = classify_mcp_probe(47874, &Probe::Answered { status: 404, body });
         assert!(!row.ok);
-        assert_eq!(row.value, "port 8791 answered HTTP 404");
+        assert_eq!(row.value, "port 47874 answered HTTP 404");
         assert!(row.hint.as_deref().unwrap_or_default().contains("tt task ports"));
     }
 
     #[test]
     fn connection_refused_is_nobody_serving_with_the_start_hint() {
-        let row = classify_mcp_probe(8791, &Probe::Unreachable);
+        let row = classify_mcp_probe(47874, &Probe::Unreachable);
         assert!(!row.ok);
         assert!(row.warning.is_none(), "a down app renders red");
-        assert_eq!(row.value, "nobody serving on 8791");
+        assert_eq!(row.value, "nobody serving on 47874");
         assert!(row.hint.as_deref().unwrap_or_default().contains("bun start"));
     }
 
@@ -423,26 +423,28 @@ mod tests {
 
     #[test]
     fn a_bound_port_matching_the_claim_is_one_green_row() {
-        let rows = mcp_rows(Some(8791), Some(&serving_probe()), McpPortSource::Claimed(8791), "h");
+        let rows =
+            mcp_rows(Some(47874), Some(&serving_probe()), McpPortSource::Claimed(47874), "h");
         assert_eq!(rows.len(), 1);
         assert!(rows[0].ok && rows[0].warning.is_none());
-        assert_eq!(rows[0].value, "serving on 8791 · towles-tool 1");
+        assert_eq!(rows[0].value, "serving on 47874 · towles-tool 1");
     }
 
-    /// The #687 drive scenario: the instance was up on an inherited 8787 while the
-    /// checkout's `.env` claimed 8791 — serving, but not where sessions expect it.
+    /// The #687 drive scenario: the instance was up on an inherited 47870 while the
+    /// checkout's `.env` claimed 47874 — serving, but not where sessions expect it.
     #[test]
     fn a_bound_port_differing_from_the_claim_adds_an_amber_mismatch_row() {
-        let rows = mcp_rows(Some(8787), Some(&serving_probe()), McpPortSource::Claimed(8791), "h");
+        let rows =
+            mcp_rows(Some(47870), Some(&serving_probe()), McpPortSource::Claimed(47874), "h");
         assert_eq!(rows.len(), 2);
         assert!(rows[0].ok, "serving is still green");
         let mismatch = &rows[1];
         assert!(!mismatch.ok && mismatch.warning.is_some(), "amber");
         assert_eq!(mismatch.name, MCP_CLAIM_ROW);
-        assert_eq!(mismatch.value, "bound 8787 · claims 8791");
+        assert_eq!(mismatch.value, "bound 47870 · claims 47874");
         let hint = mismatch.hint.as_deref().unwrap_or_default();
         assert!(
-            hint.contains("bound 8787 from the environment; this checkout claims 8791"),
+            hint.contains("bound 47870 from the environment; this checkout claims 47874"),
             "{hint}"
         );
         assert!(hint.contains("tt task ports"), "{hint}");
@@ -450,7 +452,7 @@ mod tests {
 
     #[test]
     fn no_bound_port_is_one_red_row_with_the_start_hint() {
-        let rows = mcp_rows(None, None, McpPortSource::Claimed(8791), "h");
+        let rows = mcp_rows(None, None, McpPortSource::Claimed(47874), "h");
         assert_eq!(rows.len(), 1);
         assert!(!rows[0].ok && rows[0].warning.is_none(), "red");
         assert_eq!(rows[0].value, "this instance isn't serving");
@@ -460,7 +462,7 @@ mod tests {
     #[test]
     fn no_claim_keeps_the_amber_render_row_beside_the_serving_one() {
         let rows = mcp_rows(
-            Some(8787),
+            Some(47870),
             Some(&serving_probe()),
             McpPortSource::Unclaimed,
             "tt task env primary",
@@ -474,7 +476,7 @@ mod tests {
 
     #[test]
     fn outside_a_checkout_there_is_no_claim_row() {
-        let rows = mcp_rows(Some(8787), Some(&serving_probe()), McpPortSource::NoCheckout, "");
+        let rows = mcp_rows(Some(47870), Some(&serving_probe()), McpPortSource::NoCheckout, "");
         assert_eq!(rows.len(), 1);
         assert!(rows[0].ok);
     }

@@ -722,12 +722,12 @@ impl Default for IssueCollector {
 #[serde(rename_all = "camelCase", default)]
 pub struct McpSettings {
     /// Only the *fallback*, for an app outside any checkout: an instance in one
-    /// serves its `.env`'s `${tt:port 8787-8986}` claim instead. The plugin's
-    /// `.mcp.json` expands `${TT_MCP_PORT:-8787}`, hence this value.
+    /// serves its `.env`'s `${tt:port 47870-48069}` claim instead. The plugin's
+    /// `.mcp.json` expands `${TT_MCP_PORT:-47870}`, hence this value.
     pub port: u16,
 }
 
-pub const DEFAULT_MCP_PORT: u16 = 8787;
+pub const DEFAULT_MCP_PORT: u16 = 47870;
 
 impl Default for McpSettings {
     fn default() -> Self {
@@ -1348,8 +1348,8 @@ mod tests {
         let path = dir.path().join("towles-tool.settings.json");
         for bad_block in [
             r#"null"#,
-            r#"{"port":"8787"}"#, // string, not integer
-            r#"[9999]"#,          // array: must not set the port positionally
+            r#"{"port":"47870"}"#, // string, not integer
+            r#"[9999]"#,           // array: must not set the port positionally
         ] {
             std::fs::write(&path, format!(r#"{{"preferredEditor":"vim","mcp":{bad_block}}}"#))
                 .unwrap();

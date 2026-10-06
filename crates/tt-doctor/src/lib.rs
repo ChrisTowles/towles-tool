@@ -607,7 +607,7 @@ mod tests {
     fn tt_mcp_registered_matches_the_name_field_only() {
         let listed = "\
 chrome-devtools: npx chrome-devtools-mcp@latest - ✔ Connected
-towles-tool: http://127.0.0.1:8787/mcp - ✔ Connected
+towles-tool: http://127.0.0.1:47870/mcp - ✔ Connected
 ";
         assert!(tt_mcp_registered(listed));
     }
@@ -619,7 +619,7 @@ towles-tool: http://127.0.0.1:8787/mcp - ✔ Connected
     fn tt_mcp_registered_matches_a_plugin_registered_server() {
         let listed = "\
 plugin:data:bigquery: https://bigquery.googleapis.com/mcp (HTTP) - ✘ Failed to connect
-plugin:towles-tool-app:towles-tool: http://127.0.0.1:8787/mcp - ✔ Connected
+plugin:towles-tool-app:towles-tool: http://127.0.0.1:47870/mcp - ✔ Connected
 ";
         assert!(tt_mcp_registered(listed));
     }
