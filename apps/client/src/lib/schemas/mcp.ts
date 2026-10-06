@@ -41,6 +41,7 @@ export type McpToolDoc = z.infer<typeof McpToolDocSchema>;
 export const McpStatusSchema = z.object({
   serving: z.boolean(),
   port: z.number(),
+  ignoredStamp: z.number().nullable(),
   protocolVersion: z.string(),
   version: z.string(),
 });

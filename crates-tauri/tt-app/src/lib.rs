@@ -622,7 +622,8 @@ pub fn run() {
             // MCP over loopback on *this checkout's* claimed port, so a session
             // in this app's terminal reaches this app's board. After
             // `manage(store_state)`: a mutating call re-emits through it.
-            mcp_http::spawn(app.handle().clone(), tt_mcp::port::for_this_checkout());
+            let session = std::env::var(tt_agentboard::procenv::TT_SESSION_ENV).ok();
+            mcp_http::spawn(app.handle().clone(), tt_mcp::port::for_serving(session.as_deref()));
 
             // Overlap guards for the manual "refresh now" / "Sync now" commands.
             app.manage(store::CollectNowState::default());
