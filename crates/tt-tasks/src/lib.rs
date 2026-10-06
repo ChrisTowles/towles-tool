@@ -15,6 +15,7 @@ pub mod clean;
 pub mod complete;
 pub mod envfile;
 pub mod guards;
+pub mod issue;
 pub mod landed;
 pub mod layout;
 pub mod ops;
