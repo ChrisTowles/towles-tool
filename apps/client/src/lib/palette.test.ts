@@ -17,6 +17,7 @@ import {
   paletteIssueEntries,
   paletteQuickAddEntry,
   paletteFilter,
+  paletteNeedsDetail,
   paletteRecentScreens,
 } from "./palette";
 import { SCREENS } from "./screens";
@@ -235,6 +236,13 @@ describe("paletteIssueEntries", () => {
 
   it("returns nothing for an empty snapshot", () => {
     expect(paletteIssueEntries([])).toEqual([]);
+  });
+});
+
+describe("paletteNeedsDetail", () => {
+  it("is the one word 'needs', or nothing at all", () => {
+    expect(paletteNeedsDetail(true)).toBe("needs");
+    expect(paletteNeedsDetail(false)).toBeUndefined();
   });
 });
 
