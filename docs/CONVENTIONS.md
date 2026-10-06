@@ -49,6 +49,12 @@ hardest are repeated in [CLAUDE.md](../CLAUDE.md); this is the whole list.
   logic lands in a
   Tauri-free `crates/` library with unit tests — the e2e harness is not the
   primary correctness seam.
+- **Comments are a ratchet, not a style.** `cargo comment-budget` fails a change
+  that grows a file's comment excess (past a 15% share) by 5+ lines leaving it
+  more than 10 over, or that adds a 13+ line comment block (or grows one by 5+);
+  every syntax counts, `//!` included. Fix a failure in the PR that surfaced it
+  by deleting comment, never by `comment-budget: allow(<reason>)` or splitting
+  the change. Rule and flags: [COMMANDS.md](COMMANDS.md).
 - **Hard cutover, no back-compat shims** — replace, don't wrap. (No compat
   layers, no dual-name aliases — the `ttr`→`tt` rename left no `ttr` behind.)
 - **`cargo ... | tail` reports `tail`'s exit code, not cargo's.** A failed

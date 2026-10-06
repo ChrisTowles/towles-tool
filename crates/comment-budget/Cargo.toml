@@ -1,9 +1,9 @@
 [package]
 name = "comment-budget"
-version = "0.3.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.88"
-description = "A budget for comment volume: AI writes comments faster than anyone can review them, so cap how much commentary a reader wades through to reach the code."
+description = "A zero-config ratchet on comment volume: a change may not grow a file's comment excess, nor add a wall of comment."
 keywords = ["comments", "ai", "tree-sitter", "ci", "code-quality"]
 categories = ["development-tools"]
 license = "MIT OR Apache-2.0"
@@ -15,27 +15,14 @@ readme = "README.md"
 # ship a test suite that cannot pass.
 exclude = ["npm", "pyproject.toml", "tests/npm_pins.rs", "tests/npm_postinstall.rs"]
 
-[lib]
-name = "comment_budget"
-path = "src/lib.rs"
-
-[[bin]]
-name = "comment-budget"
-path = "src/bin/comment-budget.rs"
-
 # Declared here rather than inherited from the workspace: this crate is
-# published, so its dependency contract is its own. `gix` in particular — the
-# workspace pulls `status`/`dirwalk`/`index`/`attributes` for the app's git
-# pane, and inheriting that would push all of it onto anyone who installs the
-# linter, which only ever reads a base tree and diffs two blobs.
+# published, so its dependency contract is its own.
 [dependencies]
-gix = { version = "0.86.0", features = ["blob-diff", "revision"] }
-glob = "0.3.4"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
-thiserror = "2.0.17"
-toml = "1.1.4"
+gix = { version = "0.86.0", features = ["blob-diff", "revision", "dirwalk"] }
 tree-sitter = "0.26"
 tree-sitter-hcl = "1.1.0"
 tree-sitter-rust = "0.24.2"
 tree-sitter-typescript = "0.23.2"
+
+[dev-dependencies]
+serde_json = "1.0.145"

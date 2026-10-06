@@ -1,3 +1,3 @@
-# `cargo comment-budget …` — the comment-volume gate, run from its own crate.
+# `cargo comment-budget [<base> | --all]` — the comment-volume ratchet, run from its own crate.
 [alias]
-comment-budget = "run --quiet --package comment-budget --bin comment-budget --"
+comment-budget = "run --quiet --package comment-budget --"

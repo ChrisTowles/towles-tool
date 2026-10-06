@@ -1,26 +1,59 @@
 # comment-budget
 
-A budget for comment volume, written for a codebase an AI writes most of.
+A ratchet on comment volume, written for a codebase an AI writes most of.
 
-A model can emit more commentary in one pass than a human could ever accurately
-review, and it keeps adding — narrating each step, restating the line below it,
-heading every block, layering the next pass over the last — until there is too
-much of it to read. Commentary nobody reads is not documentation; it is what
-the code is hiding behind.
+A model can emit more commentary in one pass than a human could ever review,
+and it keeps adding — narrating each step, restating the line below it, layering
+the next pass over the last — until there is too much of it to read. This puts a
+stop to the *growth*. It never reads what a comment says, so it can't tell you
+one is stale or wrong; it measures how much there is, and nothing else does.
 
-So the budget is a cap on what review can actually absorb. One question:
-**how much commentary must a reader wade through to reach the code?**
+There is no config file. The whole policy is four numbers.
 
+## The rule
+
+For every file a change touches, compared with the same file at the merge-base:
+
+- **Growth.** A file's *excess* is its comment lines beyond a **15%** share of
+  its non-blank lines. The change fails if it grew that excess by **5** lines or
+  more **and** the file ends more than **10** over.
+- **Walls.** The change fails if it adds an unbroken comment block of **13**
+  lines or more, or grows a block that was already 13+ by **5** lines or more.
+  A block that was shorter than 13 fails as soon as it reaches 13. Rewording or
+  shrinking an old block is fine.
+
+A file the base does not have starts from an excess of 0. A file that only moved
+is unchanged. Old debt never fails a change; only adding to it does.
+
+Every comment syntax counts — `//`, `///`, `//!`, `/* */`, `#` — wherever it
+starts a line. A trailing comment after code is code; blank lines are neither.
+
+The language comes from the file extension: Rust (`.rs`), TypeScript and
+JavaScript (`.ts .mts .cts .js .mjs .cjs`), TSX/JSX (`.tsx .jsx`), and HCL
+(`.tf .tfvars .hcl`). Other files are not judged, Markdown included.
+
+## What is judged
+
+Tracked and untracked files in the work tree, minus anything `.gitignore`
+excludes and anything `.gitattributes` marks `linguist-generated` or
+`linguist-vendored`:
+
+```gitattributes
+src/components/ui/** linguist-vendored
+src/bindings.ts      linguist-generated
 ```
-comment_lines / (comment_lines + code_lines)      blank lines ignored
+
+Nested repositories, such as worktrees inside the checkout, are skipped.
+
+## The escape
+
+One, per file, in its header (the lines before the first blank one):
+
+```rust
+//! comment-budget: allow(every `///` here is `--help` text clap prints)
 ```
 
-So `0.15` means "1 line in 7 is comment" — not comments-per-code-line. The gate
-is on the *excess* past that share; an over-long `.md` is the same gate, since
-prose has no code and is all excess. One other signal sits beside it: an
-over-long unbroken *run* of comment. It never reads what a comment *says*, so
-it can't tell you one is stale or wrong — that is not the check. Volume is, and
-nothing else measures it.
+The reason is mandatory. `allow()` with no reason fails.
 
 ## Install
 
@@ -48,119 +81,50 @@ repos:
 ## Use
 
 ```sh
-comment-budget                    # the gate: only the lines this branch adds over `main`
-comment-budget --all              # the standing backlog, repo-wide
-comment-budget --report           # thresholds in effect, surface table, worst files
-comment-budget --format json      # findings as an array, for CI to consume
-comment-budget --surface web      # one surface, for a session spent fixing it
-
-comment-budget --new-from-merge-base release   # gate against a branch other than main
-comment-budget --new-from-rev HEAD~3           # gate against a revision itself
-
-comment-budget init               # write a starter config, budgets seeded from this tree
+comment-budget              # the gate: what changed since the merge-base with the base
+comment-budget release      # the same, against another base
+comment-budget --all        # every file judged as if new: the repo-wide backlog
 ```
 
-Exit status is `0` when nothing errored, `1` when something did, `2` on a bad
-invocation. Warnings never fail the run — they are the standing hit list.
+The base defaults to `$GITHUB_BASE_REF`, which GitHub Actions sets on
+`pull_request` runs, and otherwise to `main`; `origin/<base>` is tried when no
+local branch has the name. The comparison includes uncommitted and untracked
+work, so a local run judges what you are about to push. In GitHub Actions, check
+out with `fetch-depth: 0` so the merge-base exists:
 
-### Why the default is a diff
-
-Repo-wide, an established codebase reports hundreds of errors, and a gate that
-fails every run is one nobody reads. So the default judges only what a branch
-*adds*, and the ratio is the added lines' own — a branch can neither add
-commentary nor inherit the file's existing debt. An over-long run is the
-exception: it is measured whole and merely has to touch an added line to be
-reported, because a reader wades through all of it however much you wrote.
-
-The comparison is against the **working tree**, so a local run judges what you
-are about to push, not only what you have committed. `--whole-files` opts back
-into judging every touched file whole. The `--new-from-*` flag names are
-golangci-lint's, which is where the idea is best known from.
-
-## Configure
-
-Everything measured — and how hard, and why — lives in `comment-budget.toml` at
-the root of the tree, found by searching upward from the working directory.
-
-- **kinds** bind file extensions to a grammar — `rust`, `typescript`, `tsx`,
-  `hcl`, or `prose`. `exempt` prefixes are invisible to every signal, neither
-  comment nor code, so a Rust `//!` header can hold the decision it records —
-  but only for a file's first `exempt_free` lines, past which they count
-  normally. That cap is what stops `exempt` being a hiding place: without it the
-  cheapest way to pass is to move prose from `///` into `//!`, shortening
-  nothing for a reader. `counted` is the bloat being measured; a comment
-  matching neither list counts, so a new syntax can't slip through unmeasured.
-- **surfaces** claim paths by glob and set the thresholds. First match wins, and
-  a readable file no surface claims is a hard **error** — under first-match-wins
-  the failure mode of this design is a tree nobody noticed was exempt, and that
-  reads exactly like passing. A glob that claims no files (matching nothing, or
-  shadowed by an earlier surface) is a standing **warning** for the same reason.
-- A surface's `over` tiers gate its **excess**: comment lines beyond what
-  `budget` allows for a file's size. Mass and density gate together by
-  construction — a tiny stub can't be far over budget, a big lightly-commented
-  file never is — and the number is the one the fix is measured in: lines to
-  delete. Prose has no code to earn a budget, so a `.md` file is all excess:
-  the same gate caps its length, with no `budget` key at all. `run` caps one
-  unbroken comment block beside it.
-
-A file may opt out with a top-of-file `comment-budget: allow(<reason>)`. The
-reason is required — an unexplained opt-out is the failure mode it exists to
-prevent. `comment-budget init` writes a starter config with each budget seeded
-at the tree's own 75th percentile. A minimal config:
-
-```toml
-skip = ["node_modules", "target", "dist"]
-
-[kinds.rust]
-grammar     = "rust"              # the tree-sitter grammar whose comment nodes are read
-extensions  = ["rs"]
-exempt      = ["//!"]             # module docs: where hard-won "why" lives
-exempt_free = 12                  # ...but only this many lines of it are free
-counted     = ["///", "//"]       # item docs and narration: the bloat being measured
-
-[kinds.markdown]
-grammar    = "prose"              # parses nothing; measures length instead
-extensions = ["md"]
-
-[[surface]]
-name   = "crates"
-paths  = ["crates/*/src/**/*.rs"]
-goal   = "Document the module and the crossing points; not every pub item."
-budget = 0.15                        # comments may be 15% of a file, free
-over   = { warn = 20, error = 60 }   # comment lines past that
-run    = { warn = 8,  error = 14 }   # one unbroken comment block
-
-[[surface]]
-name   = "docs"
-paths  = ["**/*.md"]
-goal   = "Prose has no code to sit against, so the whole file is the excess."
-over   = { warn = 150, error = 250 }
-
-[escape]
-directive = "comment-budget: allow(<reason>)"
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- run: npx @towles-tool/comment-budget
 ```
 
-## Library
+Exit status is `0` when nothing failed, `1` when something did, `2` on a bad
+invocation or an unreadable repository.
 
-The binary is a thin shell over the crate; `Finding` keeps its fields rather
-than only a rendered line, so a consumer can emit GitHub annotations or editor
-diagnostics without parsing text back out.
+## Migrating from 0.x
 
-```rust
-let (cfg, root) = Config::discover(&std::env::current_dir()?)?;
-let diff = Diff::open(&root, &Since::MergeBase("main".into()), false)?;
-let analysis = comment_budget::analyze(&root, &cfg, Some(&diff))?;
-for finding in comment_budget::judge(&cfg, &analysis.stats) {
-    println!("{finding}");
-}
-```
+1.0 is a hard cutover with nothing kept for compatibility.
+
+- **Delete `comment-budget.toml`.** It is not read. Kinds, surfaces, budgets,
+  tiers, `skip`, `exempt` and `exempt_free` are all gone: one budget, one floor,
+  one growth step and one run length apply everywhere.
+- **Move `skip` entries to `.gitattributes`** as `linguist-vendored` or
+  `linguist-generated`. Paths already in `.gitignore` need nothing.
+- **`//!` and every other exempt syntax now counts.** No baseline is needed for
+  that: the ratchet only fails a change that grows a file's excess.
+- **Flags:** `--new-from-merge-base <ref>` is now the bare `<ref>` argument;
+  `--new-from-rev`, `--whole-files`, `--report`, `--surface`, `--format`,
+  `--root`, `--config` and `init` are gone. Run it from inside the repository.
+- **Warnings are gone.** Everything it reports fails the run.
+- **Markdown is no longer measured.**
+- **The library API is gone.** The crate is a binary only.
+- **`comment-budget: allow(<reason>)` is unchanged.**
 
 ## Fixing what it reports
 
-Delete, don't reflow. Cut history — git already holds it — and keep only what
-looks forward: the *why*, and the *how* where the code leaves it unclear.
-Squeezing under a threshold just moves an error onto the warning list, and the
-budgets are not the thing to lower.
+Delete, don't reflow. Cut history, since git already holds it, and keep only
+what looks forward: the *why*, and the *how* where the code leaves it unclear.
 
 ## License
 
