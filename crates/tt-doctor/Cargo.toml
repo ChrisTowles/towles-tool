@@ -6,12 +6,17 @@ publish = false
 
 [dependencies]
 tt-agentboard = { workspace = true }
+tt-browser = { workspace = true }
+tt-codeserver = { workspace = true }
 tt-config = { workspace = true }
 tt-exec = { workspace = true }
+tt-mcp = { workspace = true }
 tt-tasks = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# One loopback `server/discover` per doctor run; plain HTTP like `tt open`'s client.
+ureq = { workspace = true }
 
 [lints]
 workspace = true

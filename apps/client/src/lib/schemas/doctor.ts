@@ -44,6 +44,14 @@ const PortHealthCheckSchema = z.object({
   hint: z.string(),
 });
 
+const CheckoutCheckSchema = z.object({
+  name: z.string(),
+  value: z.string(),
+  ok: z.boolean(),
+  warning: z.string().optional(),
+  hint: z.string().optional(),
+});
+
 export const DoctorReportSchema = z.object({
   result: z.object({
     timestamp: z.string(),
@@ -56,4 +64,5 @@ export const DoctorReportSchema = z.object({
   agentboard: z.array(AgentBoardCheckSchema),
   staleTasks: z.array(StaleTaskCheckSchema),
   portHealth: z.array(PortHealthCheckSchema),
+  checkout: z.array(CheckoutCheckSchema),
 });
