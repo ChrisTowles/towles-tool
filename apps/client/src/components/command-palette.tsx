@@ -113,7 +113,7 @@ export function CommandPalette() {
 
   const repoEntries = paletteRepoEntries(repos);
   const sessionEntries = paletteSessionEntries(repos);
-  const taskEntries = paletteTaskEntries(snapshot.tasks);
+  const taskEntries = paletteTaskEntries(snapshot.tasks, repos);
   const prEntries = palettePrEntries(snapshot.prs);
   const issueEntries = paletteIssueEntries(snapshot.issues);
   const quickAdd = paletteQuickAddEntry(query);

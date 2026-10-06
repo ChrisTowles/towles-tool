@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { RailRepoRow } from "./board-groups";
 import type { TaskItem } from "./data";
 import { paletteFilter } from "./palette";
 import { paletteTaskEntries, paletteTaskTarget } from "./palette-tasks";
@@ -33,29 +34,46 @@ const bound = task({
   prs: [{ repo: "octo/widgets", number: 43, url: "u", state: "open", checks: "passing" }],
 });
 
+const rail: RailRepoRow[] = [
+  {
+    key: "widgets",
+    dir: "/home/me/code/p/widgets",
+    folders: [
+      { dir: "/home/me/code/p/widgets" },
+      { dir: "/home/me/code/p/widgets/.claude/worktrees/feat-palette" },
+    ],
+  },
+];
+
 describe("paletteTaskEntries", () => {
   it("drops archived and closed tasks", () => {
-    const entries = paletteTaskEntries([
-      task({ id: 1 }),
-      task({ id: 2, archivedAt: 5 }),
-      task({ id: 3, closed: true, status: "done" }),
-      task({ id: 4, closed: true, outcome: "abandoned" }),
-    ]);
+    const entries = paletteTaskEntries(
+      [
+        task({ id: 1 }),
+        task({ id: 2, archivedAt: 5 }),
+        task({ id: 3, closed: true, status: "done" }),
+        task({ id: 4, closed: true, outcome: "abandoned" }),
+      ],
+      rail,
+    );
     expect(entries.map((e) => e.id)).toEqual([1]);
   });
 
   it("leads with in-progress work, then board order within a column", () => {
-    const entries = paletteTaskEntries([
-      task({ id: 1, status: "backlog", position: 2 }),
-      task({ id: 2, status: "doing", position: 9 }),
-      task({ id: 3, status: "backlog", position: 1 }),
-      task({ id: 4, status: "doing", position: 3 }),
-    ]);
+    const entries = paletteTaskEntries(
+      [
+        task({ id: 1, status: "backlog", position: 2 }),
+        task({ id: 2, status: "doing", position: 9 }),
+        task({ id: 3, status: "backlog", position: 1 }),
+        task({ id: 4, status: "doing", position: 3 }),
+      ],
+      rail,
+    );
     expect(entries.map((e) => e.id)).toEqual([4, 2, 3, 1]);
   });
 
   it("carries title, repo, branch and a muted meta line", () => {
-    const [entry] = paletteTaskEntries([bound]);
+    const [entry] = paletteTaskEntries([bound], rail);
     expect(entry.key).toBe("task:7");
     expect(entry.title).toBe("jump to a task");
     expect(entry.repo).toBe("octo/widgets");
@@ -65,17 +83,17 @@ describe("paletteTaskEntries", () => {
   });
 
   it("keys two same-titled quick todos on distinct values", () => {
-    const [a, b] = paletteTaskEntries([
-      task({ id: 11, text: "fix tests" }),
-      task({ id: 12, text: "fix tests", position: 1 }),
-    ]);
+    const [a, b] = paletteTaskEntries(
+      [task({ id: 11, text: "fix tests" }), task({ id: 12, text: "fix tests", position: 1 })],
+      rail,
+    );
     expect(a.value).not.toBe(b.value);
     expect(a.value).toContain(" 11 ");
     expect(b.value).toContain(" 12 ");
   });
 
   it("makes repo, short name, branch and linked numbers searchable", () => {
-    const [entry] = paletteTaskEntries([bound]);
+    const [entry] = paletteTaskEntries([bound], rail);
     expect(entry.keywords).toEqual([
       "task",
       "board",
@@ -92,10 +110,13 @@ describe("paletteTaskEntries", () => {
   });
 
   it("falls back to a linked issue's repo and leaves meta empty with no identity", () => {
-    const [linked, bare] = paletteTaskEntries([
-      task({ id: 1, issues: [{ repo: "octo/gizmos", number: 2, url: "u", state: "open" }] }),
-      task({ id: 2 }),
-    ]);
+    const [linked, bare] = paletteTaskEntries(
+      [
+        task({ id: 1, issues: [{ repo: "octo/gizmos", number: 2, url: "u", state: "open" }] }),
+        task({ id: 2 }),
+      ],
+      rail,
+    );
     expect(linked.repo).toBe("octo/gizmos");
     expect(linked.meta).toBe("gizmos");
     expect(bare.repo).toBeNull();
@@ -107,20 +128,28 @@ describe("paletteTaskEntries", () => {
 
 describe("paletteTaskTarget", () => {
   it("lands on the bound checkout when a worktree is live", () => {
-    expect(paletteTaskTarget(bound)).toEqual({
+    expect(paletteTaskTarget(bound, rail)).toEqual({
       kind: "worktree",
       folderDir: "/home/me/code/p/widgets/.claude/worktrees/feat-palette",
     });
   });
 
   it("lands on the Board card without a live worktree, even if a dir is recorded", () => {
-    expect(paletteTaskTarget(task({ id: 3 }))).toEqual({ kind: "board", taskId: 3 });
-    expect(paletteTaskTarget({ ...bound, hasWorktree: false })).toEqual({
+    expect(paletteTaskTarget(task({ id: 3 }), rail)).toEqual({ kind: "board", taskId: 3 });
+    expect(paletteTaskTarget({ ...bound, hasWorktree: false }, rail)).toEqual({
       kind: "board",
       taskId: 7,
     });
     expect(
-      paletteTaskTarget({ ...bound, worktree: { ...bound.worktree!, dir: undefined } }),
+      paletteTaskTarget({ ...bound, worktree: { ...bound.worktree!, dir: undefined } }, rail),
     ).toEqual({ kind: "board", taskId: 7 });
+  });
+
+  it("lands on the Board card when the rail has no folder for the worktree", () => {
+    expect(paletteTaskTarget(bound, [])).toEqual({ kind: "board", taskId: 7 });
+    const repoOnly: RailRepoRow[] = [{ ...rail[0], folders: [{ dir: rail[0].dir }] }];
+    expect(paletteTaskTarget(bound, repoOnly)).toEqual({ kind: "board", taskId: 7 });
+    const [entry] = paletteTaskEntries([bound], []);
+    expect(entry.target).toEqual({ kind: "board", taskId: 7 });
   });
 });
