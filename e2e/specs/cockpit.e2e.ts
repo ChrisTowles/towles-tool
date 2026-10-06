@@ -13,13 +13,15 @@ import { bootReady, gotoScreen, waitForAnyDisplayed } from "./nav.js";
 type QueueItem = { repo: string; state?: string; dismissedTs: number; updatedTs: number };
 type StoreSnapshot = { prs: QueueItem[]; issues: QueueItem[] };
 
+// Mirrors isItemDismissed (apps/client/src/lib/data.ts) exactly; importing it would drag
+// the client's Tauri/React module graph into the wdio worker.
+const isItemDismissed = (item: QueueItem) =>
+  item.dismissedTs > 0 && item.dismissedTs >= item.updatedTs;
+
 /** Same exclusions as the screen: open, undismissed PRs; undismissed issues. */
 function cockpitRepoCount(snapshot: StoreSnapshot): number {
-  const live = (item: QueueItem) => item.dismissedTs < item.updatedTs;
-  const repos = new Set<string>();
-  for (const pr of snapshot.prs) if (pr.state === "open" && live(pr)) repos.add(pr.repo);
-  for (const issue of snapshot.issues) if (live(issue)) repos.add(issue.repo);
-  return repos.size;
+  const rows = [...snapshot.prs.filter((pr) => pr.state === "open"), ...snapshot.issues];
+  return new Set(rows.filter((row) => !isItemDismissed(row)).map((row) => row.repo)).size;
 }
 
 describe("Cockpit screen", () => {

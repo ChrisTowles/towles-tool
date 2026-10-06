@@ -61,6 +61,6 @@ describe("Claude Sessions screen", () => {
     expect(outcome.error).toContain("Claude projects");
     await browser.$("h2=Claude Sessions").waitForDisplayed({ timeout: 10000 });
     expect(await browser.$$("p=Scanning sessions…").length).toBe(0);
-    expect(await browser.$$("div.lg\\:grid-cols-5").length).toBe(0);
+    expect(await browser.$$('[data-testid="claude-sessions-totals"]').length).toBe(0);
   });
 });

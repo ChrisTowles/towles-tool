@@ -1297,7 +1297,10 @@ export function ClaudeSessionsScreen() {
         <p className="p-6 text-sm text-muted-foreground">Scanning sessions…</p>
       ) : summary && totals ? (
         <>
-          <div className="grid grid-cols-2 gap-3 border-b border-border p-4 lg:grid-cols-5">
+          <div
+            data-testid="claude-sessions-totals"
+            className="grid grid-cols-2 gap-3 border-b border-border p-4 lg:grid-cols-5"
+          >
             <StatTile label="Sessions" value={String(totals.sessions)} />
             <StatTile
               label="In + Out"
