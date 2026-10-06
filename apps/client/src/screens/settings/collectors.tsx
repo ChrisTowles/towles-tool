@@ -113,7 +113,14 @@ function PreferredToggle({
     <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
       <Checkbox
         checked={item.preferred}
-        onCheckedChange={(v) => patch({ preferred: v === true })}
+        onCheckedChange={(v) => {
+          uiAction(
+            "prompt_improver.preferred",
+            "settings",
+            `${item.id} ${v === true ? "on" : "off"}`,
+          );
+          patch({ preferred: v === true });
+        }}
         aria-label={`Give ${item.label || item.id} its own button`}
       />
       Preferred
@@ -244,6 +251,7 @@ export function RefreshNowButton() {
   const [running, setRunning] = useState(false);
   const refresh = async () => {
     if (running) return;
+    uiAction("collectors.refresh_now", "settings");
     setRunning(true);
     const started = await storeCollectNow();
     if (started.isErr() && !NotInTauri.is(started.error)) toast.error(started.error.message);
@@ -312,6 +320,7 @@ export function collectorsSections(
           node: (
             <ToggleRow
               label="Enabled"
+              id="calendar"
               description="Fetches your next meeting via claude -p (costs tokens)."
               checked={c.calendar.enabled}
               onCheckedChange={(v) => setCal({ enabled: v })}
@@ -349,6 +358,7 @@ export function collectorsSections(
           keywords: ["working hours", "window", "nights", "weekends", "gate", "tokens"],
           node: (
             <ToggleRow
+              id="calendar_quiet_hours"
               label="Quiet hours"
               description="Only run the token-costing calendar collector inside a working-hours window (skips nights and weekends)."
               checked={c.calendar.quietHours.enabled}
@@ -413,6 +423,7 @@ export function collectorsSections(
           node: (
             <ToggleRow
               label="Enabled"
+              id="prs"
               description="Polls your PRs across repos via gh."
               checked={c.prs.enabled}
               onCheckedChange={(v) => setPrs({ enabled: v })}
@@ -459,6 +470,7 @@ export function collectorsSections(
           node: (
             <ToggleRow
               label="Enabled"
+              id="issues"
               description="Feeds the cross-repo board via gh."
               checked={c.issues.enabled}
               onCheckedChange={(v) => setIssues({ enabled: v })}
@@ -491,6 +503,7 @@ export function collectorsSections(
           node: (
             <ToggleRow
               label="Enabled"
+              id="slack"
               description="Watches one DM (e.g. your wife) and raises the attention banner on unanswered messages."
               checked={c.slack.enabled}
               onCheckedChange={(v) => setSlack({ enabled: v })}

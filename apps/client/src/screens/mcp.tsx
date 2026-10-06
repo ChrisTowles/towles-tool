@@ -842,7 +842,10 @@ function ToolTesterDialog({
           <Checkbox
             id="mcp-test-as-browser"
             checked={asBrowser}
-            onCheckedChange={(v) => setAsBrowser(v === true)}
+            onCheckedChange={(v) => {
+              uiAction("mcp.tool.as_browser", "mcp", v === true ? "on" : "off");
+              setAsBrowser(v === true);
+            }}
           />
           {/* One flex child, not three: bare text nodes beside the inline
               <span> would each become a flex item and lay out as columns. */}

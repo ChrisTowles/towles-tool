@@ -17,6 +17,7 @@ import { useNow } from "@/lib/now";
 import { isEmptyQuery } from "@/lib/settings-filter";
 import { settingsTargetStore, type SettingsTarget } from "@/lib/settings-target";
 import { useUserSettings, type SaveState } from "@/lib/settings";
+import { uiAction } from "@/lib/ui-action";
 import { useAppVersion } from "@/lib/version";
 import { FilteredContent, SettingsLoading, TabHeading } from "./settings/common";
 import { generalSections } from "./settings/general";
@@ -134,7 +135,10 @@ export function SettingsScreen() {
       <Tabs
         orientation="vertical"
         value={tab}
-        onValueChange={setTab}
+        onValueChange={(v) => {
+          uiAction("settings.tab", "settings", v);
+          setTab(v);
+        }}
         className="min-h-0 flex-1 gap-0"
       >
         <TabsList

@@ -126,7 +126,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
  * would have nowhere to be seen. */
 export function AppManifestDialog() {
   return (
-    <Dialog>
+    <Dialog onOpenChange={(open) => open && uiAction("slack.manifest_open", "slack")}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="gap-1.5 px-2 text-muted-foreground">
           <FileJson className="size-3.5" />
@@ -208,7 +208,10 @@ export function SetupGuide() {
               <Button
                 size="sm"
                 className="gap-1.5"
-                onClick={() => openSettingsTab({ tab: "collectors", filter: "slack" })}
+                onClick={() => {
+                  uiAction("slack.open_settings", "slack");
+                  openSettingsTab({ tab: "collectors", filter: "slack" });
+                }}
               >
                 <Settings className="size-3.5" /> Open Slack settings
               </Button>
@@ -250,11 +253,21 @@ function ReauthNotice({ onRetry }: { onRetry: () => void }) {
           <Button
             size="sm"
             className="gap-1.5"
-            onClick={() => openSettingsTab({ tab: "collectors", filter: "slack" })}
+            onClick={() => {
+              uiAction("slack.open_settings", "slack");
+              openSettingsTab({ tab: "collectors", filter: "slack" });
+            }}
           >
             <Settings className="size-3.5" /> Open Slack settings
           </Button>
-          <Button size="sm" variant="outline" onClick={onRetry}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              uiAction("slack.retry", "slack");
+              onRetry();
+            }}
+          >
             Retry
           </Button>
         </div>
@@ -284,7 +297,14 @@ export function FetchError({ error, onRetry }: { error: string; onRetry: () => v
             ? "Re-authorize your Slack token with the chat:write and reactions:write scopes, then retry."
             : error}
         </p>
-        <Button size="sm" variant="outline" onClick={onRetry}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            uiAction("slack.retry", "slack");
+            onRetry();
+          }}
+        >
           Retry
         </Button>
       </div>

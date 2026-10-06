@@ -29,6 +29,7 @@ export function ShortcutCoachRow({
   if (!shown) return null;
   return (
     <ToggleRow
+      id="shortcut_coach"
       label="Shortcut coach"
       description="When you click something a keyboard shortcut also does, show a one-line reminder of the keys. Your keyboard-vs-mouse streak is tracked either way — see Telemetry → Keyboard."
       checked={settings.agentboard?.shortcutCoach ?? DEFAULT_SHORTCUT_COACH}
@@ -65,6 +66,7 @@ export function PcKeybindingsRow({
   if (!IS_MAC || !shown) return null;
   return (
     <ToggleRow
+      id="pc_keybindings"
       label="PC-style keybindings"
       description="Use Ctrl instead of ⌘, like Windows and Linux: Ctrl+C copies, Ctrl+V pastes, Ctrl+K opens the palette. VS Code panes switch to their Windows/Linux keymap and reload. A terminal keeps Ctrl+C as interrupt — copy there with Ctrl+Shift+C."
       checked={settings.agentboard?.pcKeybindings ?? false}

@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { uiAction } from "@/lib/ui-action";
 import type { SavedView } from "@/lib/settings";
 import {
   FILTER_FIELD_SUGGESTIONS,
@@ -179,7 +180,12 @@ function ViewChip({
                 </div>
               ))}
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => setSaving(true)}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  uiAction("telemetry.view_save_open", "telemetry");
+                  setSaving(true);
+                }}
+              >
                 <Bookmark className="size-3.5" />
                 Save current as view…
               </DropdownMenuItem>

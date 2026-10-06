@@ -6,6 +6,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { COLOR_THEMES, type ColorTheme, type Theme } from "@/components/theme-provider";
+import { uiAction } from "@/lib/ui-action";
 import { SettingRow, type FilterSection } from "./common";
 
 export function appearanceSections(
@@ -22,7 +23,13 @@ export function appearanceSections(
           keywords: ["appearance", "color", "light", "dark", "system"],
           node: (
             <SettingRow label="Theme" description="Light, dark, or follow the system.">
-              <Select value={theme} onValueChange={(v) => setTheme(v as Theme)}>
+              <Select
+                value={theme}
+                onValueChange={(v) => {
+                  uiAction("settings.theme", "settings", v);
+                  setTheme(v as Theme);
+                }}
+              >
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>
@@ -50,7 +57,13 @@ export function appearanceSections(
           ],
           node: (
             <SettingRow label="Color theme" description="Palette used in dark mode.">
-              <Select value={colorTheme} onValueChange={(v) => setColorTheme(v as ColorTheme)}>
+              <Select
+                value={colorTheme}
+                onValueChange={(v) => {
+                  uiAction("settings.color_theme", "settings", v);
+                  setColorTheme(v as ColorTheme);
+                }}
+              >
                 <SelectTrigger className="w-40">
                   <SelectValue />
                 </SelectTrigger>

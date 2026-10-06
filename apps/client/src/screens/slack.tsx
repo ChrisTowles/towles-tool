@@ -59,6 +59,11 @@ export function SlackScreen() {
     [refresh],
   );
 
+  const openThreadPanel = useCallback((ts: string) => {
+    uiAction("slack.thread_open", "slack");
+    setOpenThread(ts);
+  }, []);
+
   const watchName = view?.watchName?.trim() || "Slack DM";
 
   return (
@@ -109,7 +114,7 @@ export function SlackScreen() {
                     message={m}
                     watchUserId={view?.watchUserId}
                     watchName={view?.watchName}
-                    actions={{ onToggleReaction: toggleReaction, onOpenThread: setOpenThread }}
+                    actions={{ onToggleReaction: toggleReaction, onOpenThread: openThreadPanel }}
                   />
                 ))}
               </div>
@@ -133,7 +138,10 @@ export function SlackScreen() {
               watchUserId={view?.watchUserId}
               revision={revision}
               sending={sending}
-              onClose={() => setOpenThread(null)}
+              onClose={() => {
+                uiAction("slack.thread_close", "slack");
+                setOpenThread(null);
+              }}
               onReply={(text) => send(text, openThread)}
               onToggleReaction={toggleReaction}
             />

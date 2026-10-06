@@ -285,7 +285,10 @@ export function PreviewPane({
               title="close pane (preview stays a click away on the folder)"
               shortcut={focused ? "ab-close-pane" : undefined}
               className="hover:text-sky-500"
-              onClick={onClose}
+              onClick={() => {
+                if (!focused) uiAction("preview.close", "agentboard");
+                onClose();
+              }}
             >
               <X className="size-3" />
             </IconBtn>

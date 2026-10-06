@@ -137,6 +137,7 @@ export function agentboardSections(
         ],
         node: (
           <ToggleRow
+            id="notify"
             label="Desktop notifications"
             description="Fire desktop notifications for meetings, agents needing you, PR/CI activity, and collector health. Status only — act in the session's terminal."
             checked={settings.agentboard?.notify ?? true}
@@ -206,6 +207,7 @@ export function agentboardSections(
         keywords: ["terminal", "clipboard", "selection", "copy"],
         node: (
           <ToggleRow
+            id="copy_on_select"
             label="Copy on select"
             description="Copy the terminal selection to the clipboard as soon as you finish selecting, without Ctrl/⌘+Shift+C."
             checked={settings.agentboard?.copyOnSelect ?? true}
@@ -223,6 +225,7 @@ export function agentboardSections(
         keywords: ["jarvis", "bevy", "native", "pane", "3d", "render", "gpu", "rail"],
         node: (
           <ToggleRow
+            id="jarvis_pane"
             label="Jarvis pane"
             description="Turn on Jarvis, the native Bevy surface: a strip at the bottom of the Agentboard rail, plus a “jarvis” button on each checkout that tiles one as a pane beside its terminals. A proof-of-concept, and Linux/Wayland only — leave it off and nothing is ever drawn. It also needs a build made with the `bevy` Cargo feature, off by default because compiling it dwarfs the rest of the app; without one, opening a pane reports it unsupported. Turning it back off parks what you opened rather than reclaiming it; relaunch for that."
             checked={settings.agentboard?.jarvisPane ?? DEFAULT_JARVIS_PANE}
@@ -240,6 +243,7 @@ export function agentboardSections(
         keywords: ["chrome", "browser", "web", "pane", "login", "sign in", "cdp", "headless"],
         node: (
           <ToggleRow
+            id="browser_pane"
             label="Chrome pane"
             description="Add a “chrome” button to each checkout that opens a real Chrome beside its terminals. It keeps its own browser profile, separate from your personal Chrome and empty to start — sign into a site once there and it stays signed in. Needs Chrome or Chromium installed."
             checked={settings.agentboard?.browserPane ?? DEFAULT_BROWSER_PANE}
@@ -279,6 +283,7 @@ export function agentboardSections(
         keywords: ["shortcut", "keyboard", "terminal", "focus", "hotkey", "jump", "needs you"],
         node: (
           <ToggleRow
+            id="shortcuts_in_terminal"
             label="Shortcuts work in terminal"
             description="Board-wide shortcuts (jump to next/prev session needing you, close/split session, toggle diff/rail) fire even while a terminal has focus, instead of being sent to the shell."
             checked={settings.agentboard?.shortcutsWorkInTerminal ?? true}
@@ -311,7 +316,14 @@ function NotifyThresholdRow({
   const current = NOTIFY_LEVELS.find((l) => l.value === value) ?? NOTIFY_LEVELS[0];
   return (
     <SettingRow label="Notification threshold" description={current.description}>
-      <Select value={value} disabled={disabled} onValueChange={(v) => onValue(v as NotifyLevel)}>
+      <Select
+        value={value}
+        disabled={disabled}
+        onValueChange={(v) => {
+          uiAction("settings.notify_threshold", "settings", v);
+          onValue(v as NotifyLevel);
+        }}
+      >
         <SelectTrigger className="w-44" aria-label="Notification threshold">
           <SelectValue />
         </SelectTrigger>

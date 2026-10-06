@@ -18,6 +18,7 @@ import { fmtClock, fmtCountdown, fmtDate, useAppTask, useStoreSnapshot } from "@
 import { identityColor } from "@/lib/identity-color";
 import { useNow } from "@/lib/now";
 import { mouseAction } from "@/lib/shortcut-coach";
+import { uiAction } from "@/lib/ui-action";
 import { shortcutHint } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -86,7 +87,7 @@ function CheckoutKindChip() {
  * minutes). Absolutely centered so it stays put regardless of what sits
  * left/right, on the shared app clock. */
 function ClockCluster() {
-  const { openTab } = useWorkspace();
+  const { openTab, activeTab } = useWorkspace();
   const { snapshot } = useStoreSnapshot();
   const now = useNow();
 
@@ -114,7 +115,10 @@ function ClockCluster() {
               "max-w-72 truncate rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent/50",
               eventSoon && "text-amber-600 dark:text-amber-500",
             )}
-            onClick={() => openTab("cockpit")}
+            onClick={() => {
+              uiAction("header.open_cockpit", activeTab, "meeting");
+              openTab("cockpit");
+            }}
           >
             {nextEvent.title} in {fmtCountdown(nextEvent.startTs - now)}
           </button>

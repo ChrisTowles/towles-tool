@@ -26,17 +26,21 @@ import { useNow } from "@/lib/now";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE } from "@/lib/pr-tone";
 import { useWorkspace } from "@/lib/workspace";
+import { uiAction } from "@/lib/ui-action";
 
 /** The one task the day is about, or nothing when the board has no candidate. */
 export function TopTaskChip() {
-  const { openTab } = useWorkspace();
+  const { openTab, activeTab } = useWorkspace();
   const { snapshot } = useStoreSnapshot();
   const topTask = pickTopTask(snapshot.tasks);
   if (!topTask) return null;
   return (
     <button
       className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent/50"
-      onClick={() => openTab("cockpit")}
+      onClick={() => {
+        uiAction("header.open_cockpit", activeTab, "top_task");
+        openTab("cockpit");
+      }}
       title={topTask.text}
     >
       <ListTodo className="size-3.5 shrink-0" />
@@ -48,7 +52,7 @@ export function TopTaskChip() {
 /** One feed backs both the count and the rows, so the badge can never disagree
  * with the list it opens. */
 export function NeedsYouChip() {
-  const { openTabWithFocus } = useWorkspace();
+  const { openTabWithFocus, activeTab } = useWorkspace();
   const { snapshot } = useStoreSnapshot();
   const agentState = useAgentboardState();
   const now = useNow();
@@ -57,6 +61,7 @@ export function NeedsYouChip() {
   const feed = buildAttentionFeed(snapshot, agentState);
 
   function navigate(item: AttentionItem) {
+    uiAction("header.attention_navigate", activeTab, item.kind);
     setFeedOpen(false);
     if (item.url) {
       void openExternalUrl(item.url);
@@ -70,7 +75,13 @@ export function NeedsYouChip() {
   }
 
   return (
-    <Popover open={feedOpen} onOpenChange={setFeedOpen}>
+    <Popover
+      open={feedOpen}
+      onOpenChange={(open) => {
+        if (open) uiAction("header.needs_you_open", activeTab);
+        setFeedOpen(open);
+      }}
+    >
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-accent/50 data-[state=open]:bg-accent/50">
           <CircleAlert className="size-3.5 text-amber-500" />

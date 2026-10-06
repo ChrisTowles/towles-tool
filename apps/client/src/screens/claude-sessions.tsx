@@ -780,6 +780,7 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
             size="icon-xs"
             onClick={(e) => {
               e.stopPropagation();
+              uiAction("claude_sessions.copy", "claude-sessions", "id");
               copy("id", session.sessionId);
             }}
           >
@@ -795,6 +796,7 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
             size="icon-xs"
             onClick={(e) => {
               e.stopPropagation();
+              uiAction("claude_sessions.copy", "claude-sessions", "path");
               copy("path", session.path);
             }}
           >
@@ -1258,7 +1260,13 @@ export function ClaudeSessionsScreen() {
       <header className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
         <h2 className="font-heading text-lg font-semibold">Claude Sessions</h2>
         <div className="flex items-center gap-2">
-          <Select value={days} onValueChange={setDays}>
+          <Select
+            value={days}
+            onValueChange={(v) => {
+              uiAction("claude_sessions.range", "claude-sessions", v);
+              setDays(v);
+            }}
+          >
             <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
@@ -1274,6 +1282,7 @@ export function ClaudeSessionsScreen() {
             variant="outline"
             size="sm"
             onClick={() => {
+              uiAction("claude_sessions.refresh", "claude-sessions");
               setRefreshNonce((n) => n + 1);
               void refresh(days);
             }}
@@ -1307,7 +1316,10 @@ export function ClaudeSessionsScreen() {
           <Tabs
             orientation="vertical"
             value={tab}
-            onValueChange={setTab}
+            onValueChange={(v) => {
+              uiAction("claude_sessions.tab", "claude-sessions", v);
+              setTab(v as typeof tab);
+            }}
             className="min-h-0 flex-1 gap-0"
           >
             <TabsList

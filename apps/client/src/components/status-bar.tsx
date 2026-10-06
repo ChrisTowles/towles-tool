@@ -24,6 +24,7 @@ import { taskExplorerSnapshot } from "@/lib/task-explorer";
 import { cn } from "@/lib/utils";
 import { useAppVersion } from "@/lib/version";
 import { useWorkspace } from "@/lib/workspace";
+import { uiAction } from "@/lib/ui-action";
 
 type ResourceUsage = { cpuPercent: number; memoryBytes: number };
 
@@ -166,7 +167,7 @@ function CollectorHealthCluster() {
 /** Deliberately the smallest possible readout, coaching detail kept in the
  * tooltip: a habit gauge that competes for attention defeats the app's point. */
 function KeyboardHabit({ score }: { score: KeyboardScore }) {
-  const { openTab } = useWorkspace();
+  const { openTab, activeTab } = useWorkspace();
   const { today, streak } = score;
   const tier = tierFor(today.share);
   const remaining = actionsToGoal(today, score.goalShare, score.goalMinActions);
@@ -178,7 +179,10 @@ function KeyboardHabit({ score }: { score: KeyboardScore }) {
         <button
           className="flex items-center gap-1 tabular-nums hover:text-foreground"
           aria-label="Keyboard shortcut habit"
-          onClick={() => openTab("telemetry")}
+          onClick={() => {
+            uiAction("status_bar.open_telemetry", activeTab, "keyboard");
+            openTab("telemetry");
+          }}
         >
           <Keyboard className="size-3.5" />
           <span className={today.goalMet ? "text-emerald-600 dark:text-emerald-500" : undefined}>
@@ -223,7 +227,7 @@ function KeyboardHabit({ score }: { score: KeyboardScore }) {
  * a fact to read on the Rules tab, not an alarm to react to here. Hidden at
  * zero — a pill saying "0" is noise. */
 function RulesFailing({ count }: { count: number }) {
-  const { openTab } = useWorkspace();
+  const { openTab, activeTab } = useWorkspace();
   if (count === 0) return null;
   return (
     <Tooltip>
@@ -231,7 +235,10 @@ function RulesFailing({ count }: { count: number }) {
         <button
           className="flex items-center gap-1 tabular-nums hover:text-foreground"
           aria-label="Telemetry rules failing"
-          onClick={() => openTab("telemetry")}
+          onClick={() => {
+            uiAction("status_bar.open_telemetry", activeTab, "rules");
+            openTab("telemetry");
+          }}
         >
           <ShieldAlert className="size-3.5" />
           <span className="rounded-full bg-sky-500/15 px-1.5 font-mono text-[11px] text-sky-700 dark:text-sky-300">
@@ -247,7 +254,7 @@ function RulesFailing({ count }: { count: number }) {
 }
 
 export function StatusBar() {
-  const { openTab } = useWorkspace();
+  const { openTab, activeTab } = useWorkspace();
   const usage = useResourceUsage();
   const claudeLimits = useClaudeUsageLimits();
   const keyboard = useKeyboardScore();
@@ -258,7 +265,10 @@ export function StatusBar() {
     <footer className="flex h-7 shrink-0 items-center justify-between border-t px-3 text-xs text-muted-foreground">
       <button
         className="flex items-center gap-1.5 hover:text-foreground"
-        onClick={() => openTab("doctor")}
+        onClick={() => {
+          uiAction("status_bar.open_doctor", activeTab);
+          openTab("doctor");
+        }}
       >
         <Stethoscope className="size-3.5" />
         Doctor
@@ -278,7 +288,10 @@ export function StatusBar() {
           <button
             className="tabular-nums hover:text-foreground"
             title="Total CPU / memory — this app plus every open terminal"
-            onClick={() => openTab("task-explorer")}
+            onClick={() => {
+              uiAction("status_bar.open_task_explorer", activeTab);
+              openTab("task-explorer");
+            }}
           >
             {usage.cpuPercent.toFixed(0)}% CPU · {formatMemory(usage.memoryBytes)}
           </button>
