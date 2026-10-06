@@ -12,8 +12,9 @@
 use serde::{Deserialize, Serialize};
 
 /// Read from the journal and the PTY; `claude agents` is liveness only. `busy` =
-/// working, `waiting` = blocked on the user, `idle` = at the prompt, and
-/// `background` = at the prompt with background agents still out.
+/// working, `waiting` = blocked on the user, `idle` = at the prompt. Background
+/// agents still out are a count beside this ([`AgentEvent::background_agents`]),
+/// never a status of their own.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentStatus {
@@ -24,7 +25,6 @@ pub enum AgentStatus {
     Error,
     Waiting,
     Interrupted,
-    Background,
 }
 
 /// The client's one needs-you answer, and notification wording — never an affordance.
@@ -39,23 +39,6 @@ pub enum NeedsYouReason {
 impl AgentStatus {
     pub fn is_terminal(self) -> bool {
         matches!(self, AgentStatus::Complete | AgentStatus::Error | AgentStatus::Interrupted)
-    }
-
-    pub fn is_working(self) -> bool {
-        matches!(self, AgentStatus::Busy | AgentStatus::Background)
-    }
-
-    /// Headline precedence when one pane holds several threads.
-    pub fn rank(self) -> u8 {
-        match self {
-            AgentStatus::Waiting => 6,
-            AgentStatus::Error => 5,
-            AgentStatus::Busy => 4,
-            AgentStatus::Background => 3,
-            AgentStatus::Interrupted => 2,
-            AgentStatus::Complete => 1,
-            AgentStatus::Idle => 0,
-        }
     }
 }
 
@@ -125,6 +108,38 @@ pub struct AgentEvent {
     pub unseen: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<AgentEventDetails>,
+}
+
+impl AgentEvent {
+    /// Background agents this thread launched that have not reported back.
+    pub fn background_agents(&self) -> i64 {
+        self.details.as_ref().and_then(|d| d.background_agents).unwrap_or(0)
+    }
+
+    /// Mid-turn, or at the prompt with background agents still out — their
+    /// reports start the next turn, so neither is waiting on you. A question
+    /// (`Waiting`) or a failure is, whatever is still running.
+    pub fn is_working(&self) -> bool {
+        match self.status {
+            AgentStatus::Busy => true,
+            AgentStatus::Idle | AgentStatus::Complete => self.background_agents() > 0,
+            _ => false,
+        }
+    }
+
+    /// Headline precedence when one pane holds several threads: attention,
+    /// then working, then the terminal states, then idle.
+    pub fn rank(&self) -> u8 {
+        match self.status {
+            AgentStatus::Waiting => 6,
+            AgentStatus::Error => 5,
+            AgentStatus::Busy => 4,
+            _ if self.is_working() => 3,
+            AgentStatus::Interrupted => 2,
+            AgentStatus::Complete => 1,
+            AgentStatus::Idle => 0,
+        }
+    }
 }
 
 /// One PTY shell; `agent_state` fills in when an agent is attributed to it.
@@ -315,14 +330,50 @@ mod tests {
         ] {
             assert!(s.is_terminal());
         }
-        for s in [
-            AgentStatus::Idle,
-            AgentStatus::Busy,
-            AgentStatus::Waiting,
-            AgentStatus::Background,
-        ] {
+        for s in [AgentStatus::Idle, AgentStatus::Busy, AgentStatus::Waiting] {
             assert!(!s.is_terminal());
         }
+    }
+
+    fn with_background(status: AgentStatus, background_agents: i64) -> AgentEvent {
+        AgentEvent {
+            agent: "claude".into(),
+            session: "s".into(),
+            status,
+            ts: 1,
+            thread_id: None,
+            thread_name: None,
+            unseen: None,
+            details: Some(AgentEventDetails {
+                background_agents: Some(background_agents),
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[test]
+    fn at_the_prompt_with_background_agents_out_is_working() {
+        for status in [AgentStatus::Idle, AgentStatus::Complete] {
+            assert!(with_background(status, 1).is_working(), "{status:?}");
+            assert!(!with_background(status, 0).is_working(), "{status:?}");
+        }
+        assert!(with_background(AgentStatus::Busy, 0).is_working());
+        for status in [
+            AgentStatus::Waiting,
+            AgentStatus::Error,
+            AgentStatus::Interrupted,
+        ] {
+            assert!(!with_background(status, 2).is_working(), "{status:?}");
+        }
+    }
+
+    #[test]
+    fn background_agents_rank_between_busy_and_the_terminal_states() {
+        let bg = with_background(AgentStatus::Idle, 1).rank();
+        assert!(with_background(AgentStatus::Busy, 0).rank() > bg);
+        assert!(bg > with_background(AgentStatus::Interrupted, 0).rank());
+        assert_eq!(with_background(AgentStatus::Complete, 2).rank(), bg);
+        assert!(with_background(AgentStatus::Idle, 0).rank() < bg);
     }
 
     #[test]

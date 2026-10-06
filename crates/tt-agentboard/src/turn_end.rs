@@ -15,11 +15,12 @@
 use std::collections::HashMap;
 
 use crate::StatePayload;
+use crate::types::AgentEvent;
 
 /// Tracks whether each folder had a working agent in the previous snapshot.
 #[derive(Debug, Default)]
 pub struct TurnEndWatch {
-    /// folder dir → any session there [`AgentStatus::is_working`] last time.
+    /// folder dir → any session there [`AgentEvent::is_working`] last time.
     prev: HashMap<String, bool>,
 }
 
@@ -42,7 +43,7 @@ impl TurnEndWatch {
                 let busy = folder
                     .sessions
                     .iter()
-                    .any(|s| s.agent_state.as_ref().is_some_and(|a| a.status.is_working()));
+                    .any(|s| s.agent_state.as_ref().is_some_and(AgentEvent::is_working));
                 current.insert(folder.dir.clone(), busy);
             }
         }
@@ -60,7 +61,7 @@ impl TurnEndWatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{AgentEvent, AgentStatus, FolderData, RepoData, SessionData};
+    use crate::types::{AgentEventDetails, AgentStatus, FolderData, RepoData, SessionData};
 
     fn session(id: &str, status: Option<AgentStatus>) -> SessionData {
         SessionData {
@@ -128,8 +129,11 @@ mod tests {
     fn a_turn_ends_when_its_background_agents_do() {
         let mut w = TurnEndWatch::new();
         let st = |s| payload(vec![("/repo/a", vec![session("s1", Some(s))])]);
+        let mut done_with_agents_out = session("s1", Some(AgentStatus::Complete));
+        done_with_agents_out.agent_state.as_mut().unwrap().details =
+            Some(AgentEventDetails { background_agents: Some(1), ..Default::default() });
         assert!(w.observe(&st(AgentStatus::Busy)).is_empty());
-        assert!(w.observe(&st(AgentStatus::Background)).is_empty());
+        assert!(w.observe(&payload(vec![("/repo/a", vec![done_with_agents_out])])).is_empty());
         assert_eq!(w.observe(&st(AgentStatus::Complete)), vec!["/repo/a".to_string()]);
     }
 

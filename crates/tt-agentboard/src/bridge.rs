@@ -287,15 +287,20 @@ pub fn session_needs(s: &SessionData) -> bool {
 }
 
 /// Why a session needs you. [`session_needs`] delegates here, so the boolean and
-/// the reason notifications show can never disagree.
+/// the reason notifications show can never disagree. A working session never
+/// does — a finished turn whose background agents are still out included.
 pub fn needs_reason(s: &SessionData) -> Option<NeedsYouReason> {
     if !s.live {
         return None;
     }
-    match s.agent_state.as_ref().map(|e| e.status) {
-        Some(AgentStatus::Waiting) => Some(NeedsYouReason::WaitingForInput),
-        Some(AgentStatus::Error) => Some(NeedsYouReason::Errored),
-        Some(AgentStatus::Complete) | Some(AgentStatus::Interrupted) if s.unseen => {
+    let agent = s.agent_state.as_ref()?;
+    if agent.is_working() {
+        return None;
+    }
+    match agent.status {
+        AgentStatus::Waiting => Some(NeedsYouReason::WaitingForInput),
+        AgentStatus::Error => Some(NeedsYouReason::Errored),
+        AgentStatus::Complete | AgentStatus::Interrupted if s.unseen => {
             Some(NeedsYouReason::Finished)
         }
         _ => None,
@@ -354,7 +359,7 @@ pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_m
 /// the ended thread — its stale model, context and cold cache would otherwise
 /// headline over the conversation actually on screen.
 fn pick_state(agents: &[AgentEvent], live: impl Fn(&AgentEvent) -> bool) -> Option<AgentEvent> {
-    agents.iter().max_by_key(|e| (live(e), e.status.rank(), e.ts)).cloned()
+    agents.iter().max_by_key(|e| (live(e), e.rank(), e.ts)).cloned()
 }
 
 /// Start a new top-level [`RepoData`] row: the first entry seen for a `common_dir`
@@ -842,9 +847,36 @@ mod tests {
         assert!(!session_needs(&session(true, Some(AgentStatus::Complete), false)));
         assert!(session_needs(&session(true, Some(AgentStatus::Interrupted), true)));
         assert!(!session_needs(&session(true, Some(AgentStatus::Busy), false)));
-        assert!(!session_needs(&session(true, Some(AgentStatus::Background), true)));
         assert!(!session_needs(&session(true, Some(AgentStatus::Idle), false)));
         assert!(!session_needs(&session(true, None, false)));
+    }
+
+    /// The shared rules read the count beside the status: a prompt with
+    /// background agents out is working, not free, and a finished turn with
+    /// them out is not yet news — their reports start the next one.
+    #[test]
+    fn background_agents_out_mean_working_and_never_needs_you() {
+        let with_background = |status, unseen| {
+            let mut s = session(true, Some(status), unseen);
+            s.agent_state.as_mut().unwrap().details = Some(crate::types::AgentEventDetails {
+                background_agents: Some(2),
+                ..Default::default()
+            });
+            s
+        };
+        for status in [AgentStatus::Idle, AgentStatus::Complete] {
+            let s = with_background(status, true);
+            assert!(s.agent_state.as_ref().unwrap().is_working(), "{status:?}");
+            assert_eq!(needs_reason(&s), None, "{status:?}");
+        }
+        assert_eq!(
+            needs_reason(&with_background(AgentStatus::Waiting, false)),
+            Some(NeedsYouReason::WaitingForInput)
+        );
+        assert_eq!(
+            needs_reason(&with_background(AgentStatus::Error, false)),
+            Some(NeedsYouReason::Errored)
+        );
     }
 
     #[test]

@@ -3,6 +3,7 @@ import {
   agentRollup,
   collapsedLiveColor,
   rollupAlertColor,
+  sessionBackgroundAgents,
   cacheWarnMs,
   contextBand,
   hasSubagentSpend,
@@ -2065,12 +2066,30 @@ describe("agentRollup expiring count", () => {
     expect(r.expiring).toBe(1);
   });
 
-  it("buckets background apart from busy and waiting, and colors it below busy", () => {
-    const bg = session({ live: true, working: true, agentState: agent("background") });
-    const r = agentRollup([repoOf([bg])], now, 30);
-    expect(r).toMatchObject({ total: 1, busy: 0, background: 1, waiting: 0 });
+  it("buckets a prompt with background agents out apart from busy, below it", () => {
+    const withAgents = (status: AgentStatus) => ({
+      ...agent(status),
+      details: { backgroundAgents: 2 },
+    });
+    const idle = session({ live: true, working: true, agentState: withAgents("idle") });
+    const done = session({
+      id: "s2",
+      live: true,
+      working: true,
+      agentState: withAgents("complete"),
+    });
+    const r = agentRollup([repoOf([idle, done])], now, 30);
+    expect(r).toMatchObject({ total: 2, busy: 0, background: 2, waiting: 0 });
     expect(rollupAlertColor(r)).toBe("bg-cyan-700");
     expect(rollupAlertColor({ ...r, busy: 1 })).toBe("bg-cyan-500");
+    // Mid-turn is busy whatever is out; the count is a fact beside the status.
+    const busy = session({ live: true, working: true, agentState: withAgents("busy") });
+    expect(agentRollup([repoOf([busy])], now, 30)).toMatchObject({ busy: 1, background: 0 });
+    expect(sessionBackgroundAgents(busy)).toBe(2);
+    expect(sessionBackgroundAgents(session({ agentState: agent("idle") }))).toBe(0);
+    // A finished turn the backend didn't flag isn't tinted, agents or not.
+    const unflagged = session({ live: true, agentState: withAgents("complete") });
+    expect(agentRollup([repoOf([unflagged])], now, 30)).toMatchObject({ background: 0 });
   });
 
   it("tints only on the backend's flags, never on a status they don't back", () => {

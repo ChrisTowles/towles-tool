@@ -26,16 +26,9 @@ export const abSyncRepo = (dir: string) => invoke<RepoSyncResult>("store_sync_re
 export const abSetSessionPurpose = (id: string, text: string | null) =>
   invoke("ab_set_session_purpose", { id, text });
 
-/** `background`: at the prompt, but its background agents are still out —
- * their reports start the next turn, so it is not waiting on you. */
-export type AgentStatus =
-  | "idle"
-  | "busy"
-  | "complete"
-  | "error"
-  | "waiting"
-  | "interrupted"
-  | "background";
+/** The CLI's statuses plus the terminal states. Background agents still out are
+ * a count beside it (`details.backgroundAgents`), never a status of their own. */
+export type AgentStatus = "idle" | "busy" | "complete" | "error" | "waiting" | "interrupted";
 
 export type SubagentInfo = {
   agentType?: string | null;
@@ -1239,25 +1232,33 @@ export function agentRollup(
   return r;
 }
 
-/** The statuses that tint a rollup or a collapsed row, loudest first. */
+/** The buckets that tint a rollup or a collapsed row, loudest first. `background`
+ * is not a status: a session working at its prompt has background agents out. */
 export const ALERT_ORDER = ["error", "waiting", "busy", "background"] as const;
-type AlertStatus = (typeof ALERT_ORDER)[number];
+export type AlertStatus = (typeof ALERT_ORDER)[number];
 
-function isAlertStatus(st: AgentStatus): st is AlertStatus {
-  return (ALERT_ORDER as readonly AgentStatus[]).includes(st);
+const BACKGROUND_COLOR = "bg-cyan-700";
+
+export function alertColor(alert: AlertStatus): string {
+  return alert === "background" ? BACKGROUND_COLOR : statusColor(alert);
+}
+
+export function sessionBackgroundAgents(s: Pick<SessionData, "agentState">): number {
+  return s.agentState?.details?.backgroundAgents ?? 0;
 }
 
 /** The backend's flags decide whether a session tints; its status only picks the color. */
 function alertStatus(s: SessionData): AlertStatus | null {
   const st = s.agentState?.status;
   if (!st || !(s.working || s.needsReason != null)) return null;
-  return isAlertStatus(st) ? st : null;
+  if (st === "error" || st === "waiting" || st === "busy") return st;
+  return s.working ? "background" : null;
 }
 
 /** Same precedence as a collapsed rail row, so the two never disagree. */
 export function rollupAlertColor(r: AgentRollup): string | null {
   const top = ALERT_ORDER.find((st) => r[st] > 0);
-  if (top) return statusColor(top);
+  if (top) return alertColor(top);
   return r.total > 0 ? "bg-emerald-500" : null;
 }
 
@@ -1272,7 +1273,6 @@ export { useAgentboardState, useSetAgentOverlay } from "./agentboard-state";
 const STATUS: Record<AgentStatus, { label: string; color: string }> = {
   idle: { label: "Idle", color: "bg-muted-foreground/40" },
   busy: { label: "Working", color: "bg-cyan-500" },
-  background: { label: "Agents", color: "bg-cyan-700" },
   waiting: { label: "Waiting", color: "bg-blue-500" },
   error: { label: "Error", color: "bg-red-500" },
   complete: { label: "Done", color: "bg-green-500" },
@@ -1289,7 +1289,7 @@ export function collapsedLiveColor(sessions: SessionData[]): string | null {
   if (live.length === 0) return null;
   const present = new Set(live.map(alertStatus));
   const top = ALERT_ORDER.find((st) => present.has(st));
-  return top ? statusColor(top) : "bg-emerald-500";
+  return top ? alertColor(top) : "bg-emerald-500";
 }
 
 // Session PTY writes

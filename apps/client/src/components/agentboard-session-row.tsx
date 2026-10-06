@@ -197,7 +197,7 @@ function RowControls({
   const agent = isAgent(session);
   const st = session.agentState?.status;
   // `/compact` only lands when Claude is at its prompt, not mid-turn.
-  const atPrompt = st === "waiting" || st === "idle" || st === "complete" || st === "background";
+  const atPrompt = st === "waiting" || st === "idle" || st === "complete";
 
   const items: {
     glyph: string;

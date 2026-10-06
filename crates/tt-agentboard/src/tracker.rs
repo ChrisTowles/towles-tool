@@ -47,10 +47,12 @@ impl AgentTracker {
         }
     }
 
-    /// Record an event. A terminal one is unseen until [`Self::mark_seen`].
+    /// Record an event. A terminal one is unseen until [`Self::mark_seen`] —
+    /// unless its background agents are still out, when there is nothing to
+    /// see yet; the event their last report lands is the one to notice.
     pub fn apply_event(&mut self, mut event: AgentEvent) {
         let key = instance_key(&event.agent, event.thread_id.as_deref());
-        event.unseen = event.status.is_terminal().then_some(true);
+        event.unseen = (event.status.is_terminal() && !event.is_working()).then_some(true);
         self.instances.entry(event.session.clone()).or_default().insert(key, event);
     }
 
@@ -94,31 +96,27 @@ impl AgentTracker {
         }
     }
 
-    /// Prune instances whose last activity is older than `timeout_ms`, optionally
-    /// restricted to one status; skips pinned.
-    fn prune_by_age(&mut self, timeout_ms: i64, only_status: Option<AgentStatus>, now_ms: i64) {
+    /// Prune any instance whose last activity is older than `timeout_ms`.
+    pub fn prune_stale(&mut self, timeout_ms: i64, now_ms: i64) {
+        self.prune_where(|event| now_ms - last_activity(event) > timeout_ms);
+    }
+
+    /// Prune "idle" instances older than `timeout_ms` unless pinned. A prompt
+    /// with background agents out is working, not idle.
+    pub fn prune_idle(&mut self, timeout_ms: i64, now_ms: i64) {
         self.prune_where(|event| {
-            let last_seen =
-                event.details.as_ref().and_then(|d| d.last_activity_at).unwrap_or(event.ts);
-            only_status.is_none_or(|s| event.status == s) && now_ms - last_seen > timeout_ms
+            event.status == AgentStatus::Idle
+                && !event.is_working()
+                && now_ms - last_activity(event) > timeout_ms
         });
     }
 
-    /// Prune any instance whose last activity is older than `timeout_ms`.
-    pub fn prune_stale(&mut self, timeout_ms: i64, now_ms: i64) {
-        self.prune_by_age(timeout_ms, None, now_ms);
-    }
-
-    /// Prune "idle" instances older than `timeout_ms` unless pinned.
-    pub fn prune_idle(&mut self, timeout_ms: i64, now_ms: i64) {
-        self.prune_by_age(timeout_ms, Some(AgentStatus::Idle), now_ms);
-    }
-
-    /// Prune terminal instances older than the terminal timeout, but only if seen
-    /// and not pinned.
+    /// Prune terminal instances older than the terminal timeout, but only if seen,
+    /// not pinned, and not still waiting on background agents.
     pub fn prune_terminal(&mut self, now_ms: i64) {
         self.prune_where(|event| {
             event.status.is_terminal()
+                && !event.is_working()
                 && event.unseen != Some(true)
                 && now_ms - event.ts > TERMINAL_PRUNE_MS
         });
@@ -145,10 +143,45 @@ impl AgentTracker {
     }
 }
 
+fn last_activity(event: &AgentEvent) -> i64 {
+    event.details.as_ref().and_then(|d| d.last_activity_at).unwrap_or(event.ts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::types::{AgentEventDetails, AgentStatus};
+
+    fn with_background(mut event: AgentEvent, n: i64) -> AgentEvent {
+        event.details =
+            Some(AgentEventDetails { background_agents: Some(n), ..Default::default() });
+        event
+    }
+
+    /// The amber row wash reads `unseen`: a finished turn whose background
+    /// agents are still out isn't news until their last report lands.
+    #[test]
+    fn a_finished_turn_with_background_agents_out_is_not_unseen_until_they_report() {
+        let mut t = AgentTracker::new();
+        t.apply_event(with_background(ev("s", "a", AgentStatus::Complete, 1), 1));
+        assert!(!t.is_unseen("s"));
+        t.apply_event(ev("s", "a", AgentStatus::Complete, 2));
+        assert!(t.is_unseen("s"));
+    }
+
+    #[test]
+    fn background_agents_out_survive_the_idle_and_terminal_prunes() {
+        let mut t = AgentTracker::new();
+        t.apply_event(with_background(ev("s", "idle", AgentStatus::Idle, 0), 1));
+        t.apply_event(with_background(ev("s", "done", AgentStatus::Complete, 0), 1));
+        t.apply_event(ev("s", "plain-idle", AgentStatus::Idle, 0));
+        let later = 60 * 60 * 1000;
+        t.prune_idle(1_000, later);
+        t.prune_terminal(later);
+        assert!(has(&t, "s", "idle"));
+        assert!(has(&t, "s", "done"));
+        assert!(!has(&t, "s", "plain-idle"));
+    }
 
     fn ev(session: &str, agent: &str, status: AgentStatus, ts: i64) -> AgentEvent {
         AgentEvent {
