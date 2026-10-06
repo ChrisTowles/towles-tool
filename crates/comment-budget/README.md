@@ -18,8 +18,8 @@ For every file a change touches, compared with the same file at the merge-base:
   its non-blank lines. The change fails if it grew that excess by **5** lines or
   more **and** the file ends more than **10** over.
 - **Walls.** The change fails if it adds an unbroken comment block of **13**
-  lines or more. A block counts as added when the lines that were already there
-  could not have made 13 on their own, so editing inside an old block is fine.
+  lines or more: one that is new, or longer than the block it replaces.
+  Rewording or shrinking an old block is fine.
 
 A file the base does not have starts from an excess of 0. A file that only moved
 is unchanged. Old debt never fails a change; only adding to it does.

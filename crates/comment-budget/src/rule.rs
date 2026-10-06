@@ -50,38 +50,57 @@ pub fn judge(lang: Lang, base: Option<&str>, head: &str) -> Vec<Failure> {
         None => {}
     }
     let now = measure(lang, head);
-    let before = base.map_or(0, |b| measure(lang, b).excess());
+    let then = base.map(|b| measure(lang, b));
+    let before = then.as_ref().map_or(0, Counts::excess);
     let mut out = Vec::new();
     if now.excess() >= before + GROWTH && now.excess() > FLOOR {
         out.push(Failure::Growth { base: before, head: now.excess() });
     }
-    out.extend(new_runs(&now, &added_rows(base, head)));
+    let longest_before = |run| match (base, &then) {
+        (Some(base), Some(then)) => longest_overlapping(then, &base_rows(base, head, run)),
+        _ => 0,
+    };
+    out.extend(
+        now.runs()
+            .into_iter()
+            .filter(|&(a, b)| b - a + 1 >= RUN && b - a + 1 > longest_before((a, b)))
+            .map(|(a, b)| Failure::Run { start: a + 1, end: b + 1 }),
+    );
     out
 }
 
-/// A run counts as new when its lines that predate this change are too few to
-/// have made a wall on their own, so editing inside an old block passes.
-fn new_runs(counts: &Counts, added: &BTreeSet<usize>) -> Vec<Failure> {
-    counts
-        .runs()
+/// A run is new only if it is longer than every base run it lines up with, so
+/// rewording inside an old block, or shrinking it, passes.
+fn longest_overlapping(then: &Counts, rows: &BTreeSet<usize>) -> usize {
+    then.runs()
         .into_iter()
-        .filter(|&(a, b)| {
-            let len = b - a + 1;
-            len >= RUN && len - added.range(a..=b).count() < RUN
-        })
-        .map(|(a, b)| Failure::Run { start: a + 1, end: b + 1 })
-        .collect()
+        .filter(|&(a, b)| rows.range(a..=b).next().is_some())
+        .map(|(a, b)| b - a + 1)
+        .max()
+        .unwrap_or(0)
 }
 
-/// 0-based rows of `head` that the base does not have.
-fn added_rows(base: Option<&str>, head: &str) -> BTreeSet<usize> {
-    let Some(base) = base else {
-        return (0..head.lines().count()).collect();
-    };
+/// The 0-based base rows that head rows `a..=b` line up with: unchanged rows
+/// one to one, and the whole old side of any hunk that rewrote one of them.
+fn base_rows(base: &str, head: &str, (a, b): (usize, usize)) -> BTreeSet<usize> {
     let input = gix::diff::blob::InternedInput::new(base.as_bytes(), head.as_bytes());
     let diff =
         gix::diff::blob::diff_with_slider_heuristics(gix::diff::blob::Algorithm::Myers, &input);
-    diff.hunks().flat_map(|h| h.after.start as usize..h.after.end as usize).collect()
+    let mut rows = BTreeSet::new();
+    let (mut old, mut new) = (0usize, 0usize);
+    let unchanged = |rows: &mut BTreeSet<usize>, old: usize, from: usize, to: usize| {
+        rows.extend((from.max(a)..to.min(b + 1)).map(|r| old + r - from));
+    };
+    for h in diff.hunks() {
+        let (before, after) = (h.before.start as usize..h.before.end as usize, h.after.clone());
+        unchanged(&mut rows, old, new, after.start as usize);
+        if (after.start as usize) <= b && (after.end as usize) > a {
+            rows.extend(before.clone());
+        }
+        (old, new) = (before.end, after.end as usize);
+    }
+    unchanged(&mut rows, old, new, usize::MAX);
+    rows
 }
 
 #[cfg(test)]
@@ -161,6 +180,26 @@ mod tests {
         let base = rust(20, 200);
         let head = base.replacen("// c\n", "// edited\n", 1);
         assert!(judge(Lang::Rust, Some(&base), &head).is_empty());
+    }
+
+    #[test]
+    fn rewording_every_line_of_an_existing_wall_passes() {
+        let base = format!("{}{}", "//! old\n".repeat(13), "fn a() {}\n".repeat(200));
+        let head = base.replace("//! old", "//! new wording");
+        assert!(judge(Lang::Rust, Some(&base), &head).is_empty());
+    }
+
+    #[test]
+    fn a_block_growing_from_eleven_to_fourteen_fails() {
+        let base = format!("{}{}", "//! h\n".repeat(11), "fn a() {}\n".repeat(200));
+        let head = format!("{}{}", "//! h\n".repeat(14), "fn a() {}\n".repeat(200));
+        assert_eq!(judge(Lang::Rust, Some(&base), &head), vec![Failure::Run { start: 1, end: 14 }]);
+    }
+
+    #[test]
+    fn a_wall_that_shrinks_passes() {
+        let base = rust(20, 200);
+        assert!(judge(Lang::Rust, Some(&base), &rust(15, 200)).is_empty());
     }
 
     #[test]
