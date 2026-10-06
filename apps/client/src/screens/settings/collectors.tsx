@@ -462,6 +462,23 @@ export function collectorsSections(
       ],
     },
     {
+      heading: "CI health",
+      keywords: ["collector", "ci", "actions", "workflow", "nightly", "gh", "github"],
+      rows: [
+        {
+          label: "Default-branch runs",
+          node: (
+            <FieldRow
+              label="Default-branch runs"
+              description="The latest Actions run per workflow on each repo's default branch, for the Cockpit's CI chips. Rides the pull-request cadence and toggle."
+            >
+              <CollectorFreshness run={run("ci")} now={now} />
+            </FieldRow>
+          ),
+        },
+      ],
+    },
+    {
       heading: "Issues",
       keywords: ["collector", "issue", "gh", "github", "board"],
       rows: [

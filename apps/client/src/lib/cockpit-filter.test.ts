@@ -5,11 +5,17 @@ describe("cockpitRepos", () => {
   it("collects the distinct repos across PRs and issues, sorted", () => {
     const prs = [{ repo: "octo/gizmos" }, { repo: "octo/widgets" }];
     const issues = [{ repo: "octo/widgets" }, { repo: "acme/api" }];
-    expect(cockpitRepos(prs, issues)).toEqual(["acme/api", "octo/gizmos", "octo/widgets"]);
+    expect(cockpitRepos(prs, issues, [])).toEqual(["acme/api", "octo/gizmos", "octo/widgets"]);
   });
 
   it("is empty when nothing is collected", () => {
-    expect(cockpitRepos([], [])).toEqual([]);
+    expect(cockpitRepos([], [], [])).toEqual([]);
+  });
+
+  it("gives a repo that only has CI runs a chip, so a red nightly can be filtered to", () => {
+    const prs = [{ repo: "octo/widgets" }];
+    const ciRuns = [{ repo: "acme/legacy" }, { repo: "octo/widgets" }];
+    expect(cockpitRepos(prs, [], ciRuns)).toEqual(["acme/legacy", "octo/widgets"]);
   });
 });
 

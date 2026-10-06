@@ -1,5 +1,5 @@
 //! Data-hub collectors for the towles-tool personal dashboard. Each gathers one
-//! slice of state — calendar events, cross-repo issues, pull-request status — and
+//! slice of state — calendar events, cross-repo issues, pull-request status, CI runs — and
 //! writes it into the shared [`tt_store::Store`]. The calendar collector shells out
 //! to `claude -p` once per configured [`tt_config::CalendarSource`], each writing
 //! its own store lane; issues and PRs shell out to `gh`. Tauri-free, so both the CLI
@@ -9,6 +9,7 @@
 //! failure becomes a [`CollectSummary`] with `ok = false`, recorded via `record_run`
 //! under a stable key.
 
+mod ci;
 mod gh;
 pub mod issues;
 pub mod nudge;
@@ -459,6 +460,47 @@ pub fn collect_prs_merged(
     summary
 }
 
+/// The latest default-branch Actions run per workflow for every tracked repo, under
+/// the `ci` key. Rides the open-PR tick (same `reuse_ms`), so it has no cadence of its
+/// own.
+pub fn collect_ci(
+    store: &Store,
+    repo_dirs: &[PathBuf],
+    reuse_ms: i64,
+    now_ms: i64,
+) -> CollectSummary {
+    let repos = dedupe_repo_dirs(repo_dirs);
+    let sweep = sweep_repos_shared(&repos, "ci", reuse_ms, now_ms, ci::collect_repo_ci);
+    finish_ci_sweep(store, sweep, now_ms)
+}
+
+/// How long a workflow missing from a successful fetch keeps its last run: long
+/// enough for a weekly Nightly behind a busy page, short enough that a deleted or
+/// renamed workflow's red chip ages out.
+const CI_ABSENT_KEEP_MS: i64 = 14 * 24 * 60 * 60 * 1000;
+
+/// CI rows are upserted, never swapped: a workflow missing from this page keeps its
+/// last known run until [`CI_ABSENT_KEEP_MS`] old. Only a sweep that reached every
+/// tracked repo prunes whole repos, and only repos no longer tracked.
+fn finish_ci_sweep(store: &Store, sweep: Sweep<tt_store::CiRun>, now_ms: i64) -> CollectSummary {
+    let clean = sweep.errors.is_empty() && sweep.skipped.is_empty();
+    let tracked: Vec<String> = sweep.successes.iter().map(|(repo, _)| repo.clone()).collect();
+    let stale_before_ms = now_ms.saturating_sub(CI_ABSENT_KEEP_MS);
+    let write = |all: &[tt_store::CiRun], _scope: Option<&[String]>| {
+        let written = store.upsert_ci_runs(all)?;
+        for repo in &tracked {
+            let present: Vec<&str> =
+                all.iter().filter(|r| &r.repo == repo).map(|r| r.workflow.as_str()).collect();
+            store.prune_absent_ci_workflows(repo, &present, stale_before_ms)?;
+        }
+        if clean {
+            store.prune_ci_runs_except(&tracked)?;
+        }
+        Ok(written)
+    };
+    finish_sweep(store, "ci", sweep, write, |r| (r.repo.clone(), r.workflow.clone()), now_ms)
+}
+
 /// Upsert the watched Slack DM's latest state. Missing credentials is a recorded
 /// failure, not a silent no-op: the caller already gated on `enabled`.
 pub fn collect_slack_dm(store: &Store, config: &SlackDmConfig, now_ms: i64) -> CollectSummary {
@@ -677,28 +719,27 @@ where
 /// Apply a sweep's results and record the run. `write(all, None)` is a full-table
 /// replace, `Some(repos)` a scoped one; `key_of` yields the identity that dedups
 /// items collected from two checkouts of one repo.
-fn finish_sweep<T>(
+fn finish_sweep<T, K: std::hash::Hash + Eq>(
     store: &Store,
     key: &str,
     sweep: Sweep<T>,
     write: impl Fn(&[T], Option<&[String]>) -> tt_store::Result<usize>,
-    key_of: impl Fn(&T) -> (String, i64),
+    key_of: impl Fn(&T) -> K,
     now_ms: i64,
 ) -> CollectSummary {
     let Sweep { successes, errors, skipped } = sweep;
 
-    if successes.is_empty() {
-        // Nothing succeeded: never touch existing rows. Any error fails the run.
-        let ok = errors.is_empty();
-        let mut notes: Vec<String> = errors.into_iter().chain(skipped).collect();
-        if notes.is_empty() {
-            notes.push("no repos configured".to_string());
-        }
-        return finish(store, key, ok, 0, Some(notes.join("; ")), now_ms);
+    let clean_sweep = errors.is_empty() && skipped.is_empty();
+    if successes.is_empty() && !clean_sweep {
+        // Repos were tracked but none answered: keep every row. No repos at all is a
+        // clean sweep of nothing, which clears them.
+        let notes: Vec<String> = errors.iter().cloned().chain(skipped).collect();
+        return finish(store, key, errors.is_empty(), 0, Some(notes.join("; ")), now_ms);
     }
+    let untracked = successes.is_empty();
 
     let repos: Vec<String> = successes.iter().map(|(repo, _)| repo.clone()).collect();
-    let mut by_key: std::collections::HashMap<(String, i64), T> = std::collections::HashMap::new();
+    let mut by_key: std::collections::HashMap<K, T> = std::collections::HashMap::new();
     for (_, items) in successes {
         for item in items {
             by_key.insert(key_of(&item), item);
@@ -707,20 +748,25 @@ fn finish_sweep<T>(
     let all: Vec<T> = by_key.into_values().collect();
     let count = all.len();
 
-    let clean_sweep = errors.is_empty() && skipped.is_empty();
     let scope = if clean_sweep { None } else { Some(repos.as_slice()) };
     if let Err(e) = write(&all, scope) {
         return finish(store, key, false, count, Some(e.to_string()), now_ms);
     }
 
     let notes: Vec<String> = errors.iter().cloned().chain(skipped).collect();
-    let message = if notes.is_empty() { None } else { Some(notes.join("; ")) };
+    let message = if untracked {
+        Some("no repos configured".to_string())
+    } else if notes.is_empty() {
+        None
+    } else {
+        Some(notes.join("; "))
+    };
     finish(store, key, errors.is_empty(), count, message, now_ms)
 }
 
-/// What a manual "refresh now" fires: issues, PRs, and the watched DM when `slack`
-/// is configured. Calendar is excluded — every run spends `claude` tokens. Asks
-/// GitHub itself, since stale data reads as the button doing nothing.
+/// What a manual "refresh now" fires: issues, PRs, CI runs, and the watched DM when
+/// `slack` is configured. Calendar is excluded — every run spends `claude` tokens.
+/// Asks GitHub itself, since stale data reads as the button doing nothing.
 pub fn collect_manual(
     store: &Store,
     repo_dirs: &[PathBuf],
@@ -730,6 +776,7 @@ pub fn collect_manual(
     let mut summaries = vec![
         collect_issues(store, repo_dirs, FETCH_NOW, now_ms),
         collect_prs(store, repo_dirs, now_ms),
+        collect_ci(store, repo_dirs, FETCH_NOW, now_ms),
     ];
     if let Some(config) = slack {
         summaries.push(collect_slack_dm(store, config, now_ms));
@@ -960,7 +1007,11 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let summaries = collect_manual(&store, &[], None, 1);
         let keys: Vec<&str> = summaries.iter().map(|s| s.collector.as_str()).collect();
-        assert_eq!(keys, ["issues", "prs"], "manual refresh runs issues + PRs, skips calendar");
+        assert_eq!(
+            keys,
+            ["issues", "prs", "ci"],
+            "manual refresh runs issues + PRs + CI, skips calendar"
+        );
         assert!(!keys.contains(&"claude:calendar"), "calendar is never manually triggered");
     }
 
@@ -977,7 +1028,7 @@ mod tests {
             .into_iter()
             .map(|s| s.collector)
             .collect();
-        assert_eq!(keys, ["issues", "prs", "slack:dm"]);
+        assert_eq!(keys, ["issues", "prs", "ci", "slack:dm"]);
     }
 
     #[test]
@@ -1325,6 +1376,157 @@ mod tests {
         assert!(prs.iter().any(|p| p.repo == "o/a" && p.number == 9), "synced repo's fresh row");
         assert!(prs.iter().any(|p| p.repo == "o/b" && p.number == 2), "other repo untouched");
         assert!(!prs.iter().any(|p| p.number == 1), "synced repo's stale row is gone");
+    }
+
+    fn ci_run(repo: &str, workflow: &str, conclusion: &str, created_ms: i64) -> tt_store::CiRun {
+        tt_store::CiRun {
+            repo: repo.to_string(),
+            workflow: workflow.to_string(),
+            status: "completed".to_string(),
+            conclusion: conclusion.to_string(),
+            created_ms,
+            updated_ms: created_ms,
+            url: String::new(),
+            head_sha: String::new(),
+            event: "push".to_string(),
+        }
+    }
+
+    fn ci_conclusion(store: &Store, repo: &str, workflow: &str) -> Option<String> {
+        store
+            .ci_runs()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.repo == repo && r.workflow == workflow)
+            .map(|r| r.conclusion)
+    }
+
+    #[test]
+    fn ci_sweep_with_a_failed_repo_keeps_its_rows_and_an_absent_workflow() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_ci_runs(&[
+                ci_run("o/a", "CI", "failure", 1),
+                ci_run("o/a", "Nightly", "failure", 1),
+                ci_run("o/b", "CI", "success", 1),
+            ])
+            .unwrap();
+
+        let sweep = Sweep {
+            successes: vec![("o/a".to_string(), vec![ci_run("o/a", "CI", "success", 2)])],
+            errors: vec!["o/b: gh exploded".to_string()],
+            skipped: vec![],
+        };
+        let summary = finish_ci_sweep(&store, sweep, 5);
+
+        assert!(!summary.ok, "a failed repo still fails the run");
+        assert_eq!(summary.count, 1);
+        assert_eq!(ci_conclusion(&store, "o/a", "CI").as_deref(), Some("success"));
+        assert_eq!(
+            ci_conclusion(&store, "o/a", "Nightly").as_deref(),
+            Some("failure"),
+            "a workflow outside this page keeps its last known run"
+        );
+        assert_eq!(
+            ci_conclusion(&store, "o/b", "CI").as_deref(),
+            Some("success"),
+            "the failed repo's rows are intact"
+        );
+    }
+
+    #[test]
+    fn clean_ci_sweep_prunes_only_repos_no_longer_tracked() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .upsert_ci_runs(&[
+                ci_run("o/a", "Nightly", "failure", 1),
+                ci_run("o/gone", "CI", "success", 1),
+            ])
+            .unwrap();
+
+        let sweep = Sweep {
+            successes: vec![
+                ("o/a".to_string(), vec![]),
+                ("o/b".to_string(), vec![ci_run("o/b", "CI", "success", 2)]),
+            ],
+            errors: vec![],
+            skipped: vec![],
+        };
+        let summary = finish_ci_sweep(&store, sweep, 5);
+
+        assert!(summary.ok);
+        let keys: Vec<(String, String)> =
+            store.ci_runs().unwrap().into_iter().map(|r| (r.repo, r.workflow)).collect();
+        assert_eq!(
+            keys,
+            [
+                ("o/a".to_string(), "Nightly".to_string()),
+                ("o/b".to_string(), "CI".to_string())
+            ],
+            "an empty page keeps o/a's row; only the untracked repo is gone"
+        );
+    }
+
+    #[test]
+    fn ci_sweep_ages_out_a_workflow_gone_from_a_fetched_repo() {
+        let store = Store::open_in_memory().unwrap();
+        let now = CI_ABSENT_KEEP_MS * 2;
+        let old = now - CI_ABSENT_KEEP_MS - 1;
+        store
+            .upsert_ci_runs(&[
+                ci_run("o/a", "Deleted", "failure", old),
+                ci_run("o/a", "Weekly", "failure", now - 1),
+                ci_run("o/b", "Gone", "failure", old),
+            ])
+            .unwrap();
+
+        let sweep = Sweep {
+            successes: vec![("o/a".to_string(), vec![ci_run("o/a", "CI", "success", now)])],
+            errors: vec!["o/b: gh exploded".to_string()],
+            skipped: vec![],
+        };
+        finish_ci_sweep(&store, sweep, now);
+
+        let keys: Vec<(String, String)> =
+            store.ci_runs().unwrap().into_iter().map(|r| (r.repo, r.workflow)).collect();
+        assert_eq!(
+            keys,
+            [
+                ("o/a".to_string(), "CI".to_string()),
+                ("o/a".to_string(), "Weekly".to_string()),
+                ("o/b".to_string(), "Gone".to_string())
+            ],
+            "the old absent workflow ages out; a recent one and a failed repo's rows stay"
+        );
+    }
+
+    #[test]
+    fn ci_sweep_with_no_tracked_repos_clears_the_rows() {
+        let store = Store::open_in_memory().unwrap();
+        store.upsert_ci_runs(&[ci_run("o/a", "CI", "failure", 1)]).unwrap();
+
+        let empty = Sweep { successes: vec![], errors: vec![], skipped: vec![] };
+        let summary = finish_ci_sweep(&store, empty, 5);
+
+        assert!(summary.ok);
+        assert_eq!(summary.message.as_deref(), Some("no repos configured"));
+        assert!(store.ci_runs().unwrap().is_empty(), "untracking every repo clears CI");
+    }
+
+    #[test]
+    fn ci_sweep_where_every_fetch_failed_keeps_the_rows() {
+        let store = Store::open_in_memory().unwrap();
+        store.upsert_ci_runs(&[ci_run("o/a", "CI", "failure", 1)]).unwrap();
+
+        let failed = Sweep {
+            successes: vec![],
+            errors: vec!["o/a: rate limited".to_string()],
+            skipped: vec![],
+        };
+        let summary = finish_ci_sweep(&store, failed, 5);
+
+        assert!(!summary.ok);
+        assert_eq!(store.ci_runs().unwrap().len(), 1, "a dead sweep isn't an untracked one");
     }
 
     #[test]

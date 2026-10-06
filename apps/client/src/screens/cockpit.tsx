@@ -63,6 +63,7 @@ import { useFocusTarget } from "@/lib/focus-target";
 import { uiAction } from "@/lib/ui-action";
 import { Empty, IssueRow, Panel, PrRow } from "@/components/store-bits";
 import { prNeedsYou, prRank } from "@/lib/pr-tone";
+import { CockpitCiHealth } from "@/components/cockpit-ci-health";
 
 /** A tracked checkout a Cockpit issue can be dispatched into. */
 type TaskTarget = { dir: string; branch: string; name: string };
@@ -161,7 +162,7 @@ export function CockpitScreen() {
     () => snapshot.issues.filter((i) => !isItemDismissed(i)),
     [snapshot.issues],
   );
-  const repoList = cockpitRepos(openPrs, openIssues);
+  const repoList = cockpitRepos(openPrs, openIssues, snapshot.ciRuns);
   const activeRepo = repoFilter !== null && repoList.includes(repoFilter) ? repoFilter : null;
   const visiblePrs = filterByRepo(openPrs, activeRepo);
   const visibleIssues = filterByRepo(openIssues, activeRepo);
@@ -351,6 +352,7 @@ export function CockpitScreen() {
 
       <ScrollArea className="min-h-0 flex-1">
         <div ref={focusRef} className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+          <CockpitCiHealth runs={snapshot.ciRuns} repo={activeRepo} now={now} live={live} />
           {/* Pull requests */}
           <Panel
             title="Pull requests"

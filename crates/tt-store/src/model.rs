@@ -388,6 +388,25 @@ pub struct Snapshot {
     pub dms: Vec<DmItem>,
     #[serde(default)]
     pub mcp_calls: Vec<McpCall>,
+    #[serde(default)]
+    pub ci_runs: Vec<CiRun>,
+}
+
+/// The latest default-branch Actions run of one workflow in one repo — the `ci`
+/// collector's unit, read back as written. `conclusion` is empty while `status`
+/// is anything but `completed`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CiRun {
+    pub repo: String,
+    pub workflow: String,
+    pub status: String,
+    pub conclusion: String,
+    pub created_ms: i64,
+    pub updated_ms: i64,
+    pub url: String,
+    pub head_sha: String,
+    pub event: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

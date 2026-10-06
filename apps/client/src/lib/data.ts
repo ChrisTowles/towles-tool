@@ -185,6 +185,20 @@ export type McpCall = {
   client?: string;
 };
 
+/** The latest default-branch Actions run of one workflow (the `ci` collector).
+ * `conclusion` is empty until `status` is `completed`. */
+export type CiRun = {
+  repo: string;
+  workflow: string;
+  status: string;
+  conclusion: string;
+  createdMs: number;
+  updatedMs: number;
+  url: string;
+  headSha: string;
+  event: string;
+};
+
 /** The snapshot exactly as the backend sends it — see {@link WireCalEvent}. */
 export type WireStoreSnapshot = Omit<StoreSnapshot, "events"> & { events: WireCalEvent[] };
 
@@ -201,6 +215,7 @@ export type StoreSnapshot = {
   runs: CollectRun[];
   dms: DmItem[];
   mcpCalls: McpCall[];
+  ciRuns: CiRun[];
 };
 
 const MINUTE = 60_000;
@@ -213,6 +228,7 @@ export const EMPTY_SNAPSHOT: StoreSnapshot = {
   runs: [],
   dms: [],
   mcpCalls: [],
+  ciRuns: [],
 };
 
 function at(ms: number): string {
@@ -398,6 +414,30 @@ export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
         ok: true,
         durationMs: 0,
         client: "claude-code 2.1",
+      },
+    ],
+    ciRuns: [
+      {
+        repo: "octo/widgets",
+        workflow: "CI",
+        status: "completed",
+        conclusion: "success",
+        createdMs: now - 35 * MINUTE,
+        updatedMs: now - 30 * MINUTE,
+        url: "https://github.com/octo/widgets/actions/runs/101",
+        headSha: "2981502e9f1c",
+        event: "push",
+      },
+      {
+        repo: "octo/widgets",
+        workflow: "Nightly",
+        status: "completed",
+        conclusion: "failure",
+        createdMs: now - 9 * 60 * MINUTE,
+        updatedMs: now - 9 * 60 * MINUTE + 12 * MINUTE,
+        url: "https://github.com/octo/widgets/actions/runs/100",
+        headSha: "2981502e9f1c",
+        event: "schedule",
       },
     ],
   };

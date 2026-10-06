@@ -1,4 +1,4 @@
-//! GitHub caches: the issues and PR tables (full-swap and state-scoped
+//! GitHub caches: the issues, PR and CI-run tables (full-swap and scoped
 //! writes), the tracked-repo identity cache, and their dismissal-aware reads.
 
 use rusqlite::params;
@@ -317,6 +317,97 @@ impl Store {
             });
         }
         Ok(out)
+    }
+
+    /// Upsert by `(repo, workflow)`: a fetched run lands only when it is at least as
+    /// new as the stored one, so a stale page never rolls a row back and a workflow
+    /// missing from a page keeps its last known run. Returns the rows written.
+    pub fn upsert_ci_runs(&self, runs: &[CiRun]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut written = 0;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO ci_runs
+                   (repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(repo, workflow) DO UPDATE SET
+                   status = excluded.status,
+                   conclusion = excluded.conclusion,
+                   created_ms = excluded.created_ms,
+                   updated_ms = excluded.updated_ms,
+                   url = excluded.url,
+                   head_sha = excluded.head_sha,
+                   event = excluded.event
+                 WHERE excluded.created_ms >= ci_runs.created_ms",
+            )?;
+            for r in runs {
+                written += stmt.execute(params![
+                    r.repo,
+                    r.workflow,
+                    r.status,
+                    r.conclusion,
+                    r.created_ms,
+                    r.updated_ms,
+                    r.url,
+                    r.head_sha,
+                    r.event,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(written)
+    }
+
+    /// After a successful fetch of `repo`: drop its workflows missing from `present`
+    /// whose last run predates `stale_before_ms`, so a deleted or renamed workflow
+    /// ages out while a rarely-run one keeps its row for a while.
+    pub fn prune_absent_ci_workflows(
+        &self,
+        repo: &str,
+        present: &[&str],
+        stale_before_ms: i64,
+    ) -> Result<usize> {
+        let present = serde_json::to_string(present)?;
+        Ok(self.conn.execute(
+            "DELETE FROM ci_runs WHERE repo = ?1 AND created_ms < ?2
+               AND workflow NOT IN (SELECT value FROM json_each(?3))",
+            params![repo, stale_before_ms, present],
+        )?)
+    }
+
+    /// Drop the rows of every repo not in `tracked`— only after a sweep that reached
+    /// every tracked repo, since a repo that merely errored must keep its rows.
+    pub fn prune_ci_runs_except(&self, tracked: &[String]) -> Result<usize> {
+        if tracked.is_empty() {
+            return Ok(self.conn.execute("DELETE FROM ci_runs", [])?);
+        }
+        let placeholders = vec!["?"; tracked.len()].join(", ");
+        let mut del = self
+            .conn
+            .prepare(&format!("DELETE FROM ci_runs WHERE repo NOT IN ({placeholders})"))?;
+        Ok(del.execute(rusqlite::params_from_iter(tracked))?)
+    }
+
+    /// Every workflow's latest default-branch run, by repo then workflow.
+    pub fn ci_runs(&self) -> Result<Vec<CiRun>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event
+             FROM ci_runs ORDER BY repo, workflow",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(CiRun {
+                repo: r.get(0)?,
+                workflow: r.get(1)?,
+                status: r.get(2)?,
+                conclusion: r.get(3)?,
+                created_ms: r.get(4)?,
+                updated_ms: r.get(5)?,
+                url: r.get(6)?,
+                head_sha: r.get(7)?,
+                event: r.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     fn query_prs(&self, sql: &str, params: impl rusqlite::Params) -> Result<Vec<PrItem>> {

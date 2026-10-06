@@ -194,7 +194,7 @@ fn review_decision_state(decision: &str) -> String {
     }
 }
 
-fn str_field(item: &serde_json::Value, key: &str) -> String {
+pub(crate) fn str_field(item: &serde_json::Value, key: &str) -> String {
     item.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string()
 }
 
@@ -230,7 +230,7 @@ pub(crate) fn checks_status(rollup: &serde_json::Value) -> String {
 }
 
 /// Parse an RFC 3339 / ISO-8601 timestamp to epoch milliseconds; 0 on failure.
-fn parse_iso_ms(s: &str) -> i64 {
+pub(crate) fn parse_iso_ms(s: &str) -> i64 {
     chrono::DateTime::parse_from_rfc3339(s).map(|dt| dt.timestamp_millis()).unwrap_or(0)
 }
 

@@ -178,11 +178,12 @@ describe("alwaysOnHealth", () => {
   });
 
   it("ignores a disabled calendar collector when colouring the dot", () => {
-    // Calendar never runs (off by default); prs/issues are fresh. The dot must
+    // Calendar never runs (off by default); prs/issues/ci are fresh. The dot must
     // read fresh, not amber, despite calendar's perpetual never-ran.
     const runs: CollectRun[] = [
       run({ collector: "prs", ranAt: NOW - 1000 }),
       run({ collector: "issues", ranAt: NOW - 1000 }),
+      run({ collector: "ci", ranAt: NOW - 1000 }),
     ];
     expect(worstCollectorState(alwaysOnHealth(runs, NOW))).toBe("fresh");
   });
@@ -191,6 +192,7 @@ describe("alwaysOnHealth", () => {
     const runs: CollectRun[] = [
       run({ collector: "prs", ranAt: NOW - 1000, ok: false }),
       run({ collector: "issues", ranAt: NOW - 1000 }),
+      run({ collector: "ci", ranAt: NOW - 1000 }),
     ];
     expect(worstCollectorState(alwaysOnHealth(runs, NOW))).toBe("failing");
   });
