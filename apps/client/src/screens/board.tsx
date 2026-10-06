@@ -30,10 +30,15 @@ import { Switch } from "@/components/ui/switch";
 import {
   ownerRepoFromOrigin,
   requestAgentboardNav,
+  sessionCatchesEye,
+  sessionLabel,
+  sessionStatusText,
   type TaskBlocker,
   useAgentboardState,
 } from "@/lib/agentboard";
+import { Dot } from "@/components/agentboard-bits";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
+import { boardAgentStatus, type BoardAgentStatus } from "@/lib/board-agent-status";
 import { repoAccentStyles, repoIcon, type RepoMeta } from "@/lib/repo-identity";
 import { useBoardGroupByRepo } from "@/lib/board-prefs";
 import { uiAction } from "@/lib/ui-action";
@@ -349,6 +354,15 @@ export function BoardScreen() {
     [openTabWithFocus],
   );
 
+  const openSession = useCallback(
+    (folderDir: string, sessionId: string) => {
+      uiAction("board.open_agent_session", "board");
+      requestAgentboardNav({ kind: "session", folderDir, sessionId });
+      openTab("agentboard");
+    },
+    [openTab],
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
@@ -541,6 +555,8 @@ export function BoardScreen() {
                                 onOpenAgentboard={
                                   railKey ? () => openOnAgentboard(railKey) : undefined
                                 }
+                                agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
+                                onOpenSession={openSession}
                                 openIssues={snapshot.issues}
                                 openPrs={openPrs}
                                 onReopen={reopen}
@@ -629,12 +645,37 @@ function LaneGlyph({ meta }: { meta?: RepoMeta }) {
   );
 }
 
+/** The rail's own dot and word for the worktree's loudest session, reported as-is;
+ * amber boxes it when that session needs you. A sibling of the identity button. */
+function AgentStatusChip({ agent, onOpen }: { agent: BoardAgentStatus; onOpen: () => void }) {
+  const { session, sessionCount } = agent;
+  const needs = sessionCatchesEye(session);
+  const others = sessionCount > 1 ? ` · ${sessionCount} sessions` : "";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`Open on Agentboard — ${sessionLabel(session)}${others}`}
+      className={cn(
+        "ml-auto flex shrink-0 items-center gap-1.5 rounded-sm px-1 font-sans not-italic hover:bg-accent hover:text-foreground",
+        needs && "border border-amber-500/50 bg-amber-500/10 text-amber-500",
+      )}
+    >
+      <Dot session={session} />
+      {needs && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
+      {sessionStatusText(session)}
+    </button>
+  );
+}
+
 function Card({
   task,
   repos,
   repoMeta,
   repoLabel,
   onOpenAgentboard,
+  agent,
+  onOpenSession,
   openIssues,
   openPrs,
   onReopen,
@@ -656,6 +697,9 @@ function Card({
   repoLabel?: string;
   /** Undefined when the repo isn't on the rail — the affordances don't render. */
   onOpenAgentboard?: () => void;
+  /** The rail's loudest session in this task's worktree; null when it has none. */
+  agent: BoardAgentStatus | null;
+  onOpenSession: (folderDir: string, sessionId: string) => void;
   openIssues: IssueItem[];
   openPrs: PrItem[];
   /** Mints a fresh worktree bound to the task's existing id — both reopening a
@@ -950,14 +994,14 @@ function Card({
           says it), plus the worktree branch when one exists — a branchless task in
           grouped mode renders nothing here, its lane header already identifies
           it. Clickable when the repo has an Agentboard rail row. */}
-      {(repoLabel !== undefined || branch) && (
+      {(repoLabel !== undefined || branch || agent) && (
         <div
           className={cn(
-            "mt-1.5 flex items-center font-mono text-[11px] text-muted-foreground",
+            "mt-1.5 flex items-center gap-2 font-mono text-[11px] text-muted-foreground",
             detached && "italic text-muted-foreground/70",
           )}
         >
-          {hasWorktree && onOpenAgentboard ? (
+          {!identityRowText ? null : hasWorktree && onOpenAgentboard ? (
             <button
               type="button"
               onClick={onOpenAgentboard}
@@ -984,6 +1028,12 @@ function Card({
             >
               {identityRowText}
             </span>
+          )}
+          {agent && (
+            <AgentStatusChip
+              agent={agent}
+              onOpen={() => onOpenSession(agent.folderDir, agent.session.id)}
+            />
           )}
         </div>
       )}
