@@ -19,7 +19,7 @@ pub const RUN: usize = 13;
 pub enum Failure {
     /// The change grew the file's excess by `GROWTH`+ and left it over `FLOOR`.
     Growth { base: usize, head: usize },
-    /// A `RUN`+ line block that was not that long before. 1-based, inclusive.
+    /// A new `RUN`+ line block, or an old wall grown by `GROWTH`+. 1-based, inclusive.
     Run { start: usize, end: usize },
     /// `comment-budget: allow` with no reason.
     UnexplainedAllow,
@@ -34,7 +34,11 @@ impl std::fmt::Display for Failure {
                 head - base
             ),
             Failure::Run { start, end } => {
-                write!(f, "a new {}-line comment block (a wall is {RUN}+)", end - start + 1)
+                write!(
+                    f,
+                    "a {}-line comment block, new or grown (a wall is {RUN}+)",
+                    end - start + 1
+                )
             }
             Failure::UnexplainedAllow => f.write_str("`comment-budget: allow()` names no reason"),
         }
@@ -63,14 +67,17 @@ pub fn judge(lang: Lang, base: Option<&str>, head: &str) -> Vec<Failure> {
     out.extend(
         now.runs()
             .into_iter()
-            .filter(|&(a, b)| b - a + 1 >= RUN && b - a + 1 > longest_before((a, b)))
+            .filter(|&(a, b)| {
+                let (len, old) = (b - a + 1, longest_before((a, b)));
+                len >= RUN && (old < RUN || len >= old + GROWTH)
+            })
             .map(|(a, b)| Failure::Run { start: a + 1, end: b + 1 }),
     );
     out
 }
 
-/// A run is new only if it is longer than every base run it lines up with, so
-/// rewording inside an old block, or shrinking it, passes.
+/// The longest base run these base rows touch: what a head run is compared to,
+/// so rewording or shrinking an old block passes.
 fn longest_overlapping(then: &Counts, rows: &BTreeSet<usize>) -> usize {
     then.runs()
         .into_iter()
@@ -194,6 +201,24 @@ mod tests {
         let base = format!("{}{}", "//! h\n".repeat(11), "fn a() {}\n".repeat(200));
         let head = format!("{}{}", "//! h\n".repeat(14), "fn a() {}\n".repeat(200));
         assert_eq!(judge(Lang::Rust, Some(&base), &head), vec![Failure::Run { start: 1, end: 14 }]);
+    }
+
+    fn header(lines: usize) -> String {
+        format!("{}{}", "//! h\n".repeat(lines), "fn a() {}\n".repeat(200))
+    }
+
+    #[test]
+    fn an_old_wall_growing_under_five_lines_passes() {
+        assert!(judge(Lang::Rust, Some(&header(14)), &header(15)).is_empty());
+        assert!(judge(Lang::Rust, Some(&header(14)), &header(18)).is_empty());
+    }
+
+    #[test]
+    fn an_old_wall_growing_five_lines_fails() {
+        assert_eq!(
+            judge(Lang::Rust, Some(&header(14)), &header(19)),
+            vec![Failure::Run { start: 1, end: 19 }]
+        );
     }
 
     #[test]

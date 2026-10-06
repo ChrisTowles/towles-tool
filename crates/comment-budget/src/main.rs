@@ -54,7 +54,8 @@ fn rule_text() -> String {
     format!(
         "A touched file fails when this change grew its comment excess (comment lines past \
          a {BUDGET_PERCENT}% share) by {GROWTH}+ lines and it ends more than {FLOOR} over, or \
-         when it adds an unbroken comment block of {RUN}+ lines. A new file starts from 0. \
+         when it adds an unbroken comment block of {RUN}+ lines or grows an existing one by \
+         {GROWTH}+. A new file starts from 0. \
          Opt a file out with `comment-budget: allow(<reason>)` in its header."
     )
 }

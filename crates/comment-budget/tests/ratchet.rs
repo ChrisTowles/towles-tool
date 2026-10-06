@@ -74,7 +74,7 @@ fn an_untracked_file_is_judged_as_new() {
     fs::write(dir.join("b.ts"), "// x\n".repeat(13) + "let b = 1;\n").expect("new file");
     let (code, out) = run(&dir, &["HEAD"]);
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("error b.ts:1-13: a new 13-line comment block"), "{out}");
+    assert!(out.contains("error b.ts:1-13: a 13-line comment block, new or grown"), "{out}");
 }
 
 #[test]

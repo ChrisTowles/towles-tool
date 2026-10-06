@@ -1,9 +1,10 @@
 name: Comment budget
 
 # The ratchet: a PR fails only if it grows a touched file's comment excess or
-# adds a 13+ line comment block. The base is the PR's own (`GITHUB_BASE_REF`,
-# which the binary reads), so a stacked PR is judged against what it branched
-# from. `--all` is the backlog view, run by hand; never wire it here.
+# adds a 13+ line comment block (or grows one by 5+). The base is the PR's own
+# (`GITHUB_BASE_REF`, which the binary reads), so a stacked PR is judged against
+# what it branched from. `--all` is the backlog view, run by hand; never wire it
+# here.
 #
 # Its own workflow rather than a step in `rust`/`frontend` because it is the one
 # gate spanning both: `rust` is paths-ignored for apps/client and scripts, and

@@ -31,12 +31,12 @@ it only when those two crates change. Full list, flags and Linux gotchas:
 **`comment-budget` is the one gate on comment sprawl**, a zero-config ratchet: a
 PR fails if it grows a touched file's comment excess (comment past a 15% share)
 by 5+ lines leaving it more than 10 over, or adds an unbroken 13+ line comment
-block. Every comment syntax counts, `//!` included; new files start from 0. The
-only escape is `comment-budget: allow(<reason>)`, reason mandatory;
-vendored/generated code is marked in `.gitattributes`. **A failure is addressed
-in the PR that surfaced it** — never by narrowing the change or `allow(…)`. The
-gate is `crates/comment-budget`, **the one crate here that ships to the
-public**, so its CLI is someone else's build.
+block (or grows one by 5+). Every comment syntax counts, `//!` included; new
+files start from 0. The only escape is `comment-budget: allow(<reason>)`, reason
+mandatory; vendored/generated code is marked in `.gitattributes`. **A failure is
+addressed in the PR that surfaced it** — never by narrowing the change or
+`allow(…)`. The gate is `crates/comment-budget`, **the one crate here that ships
+to the public**, so its CLI is someone else's build.
 
 **Verifying UI/IPC changes — drive the real app**, never a bare browser or the
 mock dev server: `bun run dev:drive` plus a `drive` verb (`shot` is blind to the

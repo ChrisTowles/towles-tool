@@ -25,8 +25,8 @@ comment-budget** below. For each file a change touches:
 - **Growth fails.** A file's excess is its comment lines past a 15% share. A
   change fails if it grows that by 5+ lines and leaves the file more than 10
   over. Old debt alone never fails, and a new file starts from 0.
-- **Walls fail.** Adding an unbroken comment block of 13+ lines fails. Editing
-  inside an existing one does not.
+- **Walls fail.** Adding an unbroken comment block of 13+ lines fails, as does
+  growing an existing 13+ block by 5+. Rewording or shrinking one does not.
 - **Every comment syntax counts**, `//!` included. The only escape is
   `comment-budget: allow(<reason>)` in the file's header, reason mandatory.
   Vendored and generated code is excluded via `.gitattributes`
