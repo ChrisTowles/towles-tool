@@ -73,8 +73,10 @@ itself: the MCP server via a static checked-in `.mcp.json`, the `towles-tool` an
 `task-onboarding` skills, and a `PostToolUse` hook that nudges a running instance
 to refresh PR or issue data after a `gh pr`/`gh issue` mutation, plus a Claude
 Code **mod** (`hooks/register.tsx`, listed under `modules` in the same
-`hooks.json`): a band above the prompt showing the session's board task, its PR
-and the time until the next meeting, read from the app's MCP server. It is
+`hooks.json`): a band above the prompt, mirrored on the status line, showing
+the session's board task, its PR (with a toast when checks settle and a
+"ready for /done" hint), how many other sessions need you, and the time until
+the next meeting, read from the app's MCP server. It is
 meant to be enabled globally, so its hook fails open and its band hides outside
 a relevant session. Don't drop either guard. App state that should show
 *inside* Claude Code goes in that mod, read over the MCP tools, never through

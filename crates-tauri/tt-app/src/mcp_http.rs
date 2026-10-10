@@ -251,7 +251,8 @@ pub fn spawn(app: AppHandle, bind: tt_mcp::port::BindPort) {
         Dispatcher::new(store, env!("CARGO_PKG_VERSION"))
             .with_task_host(Box::new(AppTaskHost { app: app.clone() }))
             .with_preview_host(Box::new(AppPreviewHost { app: app.clone() }))
-            .with_editor_host(Box::new(AppEditorHost { app: app.clone() })),
+            .with_editor_host(Box::new(AppEditorHost { app: app.clone() }))
+            .with_attention_host(Box::new(AppAttentionHost { app: app.clone() })),
     ));
 
     SERVING.store(true, Ordering::Relaxed);
@@ -364,6 +365,40 @@ impl tt_mcp::EditorHost for AppEditorHost {
         self.app
             .emit(EDITOR_OPEN_FILE_EVENT, &payload)
             .map_err(|e| format!("couldn't ask the app to open {}: {e}", payload.path))
+    }
+}
+
+/// Reads the same stamped payload the rail renders, so `needs_you` and the badges agree.
+struct AppAttentionHost {
+    app: AppHandle,
+}
+
+impl tt_mcp::AttentionHost for AppAttentionHost {
+    fn needs_you(&self) -> Vec<tt_mcp::WaitingSession> {
+        let payload = crate::agentboard::stamped_payload(&self.app);
+        let mut waiting = Vec::new();
+        for repo in &payload.repos {
+            for folder in &repo.folders {
+                for s in &folder.sessions {
+                    let (Some(reason), Some(since_ms)) = (s.needs_reason, s.needs_since_ms) else {
+                        continue;
+                    };
+                    let reason = serde_json::to_value(reason)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_default();
+                    waiting.push(tt_mcp::WaitingSession {
+                        session: s.id.clone(),
+                        name: s.name.clone(),
+                        repo: repo.name.clone(),
+                        dir: folder.dir.clone(),
+                        reason,
+                        since_ms,
+                    });
+                }
+            }
+        }
+        waiting
     }
 }
 
