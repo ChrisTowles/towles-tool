@@ -61,14 +61,14 @@ The checked-in `.mcp.json` never needs editing per checkout, because both the
 port and the caller's identity ride the environment:
 
 ```json
-"url": "http://127.0.0.1:${TT_MCP_PORT:-8787}/mcp",
+"url": "http://127.0.0.1:${TT_MCP_PORT:-47870}/mcp",
 "headers": { "X-TT-Session": "${TT_SESSION_ID:-}" }
 ```
 
-`TT_MCP_PORT` is the app instance's own port — a `${tt:port 8787-8986}` claim in
+`TT_MCP_PORT` is the app instance's own port — a `${tt:port 47870-48069}` claim in
 its rendered `.env`, stamped onto every terminal it spawns. So a session in a
 worktree task's terminal reaches *that* task's app and board, not whichever
-instance started first. Outside an app terminal it's unset and the `:-8787`
+instance started first. Outside an app terminal it's unset and the `:-47870`
 default applies. A packaged app in no checkout falls back to `"mcp": {"port": N}`
 in the shared settings file.
 

@@ -3,7 +3,7 @@
 //! claimed per checkout, and a session started in an app's terminal reaches *that* app
 //! because the app stamps [`tt_mcp::port::MCP_PORT_ENV`] into the shell. The machine-wide
 //! singleton this replaced was wrong on correctness: `tt.db` is *instance* state, so
-//! whichever instance won a fixed 8787 answered every session out of **its own** board.
+//! whichever instance won a fixed port answered every session out of **its own** board.
 //!
 //! **[`check_admission`] is the entire security boundary** — no bearer token, no capability
 //! gate (both removed 2026-07-20) — and a pure function, so it is tested directly. Loopback

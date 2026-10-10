@@ -59,7 +59,7 @@ the CLI and the app can consume it.
   [`crates/tt-collect/CLAUDE.md`](../crates/tt-collect/CLAUDE.md).
 - `tt-mcp` — the transport-free MCP server: the task family, `preview_file`,
   `file_open`, and the calendar family. Served one per app instance over
-  loopback HTTP on its own `${tt:port 8787-8986}` claim (`TT_MCP_PORT`) — app
+  loopback HTTP on its own `${tt:port 47870-48069}` claim (`TT_MCP_PORT`) — app
   closed means that checkout's MCP is down, and there is no headless fallback.
   **There is no bearer token and no mutation gate**: request admission (no
   `Origin` header, JSON `Content-Type`) is the entire write guard, which is also

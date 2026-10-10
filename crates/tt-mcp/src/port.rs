@@ -5,11 +5,11 @@
 //! opposite ends of the socket: `tt-app` binds this port, and `tt open` dials it.
 //! Two copies of the precedence would be two ways to point at the wrong
 //! instance, which is the exact failure the per-checkout port was introduced to
-//! end (see `tt-app`'s `mcp_http` module docs for the shared-8787 history).
+//! end (see `tt-app`'s `mcp_http` module docs for the shared-port history).
 
 /// Names the MCP port an app instance serves on, in its own environment and in every
-/// terminal it spawns. Rendered per checkout from the `${tt:port 8787-8986}` claim; the
-/// plugin's `.mcp.json` expands it as `${TT_MCP_PORT:-8787}`.
+/// terminal it spawns. Rendered per checkout from the `${tt:port 47870-48069}` claim; the
+/// plugin's `.mcp.json` expands it as `${TT_MCP_PORT:-47870}`.
 pub const MCP_PORT_ENV: &str = "TT_MCP_PORT";
 
 /// Most specific source first: `TT_MCP_PORT` in the process env, the checkout's `.env`
@@ -99,13 +99,13 @@ mod tests {
 
     #[test]
     fn the_checkouts_dotenv_claim_beats_the_shared_settings_default() {
-        assert_eq!(resolve_port(None, Some(8801), 8787), 8801);
+        assert_eq!(resolve_port(None, Some(47884), 47870), 47884);
     }
 
     /// An explicit env var is a deliberate override, so it outranks the file.
     #[test]
     fn the_process_environment_wins_over_the_dotenv() {
-        assert_eq!(resolve_port(Some("9000"), Some(8801), 8787), 9000);
+        assert_eq!(resolve_port(Some("9000"), Some(47884), 47870), 9000);
     }
 
     /// A packaged app launched from the desktop is in no checkout and has no
@@ -122,54 +122,54 @@ mod tests {
         for bad in [
             "",
             "   ",
-            "${tt:port 8787-8986}",
+            "${tt:port 47870-48069}",
             "eight thousand",
             "70000",
             "-1",
             "0",
         ] {
-            assert_eq!(resolve_port(Some(bad), None, 8787), 8787, "should reject {bad:?}");
-            assert_eq!(resolve_port(Some(bad), Some(8801), 8787), 8801, "should reject {bad:?}");
+            assert_eq!(resolve_port(Some(bad), None, 47870), 47870, "should reject {bad:?}");
+            assert_eq!(resolve_port(Some(bad), Some(47884), 47870), 47884, "should reject {bad:?}");
         }
     }
 
     #[test]
     fn surrounding_whitespace_is_tolerated() {
-        assert_eq!(resolve_port(Some(" 9000 "), None, 8787), 9000);
+        assert_eq!(resolve_port(Some(" 9000 "), None, 47870), 9000);
     }
 
-    /// The bug: a dev app started in an app terminal bound the parent's 8787, lost, served nothing.
+    /// The bug: a dev app started in an app terminal bound the parent's 47870, lost, served nothing.
     #[test]
     fn a_stamp_beside_a_session_id_yields_to_the_checkouts_claim() {
-        let bind = resolve_bind_port(Some("8787"), Some("s00abc"), Some(8796), 8787);
-        assert_eq!(bind, BindPort { port: 8796, ignored_stamp: Some(8787) });
+        let bind = resolve_bind_port(Some("47870"), Some("s00abc"), Some(47879), 47870);
+        assert_eq!(bind, BindPort { port: 47879, ignored_stamp: Some(47870) });
     }
 
     #[test]
     fn env_without_a_session_id_is_still_a_shell_override() {
-        let bind = resolve_bind_port(Some("9000"), None, Some(8796), 8787);
+        let bind = resolve_bind_port(Some("9000"), None, Some(47879), 47870);
         assert_eq!(bind, BindPort { port: 9000, ignored_stamp: None });
-        let bind = resolve_bind_port(Some("9000"), Some("  "), Some(8796), 8787);
+        let bind = resolve_bind_port(Some("9000"), Some("  "), Some(47879), 47870);
         assert_eq!(bind.port, 9000);
     }
 
     #[test]
     fn neither_env_nor_session_takes_the_claim() {
-        assert_eq!(resolve_bind_port(None, None, Some(8796), 8787).port, 8796);
-        assert_eq!(resolve_bind_port(None, Some("s00abc"), Some(8796), 8787).port, 8796);
+        assert_eq!(resolve_bind_port(None, None, Some(47879), 47870).port, 47879);
+        assert_eq!(resolve_bind_port(None, Some("s00abc"), Some(47879), 47870).port, 47879);
     }
 
     #[test]
     fn no_claim_anywhere_keeps_the_settings_fallback() {
-        let bind = resolve_bind_port(Some("8787"), Some("s00abc"), None, 9191);
-        assert_eq!(bind, BindPort { port: 9191, ignored_stamp: Some(8787) });
+        let bind = resolve_bind_port(Some("47870"), Some("s00abc"), None, 9191);
+        assert_eq!(bind, BindPort { port: 9191, ignored_stamp: Some(47870) });
         assert_eq!(resolve_bind_port(None, None, None, 9191).port, 9191);
     }
 
     #[test]
     fn an_unparsable_inherited_stamp_is_not_reported() {
         let bind =
-            resolve_bind_port(Some("${tt:port 8787-8986}"), Some("s00abc"), Some(8796), 8787);
-        assert_eq!(bind, BindPort { port: 8796, ignored_stamp: None });
+            resolve_bind_port(Some("${tt:port 47870-48069}"), Some("s00abc"), Some(47879), 47870);
+        assert_eq!(bind, BindPort { port: 47879, ignored_stamp: None });
     }
 }

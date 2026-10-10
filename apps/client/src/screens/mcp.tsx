@@ -50,9 +50,9 @@ import {
  * answered. The dispatcher retains the newest few hundred calls, the snapshot
  * carries the newest 100. */
 
-/** Bottom of the `${tt:port 8787-8986}` range; a placeholder for browser dev
+/** Bottom of the `${tt:port 47870-48069}` range; a placeholder for browser dev
  * and for the moment before {@link useMcpStatus} reports the real port. */
-const DEFAULT_MCP_PORT = 8787;
+const DEFAULT_MCP_PORT = 47870;
 
 const endpointFor = (port: number) => `http://127.0.0.1:${port}/mcp`;
 
