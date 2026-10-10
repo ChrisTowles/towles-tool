@@ -8,7 +8,11 @@ export type BandTask = {
 
 export type BandMeeting = { id: number; title: string; minutesUntil: number; live: boolean }
 
-export type Snapshot = { task: BandTask | null; meeting: BandMeeting | null }
+/** `needsYou` counts the app's other sessions waiting on the user, this one left out. */
+export type Snapshot = { task: BandTask | null; meeting: BandMeeting | null; needsYou: number }
+
+/** A PR's check state as last seen, so a change raises one toast. */
+export type SeenChecks = { pr: number; checks: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -16,6 +20,7 @@ declare module 'claude-code' {
       snapshot: Snapshot | null
       /** The meeting the five-minute toast already fired for, so it fires once. */
       warnedMeeting: number | null
+      seenChecks: SeenChecks | null
     }
   }
 }

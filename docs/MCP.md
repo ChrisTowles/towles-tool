@@ -39,8 +39,10 @@ into its terminals beside `TT_MCP_PORT`: Claude Code otherwise probes
 (a #339 board task in a tracked repo's swimlane, same store path as the
 app's `store_add_task`), `task_summary`, `task_sync` (re-read a task
 worktree's branch onto its row after a `git switch`), `task_start`, `task_delete`,
-`preview_file`, plus the calendar family `calendar_today`, `calendar_next`
-and the push-model write `calendar_set`.
+`preview_file`, `file_open`, `needs_you` (the other sessions waiting on
+the user, read from the rail's PTY-stamped state through `AttentionHost`),
+plus the calendar family `calendar_today`, `calendar_next` and the
+push-model write `calendar_set`.
 `task_summary` is how a finished agent leaves a record: it writes the
 wrap-up onto the task's row (`summary`/`summary_at`, schema v17) instead of
 into a PTY scrollback that dies with the worktree. It is a *separate column
@@ -95,9 +97,11 @@ the fact that actually answers "whose pane is this?". The
 delivery mechanics (path not bytes, the sandboxed `srcDoc` frame) are
 documented at `tt-mcp`'s `PreviewHost` and
 `crates-tauri/tt-app/src/preview.rs`. The broader
-dashboard-read tools (`day_brief`, `needs_you`, `snapshot`,
-PR/issue/DM/collector reads) were pruned in the 2026-07 tool-surface
-review and have not returned.
+dashboard-read tools (`day_brief`, `snapshot`, PR/issue/DM/collector
+reads) were pruned in the 2026-07 tool-surface review and have not
+returned. `needs_you` was pruned with them for having no caller, and came
+back when the plugin's mod gave it one: the band's count of other sessions
+waiting on you.
 
 **Security posture changed on 2026-07-20 — don't reason from the old
 shape.** There is no bearer token and no `mcp.mutationsEnabled` gate; both

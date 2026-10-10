@@ -1,4 +1,4 @@
-import type { BandMeeting, BandTask, Snapshot } from '../types'
+import type { BandMeeting, BandTask, SeenChecks, Snapshot } from '../types'
 
 /** The app's MCP server, as `/mcp` lists it once this plugin is enabled. */
 export const SERVER = 'plugin:towles-tool-app:towles-tool'
@@ -57,4 +57,35 @@ export function prLabel(pr: NonNullable<BandTask['pr']>): string {
 export function shouldWarn(snapshot: Snapshot, warned: number | null): boolean {
   const m = snapshot.meeting
   return !!m && !m.live && m.minutesUntil <= WARN_MINUTES && m.id !== warned
+}
+
+/** The toast for a PR whose checks settled since last seen; `null` on first sight or no change. */
+export function checksToast(pr: BandTask['pr'], seen: SeenChecks | null): string | null {
+  if (!pr || seen?.pr !== pr.number || seen.checks === pr.checks) return null
+  if (pr.checks === 'failing') return `PR #${pr.number} checks failing`
+  if (pr.checks === 'passing') return `PR #${pr.number} checks passing`
+  return null
+}
+
+/** Open and green: what `/towles-tool-app:done` needs to land it. */
+export function readyForDone(task: BandTask | null): boolean {
+  return task?.pr?.state === 'open' && task.pr.checks === 'passing'
+}
+
+export function needsLabel(count: number): string | null {
+  return count > 0 ? `${count} need${count === 1 ? 's' : ''} you` : null
+}
+
+/** The band's facts on one short line, for the status line. */
+export function statusLine(snap: Snapshot | null): string | undefined {
+  if (!snap) return undefined
+  const { task, meeting, needsYou } = snap
+  const parts = [
+    task && `#${task.id}`,
+    task?.pr && `PR #${task.pr.number} ${task.pr.checks}`,
+    readyForDone(task) && 'ready for /done',
+    needsLabel(needsYou),
+    meeting && untilLabel(meeting),
+  ].filter(Boolean)
+  return parts.length ? `tt ${parts.join(' · ')}` : undefined
 }

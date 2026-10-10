@@ -90,6 +90,25 @@ pub trait EditorHost: Send {
     fn open_file(&self, request: FileToOpen) -> Result<(), String>;
 }
 
+/// The app-side half of `needs_you`: which sessions wait on the user is the agentboard's
+/// PTY-stamped state, invisible from this Tauri-free crate.
+pub trait AttentionHost: Send {
+    fn needs_you(&self) -> Vec<WaitingSession>;
+}
+
+/// One session the rail badges as needing the user.
+pub struct WaitingSession {
+    /// The rail's session id — the `TT_SESSION_ID` its terminal carries.
+    pub session: String,
+    pub name: String,
+    pub repo: String,
+    /// The checkout or worktree directory the session runs in.
+    pub dir: String,
+    /// `waitingForInput`, `errored` or `finished`.
+    pub reason: String,
+    pub since_ms: i64,
+}
+
 /// A validated path to reveal in the Files pane — see [`EditorHost`].
 pub struct FileToOpen {
     /// Absolute, canonical path to an existing file or directory.
@@ -206,6 +225,8 @@ pub struct Dispatcher {
     preview_host: Option<Box<dyn PreviewHost>>,
     /// Injected by the transport; `None` in tests, where `file_open` refuses.
     editor_host: Option<Box<dyn EditorHost>>,
+    /// Injected by the transport; `None` in tests, where `needs_you` refuses.
+    attention_host: Option<Box<dyn AttentionHost>>,
     /// Test hook: fixed lane ids, keeping `calendar_set` off the real settings file.
     calendar_sources: Option<Vec<String>>,
 }
@@ -336,6 +357,7 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("task_start", "Start task", Effect::Write),
     ("preview_file", "Preview file", Effect::Read),
     ("file_open", "Open file", Effect::Read),
+    ("needs_you", "Sessions needing you", Effect::Read),
     ("calendar_today", "Today's meetings", Effect::Read),
     ("calendar_next", "Next meeting", Effect::Read),
     ("calendar_set", "Set a calendar day", Effect::Replace),
@@ -387,6 +409,7 @@ impl Dispatcher {
             task_host: None,
             preview_host: None,
             editor_host: None,
+            attention_host: None,
             calendar_sources: None,
         }
     }
@@ -406,6 +429,12 @@ impl Dispatcher {
     /// Injected by the serving transport — see [`EditorHost`].
     pub fn with_editor_host(mut self, host: Box<dyn EditorHost>) -> Dispatcher {
         self.editor_host = Some(host);
+        self
+    }
+
+    /// Injected by the serving transport — see [`AttentionHost`].
+    pub fn with_attention_host(mut self, host: Box<dyn AttentionHost>) -> Dispatcher {
+        self.attention_host = Some(host);
         self
     }
 
@@ -572,6 +601,7 @@ impl Dispatcher {
             "task_start" => self.task_start(args),
             "preview_file" => self.preview_file(args, ctx),
             "file_open" => self.file_open(args, ctx),
+            "needs_you" => self.needs_you(ctx),
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
@@ -907,6 +937,35 @@ impl Dispatcher {
         })?;
 
         Ok(json!({ "status": "showing", "path": path, "title": title, "routed": routed }))
+    }
+
+    /// The other sessions waiting on the user, oldest wait first. The caller's own terminal is left
+    /// out: it is the one the user is already looking at.
+    fn needs_you(&self, ctx: &RequestContext) -> Result<Value, String> {
+        let host = self
+            .attention_host
+            .as_ref()
+            .ok_or_else(|| "needs_you is unavailable: no attention host is attached".to_string())?;
+        let mut waiting: Vec<WaitingSession> = host
+            .needs_you()
+            .into_iter()
+            .filter(|s| ctx.session.as_deref() != Some(s.session.as_str()))
+            .collect();
+        waiting.sort_by_key(|s| s.since_ms);
+        let sessions: Vec<Value> = waiting
+            .into_iter()
+            .map(|s| {
+                json!({
+                    "session": s.session,
+                    "name": s.name,
+                    "repo": s.repo,
+                    "dir": s.dir,
+                    "reason": s.reason,
+                    "sinceMs": s.since_ms,
+                })
+            })
+            .collect();
+        Ok(json!({ "sessions": sessions }))
     }
 
     /// Reveal a file or folder in the caller's own Files pane — see [`EditorHost`]. Validated
@@ -1325,6 +1384,11 @@ pub fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "needs_you",
+            "description": "The other sessions in this app waiting on the human — a question asked, an error, or a finished turn they haven't looked at — oldest wait first. Your own terminal is left out. Each names its session, repo, directory and `reason` (`waitingForInput`, `errored`, `finished`). An empty list means nobody else is blocked on them.",
+            "inputSchema": no_args(),
+        },
+        {
             "name": "calendar_today",
             "description": "The shape of today: every meeting starting in today's local calendar day, in order. Use it to see where the uninterrupted stretches are before committing to deep work.",
             "inputSchema": no_args(),
@@ -1589,7 +1653,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_is_exactly_the_task_pane_and_calendar_families() {
+    fn tools_list_is_exactly_the_task_pane_attention_and_calendar_families() {
         let mut dispatcher = dispatcher();
         let response = parsed(&mut dispatcher, &request(1, "tools/list", json!({})));
         let names: Vec<&str> = response["result"]["tools"]
@@ -1610,6 +1674,7 @@ mod tests {
                 "task_start",
                 "preview_file",
                 "file_open",
+                "needs_you",
                 "calendar_today",
                 "calendar_next",
                 "calendar_set",
@@ -1785,6 +1850,64 @@ mod tests {
     #[test]
     fn preview_file_is_not_a_writing_tool() {
         assert!(!tool_writes("preview_file"));
+    }
+
+    // needs_you
+
+    fn with_attention_host(waiting: &[(&str, i64)]) -> Dispatcher {
+        struct FakeAttentionHost(Vec<(String, i64)>);
+        impl AttentionHost for FakeAttentionHost {
+            fn needs_you(&self) -> Vec<WaitingSession> {
+                self.0
+                    .iter()
+                    .map(|(session, since_ms)| WaitingSession {
+                        session: session.clone(),
+                        name: format!("{session} name"),
+                        repo: "towles-tool".to_string(),
+                        dir: "/r".to_string(),
+                        reason: "waitingForInput".to_string(),
+                        since_ms: *since_ms,
+                    })
+                    .collect()
+            }
+        }
+        let waiting = waiting.iter().map(|(s, t)| (s.to_string(), *t)).collect();
+        dispatcher().with_attention_host(Box::new(FakeAttentionHost(waiting)))
+    }
+
+    #[test]
+    fn needs_you_lists_the_others_oldest_wait_first() {
+        let mut dispatcher = with_attention_host(&[("a", 300), ("me", 100), ("b", 200)]);
+        let result = call_tool_as(
+            &mut dispatcher,
+            "needs_you",
+            json!({}),
+            &RequestContext::for_session(Some("me")),
+        );
+        let ids: Vec<&str> = result["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["session"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["b", "a"]);
+        assert_eq!(result["sessions"][0]["sinceMs"], 200);
+    }
+
+    #[test]
+    fn needs_you_from_outside_an_app_terminal_lists_everyone() {
+        let mut dispatcher = with_attention_host(&[("a", 1)]);
+        assert_eq!(
+            call_tool(&mut dispatcher, "needs_you", json!({}))["sessions"][0]["session"],
+            "a"
+        );
+    }
+
+    #[test]
+    fn needs_you_without_a_host_refuses() {
+        let message = call_tool_err(&mut dispatcher(), "needs_you", json!({}));
+        assert!(message.contains("no attention host"), "{message}");
+        assert!(!tool_writes("needs_you"));
     }
 
     // file_open
@@ -2776,7 +2899,6 @@ mod tests {
             "prs_status",
             "dm_status",
             "day_brief",
-            "needs_you",
             "snapshot",
             "collect_status",
         ] {

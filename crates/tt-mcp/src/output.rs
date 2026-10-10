@@ -105,6 +105,23 @@ struct FileOpening {
 
 #[derive(JsonSchema)]
 #[schemars(rename_all = "camelCase")]
+struct Waiting {
+    session: String,
+    name: String,
+    repo: String,
+    dir: String,
+    reason: String,
+    since_ms: i64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+struct NeedsYou {
+    sessions: Vec<Waiting>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
 struct CalendarToday {
     events: Vec<CalEvent>,
     now: i64,
@@ -142,6 +159,7 @@ pub fn schema_for(name: &str) -> Option<Value> {
         "task_start" => schema::<TaskStarting>(),
         "preview_file" => schema::<PreviewShowing>(),
         "file_open" => schema::<FileOpening>(),
+        "needs_you" => schema::<NeedsYou>(),
         "calendar_today" => schema::<CalendarToday>(),
         "calendar_next" => schema::<CalendarNext>(),
         "calendar_set" => schema::<CalendarWritten>(),

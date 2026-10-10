@@ -40,6 +40,9 @@ tools without manual `claude mcp add` setup:
   a page you wrote, use `file_open` instead — same pane routing, but it reveals
   the file in the Files pane (the `tt open` CLI command is the same call). The user can annotate what you showed and send
   it straight back to you.
+- **Attention** — `needs_you`. The app's other sessions waiting on the user
+  (a question, an error, a finished turn not yet looked at), oldest first,
+  with the caller's own terminal left out. The same state the rail badges.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.
@@ -110,21 +113,30 @@ guard.
 Claude Code itself, as one row above the prompt:
 
 ```
-✦ tt  #7 Claude mods (doing)  PR #42 open · checks passing  4m to Standup
+✦ tt  #7 Claude mods (doing)  PR #42 open · checks passing  ready for /done  2 need you  4m to Standup
 ```
 
 - **Task.** This is the open board task whose worktree holds the session's cwd,
   so a session in a `tt task` checkout sees its own card. If worktrees are
   nested, the deepest match wins.
-- **PR.** The task's open PR, or else its latest, with check state.
+- **PR.** The task's open PR, or else its latest, with check state. When
+  its checks settle to passing or failing, a toast says so once.
+- **Ready for /done.** Shown when that PR is open with passing checks: what
+  `/towles-tool-app:done` needs to land it.
+- **Needs you.** How many of the app's other sessions are waiting on you
+  (`needs_you`), so a blocked agent elsewhere is visible from this one.
 - **Next meeting.** Time until the next meeting, the only calendar fact the app
   surfaces. It turns yellow inside 15 minutes, and a toast fires once per
   meeting at 5 minutes.
 
+The same facts go on the status line too, in short form
+(`tt #7 · PR #42 passing · ready for /done · 2 need you · 4m to Standup`),
+alongside the band.
+
 The data comes from this plugin's own MCP server (`task_list`,
-`calendar_next`) via `$.mcp.call`. It refreshes at session start, after every
-turn, and every 60s. App closed means MCP down, so the band hides instead of
-showing stale state. The `$.state` contract is `types/index.d.ts`, and the
+`calendar_next`, `needs_you`) via `$.mcp.call`. It refreshes at session
+start, after every turn, and every 60s. App closed means MCP down, so the
+band and status line hide instead of showing stale state. The `$.state` contract is `types/index.d.ts`, and the
 pure logic in `hooks/band.ts` is what `tests/` covers:
 
 ```sh
