@@ -14,7 +14,6 @@
 //! skipped, unreadable files → empty) and deterministic — no clock, no `$HOME`.
 
 pub mod cwd;
-pub mod history;
 pub mod models;
 pub mod parse;
 pub mod programmatic;
