@@ -3,9 +3,16 @@
 The repo-wide rules that aren't obvious from the code. The few that bite
 hardest are repeated in [CLAUDE.md](../CLAUDE.md); this is the whole list.
 
-- **Frontend styling:** Tailwind + shadcn/ui only — no CSS modules, no
-  hand-rolled stylesheets, no CSS-in-JS. Add components with
-  `bunx shadcn@latest add <name>`, don't hand-write Radix wrappers. The one
+- **Frontend styling:** Tailwind + Kumo (`@cloudflare/kumo`, Cloudflare's
+  Base UI design system) — no CSS modules, no hand-rolled stylesheets, no
+  CSS-in-JS. Reach for a Kumo component first (`npx kumo doc <Name>` from
+  `apps/client`); where Kumo ships only an unstyled primitive (scroll area,
+  hover card, context menu, slider, separator) style it once in
+  `components/ui/*` from `@cloudflare/kumo/primitives/*`. Icons are Phosphor
+  (`@phosphor-icons/react`), Kumo's set. Surfaces and text use Kumo's semantic
+  tokens (`bg-kumo-base`, `text-kumo-subtle`, …); the shorthand tokens
+  (`bg-background`, …) are bridged onto them in `index.css`, so both resolve to
+  one palette. The one
   carve-out is **animation**, where there are two idioms and the choice is not
   a preference: `tw-animate-css` classes (`data-open:animate-in …`, as the
   vendored `components/ui/*` use) for anything that animates while mounted,

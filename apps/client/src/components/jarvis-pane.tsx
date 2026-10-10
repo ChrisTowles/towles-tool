@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { NativePane } from "@/components/native-pane";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
@@ -40,7 +40,7 @@ export function JarvisPane({
             onClick={onClose}
             className="hover:text-sky-500"
           >
-            <X className="size-3" />
+            <XIcon className="size-3" />
           </IconBtn>
         }
       />

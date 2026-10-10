@@ -1,7 +1,7 @@
 import { Card, Empty, StatTile } from "@/components/store-bits";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { recommend, type Recommendation } from "@/lib/keyboard-recommend";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip } from "@cloudflare/kumo";
 import {
   TIER_LABELS,
   actionsToGoal,
@@ -144,8 +144,22 @@ function StreakStrip({ days }: { days: KeyboardDay[] }) {
   return (
     <div className="flex items-end gap-1">
       {days.map((day) => (
-        <Tooltip key={day.date}>
-          <TooltipTrigger asChild>
+        <Tooltip
+          key={day.date}
+          content={
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium">
+                {day.date} · {fmtShare(day.share)}
+                {day.goalMet && " · won"}
+              </span>
+              <span className="text-kumo-subtle">
+                {day.idle
+                  ? "too quiet to score"
+                  : `${day.shortcut} by keyboard · ${day.mouse} by mouse`}
+              </span>
+            </span>
+          }
+          render={
             <div
               className={cn(
                 "h-8 flex-1 rounded-sm",
@@ -156,19 +170,8 @@ function StreakStrip({ days }: { days: KeyboardDay[] }) {
                     : "bg-muted-foreground/30",
               )}
             />
-          </TooltipTrigger>
-          <TooltipContent className="flex flex-col gap-0.5">
-            <span className="font-medium">
-              {day.date} · {fmtShare(day.share)}
-              {day.goalMet && " · won"}
-            </span>
-            <span className="text-muted-foreground">
-              {day.idle
-                ? "too quiet to score"
-                : `${day.shortcut} by keyboard · ${day.mouse} by mouse`}
-            </span>
-          </TooltipContent>
-        </Tooltip>
+          }
+        />
       ))}
     </div>
   );

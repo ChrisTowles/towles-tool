@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AppWindow, Box, Files as FilesIcon, Globe } from "lucide-react";
+import { AppWindowIcon, CubeIcon, FilesIcon, GlobeIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 /** One header row for every pane kind. **The lens leads, the subject follows, the
@@ -84,10 +84,10 @@ const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof Fi
   agent: { label: "claude", glyph: "✦" },
   shell: { label: "shell", glyph: "❯" },
   files: { label: "files", icon: FilesIcon },
-  web: { label: "web", icon: Globe },
-  browser: { label: "chrome", icon: AppWindow },
+  web: { label: "web", icon: GlobeIcon },
+  browser: { label: "chrome", icon: AppWindowIcon },
   // The one pane that is not DOM at all: a compositor surface Bevy draws into.
-  jarvis: { label: "jarvis", icon: Box },
+  jarvis: { label: "jarvis", icon: CubeIcon },
 };
 
 /** The chip naming a pane's kind. The word carries it — an icon alone

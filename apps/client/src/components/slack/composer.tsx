@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { Send, SmilePlus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { PaperPlaneTiltIcon, SmileyIcon } from "@phosphor-icons/react";
+import { Button, InputArea } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
 import { EmojiPicker } from "./emoji-picker";
 
@@ -36,7 +35,8 @@ export function Composer({
   return (
     <div className="flex items-end gap-2">
       <div className="relative flex-1">
-        <Textarea
+        <InputArea
+          aria-label={placeholder}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
@@ -51,20 +51,21 @@ export function Composer({
             <button
               type="button"
               title="Insert emoji"
-              className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="absolute top-1.5 right-1.5 flex size-6 items-center justify-center rounded text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-default"
             >
-              <SmilePlus className="size-4" />
+              <SmileyIcon className="size-4" />
             </button>
           }
         />
       </div>
       <Button
+        variant="primary"
         size={compact ? "sm" : "lg"}
-        className={cn("gap-1.5 bg-violet-600 text-white hover:bg-violet-600/90", compact && "h-9")}
+        className={cn("bg-violet-600 text-white hover:bg-violet-600/90", compact && "h-9")}
+        icon={<PaperPlaneTiltIcon className="size-3.5" />}
         onClick={() => void send()}
         disabled={sending || draft.trim().length === 0}
       >
-        <Send className="size-3.5" />
         {compact ? "Reply" : "Send"}
       </Button>
     </div>

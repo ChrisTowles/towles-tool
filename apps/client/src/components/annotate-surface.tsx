@@ -1,28 +1,19 @@
 /** Draw-on-page annotation, shared by the preview and Chrome panes. They
  * differ only in `capture`: a WebKit snapshot already contains the ink, a CDP
  * screenshot does not — hence `compositeInk`. */
+import { Button, Dialog, InputArea, Select } from "@cloudflare/kumo";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Pen, Send, Slash, Square, Type } from "lucide-react";
-import { toast } from "sonner";
+import {
+  CircleIcon,
+  LineSegmentIcon,
+  PaperPlaneTiltIcon,
+  PenIcon,
+  SquareIcon,
+  TextTIcon,
+} from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
 import { Glyph } from "@/components/agentboard-bits";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import { type FolderData, termWriteRetry } from "@/lib/agentboard";
 import { errorMessage, type IpcError } from "@/lib/errors";
 import {
@@ -40,12 +31,12 @@ import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import type { Result } from "better-result";
 
-const TOOLS: { tool: AnnotationTool; icon: typeof Pen; title: string }[] = [
-  { tool: "pen", icon: Pen, title: "Draw freehand" },
-  { tool: "line", icon: Slash, title: "Line" },
-  { tool: "rect", icon: Square, title: "Rectangle" },
-  { tool: "ellipse", icon: Circle, title: "Ellipse" },
-  { tool: "text", icon: Type, title: "Text note" },
+const TOOLS: { tool: AnnotationTool; icon: typeof PenIcon; title: string }[] = [
+  { tool: "pen", icon: PenIcon, title: "Draw freehand" },
+  { tool: "line", icon: LineSegmentIcon, title: "Line" },
+  { tool: "rect", icon: SquareIcon, title: "Rectangle" },
+  { tool: "ellipse", icon: CircleIcon, title: "Ellipse" },
+  { tool: "text", icon: TextTIcon, title: "Text note" },
 ];
 
 function pointFrom(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -295,19 +286,20 @@ export function AnnotateSurface({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1 border-t bg-card px-2 py-1">
+      <div className="flex shrink-0 items-center gap-1 border-t border-kumo-hairline bg-kumo-base px-2 py-1">
         {TOOLS.map(({ tool: t, icon: Icon, title }) => (
           <Button
             key={t}
             variant="ghost"
-            size="icon"
+            shape="square"
+            size="sm"
             title={title}
+            aria-label={title}
             disabled={!enabled}
-            className={cn("size-6", tool === t && "bg-accent text-foreground")}
+            className={cn(tool === t && "bg-kumo-tint")}
             onClick={() => selectTool(tool === t ? null : t)}
-          >
-            <Icon className="size-3.5" />
-          </Button>
+            icon={<Icon className="size-3.5" />}
+          />
         ))}
         <Separator orientation="vertical" className="mx-0.5 h-4" />
         {ANNOTATION_COLORS.map((c) => (
@@ -316,8 +308,8 @@ export function AnnotateSurface({
             type="button"
             title="Ink color"
             className={cn(
-              "size-3.5 rounded-full border border-border",
-              color === c && "ring-2 ring-ring ring-offset-1 ring-offset-card",
+              "size-3.5 rounded-full border border-kumo-hairline",
+              color === c && "ring-2 ring-kumo-focus ring-offset-1 ring-offset-kumo-base",
             )}
             style={{ backgroundColor: c }}
             onClick={() => setColor(c)}
@@ -329,63 +321,77 @@ export function AnnotateSurface({
               Clear
             </Button>
           )}
-          <Button size="xs" disabled={!enabled} onClick={() => void openSendDialog()}>
-            <Send /> Send to agent
+          <Button
+            variant="primary"
+            size="xs"
+            disabled={!enabled}
+            icon={<PaperPlaneTiltIcon />}
+            onClick={() => void openSendDialog()}
+          >
+            Send to agent
           </Button>
         </div>
       </div>
 
-      <Dialog open={captured != null} onOpenChange={(open) => !open && setCaptured(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Send annotated feedback</DialogTitle>
-            <DialogDescription>
+      <Dialog.Root open={captured != null} onOpenChange={(open) => !open && setCaptured(null)}>
+        <Dialog size="lg" className="flex flex-col gap-4 p-6">
+          <div className="flex flex-col gap-1.5">
+            <Dialog.Title className="text-lg font-semibold">Send annotated feedback</Dialog.Title>
+            <Dialog.Description className="text-sm text-kumo-subtle">
               The screenshot below (with your markup) is staged as a file and its path typed into
               the session&apos;s prompt.
-            </DialogDescription>
-          </DialogHeader>
+            </Dialog.Description>
+          </div>
           {captured && (
             <img
               src={`data:image/png;base64,${captured}`}
               alt="Annotated capture"
-              className="max-h-64 w-full rounded-md border border-border object-contain"
+              className="max-h-64 w-full rounded-md border border-kumo-hairline object-contain"
             />
           )}
-          <Textarea
+          <InputArea
+            aria-label="Comment"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder="What should the agent do about it?"
             rows={2}
           />
           {targets.length > 1 ? (
-            <Select value={targetId ?? ""} onValueChange={setTargetId}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Send to session…" />
-              </SelectTrigger>
-              <SelectContent>
-                {targets.map((t) => (
-                  <SelectItem key={t.sessionId} value={t.sessionId}>
+            <Select
+              aria-label="Send to session"
+              className="w-full"
+              placeholder="Send to session…"
+              value={targetId}
+              onValueChange={(id) => setTargetId(id as string | null)}
+              items={targets.map((t) => ({
+                value: t.sessionId,
+                label: (
+                  <span className="flex items-center gap-1.5">
                     <Glyph agent={t.agentRunning} />
                     {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  </span>
+                ),
+              }))}
+            />
           ) : targets.length === 0 ? (
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-kumo-subtle">
               No live session in this checkout — start one in the rail first.
             </div>
           ) : null}
-          <DialogFooter>
+          <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setCaptured(null)}>
               Cancel
             </Button>
-            <Button disabled={sending || !targetId} onClick={() => void sendFeedback()}>
+            <Button
+              variant="primary"
+              disabled={sending || !targetId}
+              onClick={() => void sendFeedback()}
+            >
               {sending ? "Sending…" : "Send"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </Dialog>
+      </Dialog.Root>
     </>
   );
 }

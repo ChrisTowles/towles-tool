@@ -1,4 +1,4 @@
-import { SmilePlus } from "lucide-react";
+import { SmileyIcon } from "@phosphor-icons/react";
 import { emojiChar } from "@/lib/emoji";
 import { cn } from "@/lib/utils";
 import type { DmReaction } from "@/lib/slack";
@@ -31,7 +31,7 @@ export function Reactions({
             title="Add reaction"
             className="flex h-[22px] items-center rounded-full border border-border bg-card px-1.5 text-muted-foreground hover:bg-muted"
           >
-            <SmilePlus className="size-3" />
+            <SmileyIcon className="size-3" />
           </button>
         }
       />

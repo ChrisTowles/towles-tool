@@ -20,7 +20,7 @@ describe("MCP server screen", () => {
     await gotoScreen("MCP server");
     await browser.$("h2=MCP server").waitForDisplayed({ timeout: 10000 });
     await browser.waitUntil(
-      async () => (await browser.$$('[data-slot="tabs-trigger"]').length) >= 3,
+      async () => (await browser.$$('[role="tab"]').length) >= 3,
       { timeout: 10000, timeoutMsg: "mcp tab list never rendered" },
     );
   });

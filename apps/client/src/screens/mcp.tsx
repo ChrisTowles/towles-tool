@@ -1,35 +1,17 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  BookOpen,
-  CircleAlert,
-  Copy,
-  LayoutDashboard,
-  Play,
-  Plug,
-  Radio,
-  RefreshCw,
-  Search,
-} from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+  ArrowClockwiseIcon,
+  BookOpenIcon,
+  BroadcastIcon,
+  CopyIcon,
+  MagnifyingGlassIcon,
+  PlayIcon,
+  PlugIcon,
+  SquaresFourIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button, Checkbox, Dialog, Input, InputArea, Select, Tabs } from "@cloudflare/kumo";
 import { Card, Empty, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
 import { fmtAge, useStoreSnapshot, type McpCall } from "@/lib/data";
@@ -45,6 +27,13 @@ import {
   type McpTestResult,
   type McpToolDoc,
 } from "@/lib/schemas/mcp";
+
+const tabLabel = (icon: ReactNode, text: string) => (
+  <span className="flex items-center gap-2">
+    {icon}
+    {text}
+  </span>
+);
 
 /** Read-only console over the MCP server: who is calling it and how it
  * answered. The dispatcher retains the newest few hundred calls, the snapshot
@@ -120,35 +109,35 @@ export function McpScreen() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
+      <header className="flex items-center justify-between gap-2 border-b border-kumo-hairline bg-kumo-base px-4 py-3">
         <h2 className="flex items-center gap-2 font-heading text-lg font-semibold">
-          <Radio className="size-5 text-muted-foreground" />
+          <BroadcastIcon className="size-5 text-kumo-subtle" />
           MCP server
         </h2>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-muted-foreground">{endpoint}</span>
+          <span className="font-mono text-xs text-kumo-subtle">{endpoint}</span>
           <Button
             variant="outline"
             size="sm"
+            icon={<ArrowClockwiseIcon className="size-3.5" />}
             onClick={() => {
               uiAction("mcp.tools.refresh", "mcp");
               reload();
             }}
           >
-            <RefreshCw className="size-3.5" />
             Refresh
           </Button>
         </div>
       </header>
 
       {!live && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-amber-500/10 px-4 py-1.5 text-xs text-amber-700 dark:text-amber-400">
-          <CircleAlert className="size-3.5 shrink-0" />
+        <div className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-amber-500/10 px-4 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <WarningCircleIcon className="size-3.5 shrink-0" />
           Not connected to the store — open this window in the Towles Tool app to see live calls.
         </div>
       )}
 
-      <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-border p-4 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-kumo-hairline p-4 lg:grid-cols-4">
         <StatTile
           label="Server"
           value={serverLabel(status, active)}
@@ -182,56 +171,38 @@ export function McpScreen() {
       </div>
 
       <Tabs
-        orientation="vertical"
+        variant="underline"
         value={tab}
         onValueChange={switchTab}
-        className="min-h-0 flex-1 gap-0"
+        tabs={[
+          {
+            value: "overview",
+            label: tabLabel(<SquaresFourIcon className="size-4" />, "Overview"),
+          },
+          { value: "calls", label: tabLabel(<BroadcastIcon className="size-4" />, "Calls") },
+          { value: "tools", label: tabLabel(<BookOpenIcon className="size-4" />, "Tools") },
+          { value: "setup", label: tabLabel(<PlugIcon className="size-4" />, "Setup") },
+        ]}
+        className="shrink-0 border-b border-kumo-hairline bg-kumo-base px-2"
+      />
+
+      <div
+        role="tabpanel"
+        aria-label={tab[0].toUpperCase() + tab.slice(1)}
+        className="min-h-0 flex-1 overflow-y-auto p-4"
       >
-        <TabsList
-          variant="line"
-          className="h-full w-44 shrink-0 items-stretch gap-1 rounded-none border-r border-border bg-card p-2"
-        >
-          <TabsTrigger value="overview" className="justify-start gap-2 px-2 py-1.5">
-            <LayoutDashboard className="size-4" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="calls" className="justify-start gap-2 px-2 py-1.5">
-            <Radio className="size-4" />
-            Calls
-          </TabsTrigger>
-          <TabsTrigger value="tools" className="justify-start gap-2 px-2 py-1.5">
-            <BookOpen className="size-4" />
-            Tools
-          </TabsTrigger>
-          <TabsTrigger value="setup" className="justify-start gap-2 px-2 py-1.5">
-            <Plug className="size-4" />
-            Setup
-          </TabsTrigger>
-        </TabsList>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <TabsContent value="overview" className="p-4">
-            <OverviewTab
-              calls={calls}
-              tools={tools}
-              now={now}
-              onOpenSetup={() => switchTab("setup")}
-            />
-          </TabsContent>
-
-          <TabsContent value="calls" className="p-4">
-            <CallsTab calls={calls} now={now} live={live} onSelect={setSelected} />
-          </TabsContent>
-
-          <TabsContent value="tools" className="p-4">
-            <ToolsTab tools={tools} endpoint={endpoint} wire={wire} />
-          </TabsContent>
-
-          <TabsContent value="setup" className="p-4">
-            <SetupTab endpoint={endpoint} port={port} />
-          </TabsContent>
-        </div>
-      </Tabs>
+        {tab === "overview" && (
+          <OverviewTab
+            calls={calls}
+            tools={tools}
+            now={now}
+            onOpenSetup={() => switchTab("setup")}
+          />
+        )}
+        {tab === "calls" && <CallsTab calls={calls} now={now} live={live} onSelect={setSelected} />}
+        {tab === "tools" && <ToolsTab tools={tools} endpoint={endpoint} wire={wire} />}
+        {tab === "setup" && <SetupTab endpoint={endpoint} port={port} />}
+      </div>
 
       <CallDialog call={selected} now={now} onClose={() => setSelected(null)} />
     </div>
@@ -306,8 +277,13 @@ function OverviewTab({
           Nothing has called this server. The towles-tool-app plugin registers it automatically —
           check the Setup tab if a client isn&apos;t connecting.
         </Empty>
-        <Button variant="outline" size="sm" className="mt-3" onClick={onOpenSetup}>
-          <Plug className="size-3.5" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          icon={<PlugIcon className="size-3.5" />}
+          onClick={onOpenSetup}
+        >
           Setup
         </Button>
       </Card>
@@ -333,7 +309,7 @@ function OverviewTab({
                     style={{ width: `${Math.max(2, (u.total / max) * 100)}%` }}
                   />
                 </div>
-                <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                <span className="w-14 shrink-0 text-right font-mono text-xs text-kumo-subtle">
                   {u.total}
                   {u.failed > 0 && <span className="text-red-500"> ·{u.failed}</span>}
                 </span>
@@ -368,7 +344,7 @@ function OverviewTab({
                 )}
               />
               <span className="font-mono text-xs text-foreground">{call.tool ?? call.method}</span>
-              <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+              <span className="ml-auto font-mono text-[11px] text-kumo-subtle">
                 {fmtAge(call.ts, now)}
               </span>
             </div>
@@ -444,29 +420,28 @@ function CallsTab({
     <Card title="Incoming calls" note={`${shown.length} of ${calls.length}`}>
       <div className="mb-3 flex items-center gap-2">
         <div className="relative w-72">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-kumo-subtle" />
           <Input
+            aria-label="Search incoming calls"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search tool, args, client…"
-            className="h-8 pl-8 text-sm"
+            size="sm"
+            className="pl-8"
           />
         </div>
         <Select
+          aria-label="Filter calls"
+          size="sm"
+          className="w-36"
           value={filter}
           onValueChange={(v) => {
+            if (!v) return;
             setFilter(v as CallFilter);
             uiAction("mcp.calls.filter", "mcp", v);
           }}
-        >
-          <SelectTrigger className="h-8 w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All calls</SelectItem>
-            <SelectItem value="errors">Errors only</SelectItem>
-          </SelectContent>
-        </Select>
+          items={{ all: "All calls", errors: "Errors only" }}
+        />
       </div>
 
       {shown.length === 0 ? (
@@ -515,15 +490,15 @@ const CallRow = memo(function CallRow({
         />
         <span className="font-mono text-xs text-foreground">{call.tool ?? call.method}</span>
         {call.tool && (
-          <span className="font-mono text-[11px] text-muted-foreground/60">{call.method}</span>
+          <span className="font-mono text-[11px] text-kumo-subtle/60">{call.method}</span>
         )}
-        <div className="ml-auto flex shrink-0 items-center gap-3 font-mono text-[11px] text-muted-foreground">
+        <div className="ml-auto flex shrink-0 items-center gap-3 font-mono text-[11px] text-kumo-subtle">
           {call.durationMs !== undefined && <span>{call.durationMs}ms</span>}
           <span>{age}</span>
         </div>
       </div>
       {call.args && call.args !== "{}" && (
-        <span className="w-full truncate pl-[18px] font-mono text-[11px] text-muted-foreground/70">
+        <span className="w-full truncate pl-[18px] font-mono text-[11px] text-kumo-subtle/70">
           {call.args}
         </span>
       )}
@@ -546,24 +521,24 @@ function CallDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={!!call} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="pr-6 font-mono text-base">
+    <Dialog.Root open={!!call} onOpenChange={(o) => !o && onClose()}>
+      <Dialog size="xl" className="max-h-[85vh] overflow-y-auto p-6">
+        <div className="mb-4 flex flex-col gap-1.5">
+          <Dialog.Title className="pr-6 font-mono text-base">
             {call?.tool ?? call?.method}
-          </DialogTitle>
-          <DialogDescription>
+          </Dialog.Title>
+          <Dialog.Description className="text-kumo-subtle">
             {call?.method}
             {call?.client ? ` · ${call.client}` : ""}
             {call?.durationMs !== undefined ? ` · ${call.durationMs}ms` : ""}
             {call ? ` · ${fmtAge(call.ts, now)}` : ""}
-          </DialogDescription>
-        </DialogHeader>
+          </Dialog.Description>
+        </div>
 
         {call && (
           <div className="flex flex-col gap-4">
             <section>
-              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-kumo-subtle">
                 Result
               </h4>
               <div className="flex items-center gap-2 text-sm">
@@ -576,18 +551,18 @@ function CallDialog({
                 <span className="text-foreground">{call.ok ? "Succeeded" : "Failed"}</span>
               </div>
               {!call.ok && call.error && (
-                <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-red-600 dark:text-red-400">
+                <pre className="mt-2 overflow-x-auto rounded-md border border-kumo-hairline bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-red-600 dark:text-red-400">
                   {call.error}
                 </pre>
               )}
             </section>
 
             <section>
-              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-kumo-subtle">
                 Arguments
               </h4>
               {call.args && call.args !== "{}" ? (
-                <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-foreground">
+                <pre className="overflow-x-auto rounded-md border border-kumo-hairline bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-foreground">
                   {call.args}
                 </pre>
               ) : (
@@ -596,8 +571,8 @@ function CallDialog({
             </section>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -656,12 +631,14 @@ function ToolsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="relative w-72">
-        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-kumo-subtle" />
         <Input
+          aria-label="Search tools"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search tools…"
-          className="h-8 pl-8 text-sm"
+          size="sm"
+          className="pl-8"
         />
       </div>
 
@@ -682,12 +659,12 @@ function ToolsTab({
                       variant="outline"
                       size="sm"
                       className="text-xs"
+                      icon={<PlayIcon className="size-3" />}
                       onClick={() => {
                         uiAction("mcp.tool.test_open", "mcp", tool.name);
                         setTesting(tool);
                       }}
                     >
-                      <Play className="size-3" />
                       Test
                     </Button>
                   }
@@ -803,16 +780,16 @@ function ToolTesterDialog({
   const destructive = tool.annotations?.destructiveHint === true;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="font-mono text-sm">{tool.name}</DialogTitle>
-          <DialogDescription>{tool.description}</DialogDescription>
-        </DialogHeader>
+    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+      <Dialog size="xl" className="flex flex-col gap-4 p-6">
+        <div className="flex flex-col gap-1.5">
+          <Dialog.Title className="font-mono text-sm">{tool.name}</Dialog.Title>
+          <Dialog.Description className="text-kumo-subtle">{tool.description}</Dialog.Description>
+        </div>
 
         {mutating && (
           <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-            <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+            <WarningCircleIcon className="mt-0.5 size-3.5 shrink-0" />
             <span>
               {destructive
                 ? "This tool deletes real data — the task's panes and its worktree — and cannot be undone."
@@ -822,10 +799,10 @@ function ToolTesterDialog({
         )}
 
         <div className="flex flex-col gap-2">
-          <label htmlFor="mcp-test-args" className="text-xs font-medium text-muted-foreground">
+          <label htmlFor="mcp-test-args" className="text-xs font-medium text-kumo-subtle">
             Arguments (JSON)
           </label>
-          <Textarea
+          <InputArea
             id="mcp-test-args"
             value={args}
             onChange={(e) => setArgs(e.target.value)}
@@ -835,37 +812,40 @@ function ToolTesterDialog({
           />
         </div>
 
-        <label
-          htmlFor="mcp-test-as-browser"
-          className="flex items-center gap-2 text-xs text-muted-foreground"
-        >
-          <Checkbox
-            id="mcp-test-as-browser"
-            checked={asBrowser}
-            onCheckedChange={(v) => {
-              uiAction("mcp.tool.as_browser", "mcp", v === true ? "on" : "off");
-              setAsBrowser(v === true);
-            }}
-          />
-          {/* One flex child, not three: bare text nodes beside the inline
-              <span> would each become a flex item and lay out as columns. */}
-          <span>
-            Send as a browser would (adds an <span className="font-mono">Origin</span> header) — the
-            server must refuse this
-          </span>
-        </label>
+        <Checkbox
+          checked={asBrowser}
+          onCheckedChange={(v) => {
+            uiAction("mcp.tool.as_browser", "mcp", v === true ? "on" : "off");
+            setAsBrowser(v === true);
+          }}
+          label={
+            <span className="text-xs text-kumo-subtle">
+              Send as a browser would (adds an <span className="font-mono">Origin</span> header) —
+              the server must refuse this
+            </span>
+          }
+        />
 
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => void run()} disabled={running}>
-            <Play className="size-3.5" />
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<PlayIcon className="size-3.5" />}
+            onClick={() => void run()}
+            disabled={running}
+          >
             {running ? "Running…" : "Run tool"}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => void copyCurl()}>
-            <Copy className="size-3.5" />
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<CopyIcon className="size-3.5" />}
+            onClick={() => void copyCurl()}
+          >
             Copy as curl
           </Button>
           {result && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-kumo-subtle">
               HTTP {result.status} · {result.durationMs}ms
             </span>
           )}
@@ -887,13 +867,13 @@ function ToolTesterDialog({
                   ? "Refused, as it should be: an Origin header means a web page sent it."
                   : "Refused before reaching the dispatcher."}
             </div>
-            <pre className="max-h-64 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap">
+            <pre className="max-h-64 overflow-auto rounded-md border border-kumo-hairline bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap">
               {prettyJson(result.body)}
             </pre>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -969,9 +949,9 @@ function ToolRow({ tool, actions }: { tool: McpToolDoc; actions?: React.ReactNod
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-baseline gap-2">
           <span className="font-mono text-xs text-foreground">{tool.name}</span>
-          {tool.title && <span className="text-xs text-muted-foreground">{tool.title}</span>}
+          {tool.title && <span className="text-xs text-kumo-subtle">{tool.title}</span>}
         </div>
-        <p className="text-xs text-muted-foreground">{tool.description}</p>
+        <p className="text-xs text-kumo-subtle">{tool.description}</p>
         {params.length > 0 && (
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-0.5">
             {params.map(([name, schema]) => {
@@ -979,12 +959,12 @@ function ToolRow({ tool, actions }: { tool: McpToolDoc; actions?: React.ReactNod
               return (
                 <span
                   key={name}
-                  className="font-mono text-[11px] text-muted-foreground/80"
+                  className="font-mono text-[11px] text-kumo-subtle/80"
                   title={schema.description}
                 >
                   {name}
                   {required ? "" : "?"}
-                  {schema.type && <span className="text-muted-foreground/50">:{schema.type}</span>}
+                  {schema.type && <span className="text-kumo-subtle/50">:{schema.type}</span>}
                 </span>
               );
             })}
@@ -1011,12 +991,12 @@ function SetupTab({ endpoint, port }: { endpoint: string; port: number }) {
   return (
     <div className="flex flex-col gap-4">
       <Card title="Endpoint">
-        <p className="mb-3 text-xs text-muted-foreground">
+        <p className="mb-3 text-xs text-kumo-subtle">
           The app serves MCP over loopback HTTP. Nothing to start by hand and no token — the
           listener is bound to 127.0.0.1.
         </p>
         <CopyBlock value={endpoint} />
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 text-[11px] text-kumo-subtle">
           Port defaults to {port}; set <span className="font-mono">mcp.port</span> in the settings
           file to change it.
         </p>
@@ -1039,7 +1019,7 @@ function SetupTab({ endpoint, port }: { endpoint: string; port: number }) {
           command={pluginMcpJson(endpoint)}
           block
         />
-        <p className="px-3 py-2 text-xs text-muted-foreground">
+        <p className="px-3 py-2 text-xs text-kumo-subtle">
           Verify with <span className="font-mono">claude mcp list</span> — calls appear on the Calls
           tab as they arrive.
         </p>
@@ -1063,7 +1043,7 @@ function SetupStep({
     <div className="flex flex-col gap-1.5 px-3 py-2.5">
       <div className="flex items-baseline gap-2">
         <span className="text-sm text-foreground">{title}</span>
-        <span className="text-[11px] text-muted-foreground">{detail}</span>
+        <span className="text-[11px] text-kumo-subtle">{detail}</span>
       </div>
       <CopyBlock value={command} block={block} />
     </div>
@@ -1082,7 +1062,7 @@ function CopyBlock({ value, block = false }: { value: string; block?: boolean })
   }
 
   return (
-    <div className="flex items-start gap-1 rounded-md border border-border bg-background px-3 py-1.5">
+    <div className="flex items-start gap-1 rounded-md border border-kumo-hairline bg-background px-3 py-1.5">
       <pre
         className={cn(
           "min-w-0 flex-1 self-center overflow-x-auto font-mono text-xs text-foreground",
@@ -1093,13 +1073,14 @@ function CopyBlock({ value, block = false }: { value: string; block?: boolean })
       </pre>
       <Button
         variant="ghost"
-        size="icon"
-        className="size-6 shrink-0 text-muted-foreground"
+        size="xs"
+        shape="square"
+        className="shrink-0 text-kumo-subtle"
+        icon={<CopyIcon className="size-3.5" />}
         onClick={copy}
         title="Copy"
-      >
-        <Copy className="size-3.5" />
-      </Button>
+        aria-label="Copy"
+      />
     </div>
   );
 }

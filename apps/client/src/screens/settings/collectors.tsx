@@ -1,19 +1,7 @@
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
-import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button, Checkbox, Dialog, Input } from "@cloudflare/kumo";
 import { CollectorFreshness } from "@/components/store-bits";
 import { PromptTemplateList } from "@/components/prompt-template-list";
 import { NotInTauri } from "@/lib/errors";
@@ -110,7 +98,7 @@ function PreferredToggle({
   patch: (next: Partial<PromptImprover>) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+    <label className="flex cursor-pointer items-center gap-1.5 text-xs text-kumo-subtle">
       <Checkbox
         checked={item.preferred}
         onCheckedChange={(v) => {
@@ -155,29 +143,37 @@ function ResetImproversButton({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-muted-foreground">
-          Reset to defaults
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Reset the built-in prompt improvers?</AlertDialogTitle>
-          <AlertDialogDescription className="text-pretty">
-            Direct, Clarify, Brainstorm and Interview go back to their shipped names and prompts,
-            discarding your edits to them. Improvers you added yourself are left alone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          {/* Not `AlertDialogAction`: that closes on click, before the defaults land. */}
-          <Button disabled={busy} onClick={() => void reset()}>
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Trigger
+        render={(p) => (
+          <Button {...p} variant="ghost" size="sm" className="text-kumo-subtle">
+            Reset to defaults
+          </Button>
+        )}
+      />
+      <Dialog className="p-6">
+        <Dialog.Title className="text-lg font-semibold">
+          Reset the built-in prompt improvers?
+        </Dialog.Title>
+        <Dialog.Description className="mt-2 text-pretty text-kumo-subtle">
+          Direct, Clarify, Brainstorm and Interview go back to their shipped names and prompts,
+          discarding your edits to them. Improvers you added yourself are left alone.
+        </Dialog.Description>
+        <div className="mt-6 flex justify-end gap-2">
+          <Dialog.Close
+            render={(p) => (
+              <Button {...p} variant="secondary">
+                Cancel
+              </Button>
+            )}
+          />
+          {/* A plain Button, not `Dialog.Close`: that closes on click, before the defaults land. */}
+          <Button variant="primary" disabled={busy} onClick={() => void reset()}>
             {busy ? "Resetting…" : "Reset"}
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </div>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -258,8 +254,13 @@ export function RefreshNowButton() {
     setRunning(false);
   };
   return (
-    <Button variant="outline" size="sm" disabled={running} onClick={() => void refresh()}>
-      <RefreshCw className={running ? "size-3.5 animate-spin" : "size-3.5"} />
+    <Button
+      variant="outline"
+      size="sm"
+      icon={<ArrowClockwiseIcon className={running ? "size-3.5 animate-spin" : "size-3.5"} />}
+      disabled={running}
+      onClick={() => void refresh()}
+    >
       {running ? "Refreshing…" : "Refresh now"}
     </Button>
   );
@@ -379,17 +380,19 @@ export function collectorsSections(
                   type="number"
                   min={0}
                   max={23}
+                  aria-label="Active window start hour"
                   value={c.calendar.quietHours.startHour}
                   onChange={(e) => setCalQuiet({ startHour: clampHour(e.target.value) }, typed)}
                   onBlur={() => void flush()}
                   disabled={!c.calendar.quietHours.enabled}
                   className="w-16"
                 />
-                <span className="text-sm text-muted-foreground">to</span>
+                <span className="text-sm text-kumo-subtle">to</span>
                 <Input
                   type="number"
                   min={0}
                   max={23}
+                  aria-label="Active window end hour"
                   value={c.calendar.quietHours.endHour}
                   onChange={(e) => setCalQuiet({ endHour: clampHour(e.target.value) }, typed)}
                   onBlur={() => void flush()}
@@ -536,6 +539,7 @@ export function collectorsSections(
               description="Slack user OAuth token (xoxp-…) with im:history + im:read scopes (chat:write to reply, files:read for images)."
             >
               <RevealInput
+                aria-label="User token"
                 value={c.slack.token}
                 onChange={(v) => setSlack({ token: v }, typed)}
                 onCommit={() => void flush()}
@@ -553,6 +557,7 @@ export function collectorsSections(
               description="Optional app-level token (xapp-…) with connections:write for real-time DM delivery. Empty = poll only."
             >
               <RevealInput
+                aria-label="App-level token (Socket Mode)"
                 value={c.slack.appToken}
                 onChange={(v) => setSlack({ appToken: v }, typed)}
                 onCommit={() => void flush()}
@@ -588,6 +593,7 @@ export function collectorsSections(
               description="Name shown in the banner (set automatically when you pick a user)."
             >
               <Input
+                aria-label="Display name"
                 value={c.slack.watchName}
                 onChange={(e) => setSlack({ watchName: e.target.value }, typed)}
                 onBlur={() => void flush()}

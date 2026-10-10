@@ -3,10 +3,7 @@
 // on add/remove, since only it knows the settings key the ids belong to.
 import type { ComponentType, ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
+import { Button, Input, InputArea, Switch } from "@cloudflare/kumo";
 
 /** The minimum shape every prompt-template item shares. Callers may carry more
  * fields on their own item type — this list only reads and patches these. */
@@ -76,11 +73,11 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
     <div className="flex flex-col gap-3">
       <div>
         <div className="text-sm font-medium">{heading}</div>
-        <div className="text-sm text-muted-foreground">{description}</div>
+        <div className="text-sm text-kumo-subtle">{description}</div>
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed border-kumo-hairline p-3 text-sm text-kumo-subtle">
           {emptyText}
         </div>
       ) : null}
@@ -88,7 +85,10 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
       {items.map((item, index) => {
         const warning = rowWarning?.(item) ?? null;
         return (
-          <div key={item.id} className="flex flex-col gap-2 rounded-md border p-3">
+          <div
+            key={item.id}
+            className="flex flex-col gap-2 rounded-md border border-kumo-hairline p-3"
+          >
             <div className="flex items-center gap-2">
               <Switch
                 checked={item.enabled}
@@ -103,9 +103,10 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
                 onBlur={onCommit}
                 placeholder={labelPlaceholder}
                 aria-label="Label"
-                className="h-8 max-w-56"
+                size="sm"
+                className="max-w-56"
               />
-              <span className="font-mono text-xs text-muted-foreground" title={idTitle}>
+              <span className="font-mono text-xs text-kumo-subtle" title={idTitle}>
                 {item.id}
               </span>
               <span className="ml-auto flex items-center gap-2">
@@ -114,13 +115,13 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-muted-foreground"
+                className="text-kumo-subtle"
                 onClick={() => onRemove(index)}
               >
                 Remove
               </Button>
             </div>
-            <Textarea
+            <InputArea
               value={item.prompt}
               onChange={(e) =>
                 patch(index, { prompt: e.target.value } as Partial<T>, { defer: true })
@@ -132,7 +133,7 @@ export function PromptTemplateList<T extends PromptTemplateItem>({
               className="font-mono text-xs"
               aria-label={`Prompt for ${item.label || item.id}`}
             />
-            {warning ? <div className="text-xs text-destructive">{warning}</div> : null}
+            {warning ? <div className="text-xs text-kumo-danger">{warning}</div> : null}
           </div>
         );
       })}

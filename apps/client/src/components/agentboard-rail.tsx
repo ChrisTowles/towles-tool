@@ -2,11 +2,10 @@
  * the collapsed icon strip and the board-wide agent tally. The tree is
  * `agentboard-repo-group` → `-folder-header` → `-session-row`/`-pane-rows`. */
 import { useState } from "react";
-import { Folder, PanelLeftOpen } from "lucide-react";
+import { FolderIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { RollupDots } from "@/components/agentboard-bits";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, Tooltip } from "@cloudflare/kumo";
 import { Slider } from "@/components/ui/slider";
 import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { invoke } from "@/lib/tauri";
@@ -58,8 +57,16 @@ export function RailIconStrip({
     // ring layered on top instead, so it doesn't erase the identity wash.
     const statusOwnsEdge = needs > 0;
     return (
-      <Tooltip key={folder.dir}>
-        <TooltipTrigger asChild>
+      <Tooltip
+        key={folder.dir}
+        side="right"
+        content={
+          <>
+            {label} — ⎇ {folder.branch}
+            {needs > 0 && ` · ${needs} need${needs === 1 ? "s" : ""} you`}
+          </>
+        }
+        render={
           <button
             type="button"
             aria-label={label}
@@ -67,8 +74,9 @@ export function RailIconStrip({
             onClick={() => onSelectFolder(folder.dir)}
             style={statusOwnsEdge ? undefined : { ...accent.edgeStyle, ...accent.surfaceStyle }}
             className={cn(
-              "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-muted-foreground hover:bg-accent/50",
-              active && "border-l-violet-500 text-foreground ring-1 ring-inset ring-violet-500/50",
+              "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-kumo-subtle hover:bg-kumo-tint",
+              active &&
+                "border-l-violet-500 text-kumo-default ring-1 ring-inset ring-violet-500/50",
               // Attention outranks focus on the accent edge (visual-design rule).
               needs > 0 && "border-l-amber-500",
             )}
@@ -76,7 +84,7 @@ export function RailIconStrip({
             {solo ? (
               <RepoIcon className="size-4" style={accent.iconStyle} />
             ) : (
-              <Folder className="size-4" style={accent.iconStyle} />
+              <FolderIcon className="size-4" style={accent.iconStyle} />
             )}
             {live && <span className={cn("absolute top-1 right-1 size-2 rounded-full", live)} />}
             {needs > 0 && (
@@ -85,19 +93,17 @@ export function RailIconStrip({
               </span>
             )}
           </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">
-          {label} — ⎇ {folder.branch}
-          {needs > 0 && ` · ${needs} need${needs === 1 ? "s" : ""} you`}
-        </TooltipContent>
-      </Tooltip>
+        }
+      />
     );
   };
 
   return (
     <div className="flex h-full w-12 shrink-0 flex-col items-center border-r bg-background py-2">
-      <Tooltip>
-        <TooltipTrigger asChild>
+      <Tooltip
+        side="right"
+        content={`Expand rail (${expandHint})`}
+        render={
           <button
             type="button"
             aria-label="Expand the folder rail"
@@ -105,24 +111,25 @@ export function RailIconStrip({
               mouseAction("ab-toggle-rail", "agentboard");
               onExpand();
             }}
-            className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-md text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
           >
-            <PanelLeftOpen className="size-4" />
+            <SidebarSimpleIcon className="size-4" />
           </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">Expand rail ({expandHint})</TooltipContent>
-      </Tooltip>
+        }
+      />
       {liveColor && (
         <Hint label={`${liveN} running session${liveN === 1 ? "" : "s"}`} side="right">
-          <span className="flex items-center gap-1 py-1 font-mono text-[10px] text-muted-foreground/70">
+          <span className="flex items-center gap-1 py-1 font-mono text-[10px] text-kumo-subtle">
             <span className={cn("size-2 rounded-full", liveColor)} />
             {liveN}
           </span>
         </Hint>
       )}
       {attentionCount > 0 && (
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <Tooltip
+          side="right"
+          content={`${attentionCount} attention item${attentionCount === 1 ? "" : "s"} (failing PRs, imminent meeting) — expand to see`}
+          render={
             <button
               type="button"
               aria-label="Expand the rail to see attention items"
@@ -131,12 +138,8 @@ export function RailIconStrip({
             >
               {attentionCount} ⚑
             </button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            {attentionCount} attention item{attentionCount === 1 ? "" : "s"} (failing PRs, imminent
-            meeting) — expand to see
-          </TooltipContent>
-        </Tooltip>
+          }
+        />
       )}
       <div className="my-1.5 h-px w-6 shrink-0 bg-border" />
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
@@ -174,12 +177,12 @@ export function RollupChip({
   const pct = draft ?? threshold;
 
   return (
-    <div className="flex items-center gap-2.5 border-b bg-card px-3 py-2 font-mono text-[11px]">
+    <div className="flex items-center gap-2.5 border-b border-kumo-hairline bg-kumo-base px-3 py-2 font-mono text-[11px]">
       {r.total === 0 ? (
-        <span className="text-muted-foreground/60">no agents running</span>
+        <span className="text-kumo-subtle">no agents running</span>
       ) : (
         <>
-          <span className="text-foreground">
+          <span className="text-kumo-default">
             {r.total} agent{r.total !== 1 && "s"}
           </span>
           <RollupDots r={r} />
@@ -197,20 +200,22 @@ export function RollupChip({
       )}
       <Popover>
         <Hint label="Agentboard settings">
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              aria-label="Agentboard settings"
-              className="ml-auto text-muted-foreground/60 hover:text-foreground"
-            >
-              ⚙
-            </button>
-          </PopoverTrigger>
+          <Popover.Trigger
+            render={
+              <button
+                type="button"
+                aria-label="Agentboard settings"
+                className="ml-auto text-kumo-subtle hover:text-kumo-default"
+              >
+                ⚙
+              </button>
+            }
+          />
         </Hint>
-        <PopoverContent align="end" className="w-72">
+        <Popover.Content align="end" className="w-72">
           <div className="flex flex-col gap-3">
             <div className="text-sm font-medium">Agentboard settings</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-xs text-kumo-subtle">
               Recommend compacting a cold session at or above{" "}
               <span className="font-mono text-sky-500">{pct}%</span> context.
             </div>
@@ -218,19 +223,19 @@ export function RollupChip({
               min={10}
               max={90}
               step={5}
-              value={[pct]}
-              onValueChange={([v]) => setDraft(v)}
-              onValueCommit={([v]) => {
+              value={pct}
+              onValueChange={(v) => setDraft(v as number)}
+              onValueCommitted={(v) => {
                 setDraft(null);
                 void invoke("ab_set_compact_percent", { percent: v });
               }}
             />
-            <div className="text-[11px] text-muted-foreground/70">
+            <div className="text-[11px] text-kumo-subtle">
               Past this threshold, a session whose prompt cache expired shows the ❄ compact nudge.
               Stored in the shared towles-tool settings file.
             </div>
           </div>
-        </PopoverContent>
+        </Popover.Content>
       </Popover>
     </div>
   );

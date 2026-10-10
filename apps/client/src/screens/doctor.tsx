@@ -1,18 +1,18 @@
 import { useState } from "react";
 import {
-  CircleAlert,
-  CircleCheck,
-  CircleX,
-  FolderGit2,
-  KeyRound,
-  Layers,
-  Puzzle,
-  RefreshCw,
-  Stethoscope,
-  TerminalSquare,
-  Wrench,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+  ArrowClockwiseIcon,
+  CheckCircleIcon,
+  GitBranchIcon,
+  KeyIcon,
+  PuzzlePieceIcon,
+  StackIcon,
+  StethoscopeIcon,
+  TerminalWindowIcon,
+  WarningCircleIcon,
+  WrenchIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
+import { Button } from "@cloudflare/kumo";
 import { DoctorReportSchema } from "@/lib/schemas/doctor";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
@@ -76,7 +76,7 @@ export function DoctorScreen() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 font-heading text-lg font-semibold">
-          <Stethoscope className="size-5 text-muted-foreground" />
+          <StethoscopeIcon className="size-5 text-kumo-subtle" />
           Doctor
         </h2>
         <div className="flex items-center gap-3">
@@ -94,29 +94,29 @@ export function DoctorScreen() {
           <Button
             variant="outline"
             size="sm"
+            icon={<ArrowClockwiseIcon className={running ? "size-3.5 animate-spin" : "size-3.5"} />}
             onClick={() => {
               uiAction("doctor.rerun", "doctor");
               void refresh();
             }}
             disabled={running}
           >
-            <RefreshCw className={running ? "size-3.5 animate-spin" : "size-3.5"} />
             {running ? "Checking…" : "Re-run checks"}
           </Button>
         </div>
       </div>
 
       {running && !report ? (
-        <p className="text-sm text-muted-foreground">Probing tools…</p>
+        <p className="text-sm text-kumo-subtle">Probing tools…</p>
       ) : report === null ? (
-        <p className="text-sm text-muted-foreground">Not available outside the app.</p>
+        <p className="text-sm text-kumo-subtle">Not available outside the app.</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-4">
             <Panel
               title="Tools"
               note={`${report.result.tools.filter((c) => c.ok).length}/${report.result.tools.length}`}
-              icon={<Wrench className="size-4" />}
+              icon={<WrenchIcon className="size-4" />}
             >
               {report.result.tools.map((c) => (
                 <CheckRow
@@ -130,7 +130,7 @@ export function DoctorScreen() {
               ))}
             </Panel>
 
-            <Panel title="This checkout" icon={<FolderGit2 className="size-4" />}>
+            <Panel title="This checkout" icon={<GitBranchIcon className="size-4" />}>
               {report.checkout.map((c) => (
                 <CheckRow
                   key={c.name}
@@ -145,7 +145,7 @@ export function DoctorScreen() {
           </div>
 
           <div className="flex flex-col gap-4">
-            <Panel title="GitHub" icon={<KeyRound className="size-4" />}>
+            <Panel title="GitHub" icon={<KeyIcon className="size-4" />}>
               <CheckRow
                 ok={report.result.ghAuth}
                 warned={false}
@@ -155,7 +155,7 @@ export function DoctorScreen() {
               />
             </Panel>
 
-            <Panel title="Claude plugins" icon={<Puzzle className="size-4" />}>
+            <Panel title="Claude plugins" icon={<PuzzlePieceIcon className="size-4" />}>
               {report.plugins.length === 0 ? (
                 <Empty>No required plugins.</Empty>
               ) : (
@@ -172,7 +172,7 @@ export function DoctorScreen() {
               )}
             </Panel>
 
-            <Panel title="Agentboard" icon={<TerminalSquare className="size-4" />}>
+            <Panel title="Agentboard" icon={<TerminalWindowIcon className="size-4" />}>
               {report.agentboard.map((a) => (
                 <CheckRow
                   key={a.name}
@@ -188,7 +188,7 @@ export function DoctorScreen() {
             <Panel
               title="Stale tasks"
               note={report.staleTasks.length > 0 ? String(report.staleTasks.length) : undefined}
-              icon={<Layers className="size-4" />}
+              icon={<StackIcon className="size-4" />}
             >
               {report.staleTasks.length === 0 ? (
                 <Empty>No stale tasks — every worktree still holds work.</Empty>
@@ -209,7 +209,7 @@ export function DoctorScreen() {
             <Panel
               title="Port claims"
               note={report.portHealth.length > 0 ? String(report.portHealth.length) : undefined}
-              icon={<Layers className="size-4" />}
+              icon={<StackIcon className="size-4" />}
             >
               {report.portHealth.length === 0 ? (
                 <Empty>No drift — every claimed port is still in its owner's .env.</Empty>
@@ -249,18 +249,18 @@ function CheckRow({
   return (
     <div className="flex items-start gap-3 px-3 py-2 text-sm">
       {ok && !warned ? (
-        <CircleCheck className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-500" />
+        <CheckCircleIcon className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-500" />
       ) : ok || warned ? (
-        <CircleAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+        <WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
       ) : (
-        <CircleX className="mt-0.5 size-4 shrink-0 text-destructive" />
+        <XCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-medium">{name}</span>
-          <span className="truncate font-mono text-xs text-muted-foreground">{value}</span>
+          <span className="truncate font-mono text-xs text-kumo-subtle">{value}</span>
         </div>
-        {detail && <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>}
+        {detail && <div className="mt-0.5 text-xs text-kumo-subtle">{detail}</div>}
       </div>
     </div>
   );

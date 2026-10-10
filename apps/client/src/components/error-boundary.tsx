@@ -1,5 +1,5 @@
 import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@cloudflare/kumo";
 
 /** Isolates a render crash to one subtree. Wrapping each screen's mount point
  * keeps the CloseGuard dialog and close path alive — Rust intercepts close while
@@ -28,15 +28,15 @@ export class ErrorBoundary extends Component<Props, State> {
       const label = this.props.label ? ` — ${this.props.label}` : "";
       return (
         <div className="flex h-full items-center justify-center p-6">
-          <div className="w-full max-w-md rounded-lg border bg-card p-4 text-card-foreground">
+          <div className="w-full max-w-md rounded-lg border border-kumo-hairline bg-kumo-base p-4 text-kumo-default">
             <div className="text-sm font-medium text-destructive">This screen crashed{label}</div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-kumo-subtle">
               The rest of the app is still running. Reset to reopen it.
             </p>
-            <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-muted p-2 font-mono text-xs text-muted-foreground">
+            <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-kumo-recessed p-2 font-mono text-xs text-kumo-subtle">
               {error.message}
             </pre>
-            <Button size="sm" className="mt-3" onClick={this.reset}>
+            <Button variant="primary" size="sm" className="mt-3" onClick={this.reset}>
               Reset
             </Button>
           </div>

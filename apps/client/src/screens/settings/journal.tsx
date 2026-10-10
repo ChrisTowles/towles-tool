@@ -1,4 +1,4 @@
-import { Input } from "@/components/ui/input";
+import { Input } from "@cloudflare/kumo";
 import type { UserSettings } from "@/lib/settings";
 import { FieldRow, type FilterRow, type FilterSection, type Flush, type Update } from "./common";
 
@@ -28,6 +28,7 @@ export function journalSections(
     node: (
       <FieldRow label={label} description={description}>
         <Input
+          aria-label={label}
           value={j[key]}
           onChange={(e) => setJournal({ [key]: e.target.value })}
           onBlur={() => void flush()}

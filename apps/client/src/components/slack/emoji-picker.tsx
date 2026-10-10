@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useState, type ReactElement, type ReactNode } from "react";
+import { Input, Popover } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { EMOJI_GROUPS, QUICK_REACTIONS, emojiChar, searchEmoji } from "@/lib/emoji";
 import { cn } from "@/lib/utils";
@@ -38,10 +37,11 @@ export function EmojiPicker({
         if (!next) setQuery("");
       }}
     >
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align={align} className="w-72 p-0">
-        <div className="border-b border-border p-2">
+      <Popover.Trigger render={trigger as ReactElement} />
+      <Popover.Content align={align} className="w-72 p-0">
+        <div className="border-b border-kumo-hairline p-2">
           <Input
+            aria-label="Search emoji"
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -50,7 +50,7 @@ export function EmojiPicker({
           />
         </div>
         {!query.trim() && (
-          <div className="flex gap-1 border-b border-border px-2 py-1.5">
+          <div className="flex gap-1 border-b border-kumo-hairline px-2 py-1.5">
             {QUICK_REACTIONS.map((name) => (
               <EmojiButton key={name} name={name} onPick={pick} />
             ))}
@@ -60,7 +60,7 @@ export function EmojiPicker({
           <div className="p-2">
             {groups.map((group) => (
               <div key={group.name} className="mb-2 last:mb-0">
-                <div className="px-1 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <div className="px-1 pb-1 text-[10px] font-medium tracking-wide text-kumo-subtle uppercase">
                   {group.name}
                 </div>
                 <div className="grid grid-cols-8 gap-0.5">
@@ -71,13 +71,13 @@ export function EmojiPicker({
               </div>
             ))}
             {query.trim() && hits.length === 0 && (
-              <p className="px-1 py-4 text-center text-xs text-muted-foreground">
+              <p className="px-1 py-4 text-center text-xs text-kumo-subtle">
                 No emoji match “{query.trim()}”.
               </p>
             )}
           </div>
         </ScrollArea>
-      </PopoverContent>
+      </Popover.Content>
     </Popover>
   );
 }

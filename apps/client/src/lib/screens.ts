@@ -1,16 +1,16 @@
 import {
-  Activity,
-  ChartColumn,
-  Gauge,
-  KanbanSquare,
-  MessageCircle,
-  Radio,
-  Settings,
-  Stethoscope,
-  TerminalSquare,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
+  BroadcastIcon,
+  ChartBarIcon,
+  ChatCircleIcon,
+  GaugeIcon,
+  GearIcon,
+  KanbanIcon,
+  LightningIcon,
+  PulseIcon,
+  StethoscopeIcon,
+  TerminalWindowIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 
 export type ScreenId =
   | "cockpit"
@@ -27,7 +27,7 @@ export type ScreenId =
 export type ScreenMeta = {
   id: ScreenId;
   title: string;
-  icon: LucideIcon;
+  icon: Icon;
   /** Extra terms the command palette matches on. */
   keywords: string[];
   /** Render without the centered/scrolling content wrapper (e.g. terminals). */
@@ -38,69 +38,69 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
   cockpit: {
     id: "cockpit",
     title: "Cockpit",
-    icon: Gauge,
+    icon: GaugeIcon,
     keywords: ["home", "day", "next meeting", "prs", "issues", "focus", "zone"],
     fullBleed: true,
   },
   board: {
     id: "board",
     title: "Board",
-    icon: KanbanSquare,
+    icon: KanbanIcon,
     keywords: ["kanban", "todos", "tasks", "issues", "backlog"],
     fullBleed: true,
   },
   agentboard: {
     id: "agentboard",
     title: "Agentboard",
-    icon: TerminalSquare,
+    icon: TerminalWindowIcon,
     keywords: ["agents", "terminal", "sessions", "shell", "folder", "repos", "rail"],
     fullBleed: true,
   },
   slack: {
     id: "slack",
     title: "Messages",
-    icon: MessageCircle,
+    icon: ChatCircleIcon,
     keywords: ["slack", "dm", "chat", "message", "danielle", "wife"],
     fullBleed: true,
   },
   doctor: {
     id: "doctor",
     title: "Doctor",
-    icon: Stethoscope,
+    icon: StethoscopeIcon,
     keywords: ["health", "checks", "tools"],
   },
   "claude-sessions": {
     id: "claude-sessions",
     title: "Claude Sessions",
-    icon: ChartColumn,
+    icon: ChartBarIcon,
     keywords: ["tokens", "usage", "sessions", "claude code", "history", "repos"],
     fullBleed: true,
   },
   mcp: {
     id: "mcp",
     title: "MCP server",
-    icon: Radio,
+    icon: BroadcastIcon,
     keywords: ["mcp", "server", "calls", "tools", "json-rpc", "protocol", "incoming"],
     fullBleed: true,
   },
   telemetry: {
     id: "telemetry",
     title: "Telemetry",
-    icon: Zap,
+    icon: LightningIcon,
     keywords: ["events", "otel", "telemetry", "spans", "log", "tracing", "attention", "focus"],
     fullBleed: true,
   },
   "task-explorer": {
     id: "task-explorer",
     title: "Task Explorer",
-    icon: Activity,
+    icon: PulseIcon,
     keywords: ["system", "process", "processes", "cpu", "memory", "ram", "monitor", "activity"],
     fullBleed: true,
   },
   settings: {
     id: "settings",
     title: "Settings",
-    icon: Settings,
+    icon: GearIcon,
     keywords: [
       "preferences",
       "config",

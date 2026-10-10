@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
-  FolderGit2,
-  Info,
-  Keyboard,
-  NotebookPen,
-  Palette,
-  RefreshCw,
-  Search,
-  SlidersHorizontal,
-} from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+  ArrowClockwiseIcon,
+  GitBranchIcon,
+  InfoIcon,
+  KeyboardIcon,
+  MagnifyingGlassIcon,
+  NotebookIcon,
+  PaletteIcon,
+  SlidersHorizontalIcon,
+} from "@phosphor-icons/react";
+import { Input, Tabs } from "@cloudflare/kumo";
 import { useTheme } from "@/components/theme-provider";
 import { useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
@@ -29,13 +28,13 @@ import { PcKeybindingsRow, ShortcutCoachRow, ShortcutsList } from "./settings/sh
 import { AboutInfo } from "./settings/about";
 
 const TABS = [
-  { id: "general", label: "General", icon: SlidersHorizontal },
-  { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "agentboard", label: "Agentboard", icon: FolderGit2 },
-  { id: "journal", label: "Journal", icon: NotebookPen },
-  { id: "collectors", label: "Collectors", icon: RefreshCw },
-  { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
-  { id: "about", label: "About", icon: Info },
+  { id: "general", label: "General", icon: SlidersHorizontalIcon },
+  { id: "appearance", label: "Appearance", icon: PaletteIcon },
+  { id: "agentboard", label: "Agentboard", icon: GitBranchIcon },
+  { id: "journal", label: "Journal", icon: NotebookIcon },
+  { id: "collectors", label: "Collectors", icon: ArrowClockwiseIcon },
+  { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon },
+  { id: "about", label: "About", icon: InfoIcon },
 ] as const;
 
 /** The tab + prefilled filter this screen was deep-linked to (see
@@ -56,14 +55,14 @@ function resolveTarget(target: SettingsTarget | null): {
 function SaveStatus({ state }: { state: SaveState }) {
   if (state === "error") {
     return (
-      <span className="text-xs text-destructive">
+      <span className="text-xs text-kumo-danger">
         Couldn&rsquo;t save — your last change wasn&rsquo;t written to disk.
       </span>
     );
   }
   const label =
     state === "saving" ? "Saving…" : state === "saved" ? "Saved." : "Changes save automatically.";
-  return <span className="text-xs text-muted-foreground">{label}</span>;
+  return <span className="text-xs text-kumo-subtle">{label}</span>;
 }
 
 export function SettingsScreen() {
@@ -107,17 +106,17 @@ export function SettingsScreen() {
   };
 
   const collectorsPrelude = (
-    <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+    <div className="rounded-md border border-dashed p-3 text-xs text-kumo-subtle">
       Changes save as you make them — the scheduler re-reads its cadence live.
     </div>
   );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-3">
+      <header className="flex items-center gap-3 border-b border-kumo-hairline bg-kumo-base px-4 py-3">
         <h1 className="font-heading text-sm font-semibold">Settings</h1>
         <div className="relative ml-auto w-56">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-kumo-subtle" />
           <Input
             ref={filterRef}
             value={query}
@@ -133,50 +132,59 @@ export function SettingsScreen() {
       </header>
 
       <Tabs
-        orientation="vertical"
+        variant="underline"
         value={tab}
         onValueChange={(v) => {
           uiAction("settings.tab", "settings", v);
           setTab(v);
         }}
-        className="min-h-0 flex-1 gap-0"
-      >
-        <TabsList
-          variant="line"
-          className="h-full w-44 shrink-0 items-stretch gap-1 rounded-none border-r border-border bg-card p-2"
-        >
-          {TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} className="justify-start gap-2 px-2 py-1.5">
+        tabs={TABS.map((t) => ({
+          value: t.id,
+          label: (
+            <span className="flex items-center gap-2">
               <t.icon className="size-4" />
               {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+            </span>
+          ),
+        }))}
+        className="shrink-0 border-b border-kumo-hairline bg-kumo-base px-2"
+      />
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <TabsContent value="general" className="flex flex-col gap-5 p-4">
+      <div
+        role="tabpanel"
+        aria-label={TABS.find((t) => t.id === tab)?.label}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
+        {tab === "general" && (
+          <div className="flex flex-col gap-5 p-4">
             <TabHeading title="General" note="Editor used to open repos." />
             {settings ? (
               <FilteredContent query={query} sections={generalSections(settings, update, flush)} />
             ) : (
               <SettingsLoading />
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="appearance" className="flex flex-col gap-5 p-4">
+        {tab === "appearance" && (
+          <div className="flex flex-col gap-5 p-4">
             <TabHeading title="Appearance" note="Theme applies immediately across the app." />
             <FilteredContent
               query={query}
               sections={appearanceSections(theme, setTheme, colorTheme, setColorTheme)}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="agentboard" className="flex flex-col gap-5 p-4">
+        {tab === "agentboard" && (
+          <div className="flex flex-col gap-5 p-4">
             <TabHeading title="Agentboard" note="Repo discovery and needs-you notifications." />
             <FilteredContent query={query} sections={agentboardSections(settings, update, flush)} />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="journal" className="flex flex-col gap-5 p-4">
+        {tab === "journal" && (
+          <div className="flex flex-col gap-5 p-4">
             <TabHeading
               title="Journal"
               note="Where notes live and how their file paths are templated."
@@ -186,9 +194,11 @@ export function SettingsScreen() {
             ) : (
               <SettingsLoading />
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="collectors" className="flex flex-col gap-5 p-4">
+        {tab === "collectors" && (
+          <div className="flex flex-col gap-5 p-4">
             <TabHeading
               title="Collectors"
               note="Background jobs that fill the data hub. Each has an enable flag and cadence."
@@ -203,9 +213,11 @@ export function SettingsScreen() {
             ) : (
               <SettingsLoading />
             )}
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="shortcuts" className="flex flex-col gap-5 p-4">
+        {tab === "shortcuts" && (
+          <div className="flex flex-col gap-5 p-4">
             <TabHeading
               title="Shortcuts"
               note="Keyboard shortcuts (⌘ on macOS unless PC-style keybindings are on, Ctrl elsewhere). Agentboard-scoped ones only fire while that tab is active. Press ? in the app for the same list."
@@ -213,16 +225,17 @@ export function SettingsScreen() {
             {settings && <PcKeybindingsRow settings={settings} update={update} query={query} />}
             {settings && <ShortcutCoachRow settings={settings} update={update} query={query} />}
             <ShortcutsList query={query} />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="about" className="flex flex-col gap-5 p-4">
+        {tab === "about" && (
+          <div className="flex flex-col gap-5 p-4">
             <TabHeading title="About" note="Towles Tool desktop app." />
             <AboutInfo query={query} version={version} />
-          </TabsContent>
-        </div>
-      </Tabs>
-
-      <footer className="flex items-center justify-end gap-3 border-t border-border bg-card px-4 py-3">
+          </div>
+        )}
+      </div>
+      <footer className="flex items-center justify-end gap-3 border-t border-kumo-hairline bg-kumo-base px-4 py-3">
         <SaveStatus state={saveState} />
       </footer>
     </div>

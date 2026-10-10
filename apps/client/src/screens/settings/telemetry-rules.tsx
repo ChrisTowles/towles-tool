@@ -1,18 +1,6 @@
 import { useState } from "react";
-import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
+import { toast } from "@/lib/toast";
+import { Button, Dialog, Input, Switch } from "@cloudflare/kumo";
 import { NotInTauri } from "@/lib/errors";
 import {
   defaultTelemetryRules,
@@ -67,7 +55,7 @@ export function TelemetryRulesEditor({
     <div className="flex flex-col gap-3">
       <div>
         <div className="text-sm font-medium">Rules</div>
-        <div className="text-sm text-muted-foreground">
+        <div className="text-sm text-kumo-subtle">
           Standing checks on the event log, scored on the Telemetry screen's Rules tab. A{" "}
           <strong>share</strong> rule is the percentage of records matching <em>select</em> that
           also match <em>pass</em>, and fails below its threshold; a <strong>count</strong> rule is
@@ -77,7 +65,7 @@ export function TelemetryRulesEditor({
       </div>
 
       {rules.length === 0 ? (
-        <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed p-3 text-sm text-kumo-subtle">
           No rules — the Rules tab has nothing to score.
         </div>
       ) : null}
@@ -99,9 +87,10 @@ export function TelemetryRulesEditor({
               onBlur={onCommit}
               placeholder="Label"
               aria-label="Label"
-              className="h-8 max-w-56"
+              size="sm"
+              className="max-w-56"
             />
-            <span className="font-mono text-xs text-muted-foreground" title="Rule id">
+            <span className="font-mono text-xs text-kumo-subtle" title="Rule id">
               {rule.id}
             </span>
             <span className="ml-auto">
@@ -115,7 +104,7 @@ export function TelemetryRulesEditor({
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground"
+              className="text-kumo-subtle"
               onClick={() => {
                 onChange(rules.filter((_, i) => i !== index));
                 uiAction("telemetry_rule.removed", "settings", rule.id);
@@ -138,7 +127,7 @@ export function TelemetryRulesEditor({
             />
           )}
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-kumo-subtle">
             <label className="flex items-center gap-1.5">
               {rule.kind === "share" ? "Fails below" : "Fails above"}
               <Input
@@ -155,7 +144,8 @@ export function TelemetryRulesEditor({
                 }
                 onBlur={onCommit}
                 aria-label="Threshold"
-                className="h-7 w-20 font-mono text-xs"
+                size="xs"
+                className="w-20 font-mono text-xs"
               />
               {rule.kind === "share" ? "%" : "matches"}
             </label>
@@ -169,19 +159,20 @@ export function TelemetryRulesEditor({
                 onChange={(e) => patch(index, { days: clampDays(e.target.value) }, { defer: true })}
                 onBlur={onCommit}
                 aria-label="Days"
-                className="h-7 w-16 font-mono text-xs"
+                size="xs"
+                className="w-16 font-mono text-xs"
               />
               {rule.days === 1 ? "day" : "days"}
             </label>
           </div>
 
           {rule.enabled && rule.select.length === 0 && (
-            <div className="text-xs text-destructive">
+            <div className="text-xs text-kumo-danger">
               No select filter — this rule scores every record in the log.
             </div>
           )}
           {rule.enabled && rule.kind === "share" && rule.pass.length === 0 && (
-            <div className="text-xs text-destructive">
+            <div className="text-xs text-kumo-danger">
               No pass filter — every selected record passes, so this rule is always 100%.
             </div>
           )}
@@ -217,7 +208,7 @@ function FilterList({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="w-12 text-xs text-muted-foreground">{label}</span>
+      <span className="w-12 text-xs text-kumo-subtle">{label}</span>
       {filters.map((f, i) => (
         <FilterChip
           key={`${f.field}-${f.op}-${f.value}-${i}`}
@@ -267,27 +258,33 @@ function ResetRulesButton({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-muted-foreground">
-          Reset to defaults
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Reset the built-in rules?</AlertDialogTitle>
-          <AlertDialogDescription className="text-pretty">
-            The shipped rules go back to their original filters and thresholds, discarding your
-            edits to them. Rules you added yourself are left alone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <Button disabled={busy} onClick={() => void reset()}>
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Trigger
+        render={(p) => (
+          <Button {...p} variant="ghost" size="sm" className="text-kumo-subtle">
+            Reset to defaults
+          </Button>
+        )}
+      />
+      <Dialog className="p-6">
+        <Dialog.Title className="text-lg font-semibold">Reset the built-in rules?</Dialog.Title>
+        <Dialog.Description className="mt-2 text-pretty text-kumo-subtle">
+          The shipped rules go back to their original filters and thresholds, discarding your edits
+          to them. Rules you added yourself are left alone.
+        </Dialog.Description>
+        <div className="mt-6 flex justify-end gap-2">
+          <Dialog.Close
+            render={(p) => (
+              <Button {...p} variant="secondary">
+                Cancel
+              </Button>
+            )}
+          />
+          <Button variant="primary" disabled={busy} onClick={() => void reset()}>
             {busy ? "Resetting…" : "Reset"}
           </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </div>
+      </Dialog>
+    </Dialog.Root>
   );
 }

@@ -1,24 +1,13 @@
-import { useState, type FormEvent } from "react";
-import { Bookmark, ChevronDown, Plus, Search, Trash2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useRef, useState, type FormEvent } from "react";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  BookmarkSimpleIcon,
+  CaretDownIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+  TrashIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+import { Button, DropdownMenu, Input, Popover, Select } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
 import { uiAction } from "@/lib/ui-action";
 import type { SavedView } from "@/lib/settings";
@@ -41,7 +30,7 @@ import {
 const KIND_LABEL: Record<KindFilter, string> = { all: "All", span: "Spans", event: "Events" };
 
 const chip =
-  "inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-border bg-card px-2 text-xs text-foreground hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+  "inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline bg-kumo-base px-2 text-xs text-kumo-default hover:bg-kumo-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus";
 
 export type LogFilterBarProps = {
   kind: KindFilter;
@@ -67,19 +56,20 @@ export function LogFilterBar(props: LogFilterBarProps) {
       <ViewChip {...props} />
 
       <DropdownMenu>
-        <DropdownMenuTrigger className={chip}>
+        <DropdownMenu.Trigger className={chip}>
           {KIND_LABEL[kind]}
-          <ChevronDown className="size-3 text-muted-foreground" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuRadioGroup value={kind} onValueChange={(v) => onKind(v as KindFilter)}>
+          <CaretDownIcon className="size-3 text-kumo-subtle" />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="start">
+          <DropdownMenu.RadioGroup value={kind} onValueChange={(v) => onKind(v as KindFilter)}>
             {(Object.keys(KIND_LABEL) as KindFilter[]).map((k) => (
-              <DropdownMenuRadioItem key={k} value={k}>
+              <DropdownMenu.RadioItem key={k} value={k}>
                 {KIND_LABEL[k]}
-              </DropdownMenuRadioItem>
+                <DropdownMenu.RadioItemIndicator />
+              </DropdownMenu.RadioItem>
             ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Content>
       </DropdownMenu>
 
       {filters.map((f, i) => (
@@ -91,33 +81,36 @@ export function LogFilterBar(props: LogFilterBarProps) {
       ))}
 
       <DropdownMenu>
-        <DropdownMenuTrigger className={chip}>
+        <DropdownMenu.Trigger className={chip}>
           Past {days} {days === 1 ? "day" : "days"}
-          <ChevronDown className="size-3 text-muted-foreground" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuRadioGroup
+          <CaretDownIcon className="size-3 text-kumo-subtle" />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="start">
+          <DropdownMenu.RadioGroup
             value={String(days)}
             onValueChange={(v) => onDays(Number(v) as RangeDays)}
           >
             {RANGE_DAYS.map((d) => (
-              <DropdownMenuRadioItem key={d} value={String(d)}>
+              <DropdownMenu.RadioItem key={d} value={String(d)}>
                 Past {d} {d === 1 ? "day" : "days"}
-              </DropdownMenuRadioItem>
+                <DropdownMenu.RadioItemIndicator />
+              </DropdownMenu.RadioItem>
             ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
+          </DropdownMenu.RadioGroup>
+        </DropdownMenu.Content>
       </DropdownMenu>
 
       <AddFilterChip onAdd={props.onAddFilter} />
 
       <div className="relative ml-auto w-56">
-        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-kumo-subtle" />
         <Input
+          size="xs"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder="Search raw lines…"
-          className="h-7 pl-8 text-xs"
+          aria-label="Search raw lines"
+          className="pl-8"
         />
       </div>
     </div>
@@ -133,6 +126,7 @@ function ViewChip({
 }: LogFilterBarProps) {
   const [saving, setSaving] = useState(false);
   const [label, setLabel] = useState("");
+  const anchorRef = useRef<HTMLDivElement>(null);
   const active = views.find((v) => v.id === activeViewId) ?? null;
 
   function submit(e: FormEvent) {
@@ -146,67 +140,66 @@ function ViewChip({
 
   return (
     <Popover open={saving} onOpenChange={setSaving}>
-      <PopoverAnchor asChild>
-        <div className="inline-flex">
-          <DropdownMenu>
-            <DropdownMenuTrigger className={cn(chip, active && "font-medium")}>
-              <Bookmark className="size-3 text-muted-foreground" />
-              {active ? active.label : "View"}
-              <ChevronDown className="size-3 text-muted-foreground" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-56">
-              {views.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">No saved views.</div>
-              )}
-              {views.map((v) => (
-                <div key={v.id} className="flex items-center">
-                  <DropdownMenuItem
-                    className={cn("flex-1", v.id === activeViewId && "font-medium")}
-                    onSelect={() => onSelectView(v)}
-                  >
-                    <span className="truncate">{v.label}</span>
-                    <span className="ml-auto pl-3 font-mono text-[10.5px] text-muted-foreground">
-                      {v.filters.length} · {v.days}d
-                    </span>
-                  </DropdownMenuItem>
-                  <button
-                    type="button"
-                    aria-label={`Delete view ${v.label}`}
-                    onClick={() => onDeleteView(v.id)}
-                    className="mr-1 rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
-                </div>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => {
-                  uiAction("telemetry.view_save_open", "telemetry");
-                  setSaving(true);
-                }}
-              >
-                <Bookmark className="size-3.5" />
-                Save current as view…
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </PopoverAnchor>
-      <PopoverContent align="start" className="w-64 p-2">
+      <div ref={anchorRef} className="inline-flex">
+        <DropdownMenu>
+          <DropdownMenu.Trigger className={cn(chip, active && "font-medium")}>
+            <BookmarkSimpleIcon className="size-3 text-kumo-subtle" />
+            {active ? active.label : "View"}
+            <CaretDownIcon className="size-3 text-kumo-subtle" />
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content align="start" className="min-w-56">
+            {views.length === 0 && (
+              <div className="px-2 py-1.5 text-xs text-kumo-subtle">No saved views.</div>
+            )}
+            {views.map((v) => (
+              <div key={v.id} className="flex items-center">
+                <DropdownMenu.Item
+                  className={cn("flex-1", v.id === activeViewId && "font-medium")}
+                  onClick={() => onSelectView(v)}
+                >
+                  <span className="truncate">{v.label}</span>
+                  <span className="ml-auto pl-3 font-mono text-[10.5px] text-kumo-subtle">
+                    {v.filters.length} · {v.days}d
+                  </span>
+                </DropdownMenu.Item>
+                <button
+                  type="button"
+                  aria-label={`Delete view ${v.label}`}
+                  onClick={() => onDeleteView(v.id)}
+                  className="mr-1 rounded-sm p-1 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-danger"
+                >
+                  <TrashIcon className="size-3" />
+                </button>
+              </div>
+            ))}
+            <DropdownMenu.Separator />
+            <DropdownMenu.Item
+              onClick={() => {
+                uiAction("telemetry.view_save_open", "telemetry");
+                setSaving(true);
+              }}
+            >
+              <BookmarkSimpleIcon className="size-3.5" />
+              Save current as view…
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu>
+      </div>
+      <Popover.Content align="start" anchor={anchorRef} className="w-64 p-2">
         <form onSubmit={submit} className="flex items-center gap-1.5">
           <Input
             autoFocus
+            size="xs"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="View name"
-            className="h-7 text-xs"
+            aria-label="View name"
           />
-          <Button type="submit" size="sm" className="h-7" disabled={!label.trim()}>
+          <Button type="submit" size="xs" variant="primary" disabled={!label.trim()}>
             Save
           </Button>
         </form>
-      </PopoverContent>
+      </Popover.Content>
     </Popover>
   );
 }
@@ -220,9 +213,9 @@ export function FilterChip({ filter, onRemove }: { filter: Filter; onRemove: () 
         type="button"
         aria-label={`Remove filter ${filterLabel(filter)}`}
         onClick={onRemove}
-        className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="rounded-sm p-0.5 text-kumo-subtle hover:bg-kumo-recessed hover:text-kumo-default"
       >
-        <X className="size-3" />
+        <XIcon className="size-3" />
       </button>
     </span>
   );
@@ -247,52 +240,57 @@ export function AddFilterChip({ onAdd }: { onAdd: (filter: Filter) => void }) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger className={cn(chip, "text-muted-foreground")}>
-        <Plus className="size-3" />
+      <Popover.Trigger className={cn(chip, "text-kumo-subtle")}>
+        <PlusIcon className="size-3" />
         Add filter
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-2">
+      </Popover.Trigger>
+      <Popover.Content align="start" className="w-80 p-2">
         <form onSubmit={submit} className="flex flex-col gap-1.5">
           <div className="flex items-center gap-1.5">
             <Input
               autoFocus
+              size="xs"
               list="tt-telemetry-filter-fields"
               value={field}
               onChange={(e) => setField(e.target.value)}
               placeholder="field"
-              className="h-7 flex-1 font-mono text-xs"
+              aria-label="Filter field"
+              className="flex-1 font-mono"
             />
             <datalist id="tt-telemetry-filter-fields">
               {FILTER_FIELD_SUGGESTIONS.map((f) => (
                 <option key={f} value={f} />
               ))}
             </datalist>
-            <Select value={op} onValueChange={(v) => setOp(v as FilterOp)}>
-              <SelectTrigger className="h-7 w-28 font-mono text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {FILTER_OPS.map((o) => (
-                  <SelectItem key={o} value={o} className="font-mono text-xs">
-                    {OP_GLYPH[o]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
+            <Select
+              size="xs"
+              label="Operator"
+              value={op}
+              onValueChange={(v) => setOp(v as FilterOp)}
+              className="w-28 font-mono"
+            >
+              {FILTER_OPS.map((o) => (
+                <Select.Option key={o} value={o}>
+                  {OP_GLYPH[o]}
+                </Select.Option>
+              ))}
             </Select>
           </div>
           <div className="flex items-center gap-1.5">
             <Input
+              size="xs"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder="value"
-              className="h-7 flex-1 font-mono text-xs"
+              aria-label="Filter value"
+              className="flex-1 font-mono"
             />
-            <Button type="submit" size="sm" className="h-7" disabled={!field.trim()}>
+            <Button type="submit" size="xs" variant="primary" disabled={!field.trim()}>
               Add
             </Button>
           </div>
         </form>
-      </PopoverContent>
+      </Popover.Content>
     </Popover>
   );
 }

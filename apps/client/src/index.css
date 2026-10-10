@@ -1,6 +1,7 @@
+@source "../../../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@import "@cloudflare/kumo/styles";
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 @plugin "@tailwindcss/typography";
 
@@ -52,78 +53,46 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* The shorthand tokens (`bg-background`, `text-muted-foreground`, …) bridged onto Kumo's semantic palette. Kumo resolves light vs
+   dark itself via `light-dark()` under `[data-mode]`, so one block covers both. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --background: var(--color-kumo-canvas);
+  --foreground: var(--text-color-kumo-default);
+  --card: var(--color-kumo-base);
+  --card-foreground: var(--text-color-kumo-default);
+  --popover: var(--color-kumo-overlay);
+  --popover-foreground: var(--text-color-kumo-default);
+  --primary: var(--color-kumo-brand);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --secondary: var(--color-kumo-tint);
+  --secondary-foreground: var(--text-color-kumo-default);
+  --muted: var(--color-kumo-recessed);
+  --muted-foreground: var(--text-color-kumo-subtle);
+  --accent: var(--color-kumo-tint);
+  --accent-foreground: var(--text-color-kumo-default);
+  --destructive: var(--color-kumo-danger);
+  --border: var(--color-kumo-hairline);
+  --input: var(--color-kumo-line);
+  --ring: var(--color-kumo-focus);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --radius: 0.5rem;
+  --sidebar: var(--color-kumo-elevated);
+  --sidebar-foreground: var(--text-color-kumo-default);
+  --sidebar-primary: var(--color-kumo-brand);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-accent: var(--color-kumo-tint);
+  --sidebar-accent-foreground: var(--text-color-kumo-default);
+  --sidebar-border: var(--color-kumo-hairline);
+  --sidebar-ring: var(--color-kumo-focus);
 }
 
 /* Dark-mode color themes, swapped in via the `data-color-theme` attribute the
    ThemeProvider sets on <html>. Ported from vetted shadcn/ui community themes
-   (not hand-derived) — each only overrides the neutral shadcn tokens
+   (not hand-derived) — each only overrides the neutral shorthand tokens
    (bg/fg/card/border/accent surfaces); semantic status hues (agent violet,
    needs-you amber, status dots) are literal Tailwind classes elsewhere and
    are never touched here.
@@ -211,5 +180,9 @@
   }
   html {
     @apply font-sans;
+  }
+  /* Kumo's portalled popups stack correctly only above an isolated app root. */
+  #root {
+    isolation: isolate;
   }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ImageOff, Paperclip } from "lucide-react";
+import { ImageBrokenIcon, PaperclipIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { isFileScopeError, slackDmFile, type DmFile } from "@/lib/slack";
 import { openExternalUrl } from "@/lib/open-url";
@@ -67,7 +67,7 @@ function ImageAttachment({ file }: { file: DmFile }) {
         onClick={() => openFile(file)}
         className="flex items-center gap-2 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted/60"
       >
-        <ImageOff className="size-4 shrink-0" />
+        <ImageBrokenIcon className="size-4 shrink-0" />
         <span className="truncate">
           {file.name} — {note}
         </span>
@@ -95,7 +95,7 @@ function FileChip({ file }: { file: DmFile }) {
       onClick={() => openFile(file)}
       className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-left text-xs hover:bg-muted/50"
     >
-      <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+      <PaperclipIcon className="size-4 shrink-0 text-muted-foreground" />
       <span className="truncate font-medium text-foreground">{file.name}</span>
     </button>
   );

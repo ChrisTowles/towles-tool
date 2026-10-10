@@ -1,6 +1,6 @@
 /** Rows that stand for rows the rail isn't showing. Each one is a count and a
  * way back: nothing the rail folds may become unreachable. */
-import { FolderGit2 } from "lucide-react";
+import { GitBranchIcon } from "@phosphor-icons/react";
 import { Chevron } from "@/components/agentboard-bits";
 import { Hint } from "@/components/hint";
 
@@ -26,7 +26,7 @@ export function FoldedRepoStub({
         className="flex w-full items-center gap-2 border-b bg-card px-3 py-1.5 text-left text-muted-foreground/60 hover:bg-accent/40 hover:text-muted-foreground"
       >
         <Chevron collapsed />
-        <FolderGit2 className="size-3.5 shrink-0 opacity-60" />
+        <GitBranchIcon className="size-3.5 shrink-0 opacity-60" />
         <span className="min-w-0 truncate text-sm">{name}</span>
         <span className="ml-auto shrink-0 font-mono text-[10px]">
           {foldedRepoLabel(idle, unmanaged)}

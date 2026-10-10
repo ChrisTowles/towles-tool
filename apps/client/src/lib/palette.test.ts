@@ -1,4 +1,3 @@
-import { defaultFilter } from "cmdk";
 import { describe, expect, it } from "vitest";
 import {
   applyOverlays,
@@ -293,7 +292,7 @@ const screenKeywords = (title: string) =>
   Object.values(SCREENS).find((s) => s.title === title)?.keywords ?? [];
 
 describe("paletteFilter", () => {
-  it("scores an exact title match 1, above cmdk's keyword-diluted default", () => {
+  it("scores an exact title match 1, above a prefix match", () => {
     const exact = paletteFilter("Board", "Board", screenKeywords("Board"));
     expect(exact).toBe(1);
     expect(exact).toBeGreaterThan(paletteFilter("Board", "Boa", screenKeywords("Board")));
@@ -311,16 +310,21 @@ describe("paletteFilter", () => {
     expect(paletteFilter("Board", "  bOaRd ", [])).toBe(1);
   });
 
-  it("falls back to the fuzzy default for partial matches and misses", () => {
+  it("scores partial and scattered matches above 0 and misses at 0", () => {
     expect(paletteFilter("Telemetry", "tele", [])).toBeGreaterThan(0);
+    expect(paletteFilter("Telemetry", "tlmt", [])).toBeGreaterThan(0);
     expect(paletteFilter("Telemetry", "zzzz", [])).toBe(0);
+    expect(paletteFilter("the manager's elevated role", "tele", [])).toBe(0);
   });
 
-  it("does not fire the exact-match boost on an empty query", () => {
-    // An empty search means "show everything" — cmdk's default already scores
-    // every item alike, and the boost must not fake an exact hit on an
-    // empty-valued item.
-    expect(paletteFilter("Board", "", [])).toBe(defaultFilter("Board", "", []));
-    expect(paletteFilter("Board", "   ", [])).toBe(defaultFilter("Board", "   ", []));
+  it("ranks a title hit above the same hit on a keyword", () => {
+    expect(paletteFilter("Board", "bo", [])).toBeGreaterThan(
+      paletteFilter("Kanban", "bo", ["board"]),
+    );
+  });
+
+  it("scores every row alike on an empty query", () => {
+    expect(paletteFilter("Board", "", [])).toBe(1);
+    expect(paletteFilter("Telemetry", "   ", [])).toBe(1);
   });
 });

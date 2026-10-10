@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Folder } from "lucide-react";
+import { FolderIcon } from "@phosphor-icons/react";
 
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Button, Checkbox, Dialog } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { requestOpenSession, resumeCandidates } from "@/lib/agentboard";
 import type { ResumeCandidate } from "@/lib/agentboard";
@@ -74,54 +65,53 @@ export function ResumePicker() {
   }, [candidates]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Resume your sessions?</DialogTitle>
-          <DialogDescription>
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog size="lg" className="flex flex-col gap-4 p-6">
+        <div className="flex flex-col gap-1.5">
+          <Dialog.Title className="text-lg font-semibold">Resume your sessions?</Dialog.Title>
+          <Dialog.Description className="text-sm text-kumo-subtle">
             These panes were running Claude when Towles Tool last closed — pick the ones to relaunch
             with <span className="font-mono text-xs">claude --resume</span>.
-          </DialogDescription>
-        </DialogHeader>
+          </Dialog.Description>
+        </div>
 
         <ScrollArea className="max-h-80 -mx-2 px-2">
           {[...byFolder].map(([dir, list]) => (
             <div key={dir} className="mb-3 last:mb-0">
-              <div className="flex items-center gap-2 border-b border-border px-1 pb-1">
-                <Folder className="size-3.5 text-muted-foreground/70" />
-                <span className="truncate font-medium text-muted-foreground text-[13px]">
+              <div className="flex items-center gap-2 border-b border-kumo-hairline px-1 pb-1">
+                <FolderIcon className="size-3.5 text-kumo-subtle" />
+                <span className="truncate font-medium text-kumo-subtle text-[13px]">
                   {folderLabel(dir)}
                 </span>
               </div>
               {list.map((c) => {
                 const picked = chosen.has(c.paneId);
                 return (
-                  // `<label htmlFor>`, not `<button>`: Radix's Checkbox renders
+                  // A wrapping `<label>`, not `<button>`: the Checkbox renders
                   // a button and buttons can't nest. See apps/client/CLAUDE.md.
                   <label
                     key={c.paneId}
-                    htmlFor={`resume-${c.paneId}`}
                     className={cn(
                       "flex w-full cursor-pointer items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left",
-                      "hover:bg-accent/50",
-                      picked && "bg-accent",
+                      "hover:bg-kumo-tint",
+                      picked && "bg-kumo-tint",
                     )}
                   >
                     <Checkbox
-                      id={`resume-${c.paneId}`}
+                      aria-label={c.title ?? c.paneName}
                       checked={picked}
                       onCheckedChange={() => toggle(c.paneId)}
                     />
                     <span className="w-4 text-center font-mono text-violet-500 text-xs">✦</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] text-foreground">
+                      <span className="block truncate text-[13px] text-kumo-default">
                         {c.title ?? c.paneName}
                       </span>
-                      <span className="block truncate font-mono text-[11px] text-muted-foreground/60">
+                      <span className="block truncate font-mono text-[11px] text-kumo-subtle">
                         {c.paneName}
                       </span>
                     </span>
-                    <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                    <span className="shrink-0 font-mono text-[11px] text-kumo-subtle">
                       {fmtAge(c.lastActiveMs, now)}
                     </span>
                   </label>
@@ -131,16 +121,16 @@ export function ResumePicker() {
           ))}
         </ScrollArea>
 
-        <DialogFooter>
+        <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setOpen(false)}>
             Not now
           </Button>
-          <Button onClick={resume} disabled={chosen.size === 0}>
+          <Button variant="primary" onClick={resume} disabled={chosen.size === 0}>
             {chosen.size === 1 ? "Resume 1 session" : `Resume ${chosen.size} sessions`}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 

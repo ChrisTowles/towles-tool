@@ -130,7 +130,7 @@ no git repository, checked in the CLI because the pane browses a checkout.
 
 ## `apps/client`
 
-React 19 + Vite + Tailwind v4 + shadcn/ui, a Yaak-style shell (resizable sidebar
+React 19 + Vite + Tailwind v4 + Kumo, a Yaak-style shell (resizable sidebar
 as the only nav, ⌘K palette, screens stay mounted across switches) with three
 Focus screens: **Agentboard** (repos + per-repo terminals; the cold-start
 screen), **Cockpit**, **Board**. Terminals are a canvas renderer over `tt-vt`

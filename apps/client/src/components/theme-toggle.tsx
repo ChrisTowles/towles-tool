@@ -1,5 +1,5 @@
-import { Moon, Sun } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { MoonIcon, SunIcon } from "@phosphor-icons/react";
+import { Button } from "@cloudflare/kumo";
 import { useTheme } from "@/components/theme-provider";
 
 /** Flips between explicit light and dark. "system" resolves against the OS
@@ -17,11 +17,10 @@ export function ThemeToggle() {
   return (
     <Button
       variant="outline"
-      size="icon"
+      shape="square"
       aria-label="Toggle theme"
       onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
-    >
-      {resolved === "dark" ? <Sun /> : <Moon />}
-    </Button>
+      icon={resolved === "dark" ? <SunIcon /> : <MoonIcon />}
+    />
   );
 }

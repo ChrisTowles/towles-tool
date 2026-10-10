@@ -1,4 +1,3 @@
-import { defaultFilter } from "cmdk";
 import { sessionLabel, type RepoData } from "./agentboard";
 import type { IssueItem, PrItem } from "./data";
 import { SCREENS, type ScreenId } from "./screens";
@@ -148,10 +147,8 @@ export function paletteQuickAddEntry(query: string): PaletteQuickAddEntry | null
 
 const RECENT_LIMIT = 4;
 
-/**
- * Empty while searching: cmdk can't hoist a group whose heading contains an
- * escaped character, so Recent's duplicate rows stole "Go to"'s exact match.
- */
+/** Empty while searching, so Recent's duplicate rows never compete with "Go to"'s
+ * exact match. */
 export function paletteRecentScreens(
   recent: readonly string[],
   activeTab: string,
@@ -163,14 +160,33 @@ export function paletteRecentScreens(
     .slice(0, RECENT_LIMIT);
 }
 
-/**
- * An exact match of an item's own value wins outright: cmdk's default appends
- * keywords before scoring, so an exact title scores 0.99 and can be beaten.
- */
-export function paletteFilter(value: string, search: string, keywords?: string[]): number {
+/** How well `target` matches `q`, both lowercased: a prefix beats a word start
+ * beats a substring beats a subsequence, and a tight subsequence beats a loose
+ * one. A subsequence spread past 3× the query is noise, not a match: 0. */
+function matchScore(target: string, q: string): number {
+  if (target.startsWith(q)) return 0.9;
+  const at = target.indexOf(q);
+  if (at > 0) return /[\s/#._-]/.test(target[at - 1]) ? 0.8 : 0.7;
+  let first = -1;
+  let pos = -1;
+  for (const ch of q) {
+    pos = target.indexOf(ch, pos + 1);
+    if (pos === -1) return 0;
+    if (first === -1) first = pos;
+  }
+  const span = pos - first + 1;
+  return span > 3 * q.length ? 0 : 0.1 + (0.4 * q.length) / span;
+}
+
+/** The palette's score for one row, 0 to 1. An exact title wins outright, and a
+ * keyword hit counts for a little less than the same hit on the title. */
+export function paletteFilter(value: string, search: string, keywords: string[] = []): number {
   const q = search.trim().toLowerCase();
-  if (q && value.trim().toLowerCase() === q) return 1;
-  return defaultFilter(value, search, keywords);
+  if (!q || value.trim().toLowerCase() === q) return 1;
+  return Math.max(
+    matchScore(value.toLowerCase(), q),
+    ...keywords.map((k) => 0.9 * matchScore(k.toLowerCase(), q)),
+  );
 }
 
 /** Stable partition: entries flagged by `needs` come first, keeping their

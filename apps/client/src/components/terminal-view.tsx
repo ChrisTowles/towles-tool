@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { Button, Dialog, Input } from "@cloudflare/kumo";
+import { CaretDownIcon, CaretUpIcon, XIcon } from "@phosphor-icons/react";
 import {
   BOLD,
   FAINT,
@@ -43,17 +44,6 @@ import {
 } from "@/lib/shortcuts";
 import { openExternalUrl } from "@/lib/open-url";
 import { invoke } from "@/lib/tauri";
-import { Input } from "@/components/ui/input";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -1006,35 +996,37 @@ export function TerminalView({
 
   return (
     <div ref={hostRef} className="relative size-full overflow-hidden bg-background p-1">
-      {/* Right-click menu; items route through `bridgeRef`. `onCloseAutoFocus`
+      {/* Right-click menu; items route through `bridgeRef`. `finalFocus`
           returns focus to the hidden input so typing/IME keep working. */}
       <ContextMenu
         onOpenChange={(open) => {
           if (open) setCopyEnabled(bridgeRef.current?.hasSelection() ?? false);
         }}
       >
-        <ContextMenuTrigger asChild>
-          <canvas
-            ref={canvasRef}
-            className="block"
-            onContextMenu={(e) =>
-              setMenuLink(
-                bridgeRef.current?.linkAtPoint(e.nativeEvent.offsetX, e.nativeEvent.offsetY) ??
-                  null,
-              )
-            }
-          />
-        </ContextMenuTrigger>
+        <ContextMenuTrigger
+          render={
+            <canvas
+              ref={canvasRef}
+              className="block"
+              onContextMenu={(e) =>
+                setMenuLink(
+                  bridgeRef.current?.linkAtPoint(e.nativeEvent.offsetX, e.nativeEvent.offsetY) ??
+                    null,
+                )
+              }
+            />
+          }
+        />
         <ContextMenuContent
-          onCloseAutoFocus={(e) => {
-            e.preventDefault();
+          finalFocus={() => {
             bridgeRef.current?.focusTerm();
+            return false;
           }}
         >
           {menuLink && (
             <>
               <ContextMenuItem
-                onSelect={() =>
+                onClick={() =>
                   menuLink.kind === "url"
                     ? void openExternalUrl(menuLink.url)
                     : bridgeRef.current?.openPath(menuLink)
@@ -1047,27 +1039,27 @@ export function TerminalView({
                     : "Open in external editor"}
               </ContextMenuItem>
               {menuLink.kind === "path" && onOpenPath && (
-                <ContextMenuItem onSelect={() => openPathInEditor(menuLink)}>
+                <ContextMenuItem onClick={() => openPathInEditor(menuLink)}>
                   Open in external editor
                 </ContextMenuItem>
               )}
               <ContextMenuSeparator />
             </>
           )}
-          <ContextMenuItem disabled={!copyEnabled} onSelect={() => bridgeRef.current?.copy()}>
+          <ContextMenuItem disabled={!copyEnabled} onClick={() => bridgeRef.current?.copy()}>
             Copy
             <ContextMenuShortcut>{macKeymap() ? "⇧⌘C" : "Ctrl+Shift+C"}</ContextMenuShortcut>
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => bridgeRef.current?.paste()}>Paste</ContextMenuItem>
-          <ContextMenuItem onSelect={() => bridgeRef.current?.selectAll()}>
+          <ContextMenuItem onClick={() => bridgeRef.current?.paste()}>Paste</ContextMenuItem>
+          <ContextMenuItem onClick={() => bridgeRef.current?.selectAll()}>
             Select all
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => setSearchOpen(true)}>
+          <ContextMenuItem onClick={() => setSearchOpen(true)}>
             Search scrollback
             <ContextMenuShortcut>{macKeymap() ? "⇧⌘F" : "Ctrl+Shift+F"}</ContextMenuShortcut>
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => bridgeRef.current?.clearScrollback()}>
+          <ContextMenuItem onClick={() => bridgeRef.current?.clearScrollback()}>
             Clear scrollback
           </ContextMenuItem>
         </ContextMenuContent>
@@ -1075,7 +1067,7 @@ export function TerminalView({
       {/* Scrollback search overlay (Ctrl/⌘+Shift+F). Enter/Shift+Enter step
           through matches; Escape returns focus to the terminal. */}
       {searchOpen && (
-        <div className="absolute right-1 top-1 z-10 flex items-center gap-1 rounded-md border bg-card p-1 shadow-md">
+        <div className="absolute right-1 top-1 z-10 flex items-center gap-1 rounded-md border border-kumo-hairline bg-kumo-base p-1 shadow-md">
           <Input
             ref={searchInputRef}
             value={query}
@@ -1090,48 +1082,59 @@ export function TerminalView({
               }
             }}
             placeholder="Search scrollback"
-            className="h-6 w-44 px-2 text-xs md:text-xs"
+            size="xs"
+            className="w-44 px-2 text-xs"
             spellCheck={false}
             aria-label="search scrollback"
           />
-          <span className="min-w-10 text-center font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span className="min-w-10 text-center font-mono text-[10px] tabular-nums text-kumo-subtle">
             {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : "0/0"}
           </span>
           <IconBtn title="Previous match (Shift+Enter)" onClick={() => step(-1)}>
-            <ChevronUp className="size-3" />
+            <CaretUpIcon className="size-3" />
           </IconBtn>
           <IconBtn title="Next match (Enter)" onClick={() => step(1)}>
-            <ChevronDown className="size-3" />
+            <CaretDownIcon className="size-3" />
           </IconBtn>
           <IconBtn title="Close search (Esc)" onClick={closeSearch}>
-            <X className="size-3" />
+            <XIcon className="size-3" />
           </IconBtn>
         </div>
       )}
       {/* Confirm a multi-line paste the engine held back: the shell has no
           bracketed paste, so every line would run the moment it lands. */}
-      <AlertDialog
+      <Dialog.Root
+        role="alertdialog"
         open={pendingPaste !== null}
         onOpenChange={(open) => {
           if (!open) setPendingPaste(null);
         }}
+        onOpenChangeComplete={(open) => {
+          if (!open) bridgeRef.current?.focusTerm();
+        }}
       >
-        <AlertDialogContent onCloseAutoFocus={() => bridgeRef.current?.focusTerm()}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Paste {pendingPaste?.split("\n").length ?? 0} lines?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This shell isn't guarding pastes (no bracketed paste), so each line runs as soon as it
-              arrives — including the last one if it ends with a newline.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmPaste}>Paste</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <Dialog size="lg" className="p-6">
+          <Dialog.Title className="text-lg font-semibold">
+            Paste {pendingPaste?.split("\n").length ?? 0} lines?
+          </Dialog.Title>
+          <Dialog.Description className="mt-2 text-sm text-kumo-subtle">
+            This shell isn't guarding pastes (no bracketed paste), so each line runs as soon as it
+            arrives — including the last one if it ends with a newline.
+          </Dialog.Description>
+          <div className="mt-6 flex justify-end gap-2">
+            <Dialog.Close
+              render={(p) => (
+                <Button {...p} variant="secondary">
+                  Cancel
+                </Button>
+              )}
+            />
+            <Button variant="primary" onClick={confirmPaste}>
+              Paste
+            </Button>
+          </div>
+        </Dialog>
+      </Dialog.Root>
       {/* Hidden input: receives focus/keystrokes/IME composition/paste. */}
       <textarea
         ref={inputRef}

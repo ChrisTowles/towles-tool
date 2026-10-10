@@ -23,7 +23,7 @@ async function openPalette(): Promise<void> {
         if (active instanceof HTMLElement) active.blur();
       });
       await browser.keys([MOD, "k"]);
-      const input = await browser.$('[data-slot="command-input"]');
+      const input = await browser.$('input[role="combobox"]');
       try {
         await input.waitForDisplayed({ timeout: 2000 });
         return true;
@@ -41,13 +41,13 @@ async function openPalette(): Promise<void> {
  * Recent is suppressed while a query is typed and an exact title match ranks
  * first (#480), and this is what keeps that true. */
 async function navigateTo(query: string, title: string = query): Promise<void> {
-  const input = await browser.$('[data-slot="command-input"]');
+  const input = await browser.$('input[role="combobox"]');
   await input.setValue(query);
   // Wait for the filtered list to settle on the exact match being selected,
   // then commit it with the keyboard.
   await browser.waitUntil(
     async () => {
-      const selected = await browser.$$('[data-slot="command-item"][data-selected="true"]');
+      const selected = await browser.$$('[role="option"][data-highlighted]');
       const labels: string[] = [];
       for (const item of selected) labels.push((await item.getText()).trim());
       return labels.length === 1 && labels[0] === title;
@@ -58,9 +58,7 @@ async function navigateTo(query: string, title: string = query): Promise<void> {
     },
   );
   await browser.keys([Key.Enter]);
-  await browser
-    .$('[data-slot="command-input"]')
-    .waitForExist({ reverse: true, timeout: 10000 });
+  await browser.$('input[role="combobox"]').waitForExist({ reverse: true, timeout: 10000 });
 }
 
 /** Wait until an active (aria-current) sidebar control is labelled `title` — by
@@ -118,10 +116,10 @@ describe("Command palette navigation", () => {
 
   it("narrows the list to items matching a typed query", async () => {
     await openPalette();
-    const unfiltered = await browser.$$('[data-slot="command-item"]').length;
+    const unfiltered = await browser.$$('[role="option"]').length;
     expect(unfiltered).toBeGreaterThan(1);
 
-    const input = await browser.$('[data-slot="command-input"]');
+    const input = await browser.$('input[role="combobox"]');
     await input.setValue("Cockpit");
     await browser.waitUntil(
       async () => {
@@ -130,22 +128,20 @@ describe("Command palette navigation", () => {
       },
       { timeout: 10000, timeoutMsg: "typing Cockpit never dropped the non-matching rows" },
     );
-    expect(await browser.$$('[data-slot="command-item"]').length).toBeLessThan(unfiltered);
+    expect(await browser.$$('[role="option"]').length).toBeLessThan(unfiltered);
     await browser.keys([Key.Escape]);
   });
 
   it("closes on Escape", async () => {
     await openPalette();
     await browser.keys([Key.Escape]);
-    await browser
-      .$('[data-slot="command-input"]')
-      .waitForExist({ reverse: true, timeout: 10000 });
+    await browser.$('input[role="combobox"]').waitForExist({ reverse: true, timeout: 10000 });
   });
 });
 
 async function itemTitles(): Promise<string[]> {
   const out: string[] = [];
-  for (const item of await browser.$$('[data-slot="command-item"]')) {
+  for (const item of await browser.$$('[role="option"]')) {
     out.push((await item.getText()).trim());
   }
   return out;

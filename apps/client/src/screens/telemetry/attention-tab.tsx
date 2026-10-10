@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { CircleAlert } from "lucide-react";
+import { WarningCircleIcon } from "@phosphor-icons/react";
 import { BarRow, Card, Empty, maxCount, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
 import { fmtDuration, focusShare, type AttentionSummary, type FocusSession } from "@/lib/telemetry";
@@ -75,7 +75,7 @@ export function AttentionTab({
 
       {fragmented && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <WarningCircleIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>
             {focus.fragmentCount} of {focus.sessionCount} focus stretches were under two minutes —
             the day was mostly glances at this app rather than time spent in it.

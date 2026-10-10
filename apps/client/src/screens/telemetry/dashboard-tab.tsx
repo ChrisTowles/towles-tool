@@ -1,13 +1,13 @@
 import {
-  ChevronDown,
-  Crosshair,
-  Hourglass,
-  Layers,
-  RefreshCw,
-  Timer,
-  type LucideIcon,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+  ArrowClockwiseIcon,
+  CaretDownIcon,
+  CrosshairIcon,
+  HourglassIcon,
+  StackIcon,
+  TimerIcon,
+  type Icon,
+} from "@phosphor-icons/react";
+import { Button } from "@cloudflare/kumo";
 import { Card, Empty, StatTile } from "@/components/store-bits";
 import { Chip, ChipMenu } from "@/screens/telemetry/chips";
 import { cn } from "@/lib/utils";
@@ -77,7 +77,7 @@ export function DashboardTab({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-1.5">
         <Chip>
-          Spans <ChevronDown className="size-3 opacity-50" />
+          Spans <CaretDownIcon className="size-3 opacity-50" />
         </Chip>
         <ChipMenu
           label={RANGES.find((r) => r.value === range)?.label ?? `Past ${range} days`}
@@ -113,7 +113,7 @@ export function DashboardTab({
           }}
           disabled={loading}
         >
-          <RefreshCw className={cn("size-3", loading && "animate-spin")} />
+          <ArrowClockwiseIcon className={cn("size-3", loading && "animate-spin")} />
           Refresh
         </Button>
       </div>
@@ -158,7 +158,7 @@ function DashboardGrid({
 
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3">
-      <ChartCard icon={Layers} title={`Spawns by ${groupLabel}`} note={`${summary.spawnCount}`}>
+      <ChartCard icon={StackIcon} title={`Spawns by ${groupLabel}`} note={`${summary.spawnCount}`}>
         {noSpawns ? (
           <Empty inline>No subprocesses ran in this range.</Empty>
         ) : (
@@ -169,7 +169,7 @@ function DashboardGrid({
         )}
       </ChartCard>
 
-      <ChartCard icon={Crosshair} title="Tool error rate">
+      <ChartCard icon={CrosshairIcon} title="Tool error rate">
         {noSpawns ? (
           <Empty inline>Nothing to fail yet.</Empty>
         ) : (
@@ -180,7 +180,7 @@ function DashboardGrid({
         )}
       </ChartCard>
 
-      <ChartCard icon={Timer} title="Tool duration p50 · p95">
+      <ChartCard icon={TimerIcon} title="Tool duration p50 · p95">
         {summary.byExecutable.length === 0 ? (
           <Empty inline>No durations recorded.</Empty>
         ) : (
@@ -188,7 +188,7 @@ function DashboardGrid({
         )}
       </ChartCard>
 
-      <ChartCard icon={Hourglass} title="Subprocess wait per day">
+      <ChartCard icon={HourglassIcon} title="Subprocess wait per day">
         <WaitBars summary={summary} />
         <p className="mt-1 text-[11px] text-muted-foreground">
           Overlaps allowed, so it can exceed wall time.
@@ -215,7 +215,7 @@ function ChartCard({
   note,
   children,
 }: {
-  icon: LucideIcon;
+  icon: Icon;
   title: string;
   note?: string;
   children: React.ReactNode;

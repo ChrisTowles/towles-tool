@@ -1,18 +1,14 @@
 import {
-  FolderGit2,
-  GitBranch,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Search,
-  Settings,
-  Sparkles,
-} from "lucide-react";
+  GearIcon,
+  GitBranchIcon,
+  MagnifyingGlassIcon,
+  SidebarSimpleIcon,
+  SparkleIcon,
+} from "@phosphor-icons/react";
+import { Badge, Button, Tooltip } from "@cloudflare/kumo";
 import { CollectorDot, NeedsYouChip, TopTaskChip } from "@/components/header-status";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { fmtClock, fmtCountdown, fmtDate, useAppTask, useStoreSnapshot } from "@/lib/data";
 import { identityColor } from "@/lib/identity-color";
@@ -35,25 +31,27 @@ function TaskBadge() {
   if (!task) return null;
   if (!task.isWorktree) {
     return (
-      <Badge
-        variant="outline"
-        className="text-muted-foreground"
-        title={`Main checkout — ${task.label}`}
-      >
-        <FolderGit2 className="text-sky-500" />
-        {task.label}
-      </Badge>
+      <span title={`Main checkout — ${task.label}`}>
+        <Badge
+          variant="outline"
+          className="text-kumo-subtle"
+          icon={<GitBranchIcon className="size-3 text-sky-500" />}
+        >
+          {task.label}
+        </Badge>
+      </span>
     );
   }
   return (
-    <Badge
-      variant="outline"
-      className={identityColor(task.label).badge}
-      title={`Task worktree — ${task.label}`}
-    >
-      <GitBranch />
-      {taskShortName(task.label)}
-    </Badge>
+    <span title={`Task worktree — ${task.label}`}>
+      <Badge
+        variant="outline"
+        className={identityColor(task.label).badge}
+        icon={<GitBranchIcon className="size-3" />}
+      >
+        {taskShortName(task.label)}
+      </Badge>
+    </span>
   );
 }
 
@@ -65,7 +63,7 @@ function CheckoutKindChip() {
   if (!task.isWorktree) {
     return (
       <span className="flex items-center gap-1.5 font-mono text-xs font-semibold text-sky-500">
-        <FolderGit2 className="size-3.5" />
+        <GitBranchIcon className="size-3.5" />
         MAIN CHECKOUT
       </span>
     );
@@ -77,7 +75,7 @@ function CheckoutKindChip() {
         identityColor(task.label).text,
       )}
     >
-      <GitBranch className="size-3.5" />
+      <GitBranchIcon className="size-3.5" />
       TASK WORKTREE
     </span>
   );
@@ -99,20 +97,20 @@ function ClockCluster() {
   return (
     <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
       <CheckoutKindChip />
-      <span className="text-muted-foreground/40">·</span>
-      <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+      <span className="text-kumo-subtle/40">·</span>
+      <span className="font-mono text-sm font-semibold tabular-nums text-kumo-default">
         {fmtClock(now)}
       </span>
       {/* First to go when the header gets tight — the centre cluster is
           absolutely positioned, so it collides rather than compressing. */}
-      <span className="hidden text-muted-foreground/40 xl:inline">·</span>
-      <span className="hidden text-xs text-muted-foreground xl:inline">{fmtDate(now)}</span>
+      <span className="hidden text-kumo-subtle/40 xl:inline">·</span>
+      <span className="hidden text-xs text-kumo-subtle xl:inline">{fmtDate(now)}</span>
       {nextEvent && (
         <>
-          <span className="text-muted-foreground/40">·</span>
+          <span className="text-kumo-subtle/40">·</span>
           <button
             className={cn(
-              "max-w-72 truncate rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent/50",
+              "max-w-72 truncate rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint",
               eventSoon && "text-amber-600 dark:text-amber-500",
             )}
             onClick={() => {
@@ -139,29 +137,31 @@ export function AppHeader() {
   return (
     <header
       className={cn(
-        "relative flex h-11 shrink-0 items-center gap-2 border-b px-2",
+        "relative flex h-11 shrink-0 items-center gap-2 border-b border-kumo-hairline px-2",
         task?.isWorktree && identityColor(task.label).wash,
       )}
     >
-      <Tooltip>
-        <TooltipTrigger asChild>
+      <Tooltip
+        content={
+          <>
+            {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}{" "}
+            <Kbd>{shortcutHint("sidebar")}</Kbd>
+          </>
+        }
+        render={
           <Button
             variant="ghost"
-            size="icon-sm"
+            shape="square"
+            size="sm"
             aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             onClick={() => {
               clicked("sidebar");
               toggleSidebar();
             }}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}{" "}
-          <Kbd>{shortcutHint("sidebar")}</Kbd>
-        </TooltipContent>
-      </Tooltip>
+            icon={sidebarCollapsed ? <SidebarSimpleIcon /> : <SidebarSimpleIcon />}
+          />
+        }
+      />
 
       <h1 className="font-heading shrink-0 px-1 text-sm font-semibold">Towles Tool</h1>
 
@@ -181,19 +181,19 @@ export function AppHeader() {
 
       {/* Status left of the rule, controls right. Without it the freshness dot
           reads as a bullet belonging to "N need you". */}
-      <div className="mx-1 h-4 w-px shrink-0 bg-border" />
+      <div className="mx-1 h-4 w-px shrink-0 bg-kumo-hairline" />
 
       <Button
         variant="outline"
         size="sm"
-        className="w-56 justify-between text-muted-foreground"
+        className="w-56 justify-between text-kumo-subtle"
         onClick={() => {
           clicked("palette");
           setPaletteOpen(true);
         }}
       >
         <span className="flex items-center gap-2">
-          <Search className="size-3.5" />
+          <MagnifyingGlassIcon className="size-3.5" />
           Search…
         </span>
         <Kbd>{shortcutHint("palette")}</Kbd>
@@ -201,43 +201,47 @@ export function AppHeader() {
 
       <ThemeToggle />
 
-      <Tooltip>
-        <TooltipTrigger asChild>
+      <Tooltip
+        content={
+          <>
+            Zen focus mode <Kbd>{shortcutHint("zen")}</Kbd>
+          </>
+        }
+        render={
           <Button
             variant="ghost"
-            size="icon-sm"
+            shape="square"
+            size="sm"
             aria-label="Enter zen focus mode"
             onClick={() => {
               clicked("zen");
               toggleZen();
             }}
-          >
-            <Sparkles />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          Zen focus mode <Kbd>{shortcutHint("zen")}</Kbd>
-        </TooltipContent>
-      </Tooltip>
+            icon={<SparkleIcon />}
+          />
+        }
+      />
 
-      <Tooltip>
-        <TooltipTrigger asChild>
+      <Tooltip
+        content={
+          <>
+            Settings <Kbd>{shortcutHint("settings")}</Kbd>
+          </>
+        }
+        render={
           <Button
             variant="ghost"
-            size="icon-sm"
+            shape="square"
+            size="sm"
             aria-label="Open settings"
             onClick={() => {
               clicked("settings");
               openSettingsTab();
             }}
-          >
-            <Settings />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          Settings <Kbd>{shortcutHint("settings")}</Kbd>
-        </TooltipContent>
-      </Tooltip>
+            icon={<GearIcon />}
+          />
+        }
+      />
     </header>
   );
 }

@@ -1,46 +1,34 @@
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import {
-  AppWindow,
-  Archive,
-  ArchiveRestore,
-  Box,
-  Check,
-  CheckCheck,
-  ChevronDown,
-  CircleDot,
-  ExternalLink,
-  Eye,
-  FolderPlus,
-  FolderTree,
-  GitCommitVertical,
-  GitMerge,
-  GitPullRequest,
-  Link,
-  Link2Off,
-  Loader2,
-  MoreVertical,
-  Pencil,
-  RefreshCw,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AppWindowIcon,
+  ArchiveIcon,
+  ArrowClockwiseIcon,
+  ArrowCounterClockwiseIcon,
+  ArrowSquareOutIcon,
+  CaretDownIcon,
+  CheckIcon,
+  ChecksIcon,
+  CircleNotchIcon,
+  CubeIcon,
+  DotsThreeVerticalIcon,
+  EyeIcon,
+  FolderPlusIcon,
+  GitCommitIcon,
+  GitMergeIcon,
+  GitPullRequestIcon,
+  LinkBreakIcon,
+  LinkIcon,
+  MagnifyingGlassIcon,
+  PencilIcon,
+  RecordIcon,
+  TrashIcon,
+  TreeStructureIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+import { Button, Dialog, DropdownMenu, Input, Tooltip } from "@cloudflare/kumo";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Input } from "@/components/ui/input";
 import { Hint, ShortcutBadge } from "@/components/hint";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   abSyncRepo,
   collapsedLiveColor,
@@ -88,7 +76,7 @@ import { cn } from "@/lib/utils";
 /** Shared atoms for the Agentboard rail rows, folder headers, pane chrome and
  * working-context band, so each surface composes the same pieces. */
 
-/** `title` is a Radix tooltip, not a native one, which a WebKitGTK webview
+/** `title` is a Kumo tooltip, not a native one, which a WebKitGTK webview
  * renders unreliably; it doubles as the `aria-label`. */
 export function IconBtn({
   title,
@@ -109,11 +97,19 @@ export function IconBtn({
   children: ReactNode;
 } & Omit<ComponentProps<"button">, "onClick" | "title" | "children">) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      side="bottom"
+      content={
+        <>
+          {title}
+          {shortcut && <ShortcutBadge id={shortcut} />}
+        </>
+      }
+      render={
         <Button
           variant={ghost ? "ghost" : "outline"}
-          size="icon-xs"
+          size="xs"
+          shape="square"
           aria-label={title}
           aria-keyshortcuts={shortcut ? shortcutAria(shortcut) : undefined}
           onClick={(e) => {
@@ -122,17 +118,13 @@ export function IconBtn({
             if (shortcut) mouseAction(shortcut, "agentboard");
             onClick();
           }}
-          className={cn("font-mono text-xs text-muted-foreground", className)}
+          className={cn("font-mono text-xs text-kumo-subtle", className)}
           {...props}
         >
           {children}
         </Button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {title}
-        {shortcut && <ShortcutBadge id={shortcut} />}
-      </TooltipContent>
-    </Tooltip>
+      }
+    />
   );
 }
 
@@ -142,7 +134,7 @@ export function Glyph({ agent }: { agent: boolean }) {
     <span
       className={cn(
         "w-4 shrink-0 text-center font-mono text-xs",
-        agent ? "text-violet-500" : "text-muted-foreground/60",
+        agent ? "text-violet-500" : "text-kumo-subtle",
       )}
     >
       {agent ? "✦" : "❯"}
@@ -221,7 +213,7 @@ function StatusDot({ session }: { session: SessionData }) {
 function BackgroundAgentsBadge({ n }: { n: number }) {
   return (
     <Hint label={`${n} background agent${n > 1 ? "s" : ""} still running — not waiting on you`}>
-      <span className="flex shrink-0 items-center gap-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+      <span className="flex shrink-0 items-center gap-0.5 font-mono text-[10px] leading-none text-kumo-subtle">
         <span className={cn("size-1.5 rounded-full", alertColor("background"))} />
         {n}
       </span>
@@ -232,7 +224,7 @@ function BackgroundAgentsBadge({ n }: { n: number }) {
 /** Shape and color derive from `Dot`, so the buckets can't drift from it. */
 export function DotCount({ status, n }: { status: AlertStatus; n: number }) {
   return (
-    <span className="flex items-center gap-1 text-muted-foreground">
+    <span className="flex items-center gap-1 text-kumo-subtle">
       <span
         className={cn(
           "size-1.5 rounded-full",
@@ -262,7 +254,7 @@ export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
     <Hint label={`${n} running session${n > 1 ? "s" : ""} hidden — expand to see`}>
       <span className="flex shrink-0 items-center gap-1">
         <span className={cn("size-2 rounded-full", color)} />
-        <span className="font-mono text-[10px] text-muted-foreground/70">{n}</span>
+        <span className="font-mono text-[10px] text-kumo-subtle">{n}</span>
       </span>
     </Hint>
   );
@@ -270,9 +262,9 @@ export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
 
 export function Chevron({ collapsed }: { collapsed: boolean }) {
   return (
-    <ChevronDown
+    <CaretDownIcon
       className={cn(
-        "size-3.5 shrink-0 text-muted-foreground transition-transform",
+        "size-3.5 shrink-0 text-kumo-subtle transition-transform",
         collapsed && "-rotate-90",
       )}
     />
@@ -323,8 +315,8 @@ export function NeedsBadge({ n, className }: { n: number; className?: string }) 
 export function QuietBadge() {
   return (
     <Hint label="Marked quiet — normally hidden from the rail. Unmark it from this row's ⋮ menu.">
-      <span className="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-muted-foreground/70">
-        <Archive className="size-2.5" /> quiet
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-kumo-subtle">
+        <ArchiveIcon className="size-2.5" /> quiet
       </span>
     </Hint>
   );
@@ -335,7 +327,7 @@ export function QuietBadge() {
 export function GhostBadge() {
   return (
     <Hint label="This checkout's directory is gone (moved or deleted). Untrack it, or restore the directory to bring it back.">
-      <span className="shrink-0 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-muted-foreground/70">
+      <span className="shrink-0 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-kumo-subtle">
         ⚠ missing
       </span>
     </Hint>
@@ -374,7 +366,7 @@ export function BranchLabel({
           // Undimmed when diverged: it earned the line. No hue — a fact, and
           // the color budget is status/attention/identity.
           "min-w-0 truncate font-mono text-[11px]",
-          !isWorktree ? "text-sky-500" : diverged ? "text-foreground" : "text-muted-foreground",
+          !isWorktree ? "text-sky-500" : diverged ? "text-kumo-default" : "text-kumo-subtle",
         )}
         onClick={onClick}
       >
@@ -394,7 +386,7 @@ export function DeletingBadge({ label }: { label?: string }) {
       }
     >
       <span className="flex shrink-0 items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-1 font-mono text-[10px] text-red-600 dark:text-red-400">
-        <Loader2 className="size-2.5 animate-spin" /> {label ? `${label}…` : "deleting…"}
+        <CircleNotchIcon className="size-2.5 animate-spin" /> {label ? `${label}…` : "deleting…"}
       </span>
     </Hint>
   );
@@ -408,7 +400,7 @@ export function CreatingBadge({ label }: { label?: string }) {
       className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400"
       title={label ? `Creating this worktree — ${label}…` : "Creating this worktree…"}
     >
-      <Loader2 className="size-2.5 animate-spin" /> {label ? `${label}…` : "creating…"}
+      <CircleNotchIcon className="size-2.5 animate-spin" /> {label ? `${label}…` : "creating…"}
     </span>
   );
 }
@@ -446,9 +438,9 @@ export function DetachedActions({
               e.stopPropagation();
               onRecreate();
             }}
-            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-sky-500/50 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400"
+            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline px-1.5 font-mono text-[10.5px] text-kumo-subtle transition-colors hover:border-sky-500/50 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400"
           >
-            <RefreshCw className="size-3" /> Recreate
+            <ArrowClockwiseIcon className="size-3" /> Recreate
           </button>
         </Hint>
       )}
@@ -460,9 +452,9 @@ export function DetachedActions({
               e.stopPropagation();
               onClose();
             }}
-            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline px-1.5 font-mono text-[10.5px] text-kumo-subtle transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
           >
-            <CheckCheck className="size-3" /> Close…
+            <ChecksIcon className="size-3" /> Close…
           </button>
         </Hint>
       )}
@@ -476,7 +468,7 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
   return (
     <span className="flex shrink-0 items-center gap-1">
       <span
-        className="rounded-md border border-border bg-muted/40 px-1 font-mono text-[10px] text-muted-foreground"
+        className="rounded-md border border-kumo-hairline bg-muted/40 px-1 font-mono text-[10px] text-kumo-subtle"
         title="A git worktree of this repo that no task claims — adopt it to track it as your own work"
       >
         no task
@@ -484,7 +476,7 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
       {onAdopt && (
         <button
           type="button"
-          className="rounded-md px-1 font-mono text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="rounded-md px-1 font-mono text-[10px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
           title="Track this worktree as one of your tasks — the row keeps its place"
           onClick={(e) => {
             e.stopPropagation();
@@ -504,7 +496,7 @@ export function SettingUpBadge({ since, now }: { since: number; now: number }) {
   return (
     <Hint label="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while">
       <span className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400">
-        <Loader2 className="size-2.5 animate-spin" /> setup {fmtElapsed(now - since)}
+        <CircleNotchIcon className="size-2.5 animate-spin" /> setup {fmtElapsed(now - since)}
       </span>
     </Hint>
   );
@@ -542,27 +534,30 @@ export function BranchDriftBadge({
 export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
   if (drift.length === 0) return null;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      side="bottom"
+      content={
+        <>
+          <div className="flex flex-col gap-0.5 font-mono text-[11px]">
+            <span className="text-kumo-subtle">
+              {drift.length === 1 ? "A pane" : "Panes"} started before{" "}
+              {drift.length === 1 ? "this" : "these"} port{drift.length === 1 ? "" : "s"} last
+              changed — restart to pick up the current .env:
+            </span>
+            {drift.map((d) => (
+              <span key={`${d.key}:${d.spawnedPort}:${d.currentPort}`}>
+                {d.key} {d.spawnedPort} → {d.currentPort}
+              </span>
+            ))}
+          </div>
+        </>
+      }
+      render={
         <span className="shrink-0 rounded-md border border-amber-500/50 bg-amber-500/10 px-1 font-mono text-[10px] text-amber-500">
           ⚡ port drift
         </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" align="start">
-        <div className="flex flex-col gap-0.5 font-mono text-[11px]">
-          <span className="text-muted-foreground">
-            {drift.length === 1 ? "A pane" : "Panes"} started before{" "}
-            {drift.length === 1 ? "this" : "these"} port{drift.length === 1 ? "" : "s"} last changed
-            — restart to pick up the current .env:
-          </span>
-          {drift.map((d) => (
-            <span key={`${d.key}:${d.spawnedPort}:${d.currentPort}`}>
-              {d.key} {d.spawnedPort} → {d.currentPort}
-            </span>
-          ))}
-        </div>
-      </TooltipContent>
-    </Tooltip>
+      }
+    />
   );
 }
 
@@ -627,7 +622,7 @@ export function ComparedBaseBadge({
           e.stopPropagation();
           setEditing(true);
         }}
-        className="shrink-0 rounded-sm px-0.5 font-mono text-[10px] text-muted-foreground/70 hover:text-foreground"
+        className="shrink-0 rounded-sm px-0.5 font-mono text-[10px] text-kumo-subtle hover:text-kumo-default"
       >
         vs {label}
       </button>
@@ -649,8 +644,8 @@ export function BaseMovedChip({
     <Hint
       label={`Base moved: ${base} has ${commitsBehind} commit${commitsBehind === 1 ? "" : "s"} this branch doesn't — rebase or merge ${base} in to catch up. Not a measure of your own work.`}
     >
-      <span className={`${CHIP_CLASS} bg-muted font-medium text-foreground`}>
-        <RefreshCw className="size-3" />
+      <span className={`${CHIP_CLASS} bg-muted font-medium text-kumo-default`}>
+        <ArrowClockwiseIcon className="size-3" />
         {commitsBehind}
       </span>
     </Hint>
@@ -660,8 +655,8 @@ export function BaseMovedChip({
 function CommitStatRow({ commit }: { commit: CommitStat }) {
   return (
     <div className="flex items-center gap-2 font-mono text-[10.5px] leading-tight">
-      <span className="shrink-0 text-muted-foreground/70">{commit.sha.slice(0, 7)}</span>
-      <span className="min-w-0 flex-1 truncate text-foreground">{commit.subject}</span>
+      <span className="shrink-0 text-kumo-subtle">{commit.sha.slice(0, 7)}</span>
+      <span className="min-w-0 flex-1 truncate text-kumo-default">{commit.subject}</span>
       <span className="shrink-0 text-emerald-600 dark:text-emerald-400">+{commit.linesAdded}</span>
       <span className="shrink-0 text-red-600 dark:text-red-400">−{commit.linesRemoved}</span>
     </div>
@@ -688,19 +683,19 @@ function CommitBreakdownPreview({
   base: string;
 }) {
   if (commits == null) {
-    return <p className="p-1 text-xs text-muted-foreground">loading commits…</p>;
+    return <p className="p-1 text-xs text-kumo-subtle">loading commits…</p>;
   }
   return (
     <div className="max-h-80 overflow-auto">
       <div className="flex flex-col gap-1">
         {commits.length === 0 ? (
-          <p className="text-xs text-muted-foreground">no commits ahead of {base}</p>
+          <p className="text-xs text-kumo-subtle">no commits ahead of {base}</p>
         ) : (
           commits.map((c) => <CommitStatRow key={c.sha} commit={c} />)
         )}
       </div>
-      <div className="mt-1.5 flex items-center gap-2 border-t border-border/70 pt-1.5 font-mono text-[10.5px] font-semibold">
-        <span className="min-w-0 flex-1 text-foreground">
+      <div className="mt-1.5 flex items-center gap-2 border-t border-kumo-hairline pt-1.5 font-mono text-[10.5px] font-semibold">
+        <span className="min-w-0 flex-1 text-kumo-default">
           Committed
           {commits.length > 0 && ` — ${commits.length} commit${commits.length === 1 ? "" : "s"}`}
           {stats.committedFiles > 0 &&
@@ -711,8 +706,8 @@ function CommitBreakdownPreview({
         </span>
         <span className="shrink-0 text-red-600 dark:text-red-400">−{stats.committedRemoved}</span>
       </div>
-      <div className="mt-1.5 flex items-center gap-2 border-t border-dashed border-border/70 pt-1.5 font-mono text-[10.5px]">
-        <span className="min-w-0 flex-1 text-muted-foreground">
+      <div className="mt-1.5 flex items-center gap-2 border-t border-dashed border-kumo-hairline pt-1.5 font-mono text-[10.5px]">
+        <span className="min-w-0 flex-1 text-kumo-subtle">
           {stats.uncommittedFiles === 0
             ? "Uncommitted — nothing"
             : `Uncommitted — ${stats.uncommittedFiles} file${stats.uncommittedFiles === 1 ? "" : "s"}, lost if this checkout is deleted`}
@@ -788,8 +783,38 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
   // A `+` because the count is a floor: an untracked directory was too large to list.
   const filesLabel = `${uncommittedFiles}${uncommittedCapped ? "+" : ""}f`;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      side="bottom"
+      content={
+        <>
+          {/* Multi-paragraph content needs its own column wrapper or the
+            lines lay out side by side. */}
+          <div className="flex flex-col gap-0.5">
+            <span>
+              {clean
+                ? "Nothing uncommitted — every change here is in a commit."
+                : uncommittedCapped
+                  ? `At least ${uncommittedFiles} files not committed — an untracked directory was too large to list; open the files pane for which one.`
+                  : `${uncommittedFiles} file${uncommittedFiles === 1 ? "" : "s"} not committed — staged, unstaged or untracked.`}
+            </span>
+            <span className="opacity-70">
+              {clean
+                ? "Deleting this checkout would lose nothing that isn't on the branch."
+                : "Deleting this checkout destroys these. Untracked files count here but add no ± (they have no diff yet)."}
+            </span>
+            <span className="opacity-70">
+              {withHint(
+                clean ? "Opens the files pane" : "Opens these changes as a diff in the files pane",
+                "ab-toggle-files",
+              )}
+            </span>
+            <span className="opacity-70">
+              <CheckedAgo computedAtMs={stats.computedAtMs} />
+            </span>
+          </div>
+        </>
+      }
+      render={
         <button
           type="button"
           onClick={(e) => {
@@ -798,11 +823,11 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
             onOpen();
             if (!clean) void invoke("code_server_show_changes", { dir: stats.dir });
           }}
-          className={`${CHIP_CLASS} hover:bg-accent ${
-            clean ? "text-muted-foreground/60" : "font-medium text-foreground"
+          className={`${CHIP_CLASS} hover:bg-kumo-tint ${
+            clean ? "text-kumo-subtle" : "font-medium text-kumo-default"
           }`}
         >
-          <Pencil className="size-3" />
+          <PencilIcon className="size-3" />
           <ChipLabel text="uncommitted" labeled={labeled} />
           {clean ? (
             <span>clean</span>
@@ -818,35 +843,8 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
             </>
           )}
         </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" align="start">
-        {/* `TooltipContent` is an `inline-flex` row — multi-paragraph content
-            needs its own column wrapper or the lines lay out side by side. */}
-        <div className="flex flex-col gap-0.5">
-          <span>
-            {clean
-              ? "Nothing uncommitted — every change here is in a commit."
-              : uncommittedCapped
-                ? `At least ${uncommittedFiles} files not committed — an untracked directory was too large to list; open the files pane for which one.`
-                : `${uncommittedFiles} file${uncommittedFiles === 1 ? "" : "s"} not committed — staged, unstaged or untracked.`}
-          </span>
-          <span className="opacity-70">
-            {clean
-              ? "Deleting this checkout would lose nothing that isn't on the branch."
-              : "Deleting this checkout destroys these. Untracked files count here but add no ± (they have no diff yet)."}
-          </span>
-          <span className="opacity-70">
-            {withHint(
-              clean ? "Opens the files pane" : "Opens these changes as a diff in the files pane",
-              "ab-toggle-files",
-            )}
-          </span>
-          <span className="opacity-70">
-            <CheckedAgo computedAtMs={stats.computedAtMs} />
-          </span>
-        </div>
-      </TooltipContent>
-    </Tooltip>
+      }
+    />
   );
 }
 
@@ -861,12 +859,11 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
   const landedClean = commitsAhead > 0 && stats.landed != null && commitsUnlanded === 0;
   const partly = commitsUnlanded > 0 && commitsUnlanded !== commitsAhead;
   const tone = landedClean
-    ? "text-muted-foreground/60 hover:bg-accent"
-    : "text-muted-foreground hover:bg-accent hover:text-foreground";
+    ? "text-kumo-subtle hover:bg-kumo-tint"
+    : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default";
 
   return (
     <HoverCard
-      openDelay={250}
       onOpenChange={(open) => {
         if (open && commits == null) {
           void invoke<CommitStat[]>("ab_get_commit_stats", {
@@ -876,38 +873,41 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
         }
       }}
     >
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            mouseAction("ab-toggle-files", "agentboard");
-            onOpen();
-          }}
-          className={`${CHIP_CLASS} ${tone}`}
-        >
-          <GitCommitVertical className="size-3" />
-          <ChipLabel text="committed" labeled={labeled} />
-          {commitsAhead === 0 ? (
-            /* Unlabeled, the word doubles as the affordance; labeled,
+      <HoverCardTrigger
+        delay={250}
+        render={
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              mouseAction("ab-toggle-files", "agentboard");
+              onOpen();
+            }}
+            className={`${CHIP_CLASS} ${tone}`}
+          />
+        }
+      >
+        <GitCommitIcon className="size-3" />
+        <ChipLabel text="committed" labeled={labeled} />
+        {commitsAhead === 0 ? (
+          /* Unlabeled, the word doubles as the affordance; labeled,
                `committed` already names the chip. */
-            <span>{labeled ? "none" : "files"}</span>
-          ) : landedClean ? (
-            <span>
-              {commitsAhead}c {stats.landed}
+          <span>{labeled ? "none" : "files"}</span>
+        ) : landedClean ? (
+          <span>
+            {commitsAhead}c {stats.landed}
+          </span>
+        ) : (
+          <>
+            <span>{partly ? `${commitsUnlanded}/${commitsAhead}c` : `${commitsAhead}c`}</span>
+            <span className="text-emerald-600 dark:text-emerald-400">
+              +{fmtDiffLines(committedAdded)}
             </span>
-          ) : (
-            <>
-              <span>{partly ? `${commitsUnlanded}/${commitsAhead}c` : `${commitsAhead}c`}</span>
-              <span className="text-emerald-600 dark:text-emerald-400">
-                +{fmtDiffLines(committedAdded)}
-              </span>
-              <span className="text-red-600 dark:text-red-400">
-                −{fmtDiffLines(committedRemoved)}
-              </span>
-            </>
-          )}
-        </button>
+            <span className="text-red-600 dark:text-red-400">
+              −{fmtDiffLines(committedRemoved)}
+            </span>
+          </>
+        )}
       </HoverCardTrigger>
       <HoverCardContent
         side="bottom"
@@ -915,7 +915,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
         className="w-[28rem] max-w-[calc(100vw-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="mb-1.5 text-[11px] leading-snug text-muted-foreground">
+        <p className="mb-1.5 text-[11px] leading-snug text-kumo-subtle">
           {commitsAhead === 0 ? (
             <>Nothing committed beyond {base}.</>
           ) : landedClean ? (
@@ -969,7 +969,7 @@ function PaneOpenButton({
           if (shortcutTwin) mouseAction(shortcutTwin, "agentboard");
           onOpen();
         }}
-        className={`${CHIP_CLASS} text-muted-foreground hover:bg-accent hover:text-foreground`}
+        className={`${CHIP_CLASS} text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default`}
         aria-label={label}
       >
         {glyph}
@@ -982,12 +982,12 @@ function PaneOpenButton({
 /** `labeled` is the same width budget as [`DiffChipProps.labeled`]. */
 type PaneOpenButtonProps = { onOpen: () => void; labeled?: boolean };
 
-/** Opens the folder's file tree as a pane. `FolderTree`, not lucide's `Files`:
+/** Opens the folder's file tree as a pane. `TreeStructure`, not `Files`:
  * two stacked pages is the near-universal *copy* glyph. */
 export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
-      glyph={<FolderTree className="size-3" />}
+      glyph={<TreeStructureIcon className="size-3" />}
       label="files"
       title="Browse every file in this checkout — @ any of them to Claude"
       onOpen={onOpen}
@@ -1001,7 +1001,7 @@ export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
 export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
-      glyph={<Box className="size-3" />}
+      glyph={<CubeIcon className="size-3" />}
       label="jarvis"
       title="Open the native Bevy pane in this checkout's window — real GPU output, not DOM"
       onOpen={onOpen}
@@ -1015,7 +1015,7 @@ export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
 export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
-      glyph={<Eye className="size-3" />}
+      glyph={<EyeIcon className="size-3" />}
       label="preview"
       title="Preview this checkout's dev server — annotate the page and send it to the agent"
       onOpen={onOpen}
@@ -1029,7 +1029,7 @@ export function PreviewButton({ onOpen, labeled }: PaneOpenButtonProps) {
 export function BrowserButton({ onOpen, labeled }: PaneOpenButtonProps) {
   return (
     <PaneOpenButton
-      glyph={<AppWindow className="size-3" />}
+      glyph={<AppWindowIcon className="size-3" />}
       label="chrome"
       title="Open a real Chrome in this window — log in once, it sticks"
       onOpen={onOpen}
@@ -1096,7 +1096,7 @@ export function PrChip({
           tone,
         )}
       >
-        <GitPullRequest className="size-3" />#{pr.number}
+        <GitPullRequestIcon className="size-3" />#{pr.number}
         {hasLocalWork && <span aria-hidden>⚑</span>}
       </button>
     </Hint>
@@ -1109,7 +1109,7 @@ export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueL
   const closed = issue.state === "closed";
   const tone = closed
     ? "border-purple-500/50 bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400"
-    : "border-border/70 text-muted-foreground hover:bg-accent hover:text-foreground";
+    : "border-kumo-hairline text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default";
 
   async function detach() {
     const result = await storeDetachTaskIssue(taskId, issue.repo, issue.number);
@@ -1122,34 +1122,38 @@ export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueL
       <Hint
         label={`${issue.repo}#${issue.number} — ${closed ? "closed" : "open"}, linked to this task`}
       >
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            onClick={(e) => e.stopPropagation()}
-            className={cn(
-              "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
-              tone,
-            )}
-          >
-            <CircleDot className="size-3" />#{issue.number}
-          </button>
-        </DropdownMenuTrigger>
+        <DropdownMenu.Trigger
+          render={
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
+                tone,
+              )}
+            >
+              <RecordIcon className="size-3" />#{issue.number}
+            </button>
+          }
+        />
       </Hint>
-      <DropdownMenuContent align="start" className="w-auto min-w-44">
-        <DropdownMenuItem
-          onSelect={() => void openExternalUrl(issue.url)}
+      <DropdownMenu.Content align="start" className="w-auto min-w-44">
+        <DropdownMenu.Item
+          onClick={() => void openExternalUrl(issue.url)}
           className="whitespace-nowrap"
+          icon={<ArrowSquareOutIcon className="size-3.5" />}
         >
-          <ExternalLink className="size-3.5" /> Open on GitHub
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          variant="destructive"
-          onSelect={() => void detach()}
+          Open on GitHub
+        </DropdownMenu.Item>
+        <DropdownMenu.Item
+          variant="danger"
+          onClick={() => void detach()}
           className="whitespace-nowrap"
+          icon={<LinkBreakIcon className="size-3.5" />}
         >
-          <Link2Off className="size-3.5" /> Detach issue
-        </DropdownMenuItem>
-      </DropdownMenuContent>
+          Detach issue
+        </DropdownMenu.Item>
+      </DropdownMenu.Content>
     </DropdownMenu>
   );
 }
@@ -1198,15 +1202,15 @@ function AttachIssueDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Attach issue</DialogTitle>
-        </DialogHeader>
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog size="lg" className="flex flex-col gap-4 p-6">
+        <Dialog.Title className="text-lg font-semibold">Attach issue</Dialog.Title>
         <div className="flex items-center gap-2">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+          <MagnifyingGlassIcon className="size-4 shrink-0 text-kumo-subtle" />
           <Input
+            aria-label="Search issues"
             autoFocus
+            className="flex-1"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search issues by title, number, or text…"
@@ -1214,11 +1218,11 @@ function AttachIssueDialog({
         </div>
         <div className="max-h-80 min-h-10 overflow-auto">
           {searching ? (
-            <p className="p-2 text-xs text-muted-foreground">
-              <Loader2 className="mr-1 inline size-3 animate-spin" /> searching…
+            <p className="p-2 text-xs text-kumo-subtle">
+              <CircleNotchIcon className="mr-1 inline size-3 animate-spin" /> searching…
             </p>
           ) : results.length === 0 ? (
-            <p className="p-2 text-xs text-muted-foreground">
+            <p className="p-2 text-xs text-kumo-subtle">
               {query.trim() ? "No matching issues." : "Type to search this repo's issues."}
             </p>
           ) : (
@@ -1228,15 +1232,15 @@ function AttachIssueDialog({
                   key={`${issue.repo}#${issue.number}`}
                   type="button"
                   onClick={() => void attach(issue)}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-kumo-tint"
                 >
-                  <CircleDot
+                  <RecordIcon
                     className={cn(
                       "size-3.5 shrink-0",
                       issue.state === "closed" ? "text-purple-500" : "text-emerald-500",
                     )}
                   />
-                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                  <span className="shrink-0 font-mono text-[11px] text-kumo-subtle">
                     #{issue.number}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{issue.title}</span>
@@ -1245,8 +1249,8 @@ function AttachIssueDialog({
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -1254,17 +1258,16 @@ function AttachIssueDialog({
  * is invisible to naive checks, and a PR-less task has no other evidence. */
 export function LandedBadge({ landed, base }: { landed: LandedVia; base: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      side="bottom"
+      content={`Git says this branch's work is already on ${base} (${landed}), with or without a PR.`}
+      render={
         <span className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-purple-500/50 bg-purple-500/10 px-1.5 font-mono text-[10.5px] text-purple-600 dark:text-purple-400">
-          <GitMerge className="size-3" />
+          <GitMergeIcon className="size-3" />
           {landed}
         </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" align="start">
-        {`Git says this branch's work is already on ${base} (${landed}), with or without a PR.`}
-      </TooltipContent>
-    </Tooltip>
+      }
+    />
   );
 }
 
@@ -1294,8 +1297,16 @@ export function SafeToDeleteBadge({
   onDeleteWorktree: () => void;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      side="bottom"
+      content={
+        <>
+          No uncommitted changes, and every commit has landed on {base}
+          {landed ? ` (${landed})` : ""}. Nothing here would be lost — click to delete this
+          worktree.
+        </>
+      }
+      render={
         <button
           type="button"
           onClick={(e) => {
@@ -1304,14 +1315,10 @@ export function SafeToDeleteBadge({
           }}
           className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-1.5 font-mono text-[10.5px] text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
         >
-          <Check className="size-3" /> safe to delete
+          <CheckIcon className="size-3" /> safe to delete
         </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" align="start">
-        No uncommitted changes, and every commit has landed on {base}
-        {landed ? ` (${landed})` : ""}. Nothing here would be lost — click to delete this worktree.
-      </TooltipContent>
-    </Tooltip>
+      }
+    />
   );
 }
 
@@ -1332,7 +1339,7 @@ export function ModelBadge({ session, className }: { session: SessionData; class
       <span
         className={cn(
           "flex h-4 shrink-0 items-center rounded-md border px-1 font-mono text-[10px] font-medium",
-          MODEL_TONE[letter] ?? "border-border bg-muted/30 text-muted-foreground",
+          MODEL_TONE[letter] ?? "border-kumo-hairline bg-muted/30 text-kumo-subtle",
           className,
         )}
       >
@@ -1410,11 +1417,7 @@ export function CacheBadge({
       <span
         className={cn(
           "shrink-0 font-mono text-[10.5px]",
-          expiring
-            ? "text-amber-500"
-            : cold
-              ? "font-medium text-sky-500"
-              : "text-muted-foreground/70",
+          expiring ? "text-amber-500" : cold ? "font-medium text-sky-500" : "text-kumo-subtle",
         )}
       >
         {/* Fixed 4ch slot: the percent is 1–3 digits, and without a reserved
@@ -1507,91 +1510,113 @@ export function RepoMenu({
     <>
       <DropdownMenu>
         <Hint label="More actions">
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant={ghost ? "ghost" : "outline"}
-              size="icon-xs"
-              aria-label="More actions"
-              className="text-muted-foreground"
-            >
-              <MoreVertical className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenu.Trigger
+            render={
+              <Button
+                variant={ghost ? "ghost" : "outline"}
+                size="xs"
+                shape="square"
+                aria-label="More actions"
+                className="text-kumo-subtle"
+                icon={<DotsThreeVerticalIcon className="size-3.5" />}
+              />
+            }
+          />
         </Hint>
-        <DropdownMenuContent align="end" className="w-auto min-w-56">
+        <DropdownMenu.Content align="end" className="w-auto min-w-56">
           {path && (
             <>
-              <DropdownMenuLabel className="font-mono text-[11px] font-normal whitespace-nowrap text-muted-foreground">
-                {path}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
+              <DropdownMenu.Group>
+                <DropdownMenu.Label className="font-mono text-[11px] font-normal whitespace-nowrap text-kumo-subtle">
+                  {path}
+                </DropdownMenu.Label>
+              </DropdownMenu.Group>
+              <DropdownMenu.Separator />
             </>
           )}
           {!dirMissing && (
-            <DropdownMenuItem
-              onSelect={() => void openInExternalEditor(dir, { where: "rail.menu" })}
+            <DropdownMenu.Item
+              onClick={() => void openInExternalEditor(dir, { where: "rail.menu" })}
               className="whitespace-nowrap"
+              icon={<ArrowSquareOutIcon className="size-3.5" />}
             >
-              <ExternalLink className="size-3.5" /> Open in external editor
-            </DropdownMenuItem>
+              Open in external editor
+            </DropdownMenu.Item>
           )}
           {onNewTask && (
-            <DropdownMenuItem
-              onSelect={() => {
+            <DropdownMenu.Item
+              onClick={() => {
                 mouseAction("ab-new-task", "agentboard");
                 onNewTask();
               }}
               className="whitespace-nowrap"
+              icon={<FolderPlusIcon className="size-3.5" />}
             >
-              <FolderPlus className="size-3.5" /> New task…
-              <DropdownMenuShortcut>{shortcutHint("ab-new-task")}</DropdownMenuShortcut>
-            </DropdownMenuItem>
+              New task…
+              <span className="ml-auto text-xs text-kumo-subtle">
+                {shortcutHint("ab-new-task")}
+              </span>
+            </DropdownMenu.Item>
           )}
           {onDeleteWorktree && (
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => {
+            <DropdownMenu.Item
+              variant="danger"
+              onClick={() => {
                 mouseAction("ab-remove-task", "agentboard");
                 onDeleteWorktree();
               }}
               className="whitespace-nowrap"
+              icon={<TrashIcon className="size-3.5" />}
             >
-              <Trash2 className="size-3.5" /> {deleteLabel ?? "Delete worktree…"}
-              <DropdownMenuShortcut>{shortcutHint("ab-remove-task")}</DropdownMenuShortcut>
-            </DropdownMenuItem>
+              {deleteLabel ?? "Delete worktree…"}
+              <span className="ml-auto text-xs text-kumo-subtle">
+                {shortcutHint("ab-remove-task")}
+              </span>
+            </DropdownMenu.Item>
           )}
-          {(!dirMissing || onNewTask || onDeleteWorktree) && <DropdownMenuSeparator />}
-          <DropdownMenuItem onSelect={() => void syncNow()} className="whitespace-nowrap">
-            <RefreshCw className="size-3.5" /> Sync now
-          </DropdownMenuItem>
+          {(!dirMissing || onNewTask || onDeleteWorktree) && <DropdownMenu.Separator />}
+          <DropdownMenu.Item
+            onClick={() => void syncNow()}
+            className="whitespace-nowrap"
+            icon={<ArrowClockwiseIcon className="size-3.5" />}
+          >
+            Sync now
+          </DropdownMenu.Item>
           {taskId != null && (
-            <DropdownMenuItem onSelect={() => setAttachOpen(true)} className="whitespace-nowrap">
-              <Link className="size-3.5" /> Attach issue…
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onSelect={() => void toggleQuiet()} className="whitespace-nowrap">
-            {/* Same glyph the rail header's toggle wears, so "where did it
-                go" and "bring it back" read as one feature. */}
-            {quiet ? (
-              <>
-                <ArchiveRestore className="size-3.5" /> Unmark quiet
-              </>
-            ) : (
-              <>
-                <Archive className="size-3.5" /> Mark quiet
-              </>
-            )}
-          </DropdownMenuItem>
-          {!isWorktree && (
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={onRemove}
+            <DropdownMenu.Item
+              onClick={() => setAttachOpen(true)}
               className="whitespace-nowrap"
+              icon={<LinkIcon className="size-3.5" />}
             >
-              <Trash2 className="size-3.5" /> Remove from rail
-            </DropdownMenuItem>
+              Attach issue…
+            </DropdownMenu.Item>
           )}
-        </DropdownMenuContent>
+          {/* Same glyph the rail header's toggle wears, so "where did it go"
+              and "bring it back" read as one feature. */}
+          <DropdownMenu.Item
+            onClick={() => void toggleQuiet()}
+            className="whitespace-nowrap"
+            icon={
+              quiet ? (
+                <ArrowCounterClockwiseIcon className="size-3.5" />
+              ) : (
+                <ArchiveIcon className="size-3.5" />
+              )
+            }
+          >
+            {quiet ? "Unmark quiet" : "Mark quiet"}
+          </DropdownMenu.Item>
+          {!isWorktree && (
+            <DropdownMenu.Item
+              variant="danger"
+              onClick={onRemove}
+              className="whitespace-nowrap"
+              icon={<TrashIcon className="size-3.5" />}
+            >
+              Remove from rail
+            </DropdownMenu.Item>
+          )}
+        </DropdownMenu.Content>
       </DropdownMenu>
       {taskId != null && (
         <AttachIssueDialog
@@ -1624,7 +1649,7 @@ export function PanePlaceholder({
   return (
     <div
       className={cn(
-        "flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-muted-foreground",
+        "flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-kumo-subtle",
         focused && "border-violet-500/60",
         tone === "alert" && "border-amber-500/40",
       )}
@@ -1640,7 +1665,7 @@ export function PanePlaceholder({
         }}
         className="flex items-center gap-1 font-mono text-xs hover:text-sky-500"
       >
-        <X className="size-3" /> close pane {focused && shortcutHint("ab-close-pane")}
+        <XIcon className="size-3" /> close pane {focused && shortcutHint("ab-close-pane")}
       </button>
     </div>
   );

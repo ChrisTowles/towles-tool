@@ -141,7 +141,8 @@ Full list: **[docs/CONVENTIONS.md](docs/CONVENTIONS.md)**. The ones that bite:
 - **Dev tooling must not hardcode ports/paths**, since several worktree tasks run
   concurrently; ports belong in `.env.example` as `${tt:port A-B}` claims. **No
   planning docs committed to the repo** either — those go in the scratchpad.
-- **Frontend styling is Tailwind + shadcn/ui only.** The one carve-out is
+- **Frontend styling is Tailwind + Kumo** (`@cloudflare/kumo`), its primitives
+  where it has no styled component, and Phosphor icons. The one carve-out is
   animation: `tw-animate-css` while mounted, `motion` for enter/exit.
 - **No CLI-parity requirement.** The app is the primary product; each feature
   picks its natural surface, and the logic lands in a Tauri-free `crates/`

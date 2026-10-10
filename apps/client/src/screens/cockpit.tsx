@@ -1,34 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Banner, Button, DropdownMenu, Tabs, Tooltip } from "@cloudflare/kumo";
 import {
-  CalendarClock,
-  CircleAlert,
-  CircleDot,
-  ExternalLink,
-  EyeOff,
-  GitBranch,
-  GitBranchPlus,
-  GitPullRequest,
-  Link as LinkIcon,
-  ListChecks,
-  MoreHorizontal,
-  RefreshCw,
-  Send,
-  Settings,
-  Video,
-} from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  ArrowClockwiseIcon,
+  ArrowSquareOutIcon,
+  CalendarDotsIcon,
+  DotsThreeIcon,
+  EyeSlashIcon,
+  GearIcon,
+  GitBranchIcon,
+  GitForkIcon,
+  GitPullRequestIcon,
+  LinkIcon,
+  ListChecksIcon,
+  PaperPlaneTiltIcon,
+  RecordIcon,
+  VideoCameraIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
@@ -64,6 +53,8 @@ import { uiAction } from "@/lib/ui-action";
 import { Empty, IssueRow, Panel, PrRow } from "@/components/store-bits";
 import { prNeedsYou, prRank } from "@/lib/pr-tone";
 import { CockpitCiHealth } from "@/components/cockpit-ci-health";
+import { CockpitWorkQueue } from "@/components/cockpit-work-queue";
+import { buildWorkQueue } from "@/lib/cockpit-queue";
 
 /** A tracked checkout a Cockpit issue can be dispatched into. */
 type TaskTarget = { dir: string; branch: string; name: string };
@@ -80,8 +71,9 @@ function repoMatches(originUrl: string | null | undefined, repo: string): boolea
   return norm.endsWith(`/${repo.toLowerCase()}`);
 }
 
-/** Cockpit — the day home: time until the next meeting, the PRs that need you,
- * the issue queue. Read-only over the store snapshot. */
+/** Cockpit — the day home and the head of the loop: the work queue of agents and
+ * tasks waiting on you, time until the next meeting, the PRs that need you, the
+ * issue queue. Read-only over the store snapshot and Agentboard state. */
 export function CockpitScreen() {
   const { snapshot, live } = useStoreSnapshot();
   const agentState = useAgentboardState();
@@ -162,8 +154,13 @@ export function CockpitScreen() {
     () => snapshot.issues.filter((i) => !isItemDismissed(i)),
     [snapshot.issues],
   );
-  const repoList = cockpitRepos(openPrs, openIssues, snapshot.ciRuns);
+  const queue = useMemo(
+    () => buildWorkQueue(agentState.repos, snapshot.prs),
+    [agentState.repos, snapshot.prs],
+  );
+  const repoList = cockpitRepos([...queue, ...openPrs], openIssues, snapshot.ciRuns);
   const activeRepo = repoFilter !== null && repoList.includes(repoFilter) ? repoFilter : null;
+  const visibleQueue = filterByRepo(queue, activeRepo);
   const visiblePrs = filterByRepo(openPrs, activeRepo);
   const visibleIssues = filterByRepo(openIssues, activeRepo);
 
@@ -191,8 +188,9 @@ export function CockpitScreen() {
       {/* Next-meeting strip */}
       <div className="flex shrink-0 flex-wrap items-center gap-x-8 gap-y-2 border-b px-5 py-4">
         <div className="flex items-center gap-3">
-          <CalendarClock
-            className={cn("size-5", highlight ? "text-amber-500" : "text-muted-foreground")}
+          <CalendarDotsIcon
+            size={20}
+            className={highlight ? "text-amber-500" : "text-kumo-subtle"}
           />
           {nextEvent ? (
             <div className="flex items-center gap-3">
@@ -206,7 +204,7 @@ export function CockpitScreen() {
               </span>
               <div className="flex min-w-0 flex-col">
                 <span className="text-sm font-medium">{nextEvent.title}</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-kumo-subtle">
                   {meetingLive && nextEvent.endTs !== undefined
                     ? `until ${fmtClock(nextEvent.endTs)}`
                     : fmtClock(nextEvent.startTs)}
@@ -216,31 +214,27 @@ export function CockpitScreen() {
               {nextEvent.joinUrl ? (
                 <Button
                   size="sm"
-                  variant={meetingLive ? "default" : "outline"}
-                  className={cn(
-                    meetingLive &&
-                      "bg-amber-500 text-white hover:bg-amber-500/90 dark:bg-amber-500 dark:text-white",
-                  )}
+                  variant={meetingLive ? "primary" : "secondary"}
+                  icon={<VideoCameraIcon />}
                   onClick={() => {
                     uiAction("cockpit.meeting_join", "cockpit");
                     if (nextEvent.joinUrl) void openExternalUrl(nextEvent.joinUrl);
                   }}
                 >
-                  <Video />
                   Join
                 </Button>
               ) : null}
             </div>
           ) : (
-            <span className="text-sm text-muted-foreground">No more meetings today.</span>
+            <span className="text-sm text-kumo-subtle">No more meetings today.</span>
           )}
         </div>
 
         {later.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-kumo-subtle">
             <span className="uppercase tracking-wide">Then</span>
             {shownLater.map((e) => (
-              <span key={e.id} className="rounded-md bg-muted px-2 py-0.5">
+              <span key={e.id} className="rounded-md bg-kumo-recessed px-2 py-0.5">
                 {e.title} · {fmtClock(e.startTs)}
               </span>
             ))}
@@ -270,20 +264,21 @@ export function CockpitScreen() {
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
+        <div className="ml-auto flex items-center gap-4 text-xs text-kumo-subtle">
+          <Tooltip
+            content="Refresh pull requests and issues now"
+            render={
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={refreshing}
+                icon={<ArrowClockwiseIcon />}
                 onClick={() => {
                   uiAction("cockpit.refresh", "cockpit");
                   void refresh();
                 }}
-                disabled={refreshing}
-                className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-muted-foreground hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-60"
                 aria-label="Refresh PRs and issues"
               >
-                <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
                 <span className="tabular-nums">
                   {refreshing
                     ? "Refreshing…"
@@ -291,10 +286,10 @@ export function CockpitScreen() {
                       ? `Refreshed ${fmtAge(refreshedAt, now)}`
                       : "Refresh"}
                 </span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Refresh pull requests and issues now</TooltipContent>
-          </Tooltip>
+              </Button>
+            }
+          />
+          <Gauge n={queue.length} label="In queue" tone={queue.length ? "warn" : "muted"} />
           <Gauge
             n={needsYouPrs.length}
             label="PRs need you"
@@ -303,21 +298,21 @@ export function CockpitScreen() {
           <Gauge n={openIssues.length} label="Issues" tone="muted" />
           <Gauge n={repoList.length} label="Repos" tone="muted" />
           {dismissedCount > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
+            <Tooltip
+              content="Bring back every dismissed PR and issue"
+              render={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={clearingDismissals}
+                  icon={<EyeSlashIcon />}
                   onClick={() => void clearDismissals()}
-                  disabled={clearingDismissals}
-                  className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-muted-foreground hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-60"
                   aria-label="Clear all dismissals"
                 >
-                  <EyeOff className="size-3.5" />
                   <span className="tabular-nums">{dismissedCount} dismissed</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>Bring back every dismissed PR and issue</TooltipContent>
-            </Tooltip>
+                </Button>
+              }
+            />
           )}
         </div>
       </div>
@@ -325,39 +320,43 @@ export function CockpitScreen() {
       {/* Repo filter chips — narrow both panels to one repo (only worth showing
           when there's more than one to choose between). */}
       {repoList.length > 1 && (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-5 py-2">
-          <RepoChip
-            label="All repos"
-            active={activeRepo === null}
-            onClick={() => selectRepo(null)}
+        <div className="flex shrink-0 items-center overflow-x-auto border-b px-5 py-2">
+          <Tabs
+            size="sm"
+            variant="segmented"
+            value={activeRepo ?? ALL_REPOS}
+            onValueChange={(v) => selectRepo(v === ALL_REPOS ? null : v)}
+            tabs={[
+              { value: ALL_REPOS, label: "All repos" },
+              ...repoList.map((repo) => ({
+                value: repo,
+                label: <span className="font-mono">{repo}</span>,
+              })),
+            ]}
           />
-          {repoList.map((repo) => (
-            <RepoChip
-              key={repo}
-              label={repo}
-              active={activeRepo === repo}
-              onClick={() => selectRepo(activeRepo === repo ? null : repo)}
-            />
-          ))}
         </div>
       )}
 
       {!live && (
-        <div className="flex shrink-0 items-center gap-2 border-b bg-amber-500/10 px-5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
-          <CircleAlert className="size-3.5 shrink-0" />
-          Not connected to the store — open this window in the Towles Tool app to see live PRs,
-          issues, and events.
-        </div>
+        <Banner
+          variant="alert"
+          size="sm"
+          className="shrink-0 rounded-none border-x-0 border-t-0"
+          icon={<WarningCircleIcon />}
+          title="Not connected to the store"
+          description="Open this window in the Towles Tool app to see live PRs, issues, and events."
+        />
       )}
 
       <ScrollArea className="min-h-0 flex-1">
         <div ref={focusRef} className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+          <CockpitWorkQueue queue={visibleQueue} now={now} live={live} />
           <CockpitCiHealth runs={snapshot.ciRuns} repo={activeRepo} now={now} live={live} />
           {/* Pull requests */}
           <Panel
             title="Pull requests"
             note={`${visibleNeedsYou.length} need you`}
-            icon={<GitPullRequest className="size-4" />}
+            icon={<GitPullRequestIcon size={16} />}
           >
             {visiblePrs.length === 0 ? (
               live ? (
@@ -389,7 +388,7 @@ export function CockpitScreen() {
           <Panel
             title="Issue queue"
             note={`${visibleIssues.length} open`}
-            icon={<CircleDot className="size-4" />}
+            icon={<RecordIcon size={16} />}
           >
             {visibleIssues.length === 0 ? (
               live ? (
@@ -454,29 +453,31 @@ async function dismissItem(kind: "issue" | "pr", repo: string, number: number, u
 function IssueActions({ issue, tasks }: { issue: IssueItem; tasks: TaskTarget[] }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-          aria-label="Issue actions"
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuItem
-          onSelect={() => {
+      <DropdownMenu.Trigger
+        render={
+          <Button
+            size="sm"
+            shape="square"
+            variant="ghost"
+            className="shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
+            aria-label="Issue actions"
+            icon={<DotsThreeIcon size={16} weight="bold" />}
+          />
+        }
+      />
+      <DropdownMenu.Content align="end" className="w-52">
+        <DropdownMenu.Item
+          onClick={() => {
             uiAction("cockpit.open_external", "cockpit", "issue");
             void openExternalUrl(issue.url);
           }}
+          icon={ArrowSquareOutIcon}
         >
-          <ExternalLink className="size-4" />
           Open in browser
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        </DropdownMenu.Item>
+        <DropdownMenu.Separator />
         <TaskSubmenu
-          icon={<Send className="size-4" />}
+          icon={PaperPlaneTiltIcon}
           label="Assign to task"
           tasks={tasks}
           onPick={(task) =>
@@ -488,7 +489,7 @@ function IssueActions({ issue, tasks }: { issue: IssueItem; tasks: TaskTarget[] 
           }
         />
         <TaskSubmenu
-          icon={<GitBranchPlus className="size-4" />}
+          icon={GitForkIcon}
           label="Create branch"
           tasks={tasks}
           onPick={(task) =>
@@ -500,14 +501,14 @@ function IssueActions({ issue, tasks }: { issue: IssueItem; tasks: TaskTarget[] 
             })
           }
         />
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => void dismissItem("issue", issue.repo, issue.number, issue.updatedTs)}
+        <DropdownMenu.Separator />
+        <DropdownMenu.Item
+          onClick={() => void dismissItem("issue", issue.repo, issue.number, issue.updatedTs)}
+          icon={EyeSlashIcon}
         >
-          <EyeOff className="size-4" />
           Dismiss
-        </DropdownMenuItem>
-      </DropdownMenuContent>
+        </DropdownMenu.Item>
+      </DropdownMenu.Content>
     </DropdownMenu>
   );
 }
@@ -517,50 +518,55 @@ function IssueActions({ issue, tasks }: { issue: IssueItem; tasks: TaskTarget[] 
 function PrActions({ pr }: { pr: PrItem }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-          aria-label="PR actions"
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuItem
-          onSelect={() => {
+      <DropdownMenu.Trigger
+        render={
+          <Button
+            size="sm"
+            shape="square"
+            variant="ghost"
+            className="shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
+            aria-label="PR actions"
+            icon={<DotsThreeIcon size={16} weight="bold" />}
+          />
+        }
+      />
+      <DropdownMenu.Content align="end" className="w-52">
+        <DropdownMenu.Item
+          onClick={() => {
             uiAction("cockpit.open_external", "cockpit", "pr");
             void openExternalUrl(pr.url);
           }}
+          icon={ArrowSquareOutIcon}
         >
-          <ExternalLink className="size-4" />
           Open in browser
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => {
+        </DropdownMenu.Item>
+        <DropdownMenu.Item
+          onClick={() => {
             uiAction("cockpit.open_external", "cockpit", "pr_checks");
             void openExternalUrl(`${pr.url}/checks`);
           }}
+          icon={ListChecksIcon}
         >
-          <ListChecks className="size-4" />
           Open checks
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void copyToClipboard(pr.branch, "branch name")}>
-          <GitBranch className="size-4" />
+        </DropdownMenu.Item>
+        <DropdownMenu.Separator />
+        <DropdownMenu.Item
+          onClick={() => void copyToClipboard(pr.branch, "branch name")}
+          icon={GitBranchIcon}
+        >
           Copy branch name
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void copyToClipboard(pr.url, "PR URL")}>
-          <LinkIcon className="size-4" />
+        </DropdownMenu.Item>
+        <DropdownMenu.Item onClick={() => void copyToClipboard(pr.url, "PR URL")} icon={LinkIcon}>
           Copy PR URL
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => void dismissItem("pr", pr.repo, pr.number, pr.updatedTs)}>
-          <EyeOff className="size-4" />
+        </DropdownMenu.Item>
+        <DropdownMenu.Separator />
+        <DropdownMenu.Item
+          onClick={() => void dismissItem("pr", pr.repo, pr.number, pr.updatedTs)}
+          icon={EyeSlashIcon}
+        >
           Dismiss
-        </DropdownMenuItem>
-      </DropdownMenuContent>
+        </DropdownMenu.Item>
+      </DropdownMenu.Content>
     </DropdownMenu>
   );
 }
@@ -572,34 +578,29 @@ function TaskSubmenu({
   tasks,
   onPick,
 }: {
-  icon: React.ReactNode;
+  icon: React.ComponentProps<typeof DropdownMenu.SubTrigger>["icon"];
   label: string;
   tasks: TaskTarget[];
   onPick: (task: TaskTarget) => void;
 }) {
   return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        {icon}
-        {label}
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="w-64">
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger icon={icon}>{label}</DropdownMenu.SubTrigger>
+      <DropdownMenu.SubContent className="w-64">
         {tasks.length === 0 ? (
-          <DropdownMenuItem disabled>No matching task checkout</DropdownMenuItem>
+          <DropdownMenu.Item disabled>No matching task checkout</DropdownMenu.Item>
         ) : (
           tasks.map((task) => (
-            <DropdownMenuItem key={task.dir} onSelect={() => onPick(task)}>
+            <DropdownMenu.Item key={task.dir} onClick={() => onPick(task)}>
               <div className="flex min-w-0 flex-col">
                 <span className="truncate">{task.name}</span>
-                <span className="truncate font-mono text-xs text-muted-foreground">
-                  {task.branch}
-                </span>
+                <span className="truncate font-mono text-xs text-kumo-subtle">{task.branch}</span>
               </div>
-            </DropdownMenuItem>
+            </DropdownMenu.Item>
           ))
         )}
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
+      </DropdownMenu.SubContent>
+    </DropdownMenu.Sub>
   );
 }
 
@@ -618,49 +619,24 @@ function SetupEmpty({
 }) {
   return (
     <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
-      <p className="text-sm text-muted-foreground">{message}</p>
+      <p className="text-sm text-kumo-subtle">{message}</p>
       <Button
         size="sm"
-        variant="outline"
+        variant="secondary"
+        icon={<GearIcon />}
         onClick={() => {
           uiAction("cockpit.setup_collector", "cockpit", detail);
           openSettingsTab({ tab: "collectors", filter });
         }}
       >
-        <Settings />
         Set up in Settings
       </Button>
     </div>
   );
 }
 
-/** A repo filter chip. Violet marks the active selection (the "currently
- * focused" accent); the rest are neutral until hovered. */
-function RepoChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "rounded-md border px-2 py-0.5 font-mono text-[11px] transition-colors",
-        active
-          ? "border-violet-500/60 bg-violet-500/10 text-foreground"
-          : "border-transparent bg-muted text-muted-foreground hover:bg-accent",
-      )}
-    >
-      {label}
-    </button>
-  );
-}
+/** Tab value for the unfiltered view — no repo is named this. */
+const ALL_REPOS = "__all__";
 
 function Gauge({ n, label, tone }: { n: number; label: string; tone: "warn" | "muted" }) {
   return (
@@ -668,12 +644,12 @@ function Gauge({ n, label, tone }: { n: number; label: string; tone: "warn" | "m
       <span
         className={cn(
           "font-mono text-xl font-semibold tabular-nums",
-          tone === "warn" && n > 0 ? "text-amber-500" : "text-foreground",
+          tone === "warn" && n > 0 ? "text-amber-500" : "text-kumo-default",
         )}
       >
         {n}
       </span>
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-xs text-kumo-subtle">{label}</span>
     </div>
   );
 }

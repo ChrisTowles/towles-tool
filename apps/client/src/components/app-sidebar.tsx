@@ -1,8 +1,7 @@
 import { useMemo } from "react";
 import { RollupDots } from "@/components/agentboard-bits";
-import { Button } from "@/components/ui/button";
+import { Button, Tooltip } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   agentRollup,
   rollupAlertColor,
@@ -41,9 +40,7 @@ export function AppSidebar() {
       <nav className="flex flex-col gap-4 p-2">
         {NAV_SECTIONS.map((section) => (
           <div key={section.label} className="flex flex-col gap-0.5">
-            <div className="px-2 pb-1 text-xs font-medium text-muted-foreground">
-              {section.label}
-            </div>
+            <div className="px-2 pb-1 text-xs font-medium text-kumo-subtle">{section.label}</div>
             {section.screens.map((id) => {
               const screen = SCREENS[id];
               const active = activeTab === id;
@@ -66,7 +63,7 @@ export function AppSidebar() {
                   aria-keyshortcuts={tabId ? shortcutAria(tabId) : undefined}
                   className={cn(
                     "justify-start font-normal",
-                    active && "bg-accent text-accent-foreground",
+                    active && "bg-kumo-tint text-kumo-default",
                   )}
                   onClick={() => {
                     if (tabId) mouseAction(tabId, activeTab);
@@ -75,10 +72,10 @@ export function AppSidebar() {
                     openTab(id);
                   }}
                 >
-                  <screen.icon className="text-muted-foreground" />
+                  <screen.icon className="text-kumo-subtle" />
                   {screen.title}
                   {showBadge && (
-                    <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] text-muted-foreground">
+                    <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] text-kumo-subtle">
                       {rollup.total}
                       <RollupDots r={rollup} />
                       {rollup.compact > 0 && (
@@ -123,7 +120,7 @@ export function AppSidebarIcons() {
       <div className="flex flex-col items-center gap-1 py-2">
         {NAV_SECTIONS.map((section, i) => (
           <div key={section.label} className="flex flex-col items-center gap-1">
-            {i > 0 && <div className="my-1 h-px w-6 bg-border" />}
+            {i > 0 && <div className="my-1 h-px w-6 bg-kumo-hairline" />}
             {section.screens.map((id) => {
               const screen = SCREENS[id];
               const active = activeTab === id;
@@ -131,8 +128,19 @@ export function AppSidebarIcons() {
               const showSlackDot = id === "slack" && slackUnread;
               const tabId = tabShortcutId(openTabs, id);
               return (
-                <Tooltip key={id}>
-                  <TooltipTrigger asChild>
+                <Tooltip
+                  key={id}
+                  side="right"
+                  content={
+                    <>
+                      {screen.title}
+                      {tabId && <ShortcutBadge id={tabId} />}
+                      {showBadge &&
+                        ` — ${rollup.total} agent${rollup.total === 1 ? "" : "s"}${rollup.waiting > 0 ? `, ${rollup.waiting} waiting` : ""}${rollup.error > 0 ? `, ${rollup.error} errored` : ""}`}
+                      {showSlackDot && " — unanswered DM"}
+                    </>
+                  }
+                  render={
                     <button
                       type="button"
                       aria-label={screen.title}
@@ -145,34 +153,27 @@ export function AppSidebarIcons() {
                         openTab(id);
                       }}
                       className={cn(
-                        "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-muted-foreground hover:bg-accent/50",
-                        active && "border-l-violet-500 bg-accent text-foreground",
+                        "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-kumo-subtle hover:bg-kumo-tint",
+                        active && "border-l-violet-500 bg-kumo-tint text-kumo-default",
+                      )}
+                    />
+                  }
+                >
+                  <screen.icon className="size-4" />
+                  {showBadge && (
+                    <span
+                      className={cn(
+                        "absolute -right-1 -bottom-1 min-w-4 rounded-full px-0.5 text-center font-mono text-[9px] leading-[14px]",
+                        badgeColor,
+                        rollupAlertTextColor(badgeColor),
                       )}
                     >
-                      <screen.icon className="size-4" />
-                      {showBadge && (
-                        <span
-                          className={cn(
-                            "absolute -right-1 -bottom-1 min-w-4 rounded-full px-0.5 text-center font-mono text-[9px] leading-[14px]",
-                            badgeColor,
-                            rollupAlertTextColor(badgeColor),
-                          )}
-                        >
-                          {rollup.total}
-                        </span>
-                      )}
-                      {showSlackDot && (
-                        <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-rose-500" />
-                      )}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">
-                    {screen.title}
-                    {tabId && <ShortcutBadge id={tabId} />}
-                    {showBadge &&
-                      ` — ${rollup.total} agent${rollup.total === 1 ? "" : "s"}${rollup.waiting > 0 ? `, ${rollup.waiting} waiting` : ""}${rollup.error > 0 ? `, ${rollup.error} errored` : ""}`}
-                    {showSlackDot && " — unanswered DM"}
-                  </TooltipContent>
+                      {rollup.total}
+                    </span>
+                  )}
+                  {showSlackDot && (
+                    <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-rose-500" />
+                  )}
                 </Tooltip>
               );
             })}

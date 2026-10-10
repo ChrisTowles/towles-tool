@@ -616,14 +616,6 @@ export function sessionNotBusy(s: SessionData): boolean {
   return isAgent(s) || sessionCatchesEye(s);
 }
 
-export function cycleNeedsYou(
-  repos: RepoData[],
-  fromSessionId: string | null,
-  direction: "next" | "prev",
-): SessionData | null {
-  return cycleWhere(repos, fromSessionId, direction, sessionCatchesEye);
-}
-
 export function cycleNotBusy(
   repos: RepoData[],
   fromSessionId: string | null,

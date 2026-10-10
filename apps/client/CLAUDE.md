@@ -9,8 +9,8 @@ overview; this file has the frontend-internal conventions a read won't surface.
 (`lib/workspace.tsx`, persisted by `workspace-persistence.ts`). No visible tab
 strip (the sidebar is the only nav), but screens stay mounted when you switch
 away and `close-tab`/`next-tab`/`tab-1`…`9` act on this set headlessly; this is
-what "tab" usually means. **Settings' sub-tab panel** is the vendored Radix
-`Tabs` widget, not navigation. **Editor tabs** are the code-server workbench's,
+what "tab" usually means. **Settings' sub-tab panel** is Kumo's `Tabs`
+strip, not navigation. **Editor tabs** are the code-server workbench's,
 inside a cross-origin iframe — nothing here can see or drive them.
 
 ## Adding a screen is a 4-file ritual — there's no single source of truth
@@ -122,7 +122,7 @@ must push down `visible={false}`.
 
 ## Clickable rows can't be `<button>`s
 
-Radix's `Checkbox`, `Switch`, `RadioGroupItem` and `*Trigger` render real
+Kumo's (Base UI's) `Checkbox`, `Switch`, `Radio` and `*Trigger` render real
 `<button>`s, and a `<button>` may not contain interactive descendants. Checkbox
 row → `<label htmlFor>` wrapping the `Checkbox` (`components/resume-picker.tsx`).
 Inline rename → render *either* the input *or* the chip button, never nested. Row

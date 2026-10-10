@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { SparkleIcon } from "@phosphor-icons/react";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
@@ -46,7 +46,7 @@ export function ZenIndicator({ onExit }: { onExit: () => void }) {
         visible ? "opacity-80" : "pointer-events-none opacity-0",
       )}
     >
-      <Sparkles className="size-3" />
+      <SparkleIcon className="size-3" />
       Zen
     </button>
   );

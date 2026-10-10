@@ -1,5 +1,5 @@
-import { Plus, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowClockwiseIcon, PlusIcon } from "@phosphor-icons/react";
+import { Button } from "@cloudflare/kumo";
 import { Card, Empty } from "@/components/store-bits";
 import { ChipMenu, ChipToggle } from "@/screens/telemetry/chips";
 import { cn } from "@/lib/utils";
@@ -98,7 +98,7 @@ export function RulesTab({
           }}
           disabled={loading}
         >
-          <RefreshCw className={cn("size-3", loading && "animate-spin")} />
+          <ArrowClockwiseIcon className={cn("size-3", loading && "animate-spin")} />
           Refresh
         </Button>
         <Button
@@ -109,7 +109,7 @@ export function RulesTab({
             onAddRule();
           }}
         >
-          <Plus className="size-3" />
+          <PlusIcon className="size-3" />
           Rule
         </Button>
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { toast } from "sonner";
+import { toast, toastManager } from "@/lib/toast";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar, AppSidebarIcons } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
@@ -12,8 +12,7 @@ import { UpdateBanner } from "@/components/update-banner";
 import { ZenIndicator } from "@/components/zen-indicator";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider, Toasty } from "@cloudflare/kumo";
 import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard-state";
 import { subscribeEditorOpenFile } from "@/lib/editor-open";
 import { subscribePreviewShow } from "@/lib/preview-artifact";
@@ -140,14 +139,14 @@ function Workspace() {
   const { openTabs, activeTab, sidebarCollapsed, zen, setZen, paletteOpen } = useWorkspace();
 
   // Escape exits zen — but only when nothing else is claiming Escape. An open
-  // dialog/palette (Radix `role="dialog"` with `data-state="open"`, plus the
+  // dialog/palette (Base UI's `role="dialog"` with `data-open`, plus the
   // paletteOpen flag) handles its own Escape to close first; we don't steal it.
   useEffect(() => {
     if (!zen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (paletteOpen) return;
-      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+      if (document.querySelector('[role="dialog"][data-open]')) return;
       e.preventDefault();
       setZen(false);
     };
@@ -219,7 +218,6 @@ function Workspace() {
       <CommandPalette />
       <QuickLog />
       <ResumePicker />
-      <Toaster />
     </div>
   );
 }
@@ -231,7 +229,9 @@ export function App() {
         <StoreSnapshotProvider>
           <AgentboardStateProvider>
             <TooltipProvider>
-              <Workspace />
+              <Toasty toastManager={toastManager}>
+                <Workspace />
+              </Toasty>
             </TooltipProvider>
           </AgentboardStateProvider>
         </StoreSnapshotProvider>

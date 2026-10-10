@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { MessagesSquare, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ChatsCircleIcon, XIcon } from "@phosphor-icons/react";
+import { Button } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { errorMessage } from "@/lib/errors";
 import { slackDmThread, type DmMessage } from "@/lib/slack";
@@ -55,36 +55,34 @@ export function ThreadPanel({
   const replies = Math.max(messages.length - 1, 0);
 
   return (
-    <aside className="flex w-[380px] shrink-0 flex-col border-l border-border bg-background">
-      <header className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2.5">
-        <MessagesSquare className="size-4 text-violet-500" />
+    <aside className="flex w-[380px] shrink-0 flex-col border-l border-kumo-hairline bg-background">
+      <header className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-kumo-base px-3 py-2.5">
+        <ChatsCircleIcon className="size-4 text-violet-500" />
         <span className="text-sm font-semibold text-foreground">Thread</span>
-        <span className="font-mono text-[11px] text-muted-foreground/60">
+        <span className="font-mono text-[11px] text-kumo-subtle/60">
           {replies} {replies === 1 ? "reply" : "replies"}
         </span>
         <div className="flex-1" />
         <Button
           variant="ghost"
           size="sm"
-          className="size-7 p-0 text-muted-foreground"
+          shape="square"
+          className="text-kumo-subtle"
           onClick={onClose}
           aria-label="Close thread"
-        >
-          <X className="size-4" />
-        </Button>
+          icon={<XIcon className="size-4" />}
+        />
       </header>
 
       {error ? (
         <div className="flex flex-1 items-center justify-center p-6">
-          <p className="max-w-full text-center text-[13px] break-words text-muted-foreground">
-            {error}
-          </p>
+          <p className="max-w-full text-center text-[13px] break-words text-kumo-subtle">{error}</p>
         </div>
       ) : (
         <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
           <div ref={listRef} className="flex flex-col gap-1.5 px-3 py-3">
             {loading && messages.length === 0 && (
-              <p className="py-6 text-center text-xs text-muted-foreground">Loading thread…</p>
+              <p className="py-6 text-center text-xs text-kumo-subtle">Loading thread…</p>
             )}
             {messages.map((m, i) => (
               <div key={m.tsRaw || i}>
@@ -97,7 +95,7 @@ export function ThreadPanel({
                 {i === 0 && replies > 0 && (
                   <div className="my-2 flex items-center gap-2">
                     <div className="h-px flex-1 bg-border" />
-                    <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                    <span className="text-[10px] tracking-wide text-kumo-subtle uppercase">
                       {replies} {replies === 1 ? "reply" : "replies"}
                     </span>
                     <div className="h-px flex-1 bg-border" />
@@ -109,7 +107,10 @@ export function ThreadPanel({
         </ScrollArea>
       )}
 
-      <div ref={composerRef} className="shrink-0 border-t border-border bg-card px-3 py-2.5">
+      <div
+        ref={composerRef}
+        className="shrink-0 border-t border-kumo-hairline bg-kumo-base px-3 py-2.5"
+      >
         <Composer
           compact
           placeholder={`Reply to ${watchName}…`}

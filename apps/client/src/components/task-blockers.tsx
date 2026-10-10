@@ -1,17 +1,12 @@
 import type { ReactNode } from "react";
-import { CircleAlert, FileDiff, GitCommitHorizontal, Network } from "lucide-react";
-
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+  FileMagnifyingGlassIcon,
+  GitCommitIcon,
+  GraphIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
+
+import { Button, Dialog } from "@cloudflare/kumo";
 import {
   forceDeleteLabel,
   type TaskBlocker,
@@ -22,22 +17,19 @@ import { cn } from "@/lib/utils";
 
 /** Exhaustive over `TaskBlockerKind`, so a guard added in Rust fails the build
  * here rather than silently picking up whatever icon a ternary ended on. */
-const BLOCKER_ICONS: Record<TaskBlockerKind, typeof CircleAlert> = {
-  dirtyTree: FileDiff,
-  unreachableCommits: GitCommitHorizontal,
-  foreignPort: Network,
+const BLOCKER_ICONS: Record<TaskBlockerKind, typeof WarningCircleIcon> = {
+  dirtyTree: FileMagnifyingGlassIcon,
+  unreachableCommits: GitCommitIcon,
+  foreignPort: GraphIcon,
 };
 
 /** Tinted by consequence, not kind: destructive means forcing loses that work.
  * An unrecognized kind falls back to neutral rather than asserting a wrong one. */
 function BlockerIcon({ kind, losesWork }: { kind: string; losesWork: boolean }) {
-  const Icon = BLOCKER_ICONS[kind as TaskBlockerKind] ?? CircleAlert;
+  const Icon = BLOCKER_ICONS[kind as TaskBlockerKind] ?? WarningCircleIcon;
   return (
     <Icon
-      className={cn(
-        "mt-0.5 size-4 shrink-0",
-        losesWork ? "text-destructive" : "text-muted-foreground",
-      )}
+      className={cn("mt-0.5 size-4 shrink-0", losesWork ? "text-kumo-danger" : "text-kumo-subtle")}
       aria-hidden
     />
   );
@@ -79,13 +71,16 @@ export function BlockedDeleteDialog({
   onForce: () => void;
 }) {
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {/* `!` beats the primitive's own `data-[size=default]:` width. */}
-      <AlertDialogContent className="max-w-[calc(100%-2rem)]! sm:max-w-xl!">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="wrap-anywhere">Can’t delete {name} yet</AlertDialogTitle>
-          <AlertDialogDescription className="text-pretty">{description}</AlertDialogDescription>
-        </AlertDialogHeader>
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog size="lg" className="flex max-w-xl flex-col gap-4 p-6">
+        <div className="flex flex-col gap-1.5">
+          <Dialog.Title className="text-lg font-semibold wrap-anywhere">
+            Can’t delete {name} yet
+          </Dialog.Title>
+          <Dialog.Description className="text-sm text-pretty text-kumo-subtle">
+            {description}
+          </Dialog.Description>
+        </div>
         {messages.length > 0 && (
           <ul className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
             {messages.map((message) => (
@@ -103,14 +98,12 @@ export function BlockedDeleteDialog({
             return (
               <li
                 key={`${blocker.kind}-${port ?? i}`}
-                className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5"
+                className="flex items-start gap-3 rounded-lg border border-kumo-hairline bg-kumo-recessed px-3 py-2.5"
               >
                 <BlockerIcon kind={blocker.kind} losesWork={blocker.losesWork} />
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-sm leading-snug wrap-anywhere">{blocker.message}</span>
-                  <span className="text-xs leading-snug text-muted-foreground">
-                    {blocker.remedy}
-                  </span>
+                  <span className="text-xs leading-snug text-kumo-subtle">{blocker.remedy}</span>
                 </div>
                 {port !== null &&
                   onStopPort && (
@@ -130,18 +123,24 @@ export function BlockedDeleteDialog({
             );
           })}
         </ul>
-        <AlertDialogFooter className="sm:justify-between">
-          <AlertDialogCancel disabled={cancelDisabled}>{cancelLabel}</AlertDialogCancel>
-          <AlertDialogAction
+        <div className="mt-2 flex justify-between gap-2">
+          <Dialog.Close
+            render={(props) => (
+              <Button {...props} variant="secondary" disabled={cancelDisabled}>
+                {cancelLabel}
+              </Button>
+            )}
+          />
+          <Button
             variant="destructive"
             disabled={busy}
             onClick={onForce}
             title={forceHint ? `Delete anyway (${forceHint})` : undefined}
           >
             {forceDeleteLabel(blockers)}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </div>
+      </Dialog>
+    </Dialog.Root>
   );
 }
