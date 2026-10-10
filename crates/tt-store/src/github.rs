@@ -328,8 +328,9 @@ impl Store {
         {
             let mut stmt = tx.prepare(
                 "INSERT INTO ci_runs
-                   (repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                   (repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event,
+                    branch)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                  ON CONFLICT(repo, workflow) DO UPDATE SET
                    status = excluded.status,
                    conclusion = excluded.conclusion,
@@ -337,7 +338,8 @@ impl Store {
                    updated_ms = excluded.updated_ms,
                    url = excluded.url,
                    head_sha = excluded.head_sha,
-                   event = excluded.event
+                   event = excluded.event,
+                   branch = excluded.branch
                  WHERE excluded.created_ms >= ci_runs.created_ms",
             )?;
             for r in runs {
@@ -351,6 +353,7 @@ impl Store {
                     r.url,
                     r.head_sha,
                     r.event,
+                    r.branch,
                 ])?;
             }
         }
@@ -391,7 +394,8 @@ impl Store {
     /// Every workflow's latest default-branch run, by repo then workflow.
     pub fn ci_runs(&self) -> Result<Vec<CiRun>> {
         let mut stmt = self.conn.prepare(
-            "SELECT repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event
+            "SELECT repo, workflow, status, conclusion, created_ms, updated_ms, url, head_sha, event,
+                    branch
              FROM ci_runs ORDER BY repo, workflow",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -405,6 +409,7 @@ impl Store {
                 url: r.get(6)?,
                 head_sha: r.get(7)?,
                 event: r.get(8)?,
+                branch: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

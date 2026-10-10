@@ -430,6 +430,9 @@ pub struct CiRun {
     pub url: String,
     pub head_sha: String,
     pub event: String,
+    /// The branch it ran on — today always the repo's default branch.
+    #[serde(default)]
+    pub branch: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

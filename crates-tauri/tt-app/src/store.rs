@@ -29,6 +29,14 @@ pub struct StoreState {
     store: Arc<Mutex<Option<Store>>>,
 }
 
+/// Open tasks, PRs, CI runs and snoozes — the store's half of a queue build.
+pub type QueueStoreInputs = (
+    Vec<tt_store::TaskItem>,
+    Vec<tt_store::PrItem>,
+    Vec<tt_store::CiRun>,
+    Vec<tt_store::TaskSnooze>,
+);
+
 impl StoreState {
     /// Leaves the state empty on failure so the app still starts.
     pub fn open() -> StoreState {
@@ -115,13 +123,11 @@ impl StoreState {
     }
 
     /// The store half of the queue's inputs; `None` when the store can't answer.
-    pub fn queue_inputs(
-        &self,
-    ) -> Option<(Vec<tt_store::TaskItem>, Vec<tt_store::PrItem>, Vec<tt_store::TaskSnooze>)> {
+    pub fn queue_inputs(&self) -> Option<QueueStoreInputs> {
         let guard = self.store.lock().unwrap();
         let store = guard.as_ref()?;
         let read = || -> tt_store::Result<_> {
-            Ok((store.open_tasks()?, store.prs()?, store.task_snoozes()?))
+            Ok((store.open_tasks()?, store.prs()?, store.ci_runs()?, store.task_snoozes()?))
         };
         read().map_err(|e| tracing::warn!(error = %e, "store: queue inputs unreadable")).ok()
     }

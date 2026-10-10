@@ -87,6 +87,7 @@ mod tests {
             url: format!("https://github.com/{repo}/actions/runs/{created_ms}"),
             head_sha: "abc123".to_string(),
             event: "schedule".to_string(),
+            branch: "main".to_string(),
         }
     }
 

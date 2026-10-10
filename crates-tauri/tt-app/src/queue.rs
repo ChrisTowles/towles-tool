@@ -19,11 +19,12 @@ pub struct QueueState {
 }
 
 fn build(app: &AppHandle, payload: &StatePayload) -> Option<TaskQueue> {
-    let (tasks, prs, snoozes) = app.state::<StoreState>().queue_inputs()?;
+    let (tasks, prs, ci_runs, snoozes) = app.state::<StoreState>().queue_inputs()?;
     Some(tt_agentboard::queue::build(QueueInputs {
         tasks: &tasks,
         state: payload,
         prs: &prs,
+        ci_runs: &ci_runs,
         snoozes: &snoozes,
         now_ms: now_ms(),
     }))

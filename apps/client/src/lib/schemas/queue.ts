@@ -7,6 +7,7 @@ export const WaitReasonSchema = z.enum([
   "review",
   "fix_ci",
   "address_review",
+  "review_pr",
   "land",
   "cleanup",
   "start",
@@ -19,6 +20,8 @@ export type Lane = z.infer<typeof LaneSchema>;
 export const QueueKeySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("task"), id: z.number() }),
   z.object({ kind: z.literal("unfiled"), folderDir: z.string() }),
+  z.object({ kind: z.literal("pr"), repo: z.string(), number: z.number() }),
+  z.object({ kind: z.literal("ci"), repo: z.string(), branch: z.string() }),
 ]);
 export type QueueKey = z.infer<typeof QueueKeySchema>;
 
@@ -29,6 +32,13 @@ export const QueuePrSchema = z.object({
   state: z.string(),
   checks: z.string(),
   reviewState: z.string(),
+});
+
+export const QueueCiSchema = z.object({
+  workflow: z.string(),
+  url: z.string(),
+  conclusion: z.string(),
+  updatedMs: z.number(),
 });
 
 export const QueueItemSchema = z.object({
@@ -45,6 +55,7 @@ export const QueueItemSchema = z.object({
   said: z.string().nullable(),
   runningAgents: z.number(),
   pr: QueuePrSchema.nullable(),
+  ci: z.array(QueueCiSchema),
   rank: z.number(),
   sinceMs: z.number().nullable(),
   snoozedUntilMs: z.number().nullable(),

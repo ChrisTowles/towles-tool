@@ -1390,6 +1390,7 @@ mod tests {
             url: String::new(),
             head_sha: String::new(),
             event: "push".to_string(),
+            branch: "main".to_string(),
         }
     }
 
