@@ -113,6 +113,22 @@ impl StoreState {
             }
         }
     }
+
+    /// The store half of the queue's inputs; `None` when the store can't answer.
+    pub fn queue_inputs(
+        &self,
+    ) -> Option<(Vec<tt_store::TaskItem>, Vec<tt_store::PrItem>, Vec<tt_store::TaskSnooze>)> {
+        let guard = self.store.lock().unwrap();
+        let store = guard.as_ref()?;
+        let read = || -> tt_store::Result<_> {
+            Ok((store.open_tasks()?, store.prs()?, store.task_snoozes()?))
+        };
+        read().map_err(|e| tracing::warn!(error = %e, "store: queue inputs unreadable")).ok()
+    }
+
+    pub fn with<T>(&self, f: impl FnOnce(&Store) -> Result<T, String>) -> Result<T, String> {
+        with_store(self, f)
+    }
 }
 
 /// Guards against overlapping manual "refresh now" runs, which shell `gh`/Slack
@@ -169,6 +185,8 @@ pub fn emit_snapshot(app: &AppHandle, state: &StoreState) {
     if let Ok(snapshot) = snapshot_of(state) {
         let _ = app.emit(SNAPSHOT_EVENT, snapshot);
     }
+    // Every store write lands here, and tasks, PRs and snoozes all feed the queue.
+    crate::queue::refresh(app);
 }
 
 /// The MCP HTTP transport needs this: its dispatcher writes through a *separate*

@@ -104,6 +104,9 @@ the CLI and the app can consume it.
   free. Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
+  And **the task queue** (`queue::build`), the one answer to "what's next":
+  every open task's lane and wait reason, derived per emit from `needs_reason`,
+  the PR cache and the rail's landed state, ordered by the user's global `rank`.
 - `tt-claude-code` — transcript/session parsing models.
 - `tt-doctor` — doctor checks logic (the app screen consumes it).
 - `tt-update` — checks GitHub Releases for a newer version. Uses `native-tls`,

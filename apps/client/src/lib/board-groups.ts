@@ -75,7 +75,7 @@ export function repoGroupLabel(key: string): string {
 
 /** One comparator shared by the lane cells and the drop-time insertion index. */
 export function byBoardOrder(a: TaskItem, b: TaskItem): number {
-  return a.position - b.position || a.createdAt - b.createdAt;
+  return a.rank - b.rank || a.createdAt - b.createdAt;
 }
 
 /** A closed task keeps its frozen kanban `status` as history, but the board

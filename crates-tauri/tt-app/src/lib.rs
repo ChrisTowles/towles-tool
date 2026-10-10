@@ -21,6 +21,7 @@ mod macos_keys;
 mod mcp;
 mod mcp_http;
 mod preview;
+mod queue;
 mod resume;
 mod scheduler;
 mod settings;
@@ -319,6 +320,7 @@ pub fn run() {
                         if store_state.sync_worktree_task_statuses(&payload, store::now_ms()) > 0 {
                             store::emit_snapshot_from_app(&handle);
                         }
+                        queue::observe(&handle, &payload);
 
                         let ts = std::mem::take(&mut payload.ts);
                         if last.as_ref() != Some(&payload) {
@@ -655,6 +657,7 @@ pub fn run() {
             scan.notify_one();
             Ok(())
         })
+        .manage(queue::QueueState::default())
         .manage(browser::BrowserHost::default())
         .manage(codeserver::CodeServerHost::default())
         // Shared: a pane outlives the command that created it (see `tt-pane`).
@@ -704,6 +707,12 @@ pub fn run() {
             wdio_window::wdio_place_on_test_monitor,
             task_explorer::task_explorer_snapshot,
             agentboard::ab_get_state,
+            queue::queue_get,
+            queue::queue_move,
+            queue::queue_snooze,
+            queue::queue_unsnooze,
+            queue::queue_start,
+            queue::queue_file_unfiled,
             agentboard::ab_mark_seen,
             agentboard::ab_add_repo,
             agentboard::ab_create_repo,

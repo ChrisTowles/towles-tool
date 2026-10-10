@@ -93,7 +93,7 @@ import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
 import { railMove, railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { useStoreSnapshot } from "@/lib/data";
-import { buildWorkQueue, cycleQueue } from "@/lib/cockpit-queue";
+import { cycleQueue, useTaskQueue } from "@/lib/queue";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
@@ -256,10 +256,7 @@ export function AgentboardScreen() {
     [shownRepos, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed, collapsed, wins],
   );
   const railTree = useMemo(() => railNodes(railVis), [railVis]);
-  const workQueue = useMemo(
-    () => buildWorkQueue(shownRepos, snapshot.prs),
-    [shownRepos, snapshot.prs],
-  );
+  const { queue: workQueue } = useTaskQueue();
   const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
   const cursorKey = cursorNode?.key ?? null;
   const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
@@ -625,7 +622,7 @@ export function AgentboardScreen() {
     setJumpRecall(buildJumpRecall(shownRepos, folder, target, now, jumpNonce.current));
   }
 
-  // Walks the Cockpit's work queue, not the rail: answer one, press next, and
+  // Walks the task queue, not the rail: answer one, press next, and
   // the most urgent remaining item is where you land.
   function jumpToNeedsYou(direction: "next" | "prev") {
     const id = cycleQueue(workQueue, selected?.sessionId ?? null, direction);

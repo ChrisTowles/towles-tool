@@ -423,7 +423,7 @@ function task(overrides: Partial<TaskItem>): TaskItem {
     id: 1,
     text: "a task",
     status: "doing",
-    position: 0,
+    rank: 0,
     createdAt: 0,
     issues: [],
     prs: [],

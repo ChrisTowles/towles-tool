@@ -868,58 +868,11 @@ impl Dispatcher {
         // `task_by_id` already distinguishes "no such row" from "couldn't answer".
         let task = self.store.task_by_id(id).map_err(|e| e.to_string())?;
 
-        if task.closed {
-            return Err(format!(
-                "task {id} ({:?}) is closed — reopen it on the Board before starting it",
-                task.text
-            ));
-        }
-        let worktree = task.worktree.as_ref();
-        if let Some(dir) = worktree.and_then(|w| w.dir.as_deref()) {
-            return Err(format!(
-                "task {id} ({:?}) already has a worktree at {dir} — starting it again would \
-                 abandon that one",
-                task.text
-            ));
-        }
-        let repo_root = worktree
-            .map(|w| w.repo_root.clone())
-            .filter(|root| !root.trim().is_empty())
-            .ok_or_else(|| {
-                format!(
-                    "task {id} ({:?}) isn't bound to a repo, so there's nothing to branch from",
-                    task.text
-                )
-            })?;
-
-        // A task is named after its branch: slug the title, as `tt task new` does.
-        let branch = match branch_arg {
-            Some(b) => b.to_string(),
-            None => {
-                let slug = tt_git::branch_name::slug(&task.text);
-                if slug.is_empty() {
-                    return Err(format!(
-                        "couldn't derive a branch name from {:?} — pass `branch` explicitly",
-                        task.text
-                    ));
-                }
-                slug
-            }
-        };
-
-        // Goal plus notes — the handoff context — with the title as the last resort.
-        let prompt = task_start_prompt(&task);
-
+        let req = task_start_request(&task, branch_arg, base)?;
+        let branch = req.branch.clone();
         let host =
             self.task_host.as_ref().expect("checked above, before any of the row guards ran");
-        host.start_task(TaskStartRequest {
-            id,
-            text: task.text.clone(),
-            repo_root,
-            branch: branch.clone(),
-            base,
-            prompt,
-        })?;
+        host.start_task(req)?;
 
         Ok(json!({
             "status": "starting",
@@ -1300,6 +1253,59 @@ fn unknown_calendar_source_message(source: &str, configured: &[String]) -> Strin
 
 /// `goal`, then `notes` under a header; `text` last. The Board's own "Start task" passed the
 /// title alone, so an agent started on a task with a written goal had seen neither.
+/// The guards and derivations `task_start` applies, shared with the app's queue
+/// "Start" so both refuse and name branches identically.
+pub fn task_start_request(
+    task: &tt_store::TaskItem,
+    branch_arg: Option<&str>,
+    base: Option<String>,
+) -> Result<TaskStartRequest, String> {
+    let id = task.id;
+    if task.closed {
+        return Err(format!(
+            "task {id} ({:?}) is closed — reopen it on the Board before starting it",
+            task.text
+        ));
+    }
+    let worktree = task.worktree.as_ref();
+    if let Some(dir) = worktree.and_then(|w| w.dir.as_deref()) {
+        return Err(format!(
+            "task {id} ({:?}) already has a worktree at {dir} — starting it again would \
+             abandon that one",
+            task.text
+        ));
+    }
+    let repo_root = worktree
+        .map(|w| w.repo_root.clone())
+        .filter(|root| !root.trim().is_empty())
+        .ok_or_else(|| {
+            format!(
+                "task {id} ({:?}) isn't bound to a repo, so there's nothing to branch from",
+                task.text
+            )
+        })?;
+
+    // A task is named after its branch: slug the title, as `tt task new` does.
+    let branch = match branch_arg {
+        Some(b) => b.to_string(),
+        None => {
+            let slug = tt_git::branch_name::slug(&task.text);
+            if slug.is_empty() {
+                return Err(format!(
+                    "couldn't derive a branch name from {:?} — pass `branch` explicitly",
+                    task.text
+                ));
+            }
+            slug
+        }
+    };
+
+    // Goal plus notes — the handoff context — with the title as the last resort.
+    let prompt = task_start_prompt(task);
+
+    Ok(TaskStartRequest { id, text: task.text.clone(), repo_root, branch, base, prompt })
+}
+
 fn task_start_prompt(task: &tt_store::TaskItem) -> String {
     let goal = task.goal.as_deref().map(str::trim).filter(|g| !g.is_empty());
     let notes = task.notes.as_deref().map(str::trim).filter(|n| !n.is_empty());

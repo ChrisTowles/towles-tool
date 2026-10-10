@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 21;
+pub(crate) const SCHEMA_VERSION: i64 = 22;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::check_version_floor`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -177,6 +177,17 @@ CREATE TABLE IF NOT EXISTS ci_runs (
 
 /// v21: personal Slack agents — resumable sessions, thread ownership, an echo guard
 /// for what the agents posted as Chris, self-set reminders, and a per-turn audit log.
+/// v22: "not now" on a task, keyed to the queue reason it was set on, so a new
+/// reason resurfaces it. `until_ms` NULL means until that reason changes.
+const SCHEMA_TASK_SNOOZES_V22: &str = "\
+CREATE TABLE IF NOT EXISTS task_snoozes (
+    task_id INTEGER PRIMARY KEY,
+    reason TEXT NOT NULL,
+    until_ms INTEGER,
+    created_at INTEGER NOT NULL
+);
+";
+
 const SCHEMA_AGENTS_V21: &str = "\
 CREATE TABLE IF NOT EXISTS agent_sessions (
     agent TEXT PRIMARY KEY,
@@ -271,12 +282,14 @@ impl Store {
         self.migrate_tasks_summary_v17()?;
         self.migrate_tasks_kind_v18()?;
         self.migrate_tasks_pr_probe_v19()?;
+        self.migrate_tasks_rank_v22()?;
         self.conn.execute_batch(SCHEMA_MCP_CALLS_V5)?;
         self.migrate_collect_runs_v6()?;
         self.conn.execute_batch(SCHEMA_REPOS_V12)?;
         self.conn.execute_batch(SCHEMA_ITEM_DISMISSALS_V15)?;
         self.conn.execute_batch(SCHEMA_CI_RUNS_V20)?;
         self.conn.execute_batch(SCHEMA_AGENTS_V21)?;
+        self.conn.execute_batch(SCHEMA_TASK_SNOOZES_V22)?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -411,6 +424,39 @@ impl Store {
         if !has_probe {
             self.conn.execute_batch("ALTER TABLE tasks ADD COLUMN pr_probe_ts INTEGER;")?;
         }
+        Ok(())
+    }
+
+    /// v22: per-column `position` becomes one global `rank` (the task queue's
+    /// priority), seeded doing → backlog → done in their old column order.
+    fn migrate_tasks_rank_v22(&self) -> Result<()> {
+        let mut has_position = false;
+        {
+            let mut stmt = self.conn.prepare("PRAGMA table_info(tasks)")?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let name: String = row.get(1)?;
+                if name == "position" {
+                    has_position = true;
+                }
+            }
+        }
+        if !has_position {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(&format!(
+            "ALTER TABLE tasks RENAME COLUMN position TO rank;
+             UPDATE tasks SET rank = (
+               SELECT n * {gap} FROM (
+                 SELECT id, ROW_NUMBER() OVER (
+                   ORDER BY CASE status WHEN 'doing' THEN 0 WHEN 'backlog' THEN 1 ELSE 2 END,
+                            rank, created_at, id) AS n
+                 FROM tasks) r
+               WHERE r.id = tasks.id);",
+            gap = crate::model::RANK_GAP
+        ))?;
+        tx.commit()?;
         Ok(())
     }
 }

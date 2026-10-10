@@ -95,7 +95,8 @@ export type TaskItem = {
   id: number;
   text: string;
   status: TaskStatus;
-  position: number;
+  /** Queue priority across every task, lower first. */
+  rank: number;
   createdAt: number;
   completedAt?: number;
   outcome?: TaskOutcome;

@@ -9,7 +9,7 @@ function task(overrides: Partial<TaskItem>): TaskItem {
     id: 1,
     text: "ship the palette",
     status: "backlog",
-    position: 0,
+    rank: 0,
     createdAt: 0,
     issues: [],
     prs: [],
@@ -62,10 +62,10 @@ describe("paletteTaskEntries", () => {
   it("leads with in-progress work, then board order within a column", () => {
     const entries = paletteTaskEntries(
       [
-        task({ id: 1, status: "backlog", position: 2 }),
-        task({ id: 2, status: "doing", position: 9 }),
-        task({ id: 3, status: "backlog", position: 1 }),
-        task({ id: 4, status: "doing", position: 3 }),
+        task({ id: 1, status: "backlog", rank: 2 }),
+        task({ id: 2, status: "doing", rank: 9 }),
+        task({ id: 3, status: "backlog", rank: 1 }),
+        task({ id: 4, status: "doing", rank: 3 }),
       ],
       rail,
     );
@@ -84,7 +84,7 @@ describe("paletteTaskEntries", () => {
 
   it("keys two same-titled quick todos on distinct values", () => {
     const [a, b] = paletteTaskEntries(
-      [task({ id: 11, text: "fix tests" }), task({ id: 12, text: "fix tests", position: 1 })],
+      [task({ id: 11, text: "fix tests" }), task({ id: 12, text: "fix tests", rank: 1 })],
       rail,
     );
     expect(a.value).not.toBe(b.value);

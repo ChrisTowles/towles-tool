@@ -302,23 +302,30 @@ impl tt_mcp::TaskHost for AppTaskHost {
     /// The worktree is deliberately *not* made here: the `+` flow already bakes in the
     /// serial-drain and no-PTY-until-rendered rules, and a half-in-Rust path would drift.
     fn start_task(&self, req: tt_mcp::TaskStartRequest) -> Result<(), String> {
-        let payload = TaskStartPayload {
-            task_id: req.id,
-            repo_root: req.repo_root,
-            branch: req.branch,
-            base: req.base,
-            prompt: req.prompt,
-        };
-        tracing::info!(
-            task_id = req.id,
-            text = %req.text,
-            branch = %payload.branch,
-            "task.start_requested"
-        );
-        self.app
-            .emit(TASK_START_EVENT, &payload)
-            .map_err(|e| format!("couldn't ask the app to start task {}: {e}", req.id))
+        emit_task_start(&self.app, req)
     }
+}
+
+/// Hands a start to the `+` flow; shared by MCP `task_start` and the queue's Start.
+pub(crate) fn emit_task_start(
+    app: &AppHandle,
+    req: tt_mcp::TaskStartRequest,
+) -> Result<(), String> {
+    let payload = TaskStartPayload {
+        task_id: req.id,
+        repo_root: req.repo_root,
+        branch: req.branch,
+        base: req.base,
+        prompt: req.prompt,
+    };
+    tracing::info!(
+        task_id = req.id,
+        text = %req.text,
+        branch = %payload.branch,
+        "task.start_requested"
+    );
+    app.emit(TASK_START_EVENT, &payload)
+        .map_err(|e| format!("couldn't ask the app to start task {}: {e}", req.id))
 }
 
 /// Puts a file the agent points at on screen. Emits and returns, like `start_task`.

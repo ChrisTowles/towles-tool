@@ -9,7 +9,7 @@ use crate::model::*;
 use crate::{Error, Result, Store};
 
 impl Store {
-    /// Add a task at the end of `status`'s column.
+    /// Add a task at the bottom of the queue.
     pub fn add_task(
         &self,
         text: &str,
@@ -23,22 +23,18 @@ impl Store {
                 "unknown task status: {status}"
             ))));
         }
-        let position: i64 = self.conn.query_row(
-            "SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE status = ?1",
-            params![status],
-            |r| r.get(0),
-        )?;
+        let rank = self.bottom_rank()?;
         let completed_at: Option<i64> = if status == "done" { Some(now_ms) } else { None };
         self.conn.execute(
-            "INSERT INTO tasks (text, status, position, notes, goal, created_at, completed_at)
+            "INSERT INTO tasks (text, status, rank, notes, goal, created_at, completed_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![text, status, position, notes, goal, now_ms, completed_at],
+            params![text, status, rank, notes, goal, now_ms, completed_at],
         )?;
         self.task_by_id(self.conn.last_insert_rowid())
     }
 
-    /// Move a todo to the end of a kanban column; any non-`done` column also
-    /// reopens a closed task.
+    /// Move a todo to a kanban column, keeping its rank; any non-`done` column
+    /// also reopens a closed task.
     pub fn set_task_status(&self, id: i64, status: &str, now_ms: i64) -> Result<()> {
         if !TASK_STATUSES.contains(&status) {
             return Err(Error::Sqlite(rusqlite::Error::InvalidParameterName(format!(
@@ -46,25 +42,18 @@ impl Store {
             ))));
         }
         let completed_at: Option<i64> = if status == "done" { Some(now_ms) } else { None };
-        let tx = self.conn.unchecked_transaction()?;
-        let position: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE status = ?1 AND id <> ?2",
-            params![status, id],
-            |r| r.get(0),
-        )?;
-        tx.execute(
-            "UPDATE tasks SET status = ?1, completed_at = ?2, position = ?3,
+        self.conn.execute(
+            "UPDATE tasks SET status = ?1, completed_at = ?2,
                     outcome = CASE WHEN ?1 = 'done' THEN outcome ELSE NULL END,
                     archived_at = CASE WHEN ?1 = 'done' THEN archived_at ELSE NULL END
-             WHERE id = ?4",
-            params![status, completed_at, position, id],
+             WHERE id = ?3",
+            params![status, completed_at, id],
         )?;
-        tx.commit()?;
         Ok(())
     }
 
     /// A full replace of `text` and `notes` — `None` clears the notes, there is no
-    /// "leave unchanged" sentinel. Status, position and links are untouched.
+    /// "leave unchanged" sentinel. Status, rank and links are untouched.
     pub fn update_task(&self, id: i64, text: &str, notes: Option<&str>) -> Result<TaskItem> {
         let affected = self.conn.execute(
             "UPDATE tasks SET text = ?1, notes = ?2 WHERE id = ?3",
@@ -107,18 +96,12 @@ impl Store {
         let outcome = outcome.as_str();
         let tx = self.conn.unchecked_transaction()?;
         let affected = if outcome == "done" {
-            let position: i64 = tx.query_row(
-                "SELECT COALESCE(MAX(position), -1) + 1 FROM tasks
-                 WHERE status = 'done' AND id <> ?1",
-                params![id],
-                |r| r.get(0),
-            )?;
             tx.execute(
-                "UPDATE tasks SET status = 'done', position = ?2,
-                        completed_at = COALESCE(completed_at, ?3),
-                        outcome = ?4, worktree_dir = NULL
+                "UPDATE tasks SET status = 'done',
+                        completed_at = COALESCE(completed_at, ?2),
+                        outcome = ?3, worktree_dir = NULL
                  WHERE id = ?1",
-                params![id, position, now_ms, outcome],
+                params![id, now_ms, outcome],
             )?
         } else {
             tx.execute(
@@ -448,6 +431,72 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Move a task in the queue, writing only its own row unless the neighbours
+    /// have no integer gap left, which renumbers every rank once. Returns the new rank.
+    pub fn move_task(&self, id: i64, to: RankMove) -> Result<i64> {
+        self.require_task(id)?;
+        let tx = self.conn.unchecked_transaction()?;
+        let rank = match rank_between(&tx, id, &to)? {
+            Some(rank) => rank,
+            None => {
+                renumber_ranks(&tx)?;
+                rank_between(&tx, id, &to)?.ok_or(Error::TaskNotFound(id))?
+            }
+        };
+        tx.execute("UPDATE tasks SET rank = ?1 WHERE id = ?2", params![rank, id])?;
+        tx.commit()?;
+        Ok(rank)
+    }
+
+    /// One snooze per task: a new one replaces the old.
+    pub fn snooze_task(
+        &self,
+        id: i64,
+        reason: &str,
+        until_ms: Option<i64>,
+        now_ms: i64,
+    ) -> Result<()> {
+        self.require_task(id)?;
+        self.conn.execute(
+            "INSERT INTO task_snoozes (task_id, reason, until_ms, created_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(task_id) DO UPDATE SET reason = excluded.reason,
+               until_ms = excluded.until_ms, created_at = excluded.created_at",
+            params![id, reason, until_ms, now_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn unsnooze_task(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM task_snoozes WHERE task_id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Every snooze, expired ones included: whether one still holds is the
+    /// queue's call, against its own `now_ms`.
+    pub fn task_snoozes(&self) -> Result<Vec<TaskSnooze>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT task_id, reason, until_ms, created_at FROM task_snoozes ORDER BY task_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(TaskSnooze {
+                task_id: r.get(0)?,
+                reason: r.get(1)?,
+                until_ms: r.get(2)?,
+                created_at: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    fn bottom_rank(&self) -> Result<i64> {
+        Ok(self.conn.query_row(
+            &format!("SELECT COALESCE(MAX(rank), 0) + {RANK_GAP} FROM tasks"),
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Record a git worktree on disk that has no task, so the rail shows it. A dir
     /// with a row of *either* kind is left alone, or every scan tick re-mints one.
     pub fn record_detected_worktree(
@@ -462,7 +511,7 @@ impl Store {
             .or_else(|| Path::new(dir).file_name().map(|n| n.to_string_lossy().to_string()))
             .unwrap_or_else(|| dir.to_string());
         self.conn.execute(
-            "INSERT INTO tasks (kind, text, status, position, created_at,
+            "INSERT INTO tasks (kind, text, status, rank, created_at,
                                 worktree_repo_root, worktree_branch, worktree_dir)
              SELECT 'detected', ?1, 'backlog', 0, ?2, ?3, ?4, ?5
              WHERE NOT EXISTS (SELECT 1 FROM tasks
@@ -481,13 +530,14 @@ impl Store {
         Ok(deleted)
     }
 
-    /// Promote a detected row to the user's own work, in place so its id and rail
-    /// position survive. Idempotent.
+    /// Promote a detected row to the user's own work, in place so its id survives,
+    /// at the bottom of the queue. Idempotent.
     pub fn adopt_detected_worktree(&self, id: i64) -> Result<TaskItem> {
         self.require_task(id)?;
+        let rank = self.bottom_rank()?;
         self.conn.execute(
-            "UPDATE tasks SET kind = 'task' WHERE id = ?1 AND kind = 'detected'",
-            params![id],
+            "UPDATE tasks SET kind = 'task', rank = ?2 WHERE id = ?1 AND kind = 'detected'",
+            params![id, rank],
         )?;
         self.task_by_id(id)
     }
@@ -541,7 +591,7 @@ impl Store {
             kind,
             text: r.get(1)?,
             status: r.get(2)?,
-            position: r.get(3)?,
+            rank: r.get(3)?,
             created_at: r.get(4)?,
             completed_at: r.get(5)?,
             notes: r.get(6)?,
@@ -680,11 +730,58 @@ fn delete_tasks_where(
     pred: &str,
     args: &[&dyn rusqlite::ToSql],
 ) -> Result<usize> {
-    for links in ["task_issues", "task_prs"] {
+    for links in ["task_issues", "task_prs", "task_snoozes"] {
         tx.execute(
             &format!("DELETE FROM {links} WHERE task_id IN (SELECT id FROM tasks WHERE {pred})"),
             args,
         )?;
     }
     Ok(tx.execute(&format!("DELETE FROM tasks WHERE {pred}"), args)?)
+}
+
+/// The rank that puts `id` at `to`, or `None` when the two neighbours are
+/// adjacent integers and the ranks need renumbering first.
+fn rank_between(tx: &rusqlite::Transaction<'_>, id: i64, to: &RankMove) -> Result<Option<i64>> {
+    let rank_of = |sql: &str, arg: i64| -> Result<Option<i64>> {
+        Ok(tx.query_row(sql, params![id, arg], |r| r.get::<_, Option<i64>>(0))?)
+    };
+    let anchor = |other: i64| -> Result<i64> {
+        rank_of("SELECT MAX(rank) FROM tasks WHERE id = ?2 AND id <> ?1", other)?
+            .ok_or(Error::TaskNotFound(other))
+    };
+    let below = |at: i64| rank_of("SELECT MAX(rank) FROM tasks WHERE id <> ?1 AND rank < ?2", at);
+    let above = |at: i64| rank_of("SELECT MIN(rank) FROM tasks WHERE id <> ?1 AND rank > ?2", at);
+    let (lo, hi) = match *to {
+        RankMove::Top => (None, above(i64::MIN)?),
+        RankMove::Bottom => (below(i64::MAX)?, None),
+        RankMove::Before(other) => {
+            let at = anchor(other)?;
+            (below(at)?, Some(at))
+        }
+        RankMove::After(other) => {
+            let at = anchor(other)?;
+            (Some(at), above(at)?)
+        }
+    };
+    Ok(match (lo, hi) {
+        (None, None) => Some(RANK_GAP),
+        (Some(lo), None) => Some(lo + RANK_GAP),
+        (None, Some(hi)) => Some(hi - RANK_GAP),
+        (Some(lo), Some(hi)) if hi - lo > 1 => Some(lo + (hi - lo) / 2),
+        _ => None,
+    })
+}
+
+/// Respace every rank `RANK_GAP` apart, keeping the order.
+fn renumber_ranks(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    tx.execute(
+        &format!(
+            "UPDATE tasks SET rank = (
+               SELECT n * {RANK_GAP} FROM (
+                 SELECT id, ROW_NUMBER() OVER (ORDER BY rank, created_at, id) AS n FROM tasks) r
+               WHERE r.id = tasks.id)"
+        ),
+        [],
+    )?;
+    Ok(())
 }

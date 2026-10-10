@@ -6,7 +6,7 @@ function task(partial: Pick<TaskItem, "status"> & Partial<TaskItem>): TaskItem {
   return {
     id: 1,
     text: "t",
-    position: 0,
+    rank: 0,
     createdAt: 0,
     issues: [],
     prs: [],
