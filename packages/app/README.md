@@ -96,6 +96,13 @@ guard.
   commands. Triggers on "tt commands", "daily notes", "meeting notes", or
   worktree management.
 
+## Commands
+
+- **`/towles-tool-app:done`**: run once you've confirmed a task works. It
+  rewrites the PR description to what shipped, merges it, checks nothing is
+  left unlanded, writes `task_summary`, then calls `task_delete` so the task's
+  worktree and pane go too, not just the board status.
+
 ## Mod: the app's band above the prompt
 
 `hooks/register.tsx` is a Claude Code mod (a function-hooks module, named under
