@@ -19,6 +19,8 @@ import { subscribePreviewShow } from "@/lib/preview-artifact";
 import { subscribeSummon } from "@/lib/summon";
 import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
+import { TaskQueueProvider } from "@/lib/queue";
+import { QueueNextShortcut } from "@/components/queue-panel";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
 import { SCREENS } from "@/lib/screens";
 import { useShortcutCoachSetting } from "@/lib/shortcut-coach";
@@ -224,6 +226,7 @@ function Workspace() {
       {zen && <ZenIndicator onExit={() => setZen(false)} />}
       <Shortcuts />
       <TaskStartBridge />
+      <QueueNextShortcut />
       <CommandPalette />
       <QuickLog />
       <ResumePicker />
@@ -237,11 +240,13 @@ export function App() {
       <NowProvider>
         <StoreSnapshotProvider>
           <AgentboardStateProvider>
-            <TooltipProvider>
-              <Toasty toastManager={toastManager}>
-                <Workspace />
-              </Toasty>
-            </TooltipProvider>
+            <TaskQueueProvider>
+              <TooltipProvider>
+                <Toasty toastManager={toastManager}>
+                  <Workspace />
+                </Toasty>
+              </TooltipProvider>
+            </TaskQueueProvider>
           </AgentboardStateProvider>
         </StoreSnapshotProvider>
       </NowProvider>

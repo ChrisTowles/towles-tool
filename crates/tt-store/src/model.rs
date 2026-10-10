@@ -123,6 +123,28 @@ pub struct UnlinkedWorktree {
     pub branch: String,
 }
 
+/// Spacing between ranks, so a reorder writes one row instead of renumbering.
+pub const RANK_GAP: i64 = 1024;
+
+/// Where [`crate::Store::move_task`] puts a task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum RankMove {
+    Top,
+    Bottom,
+    Before(i64),
+    After(i64),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSnooze {
+    pub task_id: i64,
+    pub reason: String,
+    pub until_ms: Option<i64>,
+    pub created_at: i64,
+}
+
 /// One constant so the manual "Archive done" button and the auto-sweep agree on "old enough".
 pub const ARCHIVE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
@@ -130,7 +152,7 @@ pub const ARCHIVE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 pub(crate) const EVENT_COLS: &str =
     "id, source, external_id, title, starts_at, ends_at, attendees, location, join_url";
 // `kind` is appended so the positional indices `map_task_row` reads stay put.
-pub(crate) const TASK_COLS: &str = "id, text, status, position, created_at, completed_at, notes, \
+pub(crate) const TASK_COLS: &str = "id, text, status, rank, created_at, completed_at, notes, \
      worktree_repo_root, worktree_repo, worktree_branch, worktree_dir, outcome, archived_at, goal, \
      summary, summary_at, kind";
 
@@ -148,7 +170,7 @@ pub(crate) const MCP_CALL_COLS: &str = "id, ts, method, tool, args, ok, error, d
 pub(crate) const TASK_ORDER: &str = "\
 ORDER BY CASE status
     WHEN 'backlog' THEN 0 WHEN 'doing' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
-  position ASC, created_at ASC";
+  rank ASC, created_at ASC";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -191,7 +213,8 @@ pub struct TaskItem {
     pub kind: TaskKind,
     pub text: String,
     pub status: String,
-    pub position: i64,
+    /// Queue priority across every task, lower first; spaced [`RANK_GAP`] apart.
+    pub rank: i64,
     pub created_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<i64>,

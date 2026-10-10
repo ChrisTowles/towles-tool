@@ -1158,13 +1158,13 @@ mod tests {
     }
 
     #[test]
-    fn add_task_lands_in_backlog_and_orders_by_position() {
+    fn add_task_lands_in_backlog_at_the_bottom_of_the_queue() {
         let s = Store::open_in_memory().unwrap();
         let a = s.add_task("first", "backlog", None, None, 100).unwrap();
         let b = s.add_task("second", "backlog", None, None, 200).unwrap();
         assert_eq!(a.status, "backlog");
-        assert_eq!(a.position, 0);
-        assert_eq!(b.position, 1);
+        assert_eq!(a.rank, RANK_GAP);
+        assert_eq!(b.rank, 2 * RANK_GAP);
         let open = s.open_tasks().unwrap();
         let texts: Vec<&str> = open.iter().map(|t| t.text.as_str()).collect();
         assert_eq!(texts, vec!["first", "second"]);
@@ -1224,7 +1224,6 @@ mod tests {
     #[test]
     fn close_task_as_done_lands_in_done_and_detaches_the_dir() {
         let s = Store::open_in_memory().unwrap();
-        let done_first = s.add_task("already done", "done", None, None, 1).unwrap();
         let t = s.add_task("ship it", "doing", None, None, 2).unwrap();
         s.set_task_worktree(t.id, "/repos/x", Some("o/x"), Some("feat/y"), Some("/repos/x/wt"))
             .unwrap();
@@ -1233,7 +1232,7 @@ mod tests {
         assert_eq!(closed.status, "done");
         assert_eq!(closed.outcome.as_deref(), Some("done"));
         assert_eq!(closed.completed_at, Some(500));
-        assert!(closed.position > done_first.position, "appended to the done column");
+        assert_eq!(closed.rank, t.rank, "closing keeps the rank");
         let wt = closed.worktree.expect("repo binding survives");
         assert_eq!(wt.branch.as_deref(), Some("feat/y"), "branch kept as historical fact");
         assert_eq!(wt.dir, None, "dir cleared — the worktree is gone");
@@ -1372,49 +1371,103 @@ mod tests {
     }
 
     #[test]
-    fn set_task_status_appends_to_end_of_target_column() {
+    fn set_task_status_keeps_the_rank() {
+        let s = Store::open_in_memory().unwrap();
+        let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+        let b = s.add_task("b", "backlog", None, None, 2).unwrap();
+        // An agent starting and stopping must not reshuffle the queue.
+        s.set_task_status(a.id, "doing", 10).unwrap();
+        s.set_task_status(a.id, "backlog", 11).unwrap();
+        assert_eq!(s.get_task(a.id).unwrap().unwrap().rank, a.rank);
+        assert!(a.rank < b.rank);
+    }
+
+    fn ranked(s: &Store) -> Vec<String> {
+        let mut tasks = s.open_tasks().unwrap();
+        tasks.sort_by_key(|t| t.rank);
+        tasks.into_iter().map(|t| t.text).collect()
+    }
+
+    #[test]
+    fn move_task_reorders_top_bottom_before_after() {
         let s = Store::open_in_memory().unwrap();
         let a = s.add_task("a", "backlog", None, None, 1).unwrap();
         let b = s.add_task("b", "backlog", None, None, 2).unwrap();
         let c = s.add_task("c", "backlog", None, None, 3).unwrap();
-
-        // Moving into an empty column starts at 0; the next arrival lands after it.
-        s.set_task_status(a.id, "doing", 10).unwrap();
-        s.set_task_status(b.id, "doing", 11).unwrap();
-        let pos = |id: i64, tasks: &[TaskItem]| tasks.iter().find(|t| t.id == id).unwrap().position;
-        let tasks = s.snapshot().unwrap().tasks;
-        assert_eq!(pos(a.id, &tasks), 0);
-        assert_eq!(pos(b.id, &tasks), 1);
-
-        // A later drop into the same column lands at the end, not at its old position.
-        s.set_task_status(c.id, "doing", 12).unwrap();
-        let tasks = s.snapshot().unwrap().tasks;
-        assert_eq!(pos(c.id, &tasks), 2);
-
-        // Bouncing a card out and back re-appends it after the survivors.
-        s.set_task_status(a.id, "backlog", 13).unwrap();
-        s.set_task_status(a.id, "doing", 14).unwrap();
-        let tasks = s.snapshot().unwrap().tasks;
-        assert_eq!(pos(a.id, &tasks), 3);
+        s.move_task(c.id, RankMove::Top).unwrap();
+        assert_eq!(ranked(&s), ["c", "a", "b"]);
+        s.move_task(c.id, RankMove::Bottom).unwrap();
+        assert_eq!(ranked(&s), ["a", "b", "c"]);
+        s.move_task(c.id, RankMove::Before(b.id)).unwrap();
+        assert_eq!(ranked(&s), ["a", "c", "b"]);
+        s.move_task(a.id, RankMove::After(b.id)).unwrap();
+        assert_eq!(ranked(&s), ["c", "b", "a"]);
+        assert!(matches!(s.move_task(a.id, RankMove::Before(999)), Err(Error::TaskNotFound(999))));
     }
 
     #[test]
-    fn set_task_status_rejects_unknown() {
+    fn move_task_renumbers_when_the_gap_runs_out() {
         let s = Store::open_in_memory().unwrap();
-        let t = s.add_task("x", "backlog", None, None, 1).unwrap();
-        assert!(s.set_task_status(t.id, "bogus", 2).is_err());
+        let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+        let b = s.add_task("b", "backlog", None, None, 2).unwrap();
+        let c = s.add_task("c", "backlog", None, None, 3).unwrap();
+        // Bisecting a 1024 gap runs dry after ~10 moves; order must still hold.
+        for _ in 0..15 {
+            s.move_task(c.id, RankMove::After(a.id)).unwrap();
+            s.move_task(b.id, RankMove::After(a.id)).unwrap();
+        }
+        assert_eq!(ranked(&s), ["a", "b", "c"]);
+        let _ = (b, c);
     }
 
     #[test]
-    fn attach_task_issue_stores_reference() {
+    fn rank_moves_parse_the_client_shape() {
+        let parse = |v| serde_json::from_value::<RankMove>(v).unwrap();
+        assert_eq!(parse(serde_json::json!("top")), RankMove::Top);
+        assert_eq!(parse(serde_json::json!({ "before": 3 })), RankMove::Before(3));
+        assert_eq!(parse(serde_json::json!({ "after": 4 })), RankMove::After(4));
+    }
+
+    #[test]
+    fn snoozes_replace_and_clear_and_go_with_their_task() {
         let s = Store::open_in_memory().unwrap();
-        let t = s.add_task("wire up board", "backlog", None, None, 1).unwrap();
-        s.attach_task_issue(t.id, "o/r", 42, "https://github.com/o/r/issues/42").unwrap();
-        let linked = s.open_tasks().unwrap()[0].clone();
-        assert_eq!(linked.issues.len(), 1);
-        assert_eq!(linked.issues[0].repo, "o/r");
-        assert_eq!(linked.issues[0].number, 42);
-        assert_eq!(linked.issues[0].url, "https://github.com/o/r/issues/42");
+        let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+        s.snooze_task(a.id, "answer", Some(100), 5).unwrap();
+        s.snooze_task(a.id, "land", None, 6).unwrap();
+        let snoozes = s.task_snoozes().unwrap();
+        assert_eq!(snoozes.len(), 1);
+        assert_eq!((snoozes[0].reason.as_str(), snoozes[0].until_ms), ("land", None));
+        s.unsnooze_task(a.id).unwrap();
+        assert!(s.task_snoozes().unwrap().is_empty());
+        s.snooze_task(a.id, "land", None, 7).unwrap();
+        s.delete_task(a.id).unwrap();
+        assert!(s.task_snoozes().unwrap().is_empty());
+        assert!(matches!(s.snooze_task(42, "land", None, 8), Err(Error::TaskNotFound(42))));
+    }
+
+    #[test]
+    fn migrate_turns_column_positions_into_one_global_rank() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("tt.db");
+        {
+            let s = Store::open(&path).unwrap();
+            s.conn
+                .execute_batch(
+                    "ALTER TABLE tasks RENAME COLUMN rank TO position;
+                     INSERT INTO tasks (text, status, position, created_at) VALUES
+                       ('backlog-1', 'backlog', 1, 1), ('doing-0', 'doing', 0, 2),
+                       ('backlog-0', 'backlog', 0, 3), ('done-0', 'done', 0, 4);
+                     UPDATE meta SET value = '21' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(!task_columns(&s).contains(&"position".to_string()));
+        let mut all = s.all_tasks().unwrap();
+        all.sort_by_key(|t| t.rank);
+        let texts: Vec<&str> = all.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(texts, ["doing-0", "backlog-0", "backlog-1", "done-0"]);
+        assert_eq!(all[0].rank, RANK_GAP);
     }
 
     #[test]
@@ -1424,9 +1477,9 @@ mod tests {
         let updated = s.update_task(t.id, "polished", Some("ship friday")).unwrap();
         assert_eq!(updated.text, "polished");
         assert_eq!(updated.notes.as_deref(), Some("ship friday"));
-        // Status/position are untouched by an edit.
+        // Status/rank are untouched by an edit.
         assert_eq!(updated.status, "backlog");
-        assert_eq!(updated.position, t.position);
+        assert_eq!(updated.rank, t.rank);
         // And it persists.
         assert_eq!(s.get_task(t.id).unwrap().unwrap().text, "polished");
     }
@@ -1970,7 +2023,7 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         s.conn
             .execute(
-                "INSERT INTO tasks (text, status, position, created_at, completed_at)
+                "INSERT INTO tasks (text, status, rank, created_at, completed_at)
                  VALUES ('legacy done', 'done', 0, 1, NULL)",
                 [],
             )

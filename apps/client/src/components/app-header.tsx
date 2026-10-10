@@ -6,7 +6,7 @@ import {
   SparkleIcon,
 } from "@phosphor-icons/react";
 import { Badge, Button, Tooltip } from "@cloudflare/kumo";
-import { CollectorDot, NeedsYouChip, TopTaskChip } from "@/components/header-status";
+import { CollectorDot, NeedsYouChip, NextUpChip } from "@/components/header-status";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
@@ -169,7 +169,7 @@ export function AppHeader() {
       {/* Second to go, for the same reason: the top task is context, not a
           signal. */}
       <span className="hidden min-w-0 lg:flex">
-        <TopTaskChip />
+        <NextUpChip />
       </span>
 
       <ClockCluster />

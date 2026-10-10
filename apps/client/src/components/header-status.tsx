@@ -20,30 +20,32 @@ import {
   worstCollectorState,
 } from "@/lib/collector-health";
 import { fmtAge, useStoreSnapshot } from "@/lib/data";
-import { pickTopTask } from "@/lib/day-top-task";
+import { nextItem, REASON_FACE, useTaskQueue } from "@/lib/queue";
 import { useNow } from "@/lib/now";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE } from "@/lib/pr-tone";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
-/** The one task the day is about, or nothing when the board has no candidate. */
-export function TopTaskChip() {
+/** The queue's Next up — the one thing waiting on you — or nothing when it's empty. */
+export function NextUpChip() {
   const { openTab, activeTab } = useWorkspace();
-  const { snapshot } = useStoreSnapshot();
-  const topTask = pickTopTask(snapshot.tasks);
-  if (!topTask) return null;
+  const { queue } = useTaskQueue();
+  const head = nextItem(queue);
+  if (!head) return null;
+  const label = head.reason ? REASON_FACE[head.reason].label : null;
   return (
     <button
       className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint"
       onClick={() => {
-        uiAction("header.open_cockpit", activeTab, "top_task");
+        uiAction("header.open_cockpit", activeTab, "next_up");
         openTab("cockpit");
       }}
-      title={topTask.text}
+      title={head.title}
     >
       <ListChecksIcon className="size-3.5 shrink-0" />
-      <span className="max-w-44 truncate">{topTask.text}</span>
+      {label && <span className="shrink-0 font-medium text-kumo-default">{label}</span>}
+      <span className="max-w-44 truncate">{head.title}</span>
     </button>
   );
 }

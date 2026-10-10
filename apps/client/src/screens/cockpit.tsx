@@ -53,8 +53,8 @@ import { uiAction } from "@/lib/ui-action";
 import { Empty, IssueRow, Panel, PrRow } from "@/components/store-bits";
 import { prNeedsYou, prRank } from "@/lib/pr-tone";
 import { CockpitCiHealth } from "@/components/cockpit-ci-health";
-import { CockpitWorkQueue } from "@/components/cockpit-work-queue";
-import { buildWorkQueue } from "@/lib/cockpit-queue";
+import { QueuePanel } from "@/components/queue-panel";
+import { useTaskQueue } from "@/lib/queue";
 
 /** A tracked checkout a Cockpit issue can be dispatched into. */
 type TaskTarget = { dir: string; branch: string; name: string };
@@ -154,13 +154,15 @@ export function CockpitScreen() {
     () => snapshot.issues.filter((i) => !isItemDismissed(i)),
     [snapshot.issues],
   );
-  const queue = useMemo(
-    () => buildWorkQueue(agentState.repos, snapshot.prs),
-    [agentState.repos, snapshot.prs],
+  const { queue, live: queueLive } = useTaskQueue();
+  const onYouCount = queue.items.filter((i) => i.lane === "on_you").length;
+  const repoList = cockpitRepos(
+    [...queue.items.filter((i) => i.repo !== ""), ...openPrs],
+    openIssues,
+    snapshot.ciRuns,
   );
-  const repoList = cockpitRepos([...queue, ...openPrs], openIssues, snapshot.ciRuns);
   const activeRepo = repoFilter !== null && repoList.includes(repoFilter) ? repoFilter : null;
-  const visibleQueue = filterByRepo(queue, activeRepo);
+  const visibleQueue = { ...queue, items: filterByRepo(queue.items, activeRepo) };
   const visiblePrs = filterByRepo(openPrs, activeRepo);
   const visibleIssues = filterByRepo(openIssues, activeRepo);
 
@@ -289,7 +291,7 @@ export function CockpitScreen() {
               </Button>
             }
           />
-          <Gauge n={queue.length} label="In queue" tone={queue.length ? "warn" : "muted"} />
+          <Gauge n={onYouCount} label="On you" tone={onYouCount ? "warn" : "muted"} />
           <Gauge
             n={needsYouPrs.length}
             label="PRs need you"
@@ -350,7 +352,7 @@ export function CockpitScreen() {
 
       <ScrollArea className="min-h-0 flex-1">
         <div ref={focusRef} className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
-          <CockpitWorkQueue queue={visibleQueue} now={now} live={live} />
+          <QueuePanel queue={visibleQueue} now={now} live={queueLive} />
           <CockpitCiHealth runs={snapshot.ciRuns} repo={activeRepo} now={now} live={live} />
           {/* Pull requests */}
           <Panel

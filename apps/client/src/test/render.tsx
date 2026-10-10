@@ -1,6 +1,7 @@
 // Shared harness for render-level component tests (`*.test.tsx`, jsdom env), not
 // itself a test file. jsdom has no `__TAURI_INTERNALS__`, so every `invoke` returns
 // `NotInTauri` and each component paints its browser-dev fallback — the backend seam.
+import { TaskQueueProvider } from "@/lib/queue";
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup, render } from "@testing-library/react";
@@ -50,7 +51,9 @@ function AllProviders({ children }: { children: ReactNode }) {
         <NowProvider>
           <StoreSnapshotProvider>
             <AgentboardStateProvider>
-              <TooltipProvider>{children}</TooltipProvider>
+              <TaskQueueProvider>
+                <TooltipProvider>{children}</TooltipProvider>
+              </TaskQueueProvider>
             </AgentboardStateProvider>
           </StoreSnapshotProvider>
         </NowProvider>

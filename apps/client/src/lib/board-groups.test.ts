@@ -19,7 +19,7 @@ function task(over: Partial<TaskItem> = {}): TaskItem {
     id: 1,
     text: "t",
     status: "backlog",
-    position: 0,
+    rank: 0,
     createdAt: 0,
     issues: [],
     prs: [],
@@ -233,11 +233,11 @@ describe("railRepoKeyForTask", () => {
 });
 
 describe("bucketByStatus", () => {
-  it("buckets every status and sorts by position, created-at as tiebreak", () => {
+  it("buckets every status and sorts by rank, created-at as tiebreak", () => {
     const cols = bucketByStatus([
-      task({ id: 1, status: "doing", position: 2 }),
-      task({ id: 2, status: "doing", position: 1 }),
-      task({ id: 3, status: "doing", position: 1, createdAt: -1 }),
+      task({ id: 1, status: "doing", rank: 2 }),
+      task({ id: 2, status: "doing", rank: 1 }),
+      task({ id: 3, status: "doing", rank: 1, createdAt: -1 }),
       task({ id: 4, status: "done" }),
     ]);
     expect(cols.doing.map((t) => t.id)).toEqual([3, 2, 1]);

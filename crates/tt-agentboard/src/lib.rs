@@ -27,6 +27,7 @@ pub mod notify;
 pub mod persist;
 pub mod procenv;
 pub mod pty_status;
+pub mod queue;
 pub mod repo_meta;
 pub mod repos;
 pub mod resume;
