@@ -41,7 +41,7 @@ app's `store_add_task`), `task_summary`, `task_sync` (re-read a task
 worktree's branch onto its row after a `git switch`), `task_start`, `task_delete`,
 `preview_file`, `file_open`, `needs_you` (the other sessions waiting on
 the user, read from the rail's PTY-stamped state through `AttentionHost`),
-plus the calendar family `calendar_today`, `calendar_next` and the
+`summon` (the agent→human interrupt, below), plus the calendar family `calendar_today`, `calendar_next` and the
 push-model write `calendar_set`.
 `task_summary` is how a finished agent leaves a record: it writes the
 wrap-up onto the task's row (`summary`/`summary_at`, schema v17) instead of
@@ -102,6 +102,17 @@ reads) were pruned in the 2026-07 tool-surface review and have not
 returned. `needs_you` was pruned with them for having no caller, and came
 back when the plugin's mod gave it one: the band's count of other sessions
 waiting on you.
+
+**`summon` is the one tool that interrupts**: one desktop notification, then
+a chime every 4 s until the user types into the *caller's* terminal, its PTY
+closes, a newer summon from it replaces it, or `max_minutes` (default 15,
+clamped 1–60) runs out. "Answered" is the PTY's `input_at_ms` stamp, the one
+every user-behalf write already keeps for attention notifications. The app's
+ticker polls it (`crates-tauri/tt-app/src/summon.rs`) instead of hooking the
+keystroke path; the state machine is `tt_agentboard::summon`. A caller with
+no `TT_SESSION_ID` is answered by input to any terminal. The `reason` reaches
+the notification and a toast, never the log (`summon.started` records its
+length, `summon.stopped` its `cause`).
 
 **Security posture changed on 2026-07-20 — don't reason from the old
 shape.** There is no bearer token and no `mcp.mutationsEnabled` gate; both

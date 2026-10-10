@@ -27,6 +27,7 @@ mod settings;
 mod slack;
 mod slack_socket;
 mod store;
+mod summon;
 mod task;
 mod task_explorer;
 mod telemetry;

@@ -121,6 +121,20 @@ struct NeedsYou {
 }
 
 #[derive(JsonSchema)]
+#[schemars(rename_all = "lowercase")]
+enum SummonStatus {
+    Summoning,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+struct Summoning {
+    status: SummonStatus,
+    session: Option<String>,
+    max_minutes: i64,
+}
+
+#[derive(JsonSchema)]
 #[schemars(rename_all = "camelCase")]
 struct CalendarToday {
     events: Vec<CalEvent>,
@@ -160,6 +174,7 @@ pub fn schema_for(name: &str) -> Option<Value> {
         "preview_file" => schema::<PreviewShowing>(),
         "file_open" => schema::<FileOpening>(),
         "needs_you" => schema::<NeedsYou>(),
+        "summon" => schema::<Summoning>(),
         "calendar_today" => schema::<CalendarToday>(),
         "calendar_next" => schema::<CalendarNext>(),
         "calendar_set" => schema::<CalendarWritten>(),

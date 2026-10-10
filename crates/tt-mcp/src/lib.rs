@@ -94,7 +94,24 @@ pub trait EditorHost: Send {
 /// PTY-stamped state, invisible from this Tauri-free crate.
 pub trait AttentionHost: Send {
     fn needs_you(&self) -> Vec<WaitingSession>;
+
+    /// Chime until the user answers — a hand-off: returns once the chime starts.
+    fn summon(&self, request: SummonRequest) -> Result<(), String>;
 }
+
+/// A validated `summon` — see [`AttentionHost::summon`].
+pub struct SummonRequest {
+    /// Shown to the user, never logged.
+    pub reason: String,
+    /// The caller's PTY; `None` is answered by input to any terminal.
+    pub session: Option<String>,
+    pub max_minutes: u32,
+}
+
+/// `summon`'s chime cap when the caller names none, and its clamp.
+const SUMMON_DEFAULT_MINUTES: u32 = 15;
+const SUMMON_MAX_MINUTES: u32 = 60;
+const SUMMON_REASON_MAX_CHARS: usize = 200;
 
 /// One session the rail badges as needing the user.
 pub struct WaitingSession {
@@ -358,6 +375,7 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("preview_file", "Preview file", Effect::Read),
     ("file_open", "Open file", Effect::Read),
     ("needs_you", "Sessions needing you", Effect::Read),
+    ("summon", "Summon the user", Effect::Write),
     ("calendar_today", "Today's meetings", Effect::Read),
     ("calendar_next", "Next meeting", Effect::Read),
     ("calendar_set", "Set a calendar day", Effect::Replace),
@@ -602,6 +620,7 @@ impl Dispatcher {
             "preview_file" => self.preview_file(args, ctx),
             "file_open" => self.file_open(args, ctx),
             "needs_you" => self.needs_you(ctx),
+            "summon" => self.summon(args, ctx),
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
@@ -966,6 +985,33 @@ impl Dispatcher {
             })
             .collect();
         Ok(json!({ "sessions": sessions }))
+    }
+
+    /// Chime until the user answers the caller's terminal — see [`AttentionHost::summon`].
+    fn summon(&self, args: &Value, ctx: &RequestContext) -> Result<Value, String> {
+        let reason = args
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+            .ok_or_else(|| "missing required argument: reason".to_string())?;
+        let host = self
+            .attention_host
+            .as_ref()
+            .ok_or_else(|| "summon is unavailable: no attention host is attached".to_string())?;
+        let max_minutes = match args.get("max_minutes") {
+            None | Some(Value::Null) => SUMMON_DEFAULT_MINUTES,
+            Some(v) => v
+                .as_u64()
+                .ok_or_else(|| "max_minutes must be a positive integer".to_string())?
+                .clamp(1, u64::from(SUMMON_MAX_MINUTES)) as u32,
+        };
+        host.summon(SummonRequest {
+            reason: reason.chars().take(SUMMON_REASON_MAX_CHARS).collect(),
+            session: ctx.session.clone(),
+            max_minutes,
+        })?;
+        Ok(json!({ "status": "summoning", "session": ctx.session, "maxMinutes": max_minutes }))
     }
 
     /// Reveal a file or folder in the caller's own Files pane — see [`EditorHost`]. Validated
@@ -1389,6 +1435,18 @@ pub fn tool_definitions() -> Value {
             "inputSchema": no_args(),
         },
         {
+            "name": "summon",
+            "description": "Get the human back when you need them to do something only they can: answer a question, approve a step, log in, plug something in. The app plays a chime every few seconds and shows one desktop notification with your `reason`, and keeps chiming until they type into *your* terminal — so end your turn with the question itself, since their answer is what stops it. Stops on its own after `max_minutes`, or if your terminal closes; calling again replaces your previous summon. Outside an app terminal (no session), input to any app terminal stops it. Don't use it for progress updates or anything that can wait — it is meant to interrupt. Returns `status: \"summoning\"` at once; it does not wait for them.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "reason": { "type": "string", "description": "What you need them to do, in one short line — shown in the notification. Truncated at 200 characters." },
+                    "max_minutes": { "type": "integer", "description": "Stop chiming after this many minutes if they never answer. Default 15, clamped to 1–60." },
+                },
+                "required": ["reason"],
+            },
+        },
+        {
             "name": "calendar_today",
             "description": "The shape of today: every meeting starting in today's local calendar day, in order. Use it to see where the uninterrupted stretches are before committing to deep work.",
             "inputSchema": no_args(),
@@ -1675,6 +1733,7 @@ mod tests {
                 "preview_file",
                 "file_open",
                 "needs_you",
+                "summon",
                 "calendar_today",
                 "calendar_next",
                 "calendar_set",
@@ -1854,9 +1913,20 @@ mod tests {
 
     // needs_you
 
+    /// Every `(reason, session, max_minutes)` a fake attention host was summoned with.
+    type Summoned = std::sync::Arc<std::sync::Mutex<Vec<(String, Option<String>, u32)>>>;
+
     fn with_attention_host(waiting: &[(&str, i64)]) -> Dispatcher {
-        struct FakeAttentionHost(Vec<(String, i64)>);
+        with_attention_host_summoned(waiting).0
+    }
+
+    fn with_attention_host_summoned(waiting: &[(&str, i64)]) -> (Dispatcher, Summoned) {
+        struct FakeAttentionHost(Vec<(String, i64)>, Summoned);
         impl AttentionHost for FakeAttentionHost {
+            fn summon(&self, r: SummonRequest) -> Result<(), String> {
+                self.1.lock().unwrap().push((r.reason, r.session, r.max_minutes));
+                Ok(())
+            }
             fn needs_you(&self) -> Vec<WaitingSession> {
                 self.0
                     .iter()
@@ -1872,7 +1942,9 @@ mod tests {
             }
         }
         let waiting = waiting.iter().map(|(s, t)| (s.to_string(), *t)).collect();
-        dispatcher().with_attention_host(Box::new(FakeAttentionHost(waiting)))
+        let summoned = Summoned::default();
+        let host = FakeAttentionHost(waiting, summoned.clone());
+        (dispatcher().with_attention_host(Box::new(host)), summoned)
     }
 
     #[test]
@@ -1908,6 +1980,44 @@ mod tests {
         let message = call_tool_err(&mut dispatcher(), "needs_you", json!({}));
         assert!(message.contains("no attention host"), "{message}");
         assert!(!tool_writes("needs_you"));
+    }
+
+    // summon
+
+    #[test]
+    fn summon_hands_the_caller_and_a_clamped_cap_to_the_host() {
+        let (mut dispatcher, summoned) = with_attention_host_summoned(&[]);
+        let result = call_tool_as(
+            &mut dispatcher,
+            "summon",
+            json!({ "reason": "  approve the migration  ", "max_minutes": 500 }),
+            &RequestContext::for_session(Some("me")),
+        );
+        assert_eq!(result["status"], "summoning");
+        assert_eq!(result["session"], "me");
+        assert_eq!(result["maxMinutes"], 60);
+        let calls = summoned.lock().unwrap();
+        assert_eq!(calls[0], ("approve the migration".to_string(), Some("me".to_string()), 60));
+    }
+
+    #[test]
+    fn summon_defaults_its_cap_and_allows_no_session() {
+        let (mut dispatcher, summoned) = with_attention_host_summoned(&[]);
+        let result = call_tool(&mut dispatcher, "summon", json!({ "reason": "x" }));
+        assert_eq!(result["maxMinutes"], 15);
+        assert!(result["session"].is_null());
+        assert_eq!(summoned.lock().unwrap()[0].1, None);
+    }
+
+    #[test]
+    fn summon_refuses_a_blank_reason_and_a_missing_host() {
+        let message = call_tool_err(&mut dispatcher(), "summon", json!({ "reason": "x" }));
+        assert!(message.contains("no attention host"), "{message}");
+        assert!(!tool_writes("summon"));
+        let (mut with_host, summoned) = with_attention_host_summoned(&[]);
+        let message = call_tool_err(&mut with_host, "summon", json!({ "reason": "  " }));
+        assert!(message.contains("reason"), "{message}");
+        assert!(summoned.lock().unwrap().is_empty());
     }
 
     // file_open

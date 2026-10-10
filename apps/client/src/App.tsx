@@ -16,6 +16,7 @@ import { TooltipProvider, Toasty } from "@cloudflare/kumo";
 import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard-state";
 import { subscribeEditorOpenFile } from "@/lib/editor-open";
 import { subscribePreviewShow } from "@/lib/preview-artifact";
+import { subscribeSummon } from "@/lib/summon";
 import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
@@ -118,6 +119,14 @@ function TaskStartBridge() {
   useEffect(
     () =>
       subscribePreviewShow(
+        () => reposRef.current,
+        () => openTabRef.current("agentboard"),
+      ),
+    [],
+  );
+  useEffect(
+    () =>
+      subscribeSummon(
         () => reposRef.current,
         () => openTabRef.current("agentboard"),
       ),

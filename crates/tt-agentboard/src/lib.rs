@@ -31,6 +31,7 @@ pub mod repo_meta;
 pub mod repos;
 pub mod resume;
 pub mod sessions;
+pub mod summon;
 pub mod task_removal;
 pub mod task_status;
 pub mod text;
