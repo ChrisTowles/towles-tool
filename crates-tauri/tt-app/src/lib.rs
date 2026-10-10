@@ -5,6 +5,7 @@
 //! kills on window close, rendered by xterm.js in the agentboard screen.
 
 mod agentboard;
+mod agents;
 mod browser;
 mod claude_sessions;
 mod codeserver;
@@ -640,7 +641,8 @@ pub fn run() {
                 slack_socket: slack_socket_reload.clone(),
             });
             scheduler::spawn(app.handle().clone(), scheduler_reload);
-            slack_socket::spawn(app.handle().clone(), slack_socket_reload);
+            // Personal Slack agents ride the same socket; see `agents.rs`.
+            slack_socket::spawn(app.handle().clone(), slack_socket_reload, agents::spawn());
 
             // So Claude Code never dials a dead server's lockfile.
             ide::sweep_stale_lockfiles();

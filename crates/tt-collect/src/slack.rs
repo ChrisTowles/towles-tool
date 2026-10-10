@@ -292,6 +292,54 @@ fn is_redundant_reaction(error: &str) -> bool {
     error.contains("already_reacted") || error.contains("no_reaction")
 }
 
+/// The token owner's member id (`auth.test`) — who "me" is for the agents.
+pub fn auth_user_id(token: &str) -> Result<String, String> {
+    let body = SlackHttp { token }.call("auth.test", &[])?;
+    body.get("user_id")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "slack auth.test: no user_id in response".to_string())
+}
+
+/// The DM with `user` — the token owner's own id gives the self-DM.
+pub fn open_im(token: &str, user: &str) -> Result<String, String> {
+    let open = SlackHttp { token }.call("conversations.open", &[("users", user)])?;
+    parse_open_channel(&open)
+}
+
+/// Post as the token's user into any conversation, returning the new message's ts.
+pub fn post_message(
+    token: &str,
+    channel: &str,
+    text: &str,
+    thread_ts: &str,
+) -> Result<String, String> {
+    let mut form = vec![("channel", channel), ("text", text)];
+    if !thread_ts.is_empty() {
+        form.push(("thread_ts", thread_ts));
+    }
+    let body = SlackHttp { token }.call_form("chat.postMessage", &form)?;
+    Ok(str_at(&body, "ts"))
+}
+
+/// [`set_reaction`] for any conversation.
+pub fn react(token: &str, channel: &str, ts: &str, name: &str, add: bool) -> Result<(), String> {
+    let method = if add { "reactions.add" } else { "reactions.remove" };
+    let http = SlackHttp { token };
+    match http.call_form(
+        method,
+        &[
+            ("channel", channel),
+            ("timestamp", ts),
+            ("name", name.trim().trim_matches(':')),
+        ],
+    ) {
+        Ok(_) => Ok(()),
+        Err(e) if is_redundant_reaction(&e) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 /// Keeps a surprise large upload from ballooning the base64 IPC payload.
 const MAX_FILE_BYTES: u64 = 20 * 1024 * 1024;
 

@@ -21,6 +21,7 @@ pub use attention::{
     WatchedCollector,
 };
 
+mod agents;
 mod collect;
 mod events;
 mod github;
@@ -28,6 +29,7 @@ mod model;
 mod schema;
 mod tasks;
 
+pub use agents::{AgentReminder, AgentSession, TurnOutcome};
 pub use model::*;
 
 #[derive(Debug, Error)]

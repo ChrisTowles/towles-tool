@@ -735,6 +735,67 @@ impl Default for McpSettings {
     }
 }
 
+/// Personal Slack agents: named Claude Code sessions Chris addresses as `@name` in one
+/// Slack conversation. Rust-only; hand-edited until a settings UI exists.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentsSettings {
+    pub enabled: bool,
+    /// Slack conversation id the agents live in; empty = Chris's self-DM.
+    pub conversation: String,
+    /// Debounce: a burst dispatches after this much quiet…
+    pub quiet_ms: u64,
+    /// …or this long after its first message, whichever is first.
+    pub cap_ms: u64,
+    pub turn_timeout_minutes: u64,
+    /// Appended system prompt; `{name}`, `{description}` and `{stateDir}` are filled in.
+    pub prompt: String,
+    pub roster: Vec<AgentDef>,
+}
+
+/// One agent. Everything beyond its own state dir is opt-in.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct AgentDef {
+    /// Lowercase handle, matched by `@name` / `name:`.
+    pub name: String,
+    pub description: String,
+    /// Empty = the CLI's default model.
+    pub model: String,
+    /// Extra folders it may read and edit (`--add-dir`).
+    pub dirs: Vec<String>,
+    /// Built-in tools re-enabled under `--restricted`, e.g. `Bash`, `WebFetch`.
+    pub tools: Vec<String>,
+    /// Permission allow rules, e.g. `Bash(git log:*)`; anything else that would prompt is denied.
+    pub allow: Vec<String>,
+}
+
+pub const DEFAULT_AGENT_PROMPT: &str =
+    "You are {name}, one of Chris's personal agents: {description}.
+Chris writes to you in Slack. Each turn carries his messages since your last reply, \
+or a reminder you set earlier. Your `reply` is posted to that Slack thread as-is \
+(Slack mrkdwn); nothing else you write leaves this session, and no one else can \
+message you. Set `remind` when Chris asks to be reminded or you need to pick \
+something up later; that turn arrives with your note.
+Your own folder is {stateDir}. MEMORY.md there is your long-term memory and is \
+shown to you whenever it changes; keep it short and put details in notes/.";
+
+impl Default for AgentsSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            conversation: String::new(),
+            quiet_ms: 800,
+            cap_ms: 5000,
+            turn_timeout_minutes: 20,
+            prompt: DEFAULT_AGENT_PROMPT.to_string(),
+            roster: Vec::new(),
+        }
+    }
+}
+
 /// Top-level user settings, mirroring `UserSettingsSchema` in the TS CLI.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -762,6 +823,17 @@ pub struct UserSettings {
     /// so that would brick the app, journal and collect at once.
     #[serde(default, deserialize_with = "lenient_mcp")]
     pub mcp: McpSettings,
+
+    /// Lenient for the same reason as `mcp`: a hand-edit slip must not brick every command.
+    #[serde(default, deserialize_with = "lenient_agents")]
+    pub agents: AgentsSettings,
+}
+
+fn lenient_agents<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<AgentsSettings, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 /// Non-objects are rejected before serde sees them: a struct deserializes from
@@ -788,6 +860,7 @@ impl Default for UserSettings {
             telemetry_rules: TelemetryRule::defaults(),
             collectors: CollectorsSettings::default(),
             mcp: McpSettings::default(),
+            agents: AgentsSettings::default(),
         }
     }
 }
@@ -1023,6 +1096,12 @@ pub fn gh_cache_dir() -> Result<PathBuf> {
 pub fn browser_profile_dir() -> Result<PathBuf> {
     Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
         .join("chrome-profile"))
+}
+
+/// Personal agents' folders (`<name>/MEMORY.md`, `notes/`). *Shared*: who an agent is
+/// must not depend on which checkout's app answered.
+pub fn agents_dir() -> Result<PathBuf> {
+    Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME)).join("agents"))
 }
 
 /// Watched-DM handled ledger. *Shared*: kept in per-instance tt.db, a dismissal

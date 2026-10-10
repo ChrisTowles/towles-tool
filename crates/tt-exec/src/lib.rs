@@ -170,7 +170,29 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output> {
 /// the caller forever. Does not fail on a non-zero exit. stdout/stderr drain on
 /// dedicated threads, so a chatty child can't deadlock on a full pipe.
 pub fn run_with_timeout(cmd: &str, args: &[&str], timeout: Duration) -> Result<Output> {
-    run_with_timeout_in(cmd, args, None, &[], timeout)
+    run_with_timeout_in(cmd, args, None, &[], None, timeout)
+}
+
+/// For a child that must not inherit this process's environment or carry its input in
+/// argv: the env is cleared down to `keep_env` (copied from ours), and `stdin` is piped
+/// in rather than passed as an argument, so it never reaches the spawn span or `ps`.
+pub fn run_sealed(
+    cmd: &str,
+    args: &[&str],
+    dir: &std::path::Path,
+    keep_env: &[&str],
+    stdin: &str,
+    timeout: Duration,
+) -> Result<Output> {
+    let env: Vec<(String, String)> =
+        keep_env.iter().filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v))).collect();
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    run_with_timeout_in(cmd, args, Some(dir), &env, Some(Sealed { stdin }), timeout)
+}
+
+/// [`run_sealed`]'s difference from the plain path: cleared env, piped stdin.
+struct Sealed<'a> {
+    stdin: &'a str,
 }
 
 /// [`run_with_timeout`], but with the child's working directory set to `dir`.
@@ -181,7 +203,7 @@ pub fn run_in_dir_with_timeout(
     dir: &std::path::Path,
     timeout: Duration,
 ) -> Result<Output> {
-    run_with_timeout_in(cmd, args, Some(dir), &[], timeout)
+    run_with_timeout_in(cmd, args, Some(dir), &[], None, timeout)
 }
 
 /// [`run_with_timeout`], with extra env vars set on the child (e.g.
@@ -192,7 +214,7 @@ pub fn run_with_timeout_env(
     env: &[(&str, &str)],
     timeout: Duration,
 ) -> Result<Output> {
-    run_with_timeout_in(cmd, args, None, env, timeout)
+    run_with_timeout_in(cmd, args, None, env, None, timeout)
 }
 
 fn run_with_timeout_in(
@@ -200,9 +222,10 @@ fn run_with_timeout_in(
     args: &[&str],
     dir: Option<&std::path::Path>,
     env: &[(&str, &str)],
+    sealed: Option<Sealed<'_>>,
     timeout: Duration,
 ) -> Result<Output> {
-    use std::io::Read;
+    use std::io::{Read, Write};
     use std::process::Stdio;
     use wait_timeout::ChildExt;
 
@@ -210,12 +233,25 @@ fn run_with_timeout_in(
     let _entered = span.enter();
 
     let mut command = Command::new(cmd);
+    if sealed.is_some() {
+        command.env_clear().stdin(Stdio::piped());
+    }
     command.args(args).envs(env.iter().copied()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
     let mut child =
         command.spawn().map_err(|source| spawn_error(&span, "spawn_failed", cmd, source))?;
+    if let Some(sealed) = sealed {
+        span.record("stdin_bytes", sealed.stdin.len());
+        let input = sealed.stdin.to_string();
+        if let Some(mut pipe) = child.stdin.take() {
+            // Its own thread: a large input must not block on a child that isn't reading yet.
+            std::thread::spawn(move || {
+                let _ = pipe.write_all(input.as_bytes());
+            });
+        }
+    }
 
     fn drain(reader: Option<impl Read>) -> String {
         let mut buf = Vec::new();
@@ -256,6 +292,26 @@ fn run_with_timeout_in(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn sealed_runs_get_stdin_and_only_the_kept_env() {
+        // SAFETY: test-only; no other test reads this variable.
+        unsafe { std::env::set_var("TT_EXEC_SEALED_SECRET", "leak") };
+        let dir = std::env::temp_dir();
+        let script = "cat; printf '|%s|%s' \"$TT_EXEC_SEALED_SECRET\" \"$HOME\"";
+        let out = run_sealed(
+            "sh",
+            &["-c", script],
+            &dir,
+            &["HOME", "PATH"],
+            "hello",
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(out.stdout, format!("hello||{home}"));
+    }
 
     #[test]
     fn run_captures_stdout_and_exit_code() {
