@@ -5,8 +5,6 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { InputArea } from "@cloudflare/kumo";
 import {
-  acceptCompletion,
-  completionLead,
   highlightSegments,
   applyMention,
   insertMentionTrigger,
@@ -14,7 +12,6 @@ import {
   mentionQueryAt,
 } from "@/lib/goal-text";
 import type { IssueItem } from "@/lib/data";
-import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
 /** Kumo's textarea draws its edge as a ring, not a border, so the mirror needs
@@ -29,7 +26,6 @@ export function GoalEditor({
   issuesError,
   onNeedIssues,
   onPickIssue,
-  complete,
   hint,
   className,
   ...textareaProps
@@ -46,8 +42,6 @@ export function GoalEditor({
   /** A picked issue also gets attached to the task; the reference text is
    * inserted here. */
   onPickIssue: (issue: IssueItem) => void;
-  /** Text to append at the caret, best first; `before` is the goal up to it. */
-  complete: (before: string) => Promise<string[]>;
   hint?: ReactNode;
   className?: string;
 } & Omit<React.ComponentProps<"textarea">, "value" | "onChange" | "onKeyDown">) {
@@ -55,19 +49,9 @@ export function GoalEditor({
   const mirror = useRef<HTMLDivElement>(null);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [active, setActive] = useState(0);
-  // `before` pins a result to the text it was asked for, so a slow answer to
-  // an older keystroke is never shown against newer text.
-  const [comp, setComp] = useState<{ before: string; list: string[] }>({ before: "", list: [] });
-  // -1 until an arrow key: Enter in a goal is a newline unless you chose a row.
-  const [compActive, setCompActive] = useState(-1);
-  const asked = useRef(0);
 
   const matches = mention && issues ? matchIssues(issues, mention.query).slice(0, 8) : [];
   const open = mention !== null;
-  const caretAt = ref.current?.selectionStart ?? value.length;
-  const shown = !open && comp.before === value.slice(0, caretAt) ? comp.list : [];
-  // Ghost text needs the caret at the very end: the mirror can't open a gap mid-line.
-  const ghost = shown.length > 0 && caretAt === value.length ? shown[Math.max(compActive, 0)] : "";
 
   // Pin the mirror's scroll to the textarea's, or highlights lag once it scrolls.
   useLayoutEffect(() => {
@@ -91,33 +75,6 @@ export function GoalEditor({
     onPickIssue(issue);
     setMention(null);
     // A caret set synchronously is overwritten by the controlled re-render.
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(next.caret, next.caret);
-    });
-  }
-
-  function askCompletions(text: string, at: number) {
-    const id = ++asked.current;
-    setCompActive(-1);
-    const nextChar = text[at];
-    if (nextChar !== undefined && !/\s/.test(nextChar)) {
-      setComp({ before: "", list: [] });
-      return;
-    }
-    const before = text.slice(0, at);
-    void complete(before).then((list) => {
-      if (id === asked.current) setComp({ before, list });
-    });
-  }
-
-  function accept(suffix: string, how: "tab" | "list") {
-    const el = ref.current;
-    if (!el) return;
-    uiAction("task.goal_complete", "agentboard", how);
-    const next = acceptCompletion(value, el.selectionStart ?? value.length, suffix);
-    onChange(next.text);
-    askCompletions(next.text, next.caret);
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(next.caret, next.caret);
@@ -171,11 +128,7 @@ export function GoalEditor({
           ))}
           {/* A trailing newline collapses without this, so the mirror ends one
             line short of the textarea while typing at the end. */}
-          {ghost ? (
-            <span className="text-kumo-subtle/60">{ghost}</span>
-          ) : value.endsWith("\n") ? (
-            " "
-          ) : null}
+          {value.endsWith("\n") ? " " : null}
         </div>
         <InputArea
           {...textareaProps}
@@ -183,26 +136,19 @@ export function GoalEditor({
           value={value}
           // Transparent text, visible caret: the mirror underneath has the glyphs.
           className={cn(
-            "relative !bg-transparent !text-transparent caret-kumo-default",
+            "relative w-full !bg-transparent !text-transparent caret-kumo-default",
             SHARED_BOX,
             className,
           )}
           onChange={(e) => {
             onChange(e.target.value);
             syncMention(e.target);
-            askCompletions(e.target.value, e.target.selectionStart ?? e.target.value.length);
           }}
           onScroll={(e) => {
             if (mirror.current) mirror.current.scrollTop = e.currentTarget.scrollTop;
           }}
-          onClick={(e) => {
-            syncMention(e.currentTarget);
-            askCompletions(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
-          }}
-          onBlur={() => {
-            setMention(null);
-            setComp({ before: "", list: [] });
-          }}
+          onClick={(e) => syncMention(e.currentTarget)}
+          onBlur={() => setMention(null)}
           onKeyDown={(e) => {
             // The form must not see these: Enter would submit, Escape would cancel.
             if (open && matches.length > 0) {
@@ -222,34 +168,6 @@ export function GoalEditor({
                 return;
               }
             }
-            if (shown.length > 0) {
-              const current = shown[Math.max(compActive, 0)];
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setCompActive((a) => (a + 1) % shown.length);
-                return;
-              }
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setCompActive((a) => (a <= 0 ? shown.length : a) - 1);
-                return;
-              }
-              if (e.key === "Tab" || (e.key === "ArrowRight" && ghost)) {
-                e.preventDefault();
-                accept(current, "tab");
-                return;
-              }
-              if (e.key === "Enter" && compActive >= 0 && !e.metaKey && !e.ctrlKey) {
-                e.preventDefault();
-                accept(current, "list");
-                return;
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setComp({ before: "", list: [] });
-                return;
-              }
-            }
             if (open && e.key === "Escape") {
               e.preventDefault();
               setMention(null);
@@ -257,12 +175,7 @@ export function GoalEditor({
             }
             onKeyDown?.(e);
           }}
-          onKeyUp={(e) => {
-            syncMention(e.currentTarget);
-            if (e.key === "ArrowLeft" || e.key === "Home" || e.key === "End") {
-              askCompletions(e.currentTarget.value, e.currentTarget.selectionStart ?? 0);
-            }
-          }}
+          onKeyUp={(e) => syncMention(e.currentTarget)}
         />
         {open && (
           <div className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-kumo-hairline bg-kumo-overlay shadow-md">
@@ -297,35 +210,6 @@ export function GoalEditor({
             )}
           </div>
         )}
-        {shown.length > 0 && (
-          <div
-            role="listbox"
-            className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-kumo-hairline bg-kumo-overlay shadow-md"
-          >
-            {shown.map((suffix, i) => (
-              <button
-                key={suffix}
-                type="button"
-                role="option"
-                aria-selected={i === compActive}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  accept(suffix, "list");
-                }}
-                onMouseEnter={() => setCompActive(i)}
-                className={cn(
-                  "flex w-full truncate px-2 py-1 text-left text-xs",
-                  i === compActive && "bg-kumo-tint",
-                )}
-              >
-                <span className="whitespace-pre text-kumo-subtle">
-                  {completionLead(comp.before)}
-                </span>
-                <span className="font-semibold">{suffix}</span>
-              </button>
-            ))}
-          </div>
-        )}
       </div>
       {/* Persistent, because the placeholder that used to carry this vanishes
           on the first keystroke — which is exactly when someone is composing a
@@ -343,7 +227,7 @@ export function GoalEditor({
         >
           #
         </button>
-        <span>to link an issue · Tab completes</span>
+        <span>to link an issue</span>
         {hint ? <span className="text-kumo-subtle/70">· {hint}</span> : null}
       </p>
     </div>

@@ -418,7 +418,7 @@ export function InlineNewTask({
     };
   }, [issuesWanted, issueAssignedToMe, repo.dir]);
 
-  /** Attaches without touching the fields — the `#` autocomplete already wrote
+  /** Attaches without touching the fields — the `#` mention already wrote
    * what the user typed. Idempotent: `#12` twice attaches once. */
   function attachIssue(issue: IssueItem) {
     setSelectedIssues((prev) =>
@@ -641,11 +641,6 @@ export function InlineNewTask({
         issuesError={issuesError}
         onNeedIssues={() => setIssuesWanted(true)}
         onPickIssue={attachIssue}
-        complete={(before) =>
-          invoke<string[]>("task_goal_complete", { repoDir: repo.dir, before }).then((r) =>
-            r.unwrapOr([]),
-          )
-        }
         onPaste={(e) => {
           const items = Array.from(e.clipboardData?.items ?? []);
           const pastedImages = items.filter(
@@ -926,11 +921,11 @@ export function InlineNewTask({
           </div>
         </>
       )}
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Select
           aria-label="Model"
           size="sm"
-          className="min-w-0 flex-1 font-mono"
+          className="w-full font-mono"
           value={model}
           onValueChange={(v) => setModel(v as ModelChoice)}
           items={MODEL_OPTIONS}
@@ -938,7 +933,7 @@ export function InlineNewTask({
         <Select
           aria-label="Effort"
           size="sm"
-          className="min-w-0 flex-1 font-mono"
+          className="w-full font-mono"
           value={effort}
           onValueChange={(v) => setEffort(v as EffortChoice)}
           items={EFFORT_OPTIONS}
