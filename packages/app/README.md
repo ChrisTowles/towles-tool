@@ -96,6 +96,35 @@ guard.
   commands. Triggers on "tt commands", "daily notes", "meeting notes", or
   worktree management.
 
+## Mod: the app's band above the prompt
+
+`hooks/register.tsx` is a Claude Code mod (a function-hooks module, named under
+`modules` in `hooks/hooks.json`). It shows the app's view of the session inside
+Claude Code itself, as one row above the prompt:
+
+```
+✦ tt  #7 Claude mods (doing)  PR #42 open · checks passing  4m to Standup
+```
+
+- **Task.** This is the open board task whose worktree holds the session's cwd,
+  so a session in a `tt task` checkout sees its own card. If worktrees are
+  nested, the deepest match wins.
+- **PR.** The task's open PR, or else its latest, with check state.
+- **Next meeting.** Time until the next meeting, the only calendar fact the app
+  surfaces. It turns yellow inside 15 minutes, and a toast fires once per
+  meeting at 5 minutes.
+
+The data comes from this plugin's own MCP server (`task_list`,
+`calendar_next`) via `$.mcp.call`. It refreshes at session start, after every
+turn, and every 60s. App closed means MCP down, so the band hides instead of
+showing stale state. The `$.state` contract is `types/index.d.ts`, and the
+pure logic in `hooks/band.ts` is what `tests/` covers:
+
+```sh
+claude plugin validate packages/app
+claude plugin test packages/app
+```
+
 ## Hooks
 
 | Hook                            | Event                | Does…                                                                 |
