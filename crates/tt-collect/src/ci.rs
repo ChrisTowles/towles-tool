@@ -37,7 +37,7 @@ pub(crate) fn collect_repo_ci(dir: &Path) -> Result<(String, Vec<CiRun>), String
     ];
     match gh::run_json(dir, &args) {
         Ok(list) => {
-            let runs = latest_per_workflow(&list, &repo);
+            let runs = latest_per_workflow(&list, &repo, &branch);
             Ok((repo, runs))
         }
         Err(e) if no_actions(&e) => Ok((repo, Vec::new())),
@@ -56,7 +56,11 @@ fn no_actions(error: &str) -> bool {
 /// One [`CiRun`] per workflow name, keeping the most recently created run, sorted by
 /// workflow. Rows without a workflow name are skipped; a run still in flight has an
 /// empty `conclusion`.
-pub(crate) fn latest_per_workflow(list: &serde_json::Value, repo: &str) -> Vec<CiRun> {
+pub(crate) fn latest_per_workflow(
+    list: &serde_json::Value,
+    repo: &str,
+    branch: &str,
+) -> Vec<CiRun> {
     let Some(items) = list.as_array() else {
         return Vec::new();
     };
@@ -79,6 +83,7 @@ pub(crate) fn latest_per_workflow(list: &serde_json::Value, repo: &str) -> Vec<C
             url: str_field(item, "url"),
             head_sha: str_field(item, "headSha"),
             event: str_field(item, "event"),
+            branch: branch.to_string(),
         };
         match latest.get(&workflow) {
             Some(seen) if seen.created_ms >= run.created_ms => {}
@@ -122,7 +127,7 @@ mod tests {
             run("Nightly", "2026-10-02T06:00:00Z", "completed", Some("success")),
             run("CI", "2026-10-03T07:00:00Z", "in_progress", None),
         ]);
-        let runs = latest_per_workflow(&list, "o/r");
+        let runs = latest_per_workflow(&list, "o/r", "main");
         assert_eq!(runs.len(), 2);
         assert_eq!((runs[0].workflow.as_str(), runs[0].status.as_str()), ("CI", "in_progress"));
         assert_eq!(runs[0].conclusion, "", "an in-flight run has no conclusion yet");
@@ -138,10 +143,10 @@ mod tests {
     #[test]
     fn skips_rows_without_a_workflow_and_tolerates_a_non_array() {
         let list = json!([{ "status": "completed" }, run("CI", "2026-10-03T05:00:00Z", "completed", Some("SUCCESS"))]);
-        let runs = latest_per_workflow(&list, "o/r");
+        let runs = latest_per_workflow(&list, "o/r", "main");
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].conclusion, "success", "GitHub casing is normalized");
-        assert!(latest_per_workflow(&json!({ "message": "boom" }), "o/r").is_empty());
+        assert!(latest_per_workflow(&json!({ "message": "boom" }), "o/r", "main").is_empty());
     }
 
     #[test]

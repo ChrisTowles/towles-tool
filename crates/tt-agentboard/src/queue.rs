@@ -1,12 +1,13 @@
-//! The task queue: every open board task in one order, with what each is
-//! waiting on the user for. Pure — agent waits come from the PTY-first
-//! `needs_reason`, landed state from the rail's `ops::work_state`, PR facts
-//! from the collector cache; only rank and snoozes are the user's.
+//! The task queue: everything waiting on the user, in one order — every open
+//! board task, worktrees holding unlanded work, and the PRs and CI failures no
+//! task owns. Pure — agent waits come from the PTY-first `needs_reason`, landed
+//! state from the rail's `ops::work_state`, PR and CI facts from the collector
+//! cache; only rank and snoozes are the user's.
 
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
-use tt_store::{PrItem, TaskItem, TaskSnooze};
+use tt_store::{CiRun, PrItem, TaskItem, TaskSnooze};
 
 use crate::bridge::StatePayload;
 use crate::types::{FolderData, NeedsYouReason, SessionData};
@@ -20,6 +21,8 @@ pub enum WaitReason {
     Review,
     FixCi,
     AddressReview,
+    /// Someone asked for your review on a PR no task of yours owns.
+    ReviewPr,
     Land,
     Cleanup,
     Start,
@@ -38,6 +41,7 @@ impl WaitReason {
             Self::Review => "review",
             Self::FixCi => "fix_ci",
             Self::AddressReview => "address_review",
+            Self::ReviewPr => "review_pr",
             Self::Land => "land",
             Self::Cleanup => "cleanup",
             Self::Start => "start",
@@ -63,6 +67,8 @@ pub enum Lane {
 pub enum QueueKey {
     Task { id: i64 },
     Unfiled { folder_dir: String },
+    Pr { repo: String, number: i64 },
+    Ci { repo: String, branch: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +80,16 @@ pub struct QueuePr {
     pub state: String,
     pub checks: String,
     pub review_state: String,
+}
+
+/// One failing workflow run folded into an item.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueCi {
+    pub workflow: String,
+    pub url: String,
+    pub conclusion: String,
+    pub updated_ms: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +109,7 @@ pub struct QueueItem {
     pub said: Option<String>,
     pub running_agents: u32,
     pub pr: Option<QueuePr>,
+    pub ci: Vec<QueueCi>,
     pub rank: i64,
     pub since_ms: Option<i64>,
     pub snoozed_until_ms: Option<i64>,
@@ -110,6 +127,7 @@ pub struct QueueInputs<'a> {
     pub tasks: &'a [TaskItem],
     pub state: &'a StatePayload,
     pub prs: &'a [PrItem],
+    pub ci_runs: &'a [CiRun],
     pub snoozes: &'a [TaskSnooze],
     pub now_ms: i64,
 }
@@ -130,6 +148,7 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
 
     let mut items = Vec::new();
     let mut task_dirs = HashSet::new();
+    let failing = failing_ci(inputs.ci_runs);
     for task in inputs.tasks.iter().filter(|t| !t.closed && t.archived_at.is_none()) {
         let dir = task.worktree.as_ref().and_then(|w| w.dir.as_deref());
         if let Some(dir) = dir {
@@ -146,8 +165,10 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
             item.branch = task.worktree.as_ref().and_then(|w| w.branch.clone());
         }
         item.pr = task_pr(task, &item, inputs.prs);
+        item.ci = branch_ci(&item, &failing);
         let mut reasons = agent_reasons(folder.map(|f| f.2), &mut item);
         reasons.extend(pr_reasons(item.pr.as_ref()));
+        reasons.extend(ci_reasons(&item.ci));
         if folder.is_some_and(|f| holds_landed_work(f.2, item.pr.as_ref())) {
             reasons.push((WaitReason::Cleanup, None));
         }
@@ -166,22 +187,58 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
     }
 
     for (dir, folder) in &folders {
-        if task_dirs.contains(dir)
-            || !folder.2.sessions.iter().any(|s| s.live && s.agent_state.is_some())
-        {
+        let has_agent = folder.2.sessions.iter().any(|s| s.live && s.agent_state.is_some());
+        let unlanded = holds_unlanded_work(folder.2);
+        if task_dirs.contains(dir) || !(has_agent || unlanded) {
             continue;
         }
         let mut item =
             base_item(QueueKey::Unfiled { folder_dir: dir.to_string() }, i64::MAX, Some(*folder));
-        let reasons = agent_reasons(Some(folder.2), &mut item);
+        // A main checkout owns no branch's PR or CI; those stay rows of their own.
+        if folder.2.is_worktree {
+            item.pr = branch_pr(&item, inputs.prs);
+            item.ci = branch_ci(&item, &failing);
+        }
+        let mut reasons = agent_reasons(Some(folder.2), &mut item);
+        reasons.extend(pr_reasons(item.pr.as_ref()));
+        reasons.extend(ci_reasons(&item.ci));
         settle(&mut item, reasons);
-        if !matches!(item.lane, Lane::OnYou | Lane::Running) {
+        if item.lane == Lane::Backlog && unlanded {
+            item.lane = Lane::Parked;
+        }
+        if item.lane == Lane::Backlog {
             continue;
         }
         item.said = said_for(folder.2, item.session_id.as_deref());
         item.title = item.said.clone().unwrap_or_else(|| folder.2.name.clone());
         items.push(item);
     }
+
+    let owned_prs: HashSet<(String, i64)> = items
+        .iter()
+        .filter_map(|i| i.pr.as_ref())
+        .map(|p| (p.repo.to_ascii_lowercase(), p.number))
+        .collect();
+    items.extend(inputs.prs.iter().filter_map(|pr| {
+        let owned = owned_prs.contains(&(pr.repo.to_ascii_lowercase(), pr.number));
+        (!owned).then(|| pr_item(pr)).flatten()
+    }));
+
+    let owned_ci: HashSet<(String, String)> = items
+        .iter()
+        .filter(|i| !i.ci.is_empty())
+        .filter_map(|i| Some((i.repo.to_ascii_lowercase(), i.branch.clone()?)))
+        .collect();
+    let mut unowned: Vec<(&str, &str)> = failing
+        .iter()
+        .map(|r| (r.repo.as_str(), r.branch.as_str()))
+        .filter(|(repo, branch)| {
+            !owned_ci.contains(&(repo.to_ascii_lowercase(), branch.to_string()))
+        })
+        .collect();
+    unowned.sort_unstable();
+    unowned.dedup();
+    items.extend(unowned.into_iter().map(|(repo, branch)| ci_item(repo, branch, &failing)));
 
     promote_start(&mut items, &snoozes, inputs.now_ms);
     items.sort_by(|a, b| {
@@ -208,6 +265,8 @@ fn key_str(key: &QueueKey) -> String {
     match key {
         QueueKey::Task { id } => format!("task:{id:020}"),
         QueueKey::Unfiled { folder_dir } => format!("unfiled:{folder_dir}"),
+        QueueKey::Pr { repo, number } => format!("pr:{repo}#{number:020}"),
+        QueueKey::Ci { repo, branch } => format!("ci:{repo}@{branch}"),
     }
 }
 
@@ -237,6 +296,7 @@ fn base_item(
         said: None,
         running_agents: 0,
         pr: None,
+        ci: Vec::new(),
         rank,
         since_ms: None,
         snoozed_until_ms: None,
@@ -282,20 +342,110 @@ fn task_pr(task: &TaskItem, item: &QueueItem, prs: &[PrItem]) -> Option<QueuePr>
     let linked = task.prs.iter().rev().find_map(|link| {
         prs.iter().find(|p| p.number == link.number && p.repo.eq_ignore_ascii_case(&link.repo))
     });
-    let by_branch = || {
-        let branch = item.branch.as_deref()?;
-        prs.iter().find(|p| {
+    linked.map(queue_pr).or_else(|| branch_pr(item, prs))
+}
+
+fn branch_pr(item: &QueueItem, prs: &[PrItem]) -> Option<QueuePr> {
+    let branch = item.branch.as_deref()?;
+    prs.iter()
+        .find(|p| {
             p.state == "open" && p.branch == branch && p.repo.eq_ignore_ascii_case(&item.repo)
         })
-    };
-    linked.or_else(by_branch).map(|p| QueuePr {
+        .map(queue_pr)
+}
+
+fn queue_pr(p: &PrItem) -> QueuePr {
+    QueuePr {
         repo: p.repo.clone(),
         number: p.number,
         url: p.url.clone(),
         state: p.state.clone(),
         checks: p.checks.clone(),
         review_state: p.review_state.clone(),
-    })
+    }
+}
+
+/// An open, undismissed PR no task owns, if it wants you: red checks or a
+/// review asked of you — the client's `prNeedsYou`.
+fn pr_item(pr: &PrItem) -> Option<QueueItem> {
+    let dismissed = pr.dismissed_ts > 0 && pr.dismissed_ts >= pr.updated_ts;
+    if pr.state != "open" || dismissed {
+        return None;
+    }
+    let mut reasons = Vec::new();
+    if pr.checks == "failing" {
+        reasons.push((WaitReason::FixCi, None));
+    }
+    if pr.review_state == "review_requested" {
+        reasons.push((WaitReason::ReviewPr, None));
+    }
+    if reasons.is_empty() {
+        return None;
+    }
+    let mut item =
+        base_item(QueueKey::Pr { repo: pr.repo.clone(), number: pr.number }, i64::MAX, None);
+    item.title = pr.title.clone();
+    item.repo = pr.repo.clone();
+    item.branch = Some(pr.branch.clone()).filter(|b| !b.is_empty());
+    item.pr = Some(queue_pr(pr));
+    item.since_ms = Some(pr.updated_ts).filter(|t| *t > 0);
+    settle(&mut item, reasons);
+    Some(item)
+}
+
+/// A finished run that broke: the client's `ciTone` "failed".
+fn failing_ci(runs: &[CiRun]) -> Vec<&CiRun> {
+    runs.iter()
+        .filter(|r| {
+            r.status == "completed"
+                && matches!(r.conclusion.as_str(), "failure" | "timed_out" | "startup_failure")
+        })
+        .collect()
+}
+
+/// The failing runs on the item's own branch of its repo.
+fn branch_ci(item: &QueueItem, failing: &[&CiRun]) -> Vec<QueueCi> {
+    let Some(branch) = item.branch.as_deref().filter(|b| !b.is_empty()) else {
+        return Vec::new();
+    };
+    failing
+        .iter()
+        .filter(|r| r.branch == branch && r.repo.eq_ignore_ascii_case(&item.repo))
+        .map(|r| queue_ci(r))
+        .collect()
+}
+
+fn queue_ci(r: &CiRun) -> QueueCi {
+    QueueCi {
+        workflow: r.workflow.clone(),
+        url: r.url.clone(),
+        conclusion: r.conclusion.clone(),
+        updated_ms: r.updated_ms,
+    }
+}
+
+fn ci_reasons(ci: &[QueueCi]) -> Vec<(WaitReason, Option<(i64, String)>)> {
+    if ci.is_empty() { Vec::new() } else { vec![(WaitReason::FixCi, None)] }
+}
+
+/// One row per red branch no task owns, its failing workflows folded in.
+fn ci_item(repo: &str, branch: &str, failing: &[&CiRun]) -> QueueItem {
+    let key = QueueKey::Ci { repo: repo.to_string(), branch: branch.to_string() };
+    let mut item = base_item(key, i64::MAX, None);
+    item.repo = repo.to_string();
+    item.branch = Some(branch.to_string()).filter(|b| !b.is_empty());
+    item.ci = failing
+        .iter()
+        .filter(|r| r.repo == repo && r.branch == branch)
+        .map(|r| queue_ci(r))
+        .collect();
+    item.ci.sort_by(|a, b| a.workflow.cmp(&b.workflow));
+    let workflows: Vec<&str> = item.ci.iter().map(|c| c.workflow.as_str()).collect();
+    let on = if branch.is_empty() { "the default branch" } else { branch };
+    item.title = format!("CI failing on {on} — {}", workflows.join(", "));
+    item.since_ms = item.ci.iter().map(|c| c.updated_ms).filter(|t| *t > 0).min();
+    settle(&mut item, vec![(WaitReason::FixCi, None)]);
+    item
 }
 
 fn pr_reasons(pr: Option<&QueuePr>) -> Vec<(WaitReason, Option<(i64, String)>)> {
@@ -314,6 +464,14 @@ fn pr_reasons(pr: Option<&QueuePr>) -> Vec<(WaitReason, Option<(i64, String)>)> 
         out.push((WaitReason::Land, None));
     }
     out
+}
+
+/// A worktree whose commits or edits haven't landed — work that would be lost.
+fn holds_unlanded_work(folder: &FolderData) -> bool {
+    folder.is_worktree
+        && !folder.dir_missing
+        && folder.landed.is_none()
+        && (folder.dirty || folder.commits_unlanded > 0)
 }
 
 /// Landed by git or by a merged PR, and nothing in the folder would be lost.
@@ -478,10 +636,21 @@ mod tests {
     }
 
     fn run(s: &Store, st: &StatePayload, prs: &[PrItem], now_ms: i64) -> TaskQueue {
+        run_ci(s, st, prs, &[], now_ms)
+    }
+
+    fn run_ci(
+        s: &Store,
+        st: &StatePayload,
+        prs: &[PrItem],
+        ci_runs: &[CiRun],
+        now_ms: i64,
+    ) -> TaskQueue {
         build(QueueInputs {
             tasks: &s.open_tasks().unwrap(),
             state: st,
             prs,
+            ci_runs,
             snoozes: &s.task_snoozes().unwrap(),
             now_ms,
         })
@@ -697,6 +866,118 @@ mod tests {
         assert_eq!(run(&s, &st, &[], 0).next, Some(QueueKey::Task { id: ids[1] }));
     }
 
+    fn ci(workflow: &str, branch: &str, conclusion: &str) -> CiRun {
+        CiRun {
+            repo: "o/repo".to_string(),
+            workflow: workflow.to_string(),
+            status: "completed".to_string(),
+            conclusion: conclusion.to_string(),
+            created_ms: 1,
+            updated_ms: 10,
+            url: format!("u/{workflow}"),
+            head_sha: "abc".to_string(),
+            event: "push".to_string(),
+            branch: branch.to_string(),
+        }
+    }
+
+    #[test]
+    fn prs_needing_you_are_rows_unless_a_task_owns_them() {
+        let (s, _) = store(&["a"]);
+        let mut owned = pr("feat/a", "open", "failing", "");
+        owned.number = 1;
+        let mut red = pr("other", "open", "failing", "");
+        red.number = 2;
+        red.title = "red pr".to_string();
+        let mut asked = pr("theirs", "open", "passing", "review_requested");
+        asked.number = 3;
+        asked.title = "asked".to_string();
+        let mut dismissed = pr("gone", "open", "failing", "");
+        dismissed.number = 4;
+        dismissed.dismissed_ts = 5;
+        let mut quiet = pr("quiet", "open", "passing", "");
+        quiet.number = 5;
+        let mut merged = pr("done", "merged", "failing", "");
+        merged.number = 6;
+        let q = run(&s, &state(vec![]), &[owned, red, asked, dismissed, quiet, merged], 0);
+        use Lane::*;
+        use WaitReason::*;
+        assert_eq!(
+            summary(&q),
+            [
+                row("a", OnYou, Some(FixCi)),
+                row("red pr", OnYou, Some(FixCi)),
+                row("asked", OnYou, Some(ReviewPr))
+            ]
+        );
+        assert_eq!(q.items[1].key, QueueKey::Pr { repo: "o/repo".to_string(), number: 2 });
+        assert_eq!(q.items[1].branch.as_deref(), Some("other"));
+    }
+
+    #[test]
+    fn failing_ci_folds_into_the_task_on_its_branch_else_one_row_per_branch() {
+        let (s, _) = store(&["a"]);
+        let runs = [
+            ci("CI", "feat/a", "failure"),
+            ci("Nightly", "main", "failure"),
+            ci("Lint", "main", "timed_out"),
+            ci("Deploy", "main", "success"),
+            ci("Docs", "main", "cancelled"),
+        ];
+        let q = run_ci(&s, &state(vec![]), &[], &runs, 0);
+        use Lane::*;
+        use WaitReason::*;
+        assert_eq!(
+            summary(&q),
+            [
+                row("a", OnYou, Some(FixCi)),
+                row("CI failing on main — Lint, Nightly", OnYou, Some(FixCi))
+            ]
+        );
+        assert_eq!(q.items[0].ci.len(), 1, "the task carries its own branch's run");
+        let main = &q.items[1];
+        assert_eq!(
+            main.key,
+            QueueKey::Ci { repo: "o/repo".to_string(), branch: "main".to_string() }
+        );
+        assert_eq!(
+            main.ci.iter().map(|c| c.url.as_str()).collect::<Vec<_>>(),
+            ["u/Lint", "u/Nightly"]
+        );
+        assert_eq!(main.since_ms, Some(10));
+    }
+
+    #[test]
+    fn unfiled_worktrees_holding_unlanded_work_are_parked() {
+        let (s, _) = store(&[]);
+        let mut ahead = folder("/ahead", vec![]);
+        ahead.commits_unlanded = 2;
+        let mut dirty = folder("/dirty", vec![]);
+        dirty.dirty = true;
+        let mut landed = folder("/landed", vec![]);
+        landed.landed = Some("merged".to_string());
+        landed.commits_unlanded = 2;
+        let mut main = folder("/main", vec![]);
+        main.is_worktree = false;
+        main.dirty = true;
+        let clean = folder("/clean", vec![]);
+        let mut red = folder("/red", vec![]);
+        red.commits_unlanded = 1;
+        let runs = [ci("CI", "feat/red", "failure")];
+        let q = run_ci(&s, &state(vec![ahead, dirty, landed, main, clean, red]), &[], &runs, 0);
+        let mut got: Vec<(String, Lane, Option<WaitReason>)> = summary(&q);
+        got.sort();
+        use Lane::*;
+        assert_eq!(
+            got,
+            [
+                row("/ahead", Parked, None),
+                row("/dirty", Parked, None),
+                row("/red", OnYou, Some(WaitReason::FixCi))
+            ]
+        );
+    }
+
     #[test]
     fn keys_serialize_tagged_camel_case() {
         let key = QueueKey::Unfiled { folder_dir: "/x".to_string() };
@@ -705,5 +986,13 @@ mod tests {
             serde_json::json!({"kind": "unfiled", "folderDir": "/x"})
         );
         assert_eq!(serde_json::to_value(WaitReason::FixCi).unwrap(), serde_json::json!("fix_ci"));
+        assert_eq!(
+            serde_json::to_value(QueueKey::Ci {
+                repo: "o/r".to_string(),
+                branch: "main".to_string()
+            })
+            .unwrap(),
+            serde_json::json!({"kind": "ci", "repo": "o/r", "branch": "main"})
+        );
     }
 }

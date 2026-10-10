@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   cycleQueue,
+  itemUrl,
+  keyId,
   nextItem,
   primaryAction,
   rankMove,
@@ -24,6 +26,7 @@ function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
     said: null,
     runningAgents: 0,
     pr: null,
+    ci: [],
     rank: id * 1024,
     sinceMs: null,
     snoozedUntilMs: null,
@@ -57,6 +60,31 @@ describe("primaryAction", () => {
     expect(primaryAction(item(1, { sessionId: null, folderDir: null, reason: "start" }))).toBe(
       "start",
     );
+  });
+});
+
+describe("PR and CI rows", () => {
+  const pr = item(9, {
+    key: { kind: "pr", repo: "o/r", number: 7 },
+    folderDir: null,
+    sessionId: null,
+    reason: "review_pr",
+    pr: { repo: "o/r", number: 7, url: "pr-url", state: "open", checks: "", reviewState: "" },
+  });
+  const ci = item(10, {
+    key: { kind: "ci", repo: "o/r", branch: "main" },
+    folderDir: null,
+    sessionId: null,
+    reason: "fix_ci",
+    ci: [{ workflow: "Nightly", url: "run-url", conclusion: "failure", updatedMs: 1 }],
+  });
+  it("open on GitHub and key distinctly", () => {
+    expect(primaryAction(pr)).toBe("open-link");
+    expect(itemUrl(pr)).toBe("pr-url");
+    expect(itemUrl(ci)).toBe("run-url");
+    expect(keyId(pr.key)).toBe("pr:o/r#7");
+    expect(keyId(ci.key)).toBe("ci:o/r@main");
+    expect(TaskQueueSchema.parse(queue([pr, ci])).items).toHaveLength(2);
   });
 });
 

@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 22;
+pub(crate) const SCHEMA_VERSION: i64 = 23;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::check_version_floor`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -290,6 +290,7 @@ impl Store {
         self.conn.execute_batch(SCHEMA_CI_RUNS_V20)?;
         self.conn.execute_batch(SCHEMA_AGENTS_V21)?;
         self.conn.execute_batch(SCHEMA_TASK_SNOOZES_V22)?;
+        self.migrate_ci_runs_branch_v23()?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -457,6 +458,21 @@ impl Store {
             gap = crate::model::RANK_GAP
         ))?;
         tx.commit()?;
+        Ok(())
+    }
+
+    /// v23: the branch a CI run ran on, so the queue can fold a run into the task
+    /// that owns that branch. Rows from before read as `''` until the next sweep.
+    fn migrate_ci_runs_branch_v23(&self) -> Result<()> {
+        let has_branch: bool = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('ci_runs') WHERE name = 'branch'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if !has_branch {
+            self.conn
+                .execute_batch("ALTER TABLE ci_runs ADD COLUMN branch TEXT NOT NULL DEFAULT '';")?;
+        }
         Ok(())
     }
 }

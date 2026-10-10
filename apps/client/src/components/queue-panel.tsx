@@ -12,9 +12,11 @@ import {
 import { Empty, Panel } from "@/components/store-bits";
 import { requestAgentboardNav } from "@/lib/agentboard";
 import { fmtAge } from "@/lib/data";
+import { openExternalUrl } from "@/lib/open-url";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import {
   keyId,
+  itemUrl,
   nextItem,
   primaryAction,
   rankMove,
@@ -39,6 +41,7 @@ const HERO_KICKER: Record<WaitReason, string> = {
   review: "Next up · an agent finished — review it",
   fix_ci: "Next up · CI is failing",
   address_review: "Next up · changes requested",
+  review_pr: "Next up · your review is requested",
   land: "Next up · ready to land",
   cleanup: "Next up · landed — clean it up",
   start: "Nothing waiting on you — start next",
@@ -69,6 +72,11 @@ export function openQueueItem(
   const action = primaryAction(item);
   if (action === "start") {
     void startQueueItem(item, screen);
+    return;
+  }
+  if (action === "open-link") {
+    const url = itemUrl(item);
+    if (url) void openExternalUrl(url);
     return;
   }
   const folderDir = item.folderDir ?? "";
@@ -292,7 +300,9 @@ function Hero({
   onSnooze: (preset: SnoozePreset) => void;
 }) {
   const reason = item.reason ?? "start";
-  const verb = primaryAction(item) === "start" ? "Start agent" : "Open";
+  const action = primaryAction(item);
+  const verb =
+    action === "start" ? "Start agent" : action === "open-link" ? "Open on GitHub" : "Open";
   return (
     <motion.div
       key={keyId(item.key)}
@@ -393,6 +403,7 @@ function QueueRow({
     item.key.kind === "unfiled" ? "not a task" : null,
     item.branch,
     item.pr ? `PR #${item.pr.number}` : null,
+    item.ci.length > 0 ? item.ci.map((c) => c.workflow).join(", ") : null,
     item.runningAgents > 0
       ? `${item.runningAgents} agent${item.runningAgents === 1 ? "" : "s"} working`
       : null,
