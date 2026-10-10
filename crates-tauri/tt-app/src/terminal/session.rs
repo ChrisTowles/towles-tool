@@ -261,6 +261,15 @@ impl TermState {
         dirs
     }
 
+    /// Each live PTY's last user-input stamp: what answers a `summon`.
+    pub fn input_stamps(&self) -> HashMap<String, Option<i64>> {
+        let guard = self.sessions.lock().unwrap();
+        guard
+            .iter()
+            .map(|(id, s)| (id.clone(), PtyActivity::read(&s.activity.input_at_ms)))
+            .collect()
+    }
+
     pub fn live_ids(&self) -> HashSet<String> {
         self.sessions.lock().unwrap().keys().cloned().collect()
     }

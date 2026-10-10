@@ -374,6 +374,10 @@ struct AppAttentionHost {
 }
 
 impl tt_mcp::AttentionHost for AppAttentionHost {
+    fn summon(&self, request: tt_mcp::SummonRequest) -> Result<(), String> {
+        crate::summon::start(&self.app, request)
+    }
+
     fn needs_you(&self) -> Vec<tt_mcp::WaitingSession> {
         let payload = crate::agentboard::stamped_payload(&self.app);
         let mut waiting = Vec::new();

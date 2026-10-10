@@ -43,6 +43,8 @@ tools without manual `claude mcp add` setup:
 - **Attention** — `needs_you`. The app's other sessions waiting on the user
   (a question, an error, a finished turn not yet looked at), oldest first,
   with the caller's own terminal left out. The same state the rail badges.
+  And `summon`, the other direction: chime until the user types into your
+  terminal, for when you need them to do something only they can.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.
