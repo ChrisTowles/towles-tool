@@ -71,9 +71,14 @@ each plugin lives in `packages/<name>/` with its own manifest. Two ship today.
 **`towles-tool-app`** (`packages/app`) bridges Claude Code to the desktop app
 itself: the MCP server via a static checked-in `.mcp.json`, the `towles-tool` and
 `task-onboarding` skills, and a `PostToolUse` hook that nudges a running instance
-to refresh PR or issue data after a `gh pr`/`gh issue` mutation. It is meant to
-be enabled globally, so its hook fails open outside a relevant session — don't
-drop that guard.
+to refresh PR or issue data after a `gh pr`/`gh issue` mutation, plus a Claude
+Code **mod** (`hooks/register.tsx`, listed under `modules` in the same
+`hooks.json`): a band above the prompt showing the session's board task, its PR
+and the time until the next meeting, read from the app's MCP server. It is
+meant to be enabled globally, so its hook fails open and its band hides outside
+a relevant session. Don't drop either guard. App state that should show
+*inside* Claude Code goes in that mod, read over the MCP tools, never through
+a second channel.
 
 A new hook, skill or MCP entry belongs in a plugin package, not loose in
 `.claude/`, which is for hooks scoped to *this repo's* sessions. Any commit
