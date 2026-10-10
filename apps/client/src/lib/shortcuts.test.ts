@@ -25,20 +25,19 @@ function key(overrides: Partial<KeyboardEvent>): KeyboardEvent {
 describe("rail chords", () => {
   it("matches Alt+Shift+arrow and nothing looser", () => {
     const up = key({ altKey: true, shiftKey: true, key: "ArrowUp" });
-    expect(matchesShortcut("ab-collapse-all", up)).toBe(true);
-    expect(matchesShortcut("ab-expand-all", up)).toBe(false);
-    // A shift-less spec is lenient about shift; a shift-bearing one must not be,
-    // or bare Alt+arrow (word-wise motion in the shell) would fold the rail.
-    expect(matchesShortcut("ab-collapse-all", key({ altKey: true, key: "ArrowUp" }))).toBe(false);
+    expect(matchesShortcut("queue-rank-top", up)).toBe(true);
+    expect(matchesShortcut("queue-rank-down", up)).toBe(false);
+    // A shift-less spec is lenient about shift; a shift-bearing one must not be.
+    expect(matchesShortcut("queue-rank-top", key({ altKey: true, key: "ArrowUp" }))).toBe(false);
     expect(
       matchesShortcut(
-        "ab-collapse-all",
+        "queue-rank-top",
         key({ ctrlKey: true, altKey: true, shiftKey: true, key: "ArrowUp" }),
       ),
     ).toBe(false);
   });
 
-  it("keeps the tree walk on mod+shift, clear of the fold-everything chord", () => {
+  it("keeps the rail walk on mod+shift, clear of the rank chords", () => {
     const left = key({ ctrlKey: true, shiftKey: true, key: "ArrowLeft" });
     expect(matchesShortcut("ab-focus-left", left)).toBe(true);
     expect(
@@ -47,10 +46,14 @@ describe("rail chords", () => {
   });
 
   it("labels the arrows as glyphs, and yields the chord from a terminal", () => {
-    expect(shortcutHint("ab-collapse-all")).toBe("Shift+Alt+↑");
+    expect(shortcutHint("queue-rank-top")).toBe("Shift+Alt+↑");
     expect(shortcutHint("ab-focus-left")).toBe("Ctrl+Shift+←");
-    expect(matchesEditableOverride(key({ altKey: true, shiftKey: true, key: "ArrowDown" }))).toBe(
+    expect(matchesEditableOverride(key({ ctrlKey: true, shiftKey: true, key: "ArrowDown" }))).toBe(
       true,
+    );
+    // Reranking is never taken from a shell, where Alt+arrows are word motion.
+    expect(matchesEditableOverride(key({ altKey: true, shiftKey: true, key: "ArrowDown" }))).toBe(
+      false,
     );
   });
 });
@@ -134,7 +137,7 @@ describe("board shortcuts", () => {
 describe("rail session jumps", () => {
   it("registers a jump binding for each digit 1–9, collapsed to one help entry", () => {
     for (let n = 1; n <= 9; n++) {
-      expect(SHORTCUTS[`ab-jump-session-${n}`].scope).toBe("agentboard");
+      expect(SHORTCUTS[`ab-jump-session-${n}`].scope).toBe("cockpit");
       expect(SHORTCUTS[`ab-jump-session-${n}`].hideInHelp).toBe(n > 1);
     }
   });
@@ -227,17 +230,16 @@ describe("editable-target override", () => {
 
 describe("tabShortcutId", () => {
   it("maps an open tab to its digit, in tab order", () => {
-    expect(tabShortcutId(["agentboard", "cockpit", "board"], "agentboard")).toBe("tab-1");
-    expect(tabShortcutId(["agentboard", "cockpit", "board"], "board")).toBe("tab-3");
+    expect(tabShortcutId(["cockpit", "slack", "board"], "cockpit")).toBe("tab-1");
+    expect(tabShortcutId(["cockpit", "slack", "board"], "board")).toBe("tab-3");
   });
 
   it("has no key for a screen that is not open — the digits address tabs", () => {
-    expect(tabShortcutId(["agentboard"], "telemetry")).toBeNull();
+    expect(tabShortcutId(["cockpit"], "telemetry")).toBeNull();
   });
 
   it("stops at nine, because the bindings do", () => {
     const nine = [
-      "agentboard",
       "cockpit",
       "board",
       "slack",
@@ -246,13 +248,14 @@ describe("tabShortcutId", () => {
       "mcp",
       "telemetry",
       "task-explorer",
+      "settings",
     ] as const;
-    expect(tabShortcutId([...nine], "task-explorer")).toBe("tab-9");
-    expect(tabShortcutId([...nine, "settings"], "settings")).toBeNull();
+    expect(tabShortcutId([...nine], "settings")).toBe("tab-9");
+    expect(tabShortcutId([...nine.slice(0, 8), "board", "settings"], "settings")).toBeNull();
   });
 
   it("every id it returns is a real binding", () => {
-    const tabs = ["agentboard", "cockpit", "board"] as const;
+    const tabs = ["cockpit", "slack", "board"] as const;
     for (const id of tabs) {
       const shortcut = tabShortcutId([...tabs], id);
       expect(shortcut && SHORTCUTS[shortcut]).toBeDefined();

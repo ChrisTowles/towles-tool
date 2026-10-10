@@ -147,7 +147,7 @@ describe("buildAttentionFeed", () => {
       EMPTY_SNAPSHOT,
       agents([repo({ key: "octo/gizmos", needs: 1 })]),
     );
-    expect(feed[0].target).toEqual({ screen: "agentboard", kind: "repo", id: "octo/gizmos" });
+    expect(feed[0].target).toEqual({ screen: "cockpit", kind: "repo", id: "octo/gizmos" });
     expect(feed[0].subtitle).toBe("1 session waiting");
   });
 });

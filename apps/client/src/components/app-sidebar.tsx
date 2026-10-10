@@ -44,7 +44,7 @@ export function AppSidebar() {
             {section.screens.map((id) => {
               const screen = SCREENS[id];
               const active = activeTab === id;
-              const showBadge = id === "agentboard" && rollup.total > 0;
+              const showBadge = id === "cockpit" && rollup.total > 0;
               const showSlackDot = id === "slack" && slackUnread;
               // `mod+1…9` address open tabs by position, so the digit exists
               // only once this screen *is* one — and it is the row's last
@@ -124,7 +124,7 @@ export function AppSidebarIcons() {
             {section.screens.map((id) => {
               const screen = SCREENS[id];
               const active = activeTab === id;
-              const showBadge = id === "agentboard" && rollup.total > 0;
+              const showBadge = id === "cockpit" && rollup.total > 0;
               const showSlackDot = id === "slack" && slackUnread;
               const tabId = tabShortcutId(openTabs, id);
               return (

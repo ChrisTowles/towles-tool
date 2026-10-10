@@ -38,7 +38,7 @@ through `tt task` gave every background agent a marker, ports, an `.env` and a
 rail folder nobody asked for. A task is created deliberately: `tt task new`, or
 the app's `+`.
 
-The Agentboard rail shows the whole fleet automatically (worktrees of any
+Cockpit's Checkouts drawer shows the whole fleet automatically (worktrees of any
 tracked checkout are discovered per poll), and the `+` button on the repo
 header opens the same creation flow as a modal: goal → branch → base, then
 Claude starts on the goal in the new task's terminal. Its **Review PR** mode

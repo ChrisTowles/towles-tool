@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { FocusTargetStore, type FocusTarget } from "./focus-target";
 
 const prTarget: FocusTarget = { screen: "cockpit", kind: "pr", id: "octo/widgets#43" };
-const repoTarget: FocusTarget = { screen: "agentboard", kind: "repo", id: "octo/widgets" };
+const todoTarget: FocusTarget = { screen: "board", kind: "todo", id: "7" };
 
 describe("FocusTargetStore", () => {
   it("starts empty", () => {
@@ -26,11 +26,11 @@ describe("FocusTargetStore", () => {
 
   it("consume leaves a target for another screen untouched", () => {
     const store = new FocusTargetStore();
-    store.set(repoTarget);
+    store.set(todoTarget);
     expect(store.consume("cockpit")).toBeNull();
-    expect(store.get()).toEqual(repoTarget);
+    expect(store.get()).toEqual(todoTarget);
     // The real destination still gets it.
-    expect(store.consume("agentboard")).toEqual(repoTarget);
+    expect(store.consume("board")).toEqual(todoTarget);
   });
 
   it("clear drops a pending target", () => {
@@ -48,7 +48,7 @@ describe("FocusTargetStore", () => {
     store.set(prTarget); // 1
     store.consume("cockpit"); // 2 (matches → clears)
     store.clear(); // no-op: already empty
-    store.set(repoTarget); // 3
+    store.set(todoTarget); // 3
     store.consume("cockpit"); // no-op: screen mismatch
     expect(fn).toHaveBeenCalledTimes(3);
 

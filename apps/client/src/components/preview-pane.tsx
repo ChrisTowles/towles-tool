@@ -40,7 +40,7 @@ export function PreviewPane({
 }: {
   /** Undefined when the checkout left the rail. */
   folder: FolderData | undefined;
-  /** See the focus-ring rule in `screens/agentboard.tsx`'s `focusedPaneId`. */
+  /** See the focus-ring rule in `screens/cockpit.tsx`'s `focusedPaneId`. */
   focused: boolean;
   /** `nonce` changes per `preview_file` call, so a rewrite re-reads. */
   file?: PreviewRequest;
@@ -152,7 +152,7 @@ export function PreviewPane({
     setUrl(withScheme);
     setInput(withScheme);
     setFrameKey((k) => k + 1);
-    uiAction("preview.navigate", "agentboard", source);
+    uiAction("preview.navigate", "cockpit", source);
   }
 
   const onFile = showing === "file" && file != null;
@@ -194,7 +194,7 @@ export function PreviewPane({
                     return;
                   }
                   setTyped(next);
-                  uiAction("preview.file.open_typed", "agentboard");
+                  uiAction("preview.file.open_typed", "cockpit");
                 }}
                 placeholder="/absolute/path/to/file.md"
                 title="show another file — absolute path, Enter to open"
@@ -209,7 +209,7 @@ export function PreviewPane({
                   className="ml-auto shrink-0"
                   onClick={() => {
                     setShowing("server");
-                    uiAction("preview.file.dismiss", "agentboard");
+                    uiAction("preview.file.dismiss", "cockpit");
                   }}
                 >
                   Dev server
@@ -268,7 +268,7 @@ export function PreviewPane({
               onClick={() => {
                 if (onFile) void reloadFile();
                 else setFrameKey((k) => k + 1);
-                uiAction("preview.reload", "agentboard", onFile ? "file" : "server");
+                uiAction("preview.reload", "cockpit", onFile ? "file" : "server");
               }}
             >
               <ArrowClockwiseIcon className="size-3" />
@@ -278,7 +278,7 @@ export function PreviewPane({
               disabled={!hasSurface}
               className="hover:text-sky-500"
               onClick={() => {
-                uiAction("preview.open_external", "agentboard");
+                uiAction("preview.open_external", "cockpit");
                 void openExternalUrl(onFile ? fileUrl(sourceLabel) : url);
               }}
             >
@@ -289,7 +289,7 @@ export function PreviewPane({
               shortcut={focused ? "ab-close-pane" : undefined}
               className="hover:text-sky-500"
               onClick={() => {
-                if (!focused) uiAction("preview.close", "agentboard");
+                if (!focused) uiAction("preview.close", "cockpit");
                 onClose();
               }}
             >

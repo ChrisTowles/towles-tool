@@ -104,9 +104,12 @@ the CLI and the app can consume it.
   free. Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
-  And **the task queue** (`queue::build`), the one answer to "what's next":
+  And **the task queue** (`queue::build`), the one list of what needs you:
   every open task's lane and wait reason, derived per emit from `needs_reason`,
-  the PR cache and the rail's landed state, ordered by the user's global `rank`.
+  the PR and CI caches and the rail's landed state (`ops::work_state`), ordered
+  by the user's global `rank`. PRs that want you, failing CI runs and worktrees
+  holding unlanded work join it as rows of their own, each deduped against the
+  task that owns its branch.
 - `tt-claude-code` — transcript/session parsing models.
 - `tt-doctor` — doctor checks logic (the app screen consumes it).
 - `tt-update` — checks GitHub Releases for a newer version. Uses `native-tls`,
@@ -139,9 +142,14 @@ no git repository, checked in the CLI because the pane browses a checkout.
 
 React 19 + Vite + Tailwind v4 + Kumo, a Yaak-style shell (resizable sidebar
 as the only nav, ⌘K palette, screens stay mounted across switches) with three
-Focus screens: **Agentboard** (repos + per-repo terminals; the cold-start
-screen), **Cockpit**, **Board**. Terminals are a canvas renderer over `tt-vt`
-state with the PTY host in Rust — no cross-restart persistence.
+Focus screens: **Cockpit**, **Board**, **Messages**. Cockpit is the agent board
+and the cold-start screen: its rail *is* the task queue (Next up, then On you /
+Running / Parked / Backlog, with Issues and every tracked checkout in drawers
+below), and picking a row opens that item's terminals and panes beside it. When
+the head of On you changes it opens in place, unless a terminal has focus or the
+row on screen still needs you — then it is announced above the panes, never by
+taking focus. Terminals are a canvas renderer over `tt-vt` state with the PTY
+host in Rust — no cross-restart persistence.
 
 Product rules: the app is for getting in the zone; agent status is **reported,
 never re-rendered**; calendar is only *time until the next meeting*.

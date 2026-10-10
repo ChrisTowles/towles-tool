@@ -16,12 +16,6 @@ export function prChecksFailing(pr: Pick<PrItem, "state" | "checks">): boolean {
   return pr.state === "open" && pr.checks === "failing";
 }
 
-export function prRank(pr: Pick<PrItem, "state" | "checks" | "reviewState">): number {
-  if (prChecksFailing(pr)) return 2;
-  if (pr.reviewState === "review_requested") return 1;
-  return 0;
-}
-
 export type ChecksTone = Extract<PrTone, "failed" | "passing" | "plain" | "running">;
 
 export function checksTone(checks: string): ChecksTone {

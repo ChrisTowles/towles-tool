@@ -8,14 +8,12 @@ import {
   LightningIcon,
   PulseIcon,
   StethoscopeIcon,
-  TerminalWindowIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
 export type ScreenId =
   | "cockpit"
   | "board"
-  | "agentboard"
   | "slack"
   | "doctor"
   | "claude-sessions"
@@ -39,7 +37,25 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
     id: "cockpit",
     title: "Cockpit",
     icon: GaugeIcon,
-    keywords: ["home", "day", "next meeting", "prs", "issues", "focus", "zone"],
+    keywords: [
+      "home",
+      "day",
+      "next meeting",
+      "queue",
+      "prs",
+      "ci",
+      "issues",
+      "focus",
+      "zone",
+      "agents",
+      "terminal",
+      "sessions",
+      "shell",
+      "folder",
+      "repos",
+      "rail",
+      "agentboard",
+    ],
     fullBleed: true,
   },
   board: {
@@ -47,13 +63,6 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
     title: "Board",
     icon: KanbanIcon,
     keywords: ["kanban", "todos", "tasks", "issues", "backlog"],
-    fullBleed: true,
-  },
-  agentboard: {
-    id: "agentboard",
-    title: "Agentboard",
-    icon: TerminalWindowIcon,
-    keywords: ["agents", "terminal", "sessions", "shell", "folder", "repos", "rail"],
     fullBleed: true,
   },
   slack: {
@@ -117,9 +126,9 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
 };
 
 export const NAV_SECTIONS: { label: string; screens: ScreenId[] }[] = [
-  // Agentboard leads: it's where the work actually happens, and it's the
+  // Cockpit leads: it's where the work actually happens, and it's the
   // cold-start screen (`COLD_START_TAB`) — the sidebar order has to agree.
-  { label: "Focus", screens: ["agentboard", "cockpit", "board", "slack"] },
+  { label: "Focus", screens: ["cockpit", "board", "slack"] },
   {
     label: "Tools",
     screens: ["doctor", "claude-sessions", "mcp", "telemetry", "task-explorer"],

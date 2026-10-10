@@ -85,7 +85,7 @@ function NewRepoForm({
       }
       return;
     }
-    uiAction(clone ? "repo.cloned" : "repo.created", "agentboard");
+    uiAction(clone ? "repo.cloned" : "repo.created", "cockpit");
     toast.success(`${clone ? "Cloned" : "Created"} ${result.value} — it's on the rail`);
     onClose();
   };

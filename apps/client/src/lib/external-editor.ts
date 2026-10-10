@@ -11,7 +11,7 @@ export async function openInExternalEditor(
   path: string,
   opts: { cwd?: string; line?: number | null; where: string },
 ): Promise<void> {
-  uiAction("editor.open_external", "agentboard", opts.where);
+  uiAction("editor.open_external", "cockpit", opts.where);
   const opened = await invoke<void>("term_open_path", {
     path,
     cwd: opts.cwd ?? null,

@@ -267,11 +267,11 @@ describe("paletteRecentScreens", () => {
   it("drops the active screen and caps the list at four", () => {
     expect(
       paletteRecentScreens(
-        ["board", "cockpit", "agentboard", "telemetry", "mcp", "doctor"],
+        ["board", "cockpit", "slack", "telemetry", "mcp", "doctor"],
         "board",
         "",
       ),
-    ).toEqual(["cockpit", "agentboard", "telemetry", "mcp"]);
+    ).toEqual(["cockpit", "slack", "telemetry", "mcp"]);
   });
 
   it("ignores ids that are no longer screens", () => {
@@ -279,12 +279,12 @@ describe("paletteRecentScreens", () => {
   });
 
   it("renders nothing once a query is typed, so Go to is the first group", () => {
-    expect(paletteRecentScreens(["agentboard", "cockpit"], "board", "Board")).toEqual([]);
-    expect(paletteRecentScreens(["agentboard", "cockpit"], "board", "b")).toEqual([]);
+    expect(paletteRecentScreens(["slack", "cockpit"], "board", "Board")).toEqual([]);
+    expect(paletteRecentScreens(["slack", "cockpit"], "board", "b")).toEqual([]);
   });
 
   it("still renders for a whitespace-only query — nothing has been searched yet", () => {
-    expect(paletteRecentScreens(["agentboard"], "board", "   ")).toEqual(["agentboard"]);
+    expect(paletteRecentScreens(["cockpit"], "board", "   ")).toEqual(["cockpit"]);
   });
 });
 

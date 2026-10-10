@@ -35,7 +35,7 @@ export async function cleanupMissing() {
  * changes again (see isItemDismissed). The snapshot re-emits from Rust on
  * success, so no optimistic update here. */
 export async function dismissAttentionPr(repo: string, number: number, updatedTs: number) {
-  uiAction("agentboard.attention_pr_dismiss", "agentboard");
+  uiAction("agentboard.attention_pr_dismiss", "cockpit");
   const result = await storeItemDismiss("pr", repo, number, updatedTs);
   if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
 }

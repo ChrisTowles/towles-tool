@@ -1,6 +1,5 @@
 import type { ComponentType } from "react";
 import type { ScreenId } from "@/lib/screens";
-import { AgentboardScreen } from "@/screens/agentboard";
 import { BoardScreen } from "@/screens/board";
 import { ClaudeSessionsScreen } from "@/screens/claude-sessions";
 import { CockpitScreen } from "@/screens/cockpit";
@@ -14,7 +13,6 @@ import { TelemetryScreen } from "@/screens/telemetry";
 export const SCREEN_COMPONENTS: Record<ScreenId, ComponentType> = {
   cockpit: CockpitScreen,
   board: BoardScreen,
-  agentboard: AgentboardScreen,
   slack: SlackScreen,
   doctor: DoctorScreen,
   "claude-sessions": ClaudeSessionsScreen,

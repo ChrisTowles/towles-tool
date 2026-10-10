@@ -120,12 +120,6 @@ export const SHORTCUTS = defineShortcuts([
   },
   { id: "queue-down", scope: "cockpit", keys: "j", description: "Next row in the task queue" },
   { id: "queue-up", scope: "cockpit", keys: "k", description: "Previous row in the task queue" },
-  {
-    id: "queue-open",
-    scope: "cockpit",
-    keys: "enter",
-    description: "Act on the selected queue row (open, start, land, clean up)",
-  },
   { id: "queue-start", scope: "cockpit", keys: "s", description: "Start an agent on the task" },
   { id: "queue-snooze", scope: "cockpit", keys: "z", description: "Snooze the selected task" },
   { id: "queue-rank-up", scope: "cockpit", keys: "alt+arrowup", description: "Raise priority" },
@@ -149,14 +143,14 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-new-session",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+d",
     description: "New session in the focused folder",
     when: FOLDER_FOCUSED,
   },
   {
     id: "ab-new-task",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+d",
     description: "New task — goal, issues, branch",
     when: FOLDER_FOCUSED,
@@ -166,7 +160,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-remove-task",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+delete",
     description: "Delete the focused worktree (confirms first)",
     when: "a worktree is focused",
@@ -178,7 +172,7 @@ export const SHORTCUTS = defineShortcuts([
     // One id, both dialogs in the delete flow: a second binding on the same chord would
     // never fire. Same mod+shift as the delete — one chord held, Delete then Enter.
     id: "ab-confirm-close-worktree",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+enter",
     description: "Confirm the delete-worktree dialog — again to delete anyway if it's blocked",
     when: "a delete-worktree dialog is open",
@@ -188,7 +182,7 @@ export const SHORTCUTS = defineShortcuts([
     // One chord for "kill this tile", so the answer never depends on what kind of pane
     // you happen to be looking at.
     id: "ab-close-pane",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+w",
     description: "Close the focused pane (a session pane kills its shell)",
     when: "a pane is focused",
@@ -197,7 +191,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-toggle-files",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+e",
     description: "Open the focused folder's files pane",
     when: FOLDER_FOCUSED,
@@ -205,14 +199,14 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-toggle-rail",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+b",
-    description: "Collapse the folder rail to icons (and back)",
+    description: "Collapse the queue rail to icons (and back)",
     allowInEditable: true,
   },
   {
     id: "ab-jump-next",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+n",
     description: "Jump to the next item in the work queue",
     answersNeedsYou: true,
@@ -220,7 +214,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-jump-prev",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+p",
     description: "Jump to the previous item in the work queue",
     answersNeedsYou: true,
@@ -229,98 +223,83 @@ export const SHORTCUTS = defineShortcuts([
   {
     // The wider net beside jump-next — idle agents too, not only flagged ones.
     id: "ab-jump-idle",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+a",
     description: "Jump to next agent that isn't busy — idle or needing you",
     answersNeedsYou: true,
     allowInEditable: true,
   },
-  // One binding per digit, addressing the rail's visible sessions top-down; the
+  // One binding per digit, addressing the queue rail's visible rows top-down; the
   // numbers paint on the rows while held. Shift because mod+digit is the tab jump.
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `ab-jump-session-${i + 1}`,
-    scope: "agentboard" as const,
+    scope: "cockpit" as const,
     keys: `mod+shift+${i + 1}`,
     description:
       i === 0
-        ? "Jump to a numbered rail session 1–9 — hold to see the numbers"
-        : `Jump to rail session ${i + 1}`,
+        ? "Jump to a numbered queue row 1–9 — hold to see the numbers"
+        : `Jump to queue row ${i + 1}`,
     answersNeedsYou: true,
     allowInEditable: true,
     hideInHelp: i > 0,
   })),
   {
     id: "ab-focus-up",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+arrowup",
-    description: "Previous rail row — repo, checkout or session",
+    description: "Previous queue row",
     allowInEditable: true,
   },
   {
     id: "ab-focus-down",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+arrowdown",
-    description: "Next rail row — repo, checkout or session",
+    description: "Next queue row",
     allowInEditable: true,
   },
   {
     // Same action as ab-focus-up, for bracket muscle memory.
     id: "ab-focus-up-bracket",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+[",
-    description: "Previous rail row — repo, checkout or session",
+    description: "Previous queue row",
     allowInEditable: true,
     hideInHelp: true,
   },
   {
     id: "ab-focus-down-bracket",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+]",
-    description: "Next rail row — repo, checkout or session",
+    description: "Next queue row",
     allowInEditable: true,
     hideInHelp: true,
   },
   {
     id: "ab-focus-left",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+arrowleft",
-    description: "Collapse the row under the cursor, else climb to what holds it",
+    description: "From the panes, step back toward the rail",
     allowInEditable: true,
   },
   {
     id: "ab-focus-right",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+arrowright",
-    description:
-      "Expand the row under the cursor, else step into it — off a session, into the panes",
-    allowInEditable: true,
-  },
-  {
-    id: "ab-collapse-all",
-    scope: "agentboard",
-    keys: "alt+shift+arrowup",
-    description: "Collapse every repo on the rail",
-    allowInEditable: true,
-  },
-  {
-    id: "ab-expand-all",
-    scope: "agentboard",
-    keys: "alt+shift+arrowdown",
-    description: "Expand every repo on the rail",
+    description: "Step from the rail into the selected row's panes",
     allowInEditable: true,
   },
   {
     // Bare Enter is safe because the handler declines (returns `false`) when a
     // button/link/dialog has DOM focus, so the browser's native Enter still runs.
     id: "ab-focus-terminal",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "enter",
-    description: "Jump into the focused folder's first session and start typing",
+    description: "Type into the selected row's terminal — or start it, or open it on GitHub",
     when: FOLDER_FOCUSED,
   },
   {
     id: "ab-split-session",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+s",
     description: "Add another session as a pane in this window",
     when: FOLDER_FOCUSED,
@@ -328,7 +307,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-new-terminal-right",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+o",
     description: "Open a new terminal to the right",
     when: FOLDER_FOCUSED,
@@ -345,7 +324,7 @@ export const SHORTCUTS = defineShortcuts([
   {
     // Matched by the new-task form itself (`matchesShortcut`), like term-search below.
     id: "ab-start-task",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+enter",
     description: "Start the task being written",
     when: "the new-task form is focused",
@@ -355,7 +334,7 @@ export const SHORTCUTS = defineShortcuts([
     // Matched by the focused TerminalView itself (`matchesShortcut`), not window-level:
     // only the terminal owning the keystroke may open its overlay. Ctrl+F stays with the shell.
     id: "term-search",
-    scope: "agentboard",
+    scope: "cockpit",
     keys: "mod+shift+f",
     description: "Search terminal scrollback",
     when: "a terminal is focused",

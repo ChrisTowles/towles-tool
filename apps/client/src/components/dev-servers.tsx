@@ -69,7 +69,7 @@ export function DevServersButton({
   const onOpenChange = (next: boolean) => {
     setOpen(next);
     if (next) {
-      uiAction("dev_servers.opened", "agentboard", folder.hasLaunchConfig ? "configs" : "howto");
+      uiAction("dev_servers.opened", "cockpit", folder.hasLaunchConfig ? "configs" : "howto");
     }
   };
 
@@ -101,7 +101,7 @@ export function DevServersButton({
               type="button"
               className="font-mono text-[10.5px] text-kumo-subtle/60 underline-offset-2 hover:text-violet-500 hover:underline"
               onClick={() => {
-                uiAction("dev_servers.docs_opened", "agentboard");
+                uiAction("dev_servers.docs_opened", "cockpit");
                 void openExternalUrl(LAUNCH_JSON_DOCS_URL);
               }}
             >
@@ -124,11 +124,11 @@ export function DevServersButton({
               key={cfg.name}
               cfg={cfg}
               onLaunch={() => {
-                uiAction("dev_servers.launch", "agentboard");
+                uiAction("dev_servers.launch", "cockpit");
                 actions.launchDevServer(folder.dir, cfg);
               }}
               onFocus={(sessionId) => {
-                uiAction("dev_servers.focus_session", "agentboard");
+                uiAction("dev_servers.focus_session", "cockpit");
                 setOpen(false);
                 actions.focusSession(folder.dir, sessionId);
               }}
@@ -174,7 +174,7 @@ function LaunchFileHowTo() {
           type="button"
           className="underline underline-offset-2 hover:text-violet-500"
           onClick={() => {
-            uiAction("dev_servers.docs_opened", "agentboard");
+            uiAction("dev_servers.docs_opened", "cockpit");
             void openExternalUrl(LAUNCH_JSON_DOCS_URL);
           }}
         >
@@ -235,7 +235,7 @@ function ConfigRow({
             aria-label={`Open localhost:${cfg.port} in the browser`}
             onClick={() => {
               if (cfg.port == null) return;
-              uiAction("dev_servers.open_url", "agentboard");
+              uiAction("dev_servers.open_url", "cockpit");
               void openExternalUrl(devServerUrl(cfg.port));
             }}
             icon={<GlobeIcon className="size-3.5" />}

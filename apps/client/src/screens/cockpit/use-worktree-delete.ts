@@ -81,7 +81,7 @@ export function useWorktreeDelete(args: {
     const force = deleteWtForce && !confirmDeleteWt.dirMissing;
     uiAction(
       force ? "agentboard.force_delete_worktree" : "agentboard.delete_worktree",
-      "agentboard",
+      "cockpit",
       deleteWtTask ? deleteWtOutcome : "no-task",
     );
     void performDeleteWorktree(confirmDeleteWt, {
@@ -178,7 +178,7 @@ export function useWorktreeDelete(args: {
     // shortcut ignoring it could start a second removal of the same worktree.
     if (!blockedDelete || deleteBusy) return;
     const { target, outcome } = blockedDelete;
-    uiAction("agentboard.force_delete_worktree", "agentboard", outcome ?? "no-task");
+    uiAction("agentboard.force_delete_worktree", "cockpit", outcome ?? "no-task");
     endDeleteFlow(blockedDeleteDir);
     void performDeleteWorktree(target, { force: true, outcome });
   }

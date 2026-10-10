@@ -195,7 +195,7 @@ export function AnnotateSurface({
     const surface = surfaceRef.current;
     if (!surface) return;
     commitTextDraft();
-    uiAction(`${telemetryPrefix}.feedback.capture`, "agentboard");
+    uiAction(`${telemetryPrefix}.feedback.capture`, "cockpit");
     const res = await capture(surface.getBoundingClientRect());
     const shot = res.match({
       ok: (png) => png,
@@ -224,7 +224,7 @@ export function AnnotateSurface({
     ]);
     if (written.isErr()) {
       setSending(false);
-      uiAction(`${telemetryPrefix}.feedback.send`, "agentboard", "err");
+      uiAction(`${telemetryPrefix}.feedback.send`, "cockpit", "err");
       toast.error(`Send failed: ${errorMessage(written.error)}`);
       return;
     }
@@ -236,14 +236,14 @@ export function AnnotateSurface({
     setSending(false);
     sent.match({
       ok: () => {
-        uiAction(`${telemetryPrefix}.feedback.send`, "agentboard", "ok");
+        uiAction(`${telemetryPrefix}.feedback.send`, "cockpit", "ok");
         toast.success(`Sent to ${target.label}`);
         setCaptured(null);
         setAnnotations([]);
         setTool(null);
       },
       err: (e) => {
-        uiAction(`${telemetryPrefix}.feedback.send`, "agentboard", "err");
+        uiAction(`${telemetryPrefix}.feedback.send`, "cockpit", "err");
         toast.error(`Send failed: ${errorMessage(e)}`);
       },
     });

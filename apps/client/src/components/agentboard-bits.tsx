@@ -115,7 +115,7 @@ export function IconBtn({
           onClick={(e) => {
             e.stopPropagation();
             // Every `IconBtn` is an agentboard atom, so that is the scoring screen.
-            if (shortcut) mouseAction(shortcut, "agentboard");
+            if (shortcut) mouseAction(shortcut, "cockpit");
             onClick();
           }}
           className={cn("font-mono text-xs text-kumo-subtle", className)}
@@ -577,7 +577,7 @@ export function ComparedBaseBadge({
     setEditing(false);
     const trimmed = value.trim();
     if (trimmed === (folder.baseBranch ?? "")) return;
-    uiAction("folder.base_branch_set", "agentboard");
+    uiAction("folder.base_branch_set", "cockpit");
     const stored = await invoke<void>("ab_set_folder_base_branch", {
       dir: folder.dir,
       branch: trimmed || null,
@@ -819,7 +819,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            mouseAction("ab-toggle-files", "agentboard");
+            mouseAction("ab-toggle-files", "cockpit");
             onOpen();
             if (!clean) void invoke("code_server_show_changes", { dir: stats.dir });
           }}
@@ -880,7 +880,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              mouseAction("ab-toggle-files", "agentboard");
+              mouseAction("ab-toggle-files", "cockpit");
               onOpen();
             }}
             className={`${CHIP_CLASS} ${tone}`}
@@ -966,7 +966,7 @@ function PaneOpenButton({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          if (shortcutTwin) mouseAction(shortcutTwin, "agentboard");
+          if (shortcutTwin) mouseAction(shortcutTwin, "cockpit");
           onOpen();
         }}
         className={`${CHIP_CLASS} text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default`}
@@ -1493,7 +1493,7 @@ export function RepoMenu({
   // case it hasn't gone anywhere and saying so would be a lie.
   async function toggleQuiet() {
     const next = !quiet;
-    uiAction("agentboard.quiet_mark", "agentboard", next ? "mark" : "unmark");
+    uiAction("agentboard.quiet_mark", "cockpit", next ? "mark" : "unmark");
     const result = await invoke<void>("ab_set_folder_quiet", {
       dirs: quietDirs ?? [dir],
       quiet: next,
@@ -1546,7 +1546,7 @@ export function RepoMenu({
           {onNewTask && (
             <DropdownMenu.Item
               onClick={() => {
-                mouseAction("ab-new-task", "agentboard");
+                mouseAction("ab-new-task", "cockpit");
                 onNewTask();
               }}
               className="whitespace-nowrap"
@@ -1562,7 +1562,7 @@ export function RepoMenu({
             <DropdownMenu.Item
               variant="danger"
               onClick={() => {
-                mouseAction("ab-remove-task", "agentboard");
+                mouseAction("ab-remove-task", "cockpit");
                 onDeleteWorktree();
               }}
               className="whitespace-nowrap"
@@ -1642,7 +1642,7 @@ export function PanePlaceholder({
   label: string;
   detail?: string;
   tone?: "muted" | "alert";
-  /** See the focus-ring rule at `screens/agentboard.tsx`'s `focusedPaneId`. */
+  /** See the focus-ring rule at `screens/cockpit.tsx`'s `focusedPaneId`. */
   focused?: boolean;
   onRemove: () => void;
 }) {
@@ -1660,7 +1660,7 @@ export function PanePlaceholder({
         type="button"
         onClick={() => {
           // Only the focused tile is the chord's twin — see `PaneHeader`'s `focused`.
-          if (focused) mouseAction("ab-close-pane", "agentboard");
+          if (focused) mouseAction("ab-close-pane", "cockpit");
           onRemove();
         }}
         className="flex items-center gap-1 font-mono text-xs hover:text-sky-500"

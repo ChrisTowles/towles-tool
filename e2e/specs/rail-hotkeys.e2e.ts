@@ -1,7 +1,7 @@
 /**
- * The rail's hold-to-reveal jump numbers in the real WebKitGTK shell, where the
- * modifier mask arrives one event stale — a naive `e.ctrlKey` read never sees a
- * held chord. Seeds its own row, since `TT_STATE_SCOPE` starts the board empty.
+ * The queue rail's hold-to-reveal jump numbers in the real WebKitGTK shell, where
+ * the modifier mask arrives one event stale — a naive `e.ctrlKey` read never sees
+ * a held chord. Seeds its own row, since `TT_STATE_SCOPE` starts the queue empty.
  */
 
 /// <reference types="@wdio/globals/types" />
@@ -17,21 +17,24 @@ const BADGE = '[aria-label^="jump key"]';
 const CONTROL = "\uE009";
 const SHIFT = "\uE008";
 
-async function seedRailSession(): Promise<void> {
-  const repoRoot = process.cwd();
-  await browser.tauri.execute(({ core }, dir) => core.invoke("ab_add_repo", { path: dir }), repoRoot);
-  await browser.tauri.execute(({ core }, dir) => core.invoke("ab_ensure_session", { dir }), repoRoot);
+type TaskQueue = { items: { key: { kind: string; id?: number } }[] };
+
+/** A board task is a queue row; the queue only grows it on the next rebuild. */
+async function seedQueueTask(): Promise<number> {
+  const id = await browser.tauri.execute(
+    ({ core }, t) => core.invoke("store_add_task", { text: t }),
+    "e2e jump-key row",
+  );
+  if (typeof id !== "number") throw new TypeError(`store_add_task answered ${id}`);
+  return id;
 }
 
-type AgentboardState = { repos: { folders: { sessions: unknown[] }[] }[] };
-
-/** Seeding is two IPC writes; the rail only grows the row on the watcher's next scan. */
-async function railSessionCount(): Promise<number> {
-  const state = expectObject<AgentboardState>(
-    await browser.tauri.execute(({ core }) => core.invoke("ab_get_state")),
-    "ab_get_state",
+async function queueHas(id: number): Promise<boolean> {
+  const queue = expectObject<TaskQueue>(
+    await browser.tauri.execute(({ core }) => core.invoke("queue_get")),
+    "queue_get",
   );
-  return state.repos.flatMap((r) => r.folders).reduce((n, f) => n + f.sessions.length, 0);
+  return queue.items.some((i) => i.key.kind === "task" && i.key.id === id);
 }
 
 /** A real held chord, not `browser.keys`, which releases before we can look. */
@@ -57,17 +60,27 @@ async function withModifiersHeld<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-describe("Agentboard rail jump keys", () => {
+describe("Cockpit queue rail jump keys", () => {
   before(bootReady);
 
-  it("numbers the visible sessions while the chord is held, and unnumbers on release", async () => {
-    await seedRailSession();
-    await gotoScreen("Agentboard");
+  let seeded: number | undefined;
+  after(async () => {
+    if (seeded === undefined) return;
+    await browser.tauri.execute(
+      ({ core }, taskId) => core.invoke("task_delete", { id: taskId, force: false, purge: true }),
+      seeded,
+    );
+  });
 
-    await browser.waitUntil(async () => (await railSessionCount()) > 0, {
+  it("numbers the visible rows while the chord is held, and unnumbers on release", async () => {
+    const id = await seedQueueTask();
+    seeded = id;
+    await gotoScreen("Cockpit");
+
+    await browser.waitUntil(async () => queueHas(id), {
       timeout: 20000,
       interval: 1000,
-      timeoutMsg: "the seeded session never reached the rail's state",
+      timeoutMsg: "the seeded task never reached the queue",
     });
 
     // Retried: a chord lands nowhere when focus does (same flake as palette.e2e).

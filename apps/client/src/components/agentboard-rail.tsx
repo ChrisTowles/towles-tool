@@ -108,7 +108,7 @@ export function RailIconStrip({
             type="button"
             aria-label="Expand the folder rail"
             onClick={() => {
-              mouseAction("ab-toggle-rail", "agentboard");
+              mouseAction("ab-toggle-rail", "cockpit");
               onExpand();
             }}
             className="flex size-8 items-center justify-center rounded-md text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"

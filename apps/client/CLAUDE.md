@@ -73,16 +73,18 @@ mac Ctrl chord no binding claims never matches on its main key alone.
 the `pcKeybindings` setting makes a Mac take Ctrl exactly as Linux does, and the
 chords Cocoa takes before any DOM keydown are `tt-app`'s `macos_keys.rs`.
 
-## The rail is one tree with one cursor
+## The rail is the queue, with one cursor
 
-`lib/rail-nodes.ts` flattens the rail to the rows on screen — repo, checkout,
-session — and the cursor (Ctrl+Shift+arrows), the 1–9 jump digits
-(`lib/rail-hotkeys.ts`) and the fold chords all read that one walk, so a new
-rail row is unreachable by keyboard until it appears there. The cursor is a
-`RailNode` rather than a key, so `resolveCursor` hands it to the nearest
-surviving row when its own goes (repo folds, worktree deleted). Exactly one row
-wears `ring-violet-500`; the violet *edge* answers a different question —
-which checkout you are working in.
+Cockpit's rail is the task queue (`components/cockpit-rail.tsx`), and
+`railRows` (`lib/queue.tsx`) is the one walk the cursor (j/k, Ctrl+Shift+↑/↓)
+and the 1–9 jump digits read — folded lanes skipped, so the keyboard sees what
+you see. The ring follows the checkout on screen however it got there
+(`rowForFolder`), so a row picked from the Checkouts drawer still rings its
+queue row. A row with no checkout (a backlog task, a PR, a CI failure) shows its
+detail where the panes go — the pane grid stays mounted, only `hidden`. The
+repo → checkout → session tree survives only inside the Checkouts drawer, as
+a mouse surface. When the head of On you changes, `nextUpArrival` decides to
+open or announce it; a focused terminal is never taken.
 
 ## A pane has no PTY until it is rendered
 

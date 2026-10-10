@@ -55,7 +55,7 @@ export function buildAttentionFeed(
     const prId = `${pr.repo}#${pr.number}`;
     const target: FocusTarget = { screen: "cockpit", kind: "pr", id: prId };
     // Failing CI outranks review-requested; a PR that is both surfaces once, in
-    // the more-urgent bucket (mirrors `prRank`).
+    // the more-urgent bucket.
     if (prChecksFailing(pr)) {
       items.push({
         id: `pr-ci:${prId}`,
@@ -87,7 +87,7 @@ export function buildAttentionFeed(
       tier: TIER_AGENT,
       title: repo.name,
       subtitle: `${repo.needs} session${repo.needs === 1 ? "" : "s"} waiting`,
-      target: { screen: "agentboard", kind: "repo", id: repo.key },
+      target: { screen: "cockpit", kind: "repo", id: repo.key },
       sortTs: 0,
     });
   }

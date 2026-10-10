@@ -41,7 +41,7 @@ node scripts/drive.mjs clicktext "Board"        # click by visible text
 `aria-label` — `clicktext` can't find them. Click by `eval` instead:
 
 ```sh
-node scripts/drive.mjs eval '(() => { document.querySelector(`[aria-label="Agentboard"]`).click(); return "clicked"; })()'
+node scripts/drive.mjs eval '(() => { document.querySelector(`[aria-label="Cockpit"]`).click(); return "clicked"; })()'
 ```
 
 **Gotcha: `eval`'s arg is wrapped as `await (<expr>)`** — pass an expression
@@ -92,7 +92,7 @@ polls, independent of anything you did.
 The auto-mode permission classifier blocks clicks on buttons whose visible
 text reads as destructive (e.g. "delete"), even when the actual handler only
 opens a confirmation `AlertDialog` (as `requestDeleteWorktree` →
-`performDeleteWorktree` does in `screens/agentboard.tsx`). Don't try to work
+`performDeleteWorktree` does in `screens/cockpit.tsx`). Don't try to work
 around it — verify that code path by reading the guard instead of clicking
 through it live.
 

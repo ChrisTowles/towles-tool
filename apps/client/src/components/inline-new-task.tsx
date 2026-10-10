@@ -367,7 +367,7 @@ export function InlineNewTask({
     setMoreOpen(false);
     setSuggesting(improver.id);
     setNotice(null);
-    uiAction("task.improve_prompt", "agentboard", improver.id);
+    uiAction("task.improve_prompt", "cockpit", improver.id);
     const suggestion = await invoke<TaskSuggestion>("task_suggest", {
       dir: repo.dir,
       goal,
@@ -531,7 +531,7 @@ export function InlineNewTask({
 
   function switchMode(next: "new" | "review") {
     if (next === mode) return;
-    uiAction("task.form_mode", "agentboard", next);
+    uiAction("task.form_mode", "cockpit", next);
     setMode(next);
     setNotice(null);
   }
@@ -543,7 +543,7 @@ export function InlineNewTask({
     }
     // Already shown under the picker.
     if (prCheck.error) return;
-    uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "agentboard");
+    uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "cockpit");
     onSubmit({
       goal: goal.trim(),
       title: goalToTitle(goal || reviewGoal(prCheck.pr)).replace(/[\s:—–-]+$/, ""),
@@ -587,7 +587,7 @@ export function InlineNewTask({
       : launchClaude
         ? "task.start"
         : "task.start_no_claude";
-    uiAction(action, "agentboard");
+    uiAction(action, "cockpit");
     onSubmit({
       goal: goal.trim(),
       title: title.trim() || branch,
@@ -672,7 +672,7 @@ export function InlineNewTask({
         onKeyDown={(e) => {
           if (matchesShortcut("ab-start-task", e.nativeEvent)) {
             e.preventDefault();
-            uiAction("shortcut.ab-start-task", "agentboard");
+            uiAction("shortcut.ab-start-task", "cockpit");
             submit();
           }
           if (e.key === "Escape") cancel();
@@ -718,7 +718,7 @@ export function InlineNewTask({
                 title={`${img.name} — attached to the new task's first prompt. Click to zoom.`}
                 onClick={() => {
                   setZoomedImageId(img.id);
-                  uiAction("task.image_zoom", "agentboard");
+                  uiAction("task.image_zoom", "cockpit");
                 }}
                 className="block cursor-zoom-in rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >

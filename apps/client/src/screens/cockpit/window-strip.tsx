@@ -141,7 +141,7 @@ export function WindowStrip(props: {
         <button
           type="button"
           onClick={() => {
-            mouseAction("ab-new-session", "agentboard");
+            mouseAction("ab-new-session", "cockpit");
             onNewSession();
           }}
           className={ADD_CLASS}
@@ -157,7 +157,7 @@ export function WindowStrip(props: {
           <button
             type="button"
             onClick={() => {
-              mouseAction("ab-close-pane", "agentboard");
+              mouseAction("ab-close-pane", "cockpit");
               onClosePane();
             }}
             className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"

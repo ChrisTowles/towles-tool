@@ -163,7 +163,7 @@ function ViewMenu(props: {
           <DropdownMenu.RadioGroup
             value={filter}
             onValueChange={(next) => {
-              uiAction("agentboard.rail_filter", "agentboard", next);
+              uiAction("agentboard.rail_filter", "cockpit", next);
               props.onSetFilter(next as RailFilter);
             }}
           >
@@ -189,7 +189,7 @@ function ViewMenu(props: {
                 type="button"
                 aria-pressed={hours === recentHours}
                 onClick={() => {
-                  uiAction("agentboard.rail_recent_hours", "agentboard", String(hours));
+                  uiAction("agentboard.rail_recent_hours", "cockpit", String(hours));
                   props.onSetRecentHours(hours);
                 }}
                 className={cn(
@@ -212,7 +212,7 @@ function ViewMenu(props: {
               checked={props.showQuiet}
               closeOnClick={false}
               onCheckedChange={(on) => {
-                uiAction("agentboard.show_quiet", "agentboard", on ? "on" : "off");
+                uiAction("agentboard.show_quiet", "cockpit", on ? "on" : "off");
                 props.onSetShowQuiet(on);
               }}
             >
@@ -224,7 +224,7 @@ function ViewMenu(props: {
             checked={props.showUnmanagedWorktrees}
             closeOnClick={false}
             onCheckedChange={(on) => {
-              uiAction("agentboard.show_unmanaged_worktrees", "agentboard", on ? "on" : "off");
+              uiAction("agentboard.show_unmanaged_worktrees", "cockpit", on ? "on" : "off");
               props.onSetShowUnmanagedWorktrees(on);
             }}
           >
@@ -234,7 +234,7 @@ function ViewMenu(props: {
             checked={props.jarvisPane}
             closeOnClick={false}
             onCheckedChange={(on) => {
-              uiAction("agentboard.jarvis_pane", "agentboard", on ? "on" : "off");
+              uiAction("agentboard.jarvis_pane", "cockpit", on ? "on" : "off");
               props.onSetJarvisPane(on);
             }}
           >
@@ -328,7 +328,7 @@ export function RailHeader(props: {
           <AddRepoMenu
             onOpenRepoManager={props.onOpenRepoManager}
             onNewRepo={(mode) => {
-              uiAction(`repo.${mode}_opened`, "agentboard");
+              uiAction(`repo.${mode}_opened`, "cockpit");
               setNewRepo(mode);
             }}
           />
@@ -352,7 +352,7 @@ export function RailHeader(props: {
             <button
               type="button"
               onClick={() => {
-                mouseAction("ab-toggle-rail", "agentboard");
+                mouseAction("ab-toggle-rail", "cockpit");
                 props.onCollapseRail();
               }}
               aria-label="Collapse the rail to icons"

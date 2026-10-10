@@ -63,7 +63,7 @@ export function ReviewPrPicker({
     setChecking(number);
     setCheckError(null);
     onCheck(null);
-    uiAction("task.pick_pr", "agentboard");
+    uiAction("task.pick_pr", "cockpit");
     const result = await invoke("task_check_pr", { root, number }, { schema: PrCheckSchema });
     setChecking(null);
     result.match({ ok: onCheck, err: (e) => setCheckError(e.message) });
