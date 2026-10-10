@@ -57,6 +57,10 @@ the CLI and the app can consume it.
   Slack DM. Collector keys are `claude:calendar`, `issues`, `prs`, `ci`, `slack:dm`
   — the frontend matches on them. See
   [`crates/tt-collect/CLAUDE.md`](../crates/tt-collect/CLAUDE.md).
+- `tt-agents` — personal Slack agents: routing a message to `@name`, burst
+  debounce, the locked-down `claude -p --restricted` argv, the JSON reply
+  contract, and `execute` (memory, resume, reminders, audit row). The app's
+  `agents.rs` is only the I/O shell. Trust model: **[AGENTS.md](AGENTS.md)**.
 - `tt-mcp` — the transport-free MCP server: the task family, `preview_file`,
   `file_open`, and the calendar family. Served one per app instance over
   loopback HTTP on its own `${tt:port 47870-48069}` claim (`TT_MCP_PORT`) — app

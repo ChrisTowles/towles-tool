@@ -17,8 +17,9 @@ use futures_util::{SinkExt, StreamExt};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 use tokio_tungstenite::tungstenite::Message;
-use tt_collect::{Backoff, Envelope, SlackDmConfig};
+use tt_collect::{Backoff, Envelope, SlackDmConfig, SlackEvent};
 
+use crate::agents::AgentsTx;
 use crate::instance_lock::InstanceLock;
 use crate::store::SNAPSHOT_EVENT;
 
@@ -26,29 +27,28 @@ use crate::store::SNAPSHOT_EVENT;
 const LOCK_RETRY: Duration = Duration::from_secs(30);
 
 struct SocketConfig {
-    dm: SlackDmConfig,
+    /// The DM watcher, when it is on; the socket may be up for the agents alone.
+    dm: Option<SlackDmConfig>,
     app_token: String,
 }
 
-/// `None` when Socket Mode is off — a disabled collector or a missing token/watch id.
-/// Absence keeps the task idle rather than erroring.
+/// `None` when Socket Mode is off — missing tokens, or neither the DM watcher nor the
+/// agents want it. Absence keeps the task idle rather than erroring.
 fn read_config() -> Option<SocketConfig> {
-    let slack = tt_config::load().ok()?.collectors.slack;
-    if !slack.enabled
-        || slack.token.trim().is_empty()
-        || slack.app_token.trim().is_empty()
-        || slack.watch_user_id.trim().is_empty()
-    {
+    let settings = tt_config::load().ok()?;
+    let slack = settings.collectors.slack;
+    if slack.token.trim().is_empty() || slack.app_token.trim().is_empty() {
         return None;
     }
-    Some(SocketConfig {
-        dm: SlackDmConfig {
-            token: slack.token,
-            watch_user_id: slack.watch_user_id,
-            watch_name: slack.watch_name,
-        },
-        app_token: slack.app_token,
-    })
+    let dm = (slack.enabled && !slack.watch_user_id.trim().is_empty()).then_some(SlackDmConfig {
+        token: slack.token,
+        watch_user_id: slack.watch_user_id,
+        watch_name: slack.watch_name,
+    });
+    if dm.is_none() && !settings.agents.enabled {
+        return None;
+    }
+    Some(SocketConfig { dm, app_token: slack.app_token })
 }
 
 /// How a connection attempt ended, deciding the loop's next move.
@@ -63,7 +63,7 @@ enum Outcome {
 
 /// Spawn the Socket Mode loop. Re-reads settings whenever `reload` fires, so changing
 /// tokens takes effect without a relaunch.
-pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
+pub fn spawn(app: AppHandle, reload: Arc<Notify>, agents: AgentsTx) {
     tauri::async_runtime::spawn(async move {
         let mut backoff = Backoff::new();
         let mut lock: Option<InstanceLock> = None;
@@ -89,7 +89,7 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                 backoff.reset();
                 continue;
             };
-            match run_connection(&app, &config, &reload, &mut backoff).await {
+            match run_connection(&app, &config, &reload, &mut backoff, &agents).await {
                 Outcome::Reload | Outcome::Disconnected => backoff.reset(),
                 Outcome::Error => {
                     let delay = backoff.next_delay();
@@ -111,6 +111,7 @@ async fn run_connection(
     config: &SocketConfig,
     reload: &Notify,
     backoff: &mut Backoff,
+    agents: &AgentsTx,
 ) -> Outcome {
     // `apps.connections.open` is a blocking HTTP call (ureq).
     let app_token = config.app_token.clone();
@@ -153,13 +154,14 @@ async fn run_connection(
 
     // Resolved once so events match the exact conversation; on failure
     // `is_watched_event` falls back to sender-matching.
-    let dm = config.dm.clone();
-    let watched_channel =
-        tauri::async_runtime::spawn_blocking(move || tt_collect::dm_channel_id(&dm))
+    let watched_channel = match config.dm.clone() {
+        Some(dm) => tauri::async_runtime::spawn_blocking(move || tt_collect::dm_channel_id(&dm))
             .await
             .ok()
             .and_then(Result::ok)
-            .unwrap_or_default();
+            .unwrap_or_default(),
+        None => String::new(),
+    };
 
     loop {
         tokio::select! {
@@ -193,14 +195,13 @@ async fn run_connection(
                             eprintln!("slack socket: ack failed: {e}");
                             return Outcome::Error;
                         }
-                        if let Some(event) = event
-                            && tt_collect::is_watched_event(
-                                &event,
-                                &watched_channel,
-                                &config.dm.watch_user_id,
-                            )
+                        if let Some(SlackEvent::Message(msg)) = &event {
+                            agents.message(msg.clone());
+                        }
+                        if let (Some(event), Some(dm)) = (event, &config.dm)
+                            && tt_collect::is_watched_event(&event, &watched_channel, &dm.watch_user_id)
                         {
-                            refresh_dm(app, &config.dm).await;
+                            refresh_dm(app, dm).await;
                         }
                     }
                     Envelope::Ignore => {}

@@ -60,6 +60,7 @@ pub struct MessageEvent {
     pub ts: String,
     /// The parent's ts when this is a reply, else empty.
     pub thread_ts: String,
+    pub text: String,
 }
 
 /// A `reaction_added`/`reaction_removed` event. These carry no `channel_type`,
@@ -104,6 +105,8 @@ struct RawEvent {
     #[serde(default)]
     thread_ts: Option<String>,
     #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
     item: Option<RawItem>,
 }
 
@@ -143,6 +146,7 @@ fn slack_event(e: RawEvent) -> Option<SlackEvent> {
             subtype: e.subtype,
             ts: e.ts.unwrap_or_default(),
             thread_ts: e.thread_ts.unwrap_or_default(),
+            text: e.text.unwrap_or_default(),
         })),
         "reaction_added" | "reaction_removed" => Some(SlackEvent::Reaction(ReactionEvent {
             user: e.user.unwrap_or_default(),
@@ -170,12 +174,17 @@ pub fn is_watched_event(event: &SlackEvent, watched_channel: &str, watch_user_id
     }
 }
 
-/// New messages count — top-level, thread reply and shared file alike.
+/// A newly sent message — top-level, thread reply and shared file alike — rather than
+/// an edit, delete or other housekeeping subtype.
+pub fn is_new_message(msg: &MessageEvent) -> bool {
+    match &msg.subtype {
+        None => true,
+        Some(sub) => sub == "file_share" || sub == "thread_broadcast",
+    }
+}
+
 fn is_watched_message(msg: &MessageEvent, watched_channel: &str, watch_user_id: &str) -> bool {
-    if let Some(sub) = &msg.subtype
-        && sub != "file_share"
-        && sub != "thread_broadcast"
-    {
+    if !is_new_message(msg) {
         return false;
     }
     if msg.channel_type != "im" {
@@ -301,6 +310,7 @@ mod tests {
         assert_eq!(msg.subtype, None);
         assert_eq!(msg.ts, "1720000100.000200");
         assert_eq!(msg.thread_ts, "", "a top-level message has no parent");
+        assert_eq!(msg.text, "dinner at 7?");
     }
 
     #[test]
@@ -391,6 +401,7 @@ mod tests {
             subtype: subtype.map(str::to_string),
             ts: "1.0".to_string(),
             thread_ts: String::new(),
+            text: String::new(),
         })
     }
 

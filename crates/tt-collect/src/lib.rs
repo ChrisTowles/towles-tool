@@ -23,12 +23,13 @@ pub use issues::{fetch_importable_issues, search_repo_issues};
 pub use nudge::NudgeTarget;
 pub use quiet_hours::{should_run_at, should_run_calendar};
 pub use slack::{
-    DmFile, DmMessage, DmReaction, SlackDmConfig, SlackFile, SlackUser, dm_channel_id,
-    fetch_dm_history, fetch_file, fetch_thread, list_users, send_dm, set_reaction,
+    DmFile, DmMessage, DmReaction, SlackDmConfig, SlackFile, SlackUser, auth_user_id,
+    dm_channel_id, fetch_dm_history, fetch_file, fetch_thread, list_users, open_im, post_message,
+    react, send_dm, set_reaction,
 };
 pub use slack_socket::{
-    Backoff, Envelope, MessageEvent, ReactionEvent, SlackEvent, ack_json, is_watched_event,
-    open_socket_connection, parse_connection_url, parse_envelope,
+    Backoff, Envelope, MessageEvent, ReactionEvent, SlackEvent, ack_json, is_new_message,
+    is_watched_event, open_socket_connection, parse_connection_url, parse_envelope,
 };
 
 use std::path::{Path, PathBuf};
