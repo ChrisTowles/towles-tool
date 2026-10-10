@@ -6,7 +6,7 @@ user-invocable: true
 
 # Visual design — the app-wide language
 
-Neutral grayscale shadcn base; hue is a budget spent on exactly three things:
+Neutral grayscale Kumo base; hue is a budget spent on exactly three things:
 **status**, **attention**, **identity**. Everything else is type, spacing, and
 restraint. The full rendition — Agentboard anatomy (the named UI parts), live
 specimens, token/recipe tables, the ΔE rationale — is
@@ -43,8 +43,9 @@ specimens, token/recipe tables, the ΔE rationale — is
   git/shell-owned — branches, ±diff stats, timestamps, counts, glyphs.
 - **Don't animate resting UI** — `animate-pulse` is only a live,
   currently-true nudge (the busy dot), never a passive fact or rollup.
-- **Tailwind + shadcn tokens only** — no raw colors, no hand-written CSS, so
-  light and dark both work.
+- **Tailwind + Kumo semantic tokens only** (`bg-kumo-*`, `text-kumo-*`,
+  `border-kumo-hairline`) — no raw neutrals, no hand-written CSS, so light and
+  dark both work. The status/attention/identity hues below are the exception.
 
 ## Source of truth
 

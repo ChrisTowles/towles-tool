@@ -3,10 +3,10 @@
  * remount drops the workbench session and re-pays the several-second boot. */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
 import type { FilesOpenRequest } from "@/components/files-pane";
-import { Button } from "@/components/ui/button";
+import { Button } from "@cloudflare/kumo";
 import type { CodeServerInstall } from "@/lib/code-server";
 import { codeServerOpen, codeServerReveal, subscribeCodeServerInstall } from "@/lib/code-server";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -98,17 +98,17 @@ export function CodeServerPane({
           <InstallProgress install={install} />
         ) : (
           <>
-            <Loader2 className="size-5 animate-spin text-muted-foreground/60" />
-            <div className="text-xs text-muted-foreground">Starting code-server…</div>
+            <CircleNotchIcon className="size-5 animate-spin text-kumo-subtle/60" />
+            <div className="text-xs text-kumo-subtle">Starting code-server…</div>
           </>
         )
       ) : phase.at === "browser" ? (
-        <div className="text-xs text-muted-foreground">code-server needs the Tauri shell.</div>
+        <div className="text-xs text-kumo-subtle">code-server needs the Tauri shell.</div>
       ) : (
         <>
-          <AlertTriangle className="size-5 text-amber-500/80" />
-          <div className="text-xs text-muted-foreground">{phase.detail}</div>
-          <div className="text-[11px] text-muted-foreground/70">
+          <WarningIcon className="size-5 text-amber-500/80" />
+          <div className="text-xs text-kumo-subtle">{phase.detail}</div>
+          <div className="text-[11px] text-kumo-subtle/70">
             The app installs its own copy — a failure here is usually the network. Point{" "}
             <span className="font-mono">TT_CODE_SERVER_BIN</span> at one to skip it.
           </div>
@@ -129,17 +129,17 @@ function InstallProgress({ install }: { install: CodeServerInstall }) {
   );
   return (
     <div className="flex w-56 flex-col items-center gap-2">
-      <Loader2 className="size-5 animate-spin text-muted-foreground/60" />
-      <div className="text-xs text-muted-foreground">
+      <CircleNotchIcon className="size-5 animate-spin text-kumo-subtle/60" />
+      <div className="text-xs text-kumo-subtle">
         {PHASE_LABEL[install.phase]} · {percent}%
       </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-1 w-full overflow-hidden rounded-full bg-kumo-recessed">
         <div
           className="h-full rounded-full bg-sky-500/70 transition-[width] duration-200"
           style={{ width: `${install.phase === "downloading" ? percent : 100}%` }}
         />
       </div>
-      <div className="text-[11px] text-muted-foreground/70">One time, for every checkout.</div>
+      <div className="text-[11px] text-kumo-subtle/70">One time, for every checkout.</div>
     </div>
   );
 }

@@ -2,8 +2,14 @@
 // instead of a separate repo header, which is why identity, accent and the
 // toolbar all branch on `scope`.
 import { useState } from "react";
-import { toast } from "sonner";
-import { Folder, FolderPlus, FolderX, Plus, Trash2 } from "lucide-react";
+import { toast } from "@/lib/toast";
+import {
+  FolderIcon,
+  FolderMinusIcon,
+  FolderPlusIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import {
   BaseMovedChip,
@@ -35,7 +41,7 @@ import {
   UncommittedChip,
 } from "@/components/agentboard-bits";
 import { DevServersButton } from "@/components/dev-servers";
-import { Input } from "@/components/ui/input";
+import { Input } from "@cloudflare/kumo";
 import { hasRepoColor, repoAccentStyles, repoIcon, type RepoMeta } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import {
@@ -228,7 +234,7 @@ export function FolderHeader({
             <button type="button" onClick={onToggle} className="flex shrink-0 items-center gap-2">
               <Chevron collapsed={collapsed} />
               {missing ? (
-                <FolderX className="size-3.5 shrink-0 text-muted-foreground/70" />
+                <FolderMinusIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
               ) : scope === "repo" ? (
                 <HeaderIcon
                   className={cn(
@@ -238,7 +244,7 @@ export function FolderHeader({
                   style={accent.iconStyle}
                 />
               ) : (
-                <Folder className="size-3.5 shrink-0 text-muted-foreground/70" />
+                <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
               )}
               {scope === "repo" && scopePrefix && (
                 <span className="shrink-0 font-mono text-sm text-muted-foreground/60">
@@ -248,6 +254,7 @@ export function FolderHeader({
             </button>
             {renaming ? (
               <Input
+                size="xs"
                 autoFocus
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
@@ -256,7 +263,7 @@ export function FolderHeader({
                   if (e.key === "Escape") setRenaming(false);
                 }}
                 onBlur={() => void commitRename()}
-                className="h-6 min-w-0 flex-1 px-1.5 py-0 text-sm"
+                className="min-w-0 flex-1"
                 aria-label="Rename task"
               />
             ) : (
@@ -312,7 +319,7 @@ export function FolderHeader({
                       }}
                       className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
                     >
-                      <Trash2 className="size-3" /> Untrack
+                      <TrashIcon className="size-3" /> Untrack
                     </button>
                   </Hint>
                 )
@@ -410,7 +417,7 @@ export function FolderHeader({
               }}
               className="hover:text-violet-500"
             >
-              <Plus className="size-3.5" />
+              <PlusIcon className="size-3.5" />
             </IconBtn>
           )}
           {!missing && onNewTask && (
@@ -423,7 +430,7 @@ export function FolderHeader({
               }}
               className="hover:text-violet-500"
             >
-              <FolderPlus className="size-3.5" />
+              <FolderPlusIcon className="size-3.5" />
             </IconBtn>
           )}
           {onRemoveRepo && (

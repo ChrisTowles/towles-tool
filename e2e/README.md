@@ -75,7 +75,7 @@ Notes:
   string. (For a non-clickable element you still need the tag-then-select trick:
   `drive.mjs eval "document.querySelectorAll('div')[i].setAttribute('data-drive','x')"`
   then `drive.mjs click "[data-drive=x]"`.)
-- **`click` on a Radix `DropdownMenu`/`Popover` trigger** dispatches a full
+- **`click` on a Kumo (Base UI) `DropdownMenu`/`Popover` trigger** dispatches a full
   pointerdown/mousedown/focus/pointerup/mouseup/click sequence rather than the
   native W3C click, confirmed against a real repo-actions kebab menu: the
   native click endpoint didn't reliably flip the trigger's `data-state` to

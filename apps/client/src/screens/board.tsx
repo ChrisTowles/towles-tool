@@ -1,32 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { FolderGit2, ListTodo, MoreHorizontal, Search, StickyNote } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  DotsThreeIcon,
+  GitBranchIcon,
+  ListChecksIcon,
+  MagnifyingGlassIcon,
+  NoteIcon,
+} from "@phosphor-icons/react";
+import { Badge, Button, Dialog, DropdownMenu, Input, InputArea, Switch } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
 import {
   ownerRepoFromOrigin,
   requestAgentboardNav,
@@ -83,7 +64,7 @@ import { useFocusTarget } from "@/lib/focus-target";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { Result } from "better-result";
 import type { IpcError } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace";
@@ -377,7 +358,7 @@ export function BoardScreen() {
           {/* `htmlFor`, never a wrapping label: the switch is a <button>, and a
               label wrapped around it forwards each click back into it — two
               toggles per click, net nothing. */}
-          <label htmlFor="board-swimlanes" className="cursor-pointer text-xs text-muted-foreground">
+          <label htmlFor="board-swimlanes" className="cursor-pointer text-xs text-kumo-subtle">
             Swimlanes
           </label>
           <Switch
@@ -395,7 +376,7 @@ export function BoardScreen() {
               size="sm"
               className={cn(
                 "px-2 font-mono text-[11px]",
-                showArchived ? "text-foreground" : "text-muted-foreground",
+                showArchived ? "text-kumo-default" : "text-kumo-subtle",
               )}
               title={
                 showArchived
@@ -415,7 +396,7 @@ export function BoardScreen() {
             <Button
               variant="ghost"
               size="sm"
-              className="px-2 text-xs text-muted-foreground"
+              className="px-2 text-xs text-kumo-subtle"
               title="Archive all closed tasks now — hidden, not deleted"
               onClick={archiveDone}
             >
@@ -423,8 +404,9 @@ export function BoardScreen() {
             </Button>
           )}
           <div className="relative w-44">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
+              size="xs"
               ref={filterInputRef}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
@@ -432,7 +414,7 @@ export function BoardScreen() {
                 if (e.key === "Escape") setFilter("");
               }}
               placeholder={`Filter…  ${shortcutHint("board-filter")}`}
-              className="h-7 pl-7 text-sm"
+              className="pl-7"
               spellCheck={false}
               aria-label="Filter tasks"
             />
@@ -443,7 +425,7 @@ export function BoardScreen() {
       {isEmpty ? (
         <div ref={focusRef} className="flex min-h-0 flex-1 items-center justify-center p-6">
           <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-            <ListTodo aria-hidden className="size-8 text-muted-foreground/50" />
+            <ListChecksIcon aria-hidden className="size-8 text-muted-foreground/50" />
             <p className="text-sm font-medium">No tasks yet</p>
             <p className="text-xs text-muted-foreground">
               Tasks are created on the{" "}
@@ -456,7 +438,7 @@ export function BoardScreen() {
       ) : visible.length === 0 ? (
         <div ref={focusRef} className="flex min-h-0 flex-1 items-center justify-center p-6">
           <div className="flex max-w-sm flex-col items-center gap-2 text-center">
-            <Search aria-hidden className="size-8 text-muted-foreground/50" />
+            <MagnifyingGlassIcon aria-hidden className="size-8 text-muted-foreground/50" />
             <p className="text-sm font-medium">No tasks match your filter</p>
             <p className="text-xs text-muted-foreground">
               All {merged.length} {merged.length === 1 ? "task is" : "tasks are"} hidden by “
@@ -606,7 +588,7 @@ export function BoardScreen() {
   );
 }
 
-/** Seeded each time the menu opens (Radix unmounts content on close) and
+/** Seeded each time the menu opens (Base UI unmounts content on close) and
  * committed on blur, so the store isn't written per keystroke. */
 function NotesField({
   task,
@@ -617,7 +599,8 @@ function NotesField({
 }) {
   const [draft, setDraft] = useState(task.notes ?? "");
   return (
-    <Textarea
+    <InputArea
+      size="xs"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
@@ -625,7 +608,7 @@ function NotesField({
       }}
       placeholder="Add notes…"
       rows={3}
-      className="min-h-16 resize-none text-xs"
+      className="min-h-16 resize-none"
       aria-label="Todo notes"
     />
   );
@@ -633,7 +616,7 @@ function NotesField({
 
 function LaneGlyph({ meta }: { meta?: RepoMeta }) {
   if (!meta) {
-    return <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
+    return <GitBranchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
   }
   const Icon = repoIcon(meta);
   return (
@@ -796,6 +779,7 @@ function Card({
         )}
         {editing ? (
           <Input
+            size="xs"
             ref={inputRef}
             autoFocus
             value={editValue}
@@ -805,7 +789,7 @@ function Card({
               if (e.key === "Escape") setEditing(false);
             }}
             onBlur={commitRename}
-            className="h-6 min-w-0 flex-1 px-1.5 py-0 text-sm"
+            className="min-w-0 flex-1"
             aria-label="Rename todo"
           />
         ) : (
@@ -819,126 +803,128 @@ function Card({
           </span>
         )}
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="-mr-1 -mt-1 size-6"
-              aria-label="Todo actions"
-            >
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenu.Trigger
+            render={
+              <Button
+                variant="ghost"
+                size="xs"
+                shape="square"
+                className="-mr-1 -mt-1"
+                aria-label="Todo actions"
+                icon={<DotsThreeIcon className="size-4" />}
+              />
+            }
+          />
+          <DropdownMenu.Content align="end" className="w-48">
             {hasWorktree && onOpenAgentboard ? (
               <>
-                <DropdownMenuItem onSelect={onOpenAgentboard}>Open on Agentboard</DropdownMenuItem>
-                <DropdownMenuSeparator />
+                <DropdownMenu.Item onClick={onOpenAgentboard}>Open on Agentboard</DropdownMenu.Item>
+                <DropdownMenu.Separator />
               </>
             ) : (
               !closed && (
                 <>
-                  <DropdownMenuItem onSelect={() => onReopen(task)}>
+                  <DropdownMenu.Item onClick={() => onReopen(task)}>
                     Start task
-                    <span className="ml-auto text-[10px] text-muted-foreground">new worktree</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
+                    <span className="ml-auto text-[10px] text-kumo-subtle">new worktree</span>
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Separator />
                 </>
               )
             )}
-            <DropdownMenuItem onSelect={startRename}>Rename</DropdownMenuItem>
-            <DropdownMenuLabel className="pb-0.5 pt-1 text-muted-foreground">
-              Notes
-            </DropdownMenuLabel>
-            <div
-              className="px-2 py-1"
-              // Keep the menu open and stop its typeahead from eating keystrokes.
-              onKeyDown={(e) => e.stopPropagation()}
-            >
-              <NotesField task={task} onSetNotes={onSetNotes} />
-            </div>
+            <DropdownMenu.Item onClick={startRename}>Rename</DropdownMenu.Item>
+            <DropdownMenu.Group>
+              <DropdownMenu.Label className="pb-0.5 pt-1 text-kumo-subtle">
+                Notes
+              </DropdownMenu.Label>
+              <div
+                className="px-2 py-1"
+                // Keep the menu open and stop its typeahead from eating keystrokes.
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <NotesField task={task} onSetNotes={onSetNotes} />
+              </div>
+            </DropdownMenu.Group>
             {closed && !archived && (
               <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => onReopen(task)}>
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item onClick={() => onReopen(task)}>
                   Reopen
-                  <span className="ml-auto text-[10px] text-muted-foreground">new worktree</span>
-                </DropdownMenuItem>
+                  <span className="ml-auto text-[10px] text-kumo-subtle">new worktree</span>
+                </DropdownMenu.Item>
               </>
             )}
-            <DropdownMenuSeparator />
+            <DropdownMenu.Separator />
             {attachableIssues.length > 0 && (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Attach issue…</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+              <DropdownMenu.Sub>
+                <DropdownMenu.SubTrigger>Attach issue…</DropdownMenu.SubTrigger>
+                <DropdownMenu.SubContent className="max-h-72 overflow-y-auto">
                   {attachableIssues.map((issue) => (
-                    <DropdownMenuItem
+                    <DropdownMenu.Item
                       key={`${issue.repo}#${issue.number}`}
-                      onSelect={() => onAttachIssue(task.id, issue)}
+                      onClick={() => onAttachIssue(task.id, issue)}
                     >
-                      <span className="mr-1.5 font-mono text-muted-foreground">
-                        #{issue.number}
-                      </span>
+                      <span className="mr-1.5 font-mono text-kumo-subtle">#{issue.number}</span>
                       <span className="max-w-56 truncate">{issue.title}</span>
-                    </DropdownMenuItem>
+                    </DropdownMenu.Item>
                   ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Sub>
             )}
             {attachablePrs.length > 0 && (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Attach PR…</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+              <DropdownMenu.Sub>
+                <DropdownMenu.SubTrigger>Attach PR…</DropdownMenu.SubTrigger>
+                <DropdownMenu.SubContent className="max-h-72 overflow-y-auto">
                   {attachablePrs.map((pr) => (
-                    <DropdownMenuItem
+                    <DropdownMenu.Item
                       key={`${pr.repo}#${pr.number}`}
-                      onSelect={() => onAttachPr(task.id, pr)}
+                      onClick={() => onAttachPr(task.id, pr)}
                     >
-                      <span className="mr-1.5 font-mono text-muted-foreground">#{pr.number}</span>
+                      <span className="mr-1.5 font-mono text-kumo-subtle">#{pr.number}</span>
                       <span className="max-w-56 truncate">{pr.title}</span>
-                    </DropdownMenuItem>
+                    </DropdownMenu.Item>
                   ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Sub>
             )}
             {hasLinks && (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Detach…</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
+              <DropdownMenu.Sub>
+                <DropdownMenu.SubTrigger>Detach…</DropdownMenu.SubTrigger>
+                <DropdownMenu.SubContent>
                   {task.issues.map((link) => (
-                    <DropdownMenuItem
+                    <DropdownMenu.Item
                       key={`i${link.repo}#${link.number}`}
-                      onSelect={() => onDetachIssue(task.id, link)}
+                      onClick={() => onDetachIssue(task.id, link)}
                     >
                       issue #{link.number} · {link.repo}
-                    </DropdownMenuItem>
+                    </DropdownMenu.Item>
                   ))}
                   {task.prs.map((link) => (
-                    <DropdownMenuItem
+                    <DropdownMenu.Item
                       key={`p${link.repo}#${link.number}`}
-                      onSelect={() => onDetachPr(task.id, link)}
+                      onClick={() => onDetachPr(task.id, link)}
                     >
                       PR #{link.number} · {link.repo}
-                    </DropdownMenuItem>
+                    </DropdownMenu.Item>
                   ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Sub>
             )}
             {repos.length > 0 ? (
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Create issue in…</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
+              <DropdownMenu.Sub>
+                <DropdownMenu.SubTrigger>Create issue in…</DropdownMenu.SubTrigger>
+                <DropdownMenu.SubContent>
                   {repos.map((repo) => (
-                    <DropdownMenuItem key={repo} onSelect={() => onPromote(task.id, repo)}>
+                    <DropdownMenu.Item key={repo} onClick={() => onPromote(task.id, repo)}>
                       {repo}
-                    </DropdownMenuItem>
+                    </DropdownMenu.Item>
                   ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Sub>
             ) : (
-              <DropdownMenuItem disabled>No repos to file in</DropdownMenuItem>
+              <DropdownMenu.Item disabled>No repos to file in</DropdownMenu.Item>
             )}
-            <DropdownMenuSeparator />
+            <DropdownMenu.Separator />
             {/* How a task ends. Open tasks close with an outcome (taking their
                 worktree with them — confirmed when one exists, immediate for a
                 bare row). Archived ones can come back. The permanent delete
@@ -946,38 +932,35 @@ function Card({
                 refuses it otherwise. */}
             {!closed && (
               <>
-                <DropdownMenuItem
-                  onSelect={() =>
+                <DropdownMenu.Item
+                  onClick={() =>
                     hasWorktree
                       ? setConfirming({ kind: "close", outcome: "done" })
                       : onClose(task.id, "done")
                   }
                 >
                   Close as done
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() =>
+                </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onClick={() =>
                     hasWorktree
                       ? setConfirming({ kind: "close", outcome: "abandoned" })
                       : onClose(task.id, "abandoned")
                   }
                 >
                   Close as abandoned
-                </DropdownMenuItem>
+                </DropdownMenu.Item>
               </>
             )}
             {archived && (
-              <DropdownMenuItem onSelect={() => onRestore(task.id)}>Restore</DropdownMenuItem>
+              <DropdownMenu.Item onClick={() => onRestore(task.id)}>Restore</DropdownMenu.Item>
             )}
             {!hasWorktree && (
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => setConfirming({ kind: "purge" })}
-              >
+              <DropdownMenu.Item variant="danger" onClick={() => setConfirming({ kind: "purge" })}>
                 Delete permanently…
-              </DropdownMenuItem>
+              </DropdownMenu.Item>
             )}
-          </DropdownMenuContent>
+          </DropdownMenu.Content>
         </DropdownMenu>
       </div>
 
@@ -1046,14 +1029,14 @@ function Card({
               variant="outline"
               className={cn(
                 "gap-1 font-mono text-[10px]",
-                outcome === "done" ? "text-emerald-500" : "text-muted-foreground",
+                outcome === "done" ? "text-emerald-500" : "text-kumo-subtle",
               )}
             >
               {outcome === "done" ? "✓ done" : "⊘ abandoned"}
             </Badge>
           )}
           {archived && (
-            <Badge variant="outline" className="text-[10px] text-muted-foreground/70">
+            <Badge variant="outline" className="text-[10px] text-kumo-subtle">
               archived
             </Badge>
           )}
@@ -1104,14 +1087,12 @@ function Card({
             );
           })}
           {hasNotes && (
-            <Badge
-              variant="outline"
-              className="gap-1 text-[10px] text-muted-foreground"
-              title={task.notes}
-            >
-              <StickyNote aria-hidden className="size-3" />
-              Notes
-            </Badge>
+            <span title={task.notes}>
+              <Badge variant="outline" className="gap-1 text-[10px] text-kumo-subtle">
+                <NoteIcon aria-hidden className="size-3" />
+                Notes
+              </Badge>
+            </span>
           )}
         </div>
       )}
@@ -1160,47 +1141,51 @@ function Card({
         </button>
       )}
 
-      <AlertDialog open={confirming != null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
+      <Dialog.Root open={confirming != null} onOpenChange={(open) => !open && setConfirming(null)}>
+        <Dialog size="lg" className="p-6">
+          <div className="mb-4 flex flex-col gap-2">
+            <Dialog.Title className="text-lg font-semibold">
               {confirming?.kind === "purge"
                 ? "Delete this task permanently?"
                 : `Close as ${confirming?.outcome ?? "done"}?`}
-            </AlertDialogTitle>
+            </Dialog.Title>
             {/* Close names the worktree: it deletes the checkout on disk and
                 its terminals, and a confirm that only mentioned the card would
                 be understating what the button does. Still promises the
                 guards — work that would be lost stops the close and reopens
                 as the blocked dialog, which is where discarding is agreed
                 to. */}
-            <AlertDialogDescription>
+            <Dialog.Description className="text-sm">
               {confirming?.kind === "purge"
                 ? `“${task.text}” and its record will be removed for good. Closed tasks are normally archived, not deleted — this is the exception.`
                 : `“${task.text}” stays on the board as ${
                     confirming?.outcome ?? "done"
                   }, but its worktree and any terminals in it will be removed. Uncommitted or unlanded work stops the close rather than being discarded.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            </Dialog.Description>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Dialog.Close
+              render={(p) => (
+                <Button {...p} variant="secondary">
+                  Cancel
+                </Button>
+              )}
+            />
+            <Button
+              variant={confirming?.kind === "purge" ? "destructive" : "primary"}
               onClick={() => {
                 if (confirming?.kind === "purge") onPurge(task.id);
                 else if (confirming) onClose(task.id, confirming.outcome);
                 setConfirming(null);
               }}
-              className={cn(
-                confirming?.kind === "purge" && "bg-red-600 text-white hover:bg-red-600/90",
-              )}
             >
               {confirming?.kind === "purge"
                 ? "Delete permanently"
                 : `Close as ${confirming?.outcome ?? "done"}`}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </div>
+        </Dialog>
+      </Dialog.Root>
     </div>
   );
 }

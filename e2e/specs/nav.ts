@@ -79,16 +79,24 @@ export async function waitForAnyDisplayed(selector: string, why: string): Promis
  * (App.tsx hides rather than unmounts) don't collide — their `getText()` is empty.
  */
 export async function clickTab(label: string): Promise<void> {
-  const triggers = await browser.$$('[data-slot="tabs-trigger"]');
-  for (const trigger of triggers) {
-    if ((await trigger.getText()).trim() === label) {
-      await trigger.click();
-      break;
-    }
-  }
+  // The strip can mount after the screen does (a summary still loading).
+  let target: WebdriverIO.Element | undefined;
   await browser.waitUntil(
     async () => {
-      const selected = await browser.$$('[data-slot="tabs-trigger"][aria-selected="true"]');
+      for (const trigger of await browser.$$('[role="tab"]')) {
+        if ((await trigger.getText()).trim() === label) {
+          target = trigger;
+          return true;
+        }
+      }
+      return false;
+    },
+    { timeout: 10000, timeoutMsg: `tab "${label}" never rendered` },
+  );
+  await target?.click();
+  await browser.waitUntil(
+    async () => {
+      const selected = await browser.$$('[role="tab"][aria-selected="true"]');
       for (const trigger of selected) {
         if ((await trigger.getText()).trim() === label) return true;
       }
@@ -98,22 +106,12 @@ export async function clickTab(label: string): Promise<void> {
   );
 }
 
-/**
- * Resolves the panel via Radix's `aria-controls` rather than DOM order, since
- * other mounted screens also render `tabs-content` nodes.
- */
+/** Kumo's `Tabs` renders only the strip, so each screen labels its own
+ * `tabpanel` with the active tab's name. */
 export async function expectTabPanelShown(label: string): Promise<void> {
-  const selected = await browser.$$('[data-slot="tabs-trigger"][aria-selected="true"]');
-  for (const trigger of selected) {
-    if ((await trigger.getText()).trim() === label) {
-      const panelId = await trigger.getAttribute("aria-controls");
-      if (panelId) {
-        // Attribute selector, not `#id`: Radix panel ids contain colons.
-        const panel = await browser.$(`[id="${panelId}"]`);
-        await panel.waitForDisplayed({ timeout: 10000 });
-        return;
-      }
-    }
-  }
-  throw new Error(`no displayed panel for selected tab "${label}"`);
+  const panel = await browser.$(`[role="tabpanel"][aria-label="${label}"]`);
+  await panel.waitForDisplayed({
+    timeout: 10000,
+    timeoutMsg: `no displayed panel for selected tab "${label}"`,
+  });
 }

@@ -1,26 +1,6 @@
-import { TerminalSquare } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Command,
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { useState } from "react";
+import { TerminalWindowIcon } from "@phosphor-icons/react";
+import { Button, Checkbox, CommandPalette, Dialog, Input } from "@cloudflare/kumo";
 import {
   sessionLabel,
   type RemoveTarget,
@@ -46,33 +26,39 @@ export function SplitSessionDialog({
   candidates: SessionData[];
   onPick: (sessionId: string) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const rows = candidates.filter((s) => sessionLabel(s).toLowerCase().includes(q));
   return (
-    <CommandDialog
+    <CommandPalette.Root
       open={open}
-      onOpenChange={onOpenChange}
-      title="Add to window"
-      description={
-        folderName
-          ? `Pick a session from ${folderName} to add as a pane.`
-          : "Pick a session to add as a pane."
-      }
-      className="sm:max-w-lg"
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) setQuery("");
+      }}
+      items={rows}
+      value={query}
+      onValueChange={setQuery}
+      itemToStringValue={sessionLabel}
     >
-      <Command>
-        <CommandInput autoFocus placeholder="Search sessions…" />
-        <CommandList className="max-h-[60vh]">
-          <CommandEmpty>No sessions match.</CommandEmpty>
-          <CommandGroup heading="Sessions">
-            {candidates.map((s) => (
-              <CommandItem key={s.id} value={sessionLabel(s)} onSelect={() => onPick(s.id)}>
-                <TerminalSquare className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="flex-1 truncate">{sessionLabel(s)}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </Command>
-    </CommandDialog>
+      <CommandPalette.Input
+        autoFocus
+        placeholder={`Search sessions${folderName ? ` in ${folderName}` : ""}…`}
+        autoComplete="off"
+        spellCheck={false}
+      />
+      <CommandPalette.List className="max-h-[60vh]">
+        <CommandPalette.Results>
+          {(s: SessionData) => (
+            <CommandPalette.Item key={s.id} value={s} onClick={() => onPick(s.id)}>
+              <TerminalWindowIcon className="size-3.5 shrink-0 text-kumo-subtle" />
+              <span className="flex-1 truncate">{sessionLabel(s)}</span>
+            </CommandPalette.Item>
+          )}
+        </CommandPalette.Results>
+        <CommandPalette.Empty>No sessions match.</CommandPalette.Empty>
+      </CommandPalette.List>
+    </CommandPalette.Root>
   );
 }
 
@@ -88,22 +74,32 @@ export function RemoveRepoDialog({
   onConfirm: () => void;
 }) {
   return (
-    <AlertDialog open={target != null} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove {target?.label} from the rail?</AlertDialogTitle>
-          <AlertDialogDescription>
+    <Dialog.Root open={target != null} onOpenChange={onOpenChange}>
+      <Dialog size="lg" className="p-6">
+        <div className="mb-4 flex flex-col gap-1.5">
+          <Dialog.Title className="text-lg font-semibold">
+            Remove {target?.label} from the rail?
+          </Dialog.Title>
+          <Dialog.Description className="text-sm text-kumo-subtle">
             {target?.sessionIds.length}{" "}
             {target?.sessionIds.length === 1 ? "session is" : "sessions are"} still running.
             Removing will stop {target?.sessionIds.length === 1 ? "it" : "them"}.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onConfirm}>Stop &amp; remove</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Dialog.Description>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <Dialog.Close
+            render={(props) => (
+              <Button {...props} variant="secondary">
+                Cancel
+              </Button>
+            )}
+          />
+          <Button variant="primary" onClick={onConfirm}>
+            Stop &amp; remove
+          </Button>
+        </div>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -137,12 +133,12 @@ export function DeleteWorktreeDialog({
   onConfirm: () => void;
 }) {
   return (
-    <AlertDialog open={target != null} onOpenChange={onOpenChange}>
+    <Dialog.Root open={target != null} onOpenChange={onOpenChange}>
       {/* Same width as the blocked-delete dialog it can hand off to, so the
           flow doesn't jump size mid-decision. */}
-      <AlertDialogContent className="max-w-[calc(100%-2rem)]! sm:max-w-xl!">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="wrap-anywhere">
+      <Dialog size="lg" className="flex max-w-xl flex-col gap-4 p-6">
+        <div className="flex flex-col gap-1.5">
+          <Dialog.Title className="text-lg font-semibold wrap-anywhere">
             {/* Nothing is on disk to delete — the whole operation is the
                 bookkeeping, so the question is about the task, not a checkout
                 that isn't there. */}
@@ -151,8 +147,8 @@ export function DeleteWorktreeDialog({
               : task
                 ? `Close task & delete worktree ${target?.label}?`
                 : `Delete worktree ${target?.label}?`}
-          </AlertDialogTitle>
-          <AlertDialogDescription className="text-pretty">
+          </Dialog.Title>
+          <Dialog.Description className="text-sm text-pretty text-kumo-subtle">
             {target?.dirMissing ? (
               <>
                 This task's worktree is already gone, so nothing is deleted from disk. Its branch
@@ -181,8 +177,8 @@ export function DeleteWorktreeDialog({
                 will be stopped.
               </>
             )}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+          </Dialog.Description>
+        </div>
         {/* How the task ended, defaulted to `done` — the common case — with
             one underlined link to flip it to `abandoned`. Only rendered
             when a board task is bound; a bare worktree has nothing to
@@ -194,7 +190,7 @@ export function DeleteWorktreeDialog({
                 "rounded px-1.5 py-0.5 font-mono",
                 outcome === "done"
                   ? "bg-emerald-500/10 text-emerald-500"
-                  : "bg-muted text-muted-foreground",
+                  : "bg-kumo-recessed text-kumo-subtle",
               )}
             >
               {(() => {
@@ -210,7 +206,7 @@ export function DeleteWorktreeDialog({
             </span>
             <button
               type="button"
-              className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              className="text-kumo-subtle underline underline-offset-2 hover:text-kumo-default"
               onClick={onSwapOutcome}
             >
               record as {outcome === "done" ? "abandoned" : "done"} instead
@@ -218,43 +214,50 @@ export function DeleteWorktreeDialog({
           </div>
         )}
         {/* Nothing on disk means no guards to waive, so the option would be a
-            checkbox that changes nothing. `<label htmlFor>`, not a button —
-            Radix's Checkbox is one already (see apps/client/CLAUDE.md). */}
+            checkbox that changes nothing. A wrapping `<label>`, not a button —
+            the Checkbox is one already (see apps/client/CLAUDE.md). */}
         {target && !target.dirMissing && (
           <label
-            htmlFor="force-delete-worktree"
             className={cn(
               "flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 text-xs",
-              force ? "border-destructive/40 bg-destructive/10" : "border-border bg-muted/40",
+              force
+                ? "border-destructive/40 bg-destructive/10"
+                : "border-kumo-hairline bg-kumo-recessed",
             )}
           >
             <Checkbox
-              id="force-delete-worktree"
+              aria-label="Skip the guards"
               checked={force}
-              onCheckedChange={(checked) => onForceChange(checked === true)}
+              onCheckedChange={(checked) => onForceChange(checked)}
               className="mt-0.5"
             />
             <span className="flex flex-col gap-0.5">
               <span className="font-medium">Skip the guards</span>
-              <span className="text-muted-foreground">
+              <span className="text-kumo-subtle">
                 Delete even with uncommitted changes, commits on no branch/remote, or a dev server
                 on its ports.
               </span>
             </span>
           </label>
         )}
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant={force && !target?.dirMissing ? "destructive" : "default"}
+        <div className="mt-2 flex justify-end gap-2">
+          <Dialog.Close
+            render={(props) => (
+              <Button {...props} variant="secondary">
+                Cancel
+              </Button>
+            )}
+          />
+          <Button
+            variant={force && !target?.dirMissing ? "destructive" : "primary"}
             onClick={onConfirm}
             title={withHint("Confirm", "ab-confirm-close-worktree")}
           >
             {confirmLabel(task != null, target?.dirMissing === true, outcome, force)}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </div>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -274,12 +277,13 @@ export function StartClaudeDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <Dialog open={target != null} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>✦ Start Claude{target ? ` in ${target.sessionName}` : ""}</DialogTitle>
-        </DialogHeader>
+    <Dialog.Root open={target != null} onOpenChange={onOpenChange}>
+      <Dialog size="lg" className="flex flex-col gap-4 p-6">
+        <Dialog.Title className="text-lg font-semibold">
+          ✦ Start Claude{target ? ` in ${target.sessionName}` : ""}
+        </Dialog.Title>
         <Input
+          aria-label="Prompt for Claude"
           autoFocus
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
@@ -291,7 +295,7 @@ export function StartClaudeDialog({
           }}
           placeholder="what are you working toward? (optional)"
         />
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }

@@ -1,15 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { toast } from "@/lib/toast";
+import { Button, Dialog, Input } from "@cloudflare/kumo";
 import { NotInTauri } from "@/lib/errors";
 import { invoke } from "@/lib/tauri";
 import { cloneDirName } from "@/lib/new-repo";
@@ -37,8 +28,8 @@ export function NewRepoDialog({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Dialog open={mode !== null} onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent>
+    <Dialog.Root open={mode !== null} onOpenChange={(open) => !open && !busy && onClose()}>
+      <Dialog size="lg" className="p-6">
         {mode && (
           <NewRepoForm
             key={mode}
@@ -50,8 +41,8 @@ export function NewRepoDialog({
             onClose={onClose}
           />
         )}
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -107,14 +98,16 @@ function NewRepoForm({
         void submit();
       }}
     >
-      <DialogHeader>
-        <DialogTitle>{clone ? "Clone a repo from GitHub" : "Create a new repo"}</DialogTitle>
-        <DialogDescription>
+      <div className="flex flex-col gap-1.5">
+        <Dialog.Title className="text-lg font-semibold">
+          {clone ? "Clone a repo from GitHub" : "Create a new repo"}
+        </Dialog.Title>
+        <Dialog.Description className="text-sm text-kumo-subtle">
           {clone
             ? "Clones it with your git credentials and adds it to the rail."
             : "Runs git init with an empty first commit on main, then adds it to the rail."}
-        </DialogDescription>
-      </DialogHeader>
+        </Dialog.Description>
+      </div>
       {clone && (
         <Field label="Repository">
           <Input
@@ -148,15 +141,15 @@ function NewRepoForm({
           ))}
         </datalist>
       </Field>
-      <p className="truncate font-mono text-[11px] text-muted-foreground">→ {target}</p>
-      <DialogFooter>
+      <p className="truncate font-mono text-[11px] text-kumo-subtle">→ {target}</p>
+      <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
           Cancel
         </Button>
-        <Button type="submit" disabled={!ready || busy}>
+        <Button type="submit" variant="primary" disabled={!ready || busy}>
           {busy ? (clone ? "Cloning…" : "Creating…") : clone ? "Clone" : "Create"}
         </Button>
-      </DialogFooter>
+      </div>
     </form>
   );
 }

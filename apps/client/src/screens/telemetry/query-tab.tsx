@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Ellipsis, Play, Plus, RefreshCw, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
+  ArrowClockwiseIcon,
+  DotsThreeIcon,
+  MagnifyingGlassIcon,
+  PlayIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
+import { Button, DropdownMenu, Input, InputArea } from "@cloudflare/kumo";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { Textarea } from "@/components/ui/textarea";
 import { Empty } from "@/components/store-bits";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { nextSavedQueryId, useUserSettings, type SavedQuery } from "@/lib/settings";
@@ -34,7 +32,7 @@ import { useWorkspace } from "@/lib/workspace";
 const NEW_QUERY_SQL =
   "select ts, kind, name, message, duration_ms, tt_task\nfrom records\nwhere day = date('now')\norder by ts desc\nlimit 100";
 
-// Radix drops a hidden TabsContent, so the last answer lives here to survive a
+// Only the selected tab's panel renders, so the last answer lives here to survive a
 // trip to the Log tab and back.
 let remembered: { selectedId: string | null; result: QueryResult | null; error: string | null } = {
   selectedId: null,
@@ -143,34 +141,36 @@ export function QueryTab() {
 
   if (loaded && !settings) {
     return (
-      <div className="rounded-lg border border-border bg-card">
+      <div className="rounded-lg border border-kumo-hairline bg-kumo-base">
         <Empty>Saved queries live in the app's settings — open the desktop app.</Empty>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden rounded-lg border border-border bg-card">
-      <aside className="flex w-[180px] shrink-0 flex-col border-r border-border">
-        <div className="flex items-center gap-1 border-b border-border p-2">
+    <div className="flex h-full min-h-0 overflow-hidden rounded-lg border border-kumo-hairline bg-kumo-base">
+      <aside className="flex w-[180px] shrink-0 flex-col border-r border-kumo-hairline">
+        <div className="flex items-center gap-1 border-b border-kumo-hairline p-2">
           <div className="relative min-w-0 flex-1">
-            <Search className="absolute top-1/2 left-2 size-3 -translate-y-1/2 text-muted-foreground" />
+            <MagnifyingGlassIcon className="absolute top-1/2 left-2 size-3 -translate-y-1/2 text-kumo-subtle" />
             <Input
+              size="xs"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search"
-              className="h-7 pl-6 text-xs"
+              aria-label="Search queries"
+              className="pl-6"
             />
           </div>
           <Button
-            size="icon"
+            shape="square"
+            size="sm"
             variant="ghost"
-            className="size-7 shrink-0"
+            className="shrink-0"
             aria-label="New query"
+            icon={<PlusIcon className="size-3.5" />}
             onClick={addQuery}
-          >
-            <Plus className="size-3.5" />
-          </Button>
+          />
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5">
           {shown.map((q) => (
@@ -194,8 +194,8 @@ export function QueryTab() {
       <section className="flex min-w-0 flex-1 flex-col">
         {selected ? (
           <>
-            <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            <header className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline px-3 py-2">
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-kumo-default">
                 {selected.label}
               </span>
               <KbdGroup aria-hidden>
@@ -204,37 +204,39 @@ export function QueryTab() {
                 ))}
               </KbdGroup>
               <Button
-                size="icon"
+                shape="square"
+                size="sm"
                 variant="ghost"
-                className="size-7"
                 aria-label="Reload the event log"
+                icon={
+                  <ArrowClockwiseIcon className={cn("size-3.5", reloading && "animate-spin")} />
+                }
                 onClick={() => void reload()}
                 disabled={reloading || running}
-              >
-                <RefreshCw className={cn("size-3.5", reloading && "animate-spin")} />
-              </Button>
+              />
               <Button
                 size="sm"
+                variant="primary"
+                icon={<PlayIcon className="size-3.5" />}
                 onClick={() => {
                   mouseAction("tq-run", "telemetry");
                   void run();
                 }}
                 disabled={running}
               >
-                <Play className="size-3.5" />
                 Run
               </Button>
             </header>
-            <Textarea
+            <InputArea
               value={selected.sql}
               onChange={(e) => setSql(selected.id, e.target.value)}
               onBlur={() => void flush()}
               spellCheck={false}
               aria-label="SQL"
-              className="min-h-36 shrink-0 resize-y rounded-none border-0 border-b border-border font-mono text-xs leading-5 field-sizing-fixed focus-visible:ring-0 md:text-xs"
+              className="min-h-36 shrink-0 resize-y rounded-none border-0 border-b border-kumo-hairline font-mono text-xs leading-5 field-sizing-fixed focus-visible:ring-0 md:text-xs"
             />
             {error && (
-              <p className="shrink-0 border-b border-border bg-red-500/5 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-red-600 dark:text-red-400">
+              <p className="shrink-0 border-b border-kumo-hairline bg-red-500/5 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-red-600 dark:text-red-400">
                 {error}
               </p>
             )}
@@ -271,8 +273,8 @@ function QueryRow({
       className={cn(
         "group flex items-center rounded-md",
         active
-          ? "bg-accent text-foreground"
-          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+          ? "bg-kumo-tint text-kumo-default"
+          : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default",
       )}
     >
       <button
@@ -284,29 +286,31 @@ function QueryRow({
         {query.label}
       </button>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="mr-0.5 size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
-            aria-label={`Actions for ${query.label}`}
-          >
-            <Ellipsis className="size-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            onSelect={() => {
+        <DropdownMenu.Trigger
+          render={
+            <Button
+              shape="square"
+              size="xs"
+              variant="ghost"
+              className="mr-0.5 shrink-0 opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
+              aria-label={`Actions for ${query.label}`}
+              icon={<DotsThreeIcon className="size-3.5" />}
+            />
+          }
+        />
+        <DropdownMenu.Content align="end">
+          <DropdownMenu.Item
+            onClick={() => {
               uiAction("telemetry.query_rename_start", "telemetry");
               onStartRename();
             }}
           >
             Rename
-          </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item variant="danger" onClick={onDelete}>
             Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
       </DropdownMenu>
     </div>
   );
@@ -320,7 +324,7 @@ function RenameInput({ initial, onDone }: { initial: string; onDone: (label: str
       autoFocus
       defaultValue={initial}
       aria-label="Query name"
-      className="h-7 text-xs"
+      size="xs"
       onBlur={(e) => onDone(cancelled.current ? initial : e.target.value)}
       onKeyDown={(e) => {
         if (e.key === "Escape") cancelled.current = true;
@@ -352,7 +356,7 @@ function ResultsGrid({ result, running }: { result: QueryResult | null; running:
                   <th
                     key={`${c}-${i}`}
                     className={cn(
-                      "sticky top-0 border-b border-border bg-card px-2.5 py-1.5 text-left font-mono font-medium text-muted-foreground",
+                      "sticky top-0 border-b border-kumo-hairline bg-kumo-base px-2.5 py-1.5 text-left font-mono font-medium text-kumo-subtle",
                       numeric[i] && "text-right",
                     )}
                   >
@@ -368,9 +372,9 @@ function ResultsGrid({ result, running }: { result: QueryResult | null; running:
                     <td
                       key={c}
                       className={cn(
-                        "border-b border-border/50 px-2.5 py-1 align-top font-mono whitespace-nowrap",
+                        "border-b border-kumo-hairline/50 px-2.5 py-1 align-top font-mono whitespace-nowrap",
                         numeric[c] && "text-right tabular-nums",
-                        v === null && "text-muted-foreground/50",
+                        v === null && "text-kumo-subtle/50",
                       )}
                     >
                       <div className="max-w-[56ch] truncate" title={fmtCell(v)}>
@@ -384,7 +388,7 @@ function ResultsGrid({ result, running }: { result: QueryResult | null; running:
           </table>
         )}
       </div>
-      <div className="shrink-0 border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
+      <div className="shrink-0 border-t border-kumo-hairline px-3 py-1.5 font-mono text-[11px] text-kumo-subtle">
         {resultCaption(result)}
       </div>
     </div>

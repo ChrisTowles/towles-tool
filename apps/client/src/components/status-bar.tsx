@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Flame, Keyboard, ShieldAlert, Stethoscope } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { FireIcon, KeyboardIcon, ShieldWarningIcon, StethoscopeIcon } from "@phosphor-icons/react";
+import { Tooltip } from "@cloudflare/kumo";
 import { isTauri } from "@/lib/tauri";
 import { claudeUsageLimits, type UsageLimitBar, type UsageLimits } from "@/lib/claude-sessions";
 import {
@@ -70,29 +70,29 @@ function useClaudeUsageLimits(): UsageLimits | null {
 function limitFillColor(percent: number): string {
   if (percent >= 90) return "bg-red-500 dark:bg-red-400";
   if (percent >= 70) return "bg-amber-500/80 dark:bg-amber-400/80";
-  return "bg-foreground/50";
+  return "bg-kumo-contrast/50";
 }
 
 function LimitBar({ bar }: { bar: UsageLimitBar }) {
   const pct = Math.min(100, Math.max(0, bar.percent));
   const resetMs = bar.resetsAt ? new Date(bar.resetsAt).getTime() - Date.now() : null;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <div className="flex items-center gap-1">
-          <span>{shortLimitLabel(bar.label)}</span>
-          <div className="h-1.5 w-6 overflow-hidden rounded-full bg-muted-foreground/20">
-            <div
-              className={cn("h-full rounded-full", limitFillColor(bar.percent))}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-      </TooltipTrigger>
-      <TooltipContent>
-        {bar.label}: {Math.round(bar.percent)}%
-        {resetMs !== null && resetMs > 0 ? ` · resets in ${fmtCountdown(resetMs)}` : ""}
-      </TooltipContent>
+    <Tooltip
+      content={
+        <>
+          {bar.label}: {Math.round(bar.percent)}%
+          {resetMs !== null && resetMs > 0 ? ` · resets in ${fmtCountdown(resetMs)}` : ""}
+        </>
+      }
+      render={<div className="flex items-center gap-1" />}
+    >
+      <span>{shortLimitLabel(bar.label)}</span>
+      <div className="h-1.5 w-6 overflow-hidden rounded-full bg-kumo-fill">
+        <div
+          className={cn("h-full rounded-full", limitFillColor(bar.percent))}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </Tooltip>
   );
 }
@@ -125,27 +125,29 @@ function useResourceUsage(): ResourceUsage | null {
 function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: number }) {
   const { label, state, run } = health;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      content={
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium">
+            {label} · {COLLECTOR_STATE_LABEL[state]}
+          </span>
+          {run ? (
+            <span className="text-kumo-subtle">
+              {run.ok ? "ran" : "failed"} {fmtAge(run.ranAt, now)}
+              {run.message ? ` · ${run.message}` : ""}
+            </span>
+          ) : (
+            <span className="text-kumo-subtle">no run recorded yet</span>
+          )}
+        </div>
+      }
+      render={
         <span
           className={cn("size-1.5 rounded-full", COLLECTOR_STATE_DOT[state])}
           aria-label={`${label}: ${COLLECTOR_STATE_LABEL[state]}`}
         />
-      </TooltipTrigger>
-      <TooltipContent className="flex flex-col gap-0.5">
-        <span className="font-medium">
-          {label} · {COLLECTOR_STATE_LABEL[state]}
-        </span>
-        {run ? (
-          <span className="text-muted-foreground">
-            {run.ok ? "ran" : "failed"} {fmtAge(run.ranAt, now)}
-            {run.message ? ` · ${run.message}` : ""}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">no run recorded yet</span>
-        )}
-      </TooltipContent>
-    </Tooltip>
+      }
+    />
   );
 }
 
@@ -174,51 +176,53 @@ function KeyboardHabit({ score }: { score: KeyboardScore }) {
   const missed = score.topMissed[0];
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      content={
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium">
+            {tier ? TIER_LABELS[tier] : "No shortcut-bound actions yet today"}
+            {today.goalMet && " · goal met"}
+          </span>
+          <span className="text-kumo-subtle">
+            {today.shortcut} by keyboard · {today.mouse} by mouse
+          </span>
+          <span className="text-kumo-subtle">
+            {streak > 0 ? `${streak}-day streak` : "No streak yet"} · best {score.bestStreak} · goal{" "}
+            {Math.round(score.goalShare * 100)}% over {score.goalMinActions}+ actions
+          </span>
+          {remaining !== null && (
+            <span className="text-kumo-subtle">
+              {remaining} more keyboard {remaining === 1 ? "action" : "actions"} wins today
+            </span>
+          )}
+          {missed && (
+            <span className="text-kumo-subtle">
+              Most clicked past its shortcut: {missed.id} ({missed.mouse}×)
+            </span>
+          )}
+        </div>
+      }
+      render={
         <button
-          className="flex items-center gap-1 tabular-nums hover:text-foreground"
+          className="flex items-center gap-1 tabular-nums hover:text-kumo-default"
           aria-label="Keyboard shortcut habit"
           onClick={() => {
             uiAction("status_bar.open_telemetry", activeTab, "keyboard");
             openTab("telemetry");
           }}
-        >
-          <Keyboard className="size-3.5" />
-          <span className={today.goalMet ? "text-emerald-600 dark:text-emerald-500" : undefined}>
-            {fmtShare(today.share)}
-          </span>
-          {streak > 0 && (
-            <span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-500">
-              <Flame className="size-3" />
-              {streak}
-            </span>
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent className="flex flex-col gap-0.5">
-        <span className="font-medium">
-          {tier ? TIER_LABELS[tier] : "No shortcut-bound actions yet today"}
-          {today.goalMet && " · goal met"}
+        />
+      }
+    >
+      <KeyboardIcon className="size-3.5" />
+      <span className={today.goalMet ? "text-emerald-600 dark:text-emerald-500" : undefined}>
+        {fmtShare(today.share)}
+      </span>
+      {streak > 0 && (
+        <span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-500">
+          <FireIcon className="size-3" />
+          {streak}
         </span>
-        <span className="text-muted-foreground">
-          {today.shortcut} by keyboard · {today.mouse} by mouse
-        </span>
-        <span className="text-muted-foreground">
-          {streak > 0 ? `${streak}-day streak` : "No streak yet"} · best {score.bestStreak} · goal{" "}
-          {Math.round(score.goalShare * 100)}% over {score.goalMinActions}+ actions
-        </span>
-        {remaining !== null && (
-          <span className="text-muted-foreground">
-            {remaining} more keyboard {remaining === 1 ? "action" : "actions"} wins today
-          </span>
-        )}
-        {missed && (
-          <span className="text-muted-foreground">
-            Most clicked past its shortcut: {missed.id} ({missed.mouse}×)
-          </span>
-        )}
-      </TooltipContent>
+      )}
     </Tooltip>
   );
 }
@@ -230,25 +234,23 @@ function RulesFailing({ count }: { count: number }) {
   const { openTab, activeTab } = useWorkspace();
   if (count === 0) return null;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      content={`${count} telemetry ${count === 1 ? "rule" : "rules"} failing today`}
+      render={
         <button
-          className="flex items-center gap-1 tabular-nums hover:text-foreground"
+          className="flex items-center gap-1 tabular-nums hover:text-kumo-default"
           aria-label="Telemetry rules failing"
           onClick={() => {
             uiAction("status_bar.open_telemetry", activeTab, "rules");
             openTab("telemetry");
           }}
-        >
-          <ShieldAlert className="size-3.5" />
-          <span className="rounded-full bg-sky-500/15 px-1.5 font-mono text-[11px] text-sky-700 dark:text-sky-300">
-            {count}
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent>
-        {count} telemetry {count === 1 ? "rule" : "rules"} failing today
-      </TooltipContent>
+        />
+      }
+    >
+      <ShieldWarningIcon className="size-3.5" />
+      <span className="rounded-full bg-sky-500/15 px-1.5 font-mono text-[11px] text-sky-700 dark:text-sky-300">
+        {count}
+      </span>
     </Tooltip>
   );
 }
@@ -262,15 +264,15 @@ export function StatusBar() {
   const version = useAppVersion();
 
   return (
-    <footer className="flex h-7 shrink-0 items-center justify-between border-t px-3 text-xs text-muted-foreground">
+    <footer className="flex h-7 shrink-0 items-center justify-between border-t border-kumo-hairline px-3 text-xs text-kumo-subtle">
       <button
-        className="flex items-center gap-1.5 hover:text-foreground"
+        className="flex items-center gap-1.5 hover:text-kumo-default"
         onClick={() => {
           uiAction("status_bar.open_doctor", activeTab);
           openTab("doctor");
         }}
       >
-        <Stethoscope className="size-3.5" />
+        <StethoscopeIcon className="size-3.5" />
         Doctor
       </button>
       <div className="flex items-center gap-3">
@@ -286,7 +288,7 @@ export function StatusBar() {
         )}
         {usage && (
           <button
-            className="tabular-nums hover:text-foreground"
+            className="tabular-nums hover:text-kumo-default"
             title="Total CPU / memory — this app plus every open terminal"
             onClick={() => {
               uiAction("status_bar.open_task_explorer", activeTab);

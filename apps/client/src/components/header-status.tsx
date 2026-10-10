@@ -1,16 +1,15 @@
 // The header title bar's three status readouts. Reported, never actionable: a
 // row navigates, nothing here approves or replies.
 import { useState } from "react";
+import { Popover, Tooltip } from "@cloudflare/kumo";
 import {
-  CircleAlert,
-  CircleX,
-  GitPullRequest,
-  ListTodo,
-  MessageCircleHeart,
-  type LucideIcon,
-} from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+  ChatCircleDotsIcon,
+  GitPullRequestIcon,
+  type Icon,
+  ListChecksIcon,
+  WarningCircleIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { useAgentboardState } from "@/lib/agentboard";
 import { buildAttentionFeed, type AttentionItem, type AttentionKind } from "@/lib/attention-feed";
@@ -36,14 +35,14 @@ export function TopTaskChip() {
   if (!topTask) return null;
   return (
     <button
-      className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent/50"
+      className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint"
       onClick={() => {
         uiAction("header.open_cockpit", activeTab, "top_task");
         openTab("cockpit");
       }}
       title={topTask.text}
     >
-      <ListTodo className="size-3.5 shrink-0" />
+      <ListChecksIcon className="size-3.5 shrink-0" />
       <span className="max-w-44 truncate">{topTask.text}</span>
     </button>
   );
@@ -71,7 +70,7 @@ export function NeedsYouChip() {
   }
 
   if (feed.length === 0) {
-    return <span className="px-1.5 py-0.5 text-xs text-muted-foreground/50">all clear</span>;
+    return <span className="px-1.5 py-0.5 text-xs text-kumo-subtle/50">all clear</span>;
   }
 
   return (
@@ -82,14 +81,16 @@ export function NeedsYouChip() {
         setFeedOpen(open);
       }}
     >
-      <PopoverTrigger asChild>
-        <button className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-accent/50 data-[state=open]:bg-accent/50">
-          <CircleAlert className="size-3.5 text-amber-500" />
-          {feed.length} need you
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 gap-0 p-1.5">
-        <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <Popover.Trigger
+        render={
+          <button className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-medium text-kumo-default hover:bg-kumo-tint data-[popup-open]:bg-kumo-tint" />
+        }
+      >
+        <WarningCircleIcon className="size-3.5 text-amber-500" />
+        {feed.length} need you
+      </Popover.Trigger>
+      <Popover.Content align="end" className="w-80 gap-0 p-1.5">
+        <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-kumo-subtle">
           Needs you
         </div>
         <div className="flex max-h-80 flex-col overflow-y-auto">
@@ -97,7 +98,7 @@ export function NeedsYouChip() {
             <AttentionRow key={item.id} item={item} now={now} onNavigate={() => navigate(item)} />
           ))}
         </div>
-      </PopoverContent>
+      </Popover.Content>
     </Popover>
   );
 }
@@ -109,16 +110,8 @@ export function CollectorDot() {
   const now = useNow();
   const health = alwaysOnHealth(snapshot.runs, now);
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={cn(
-            "size-2 shrink-0 rounded-full",
-            COLLECTOR_STATE_DOT[worstCollectorState(health)],
-          )}
-        />
-      </TooltipTrigger>
-      <TooltipContent>
+    <Tooltip
+      content={
         <div className="flex flex-col gap-0.5">
           {health.map((h) => (
             <span key={h.key}>
@@ -127,17 +120,25 @@ export function CollectorDot() {
             </span>
           ))}
         </div>
-      </TooltipContent>
-    </Tooltip>
+      }
+      render={
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            COLLECTOR_STATE_DOT[worstCollectorState(health)],
+          )}
+        />
+      }
+    />
   );
 }
 
 /** Icon + accent (paired dark variant) per attention kind. */
-const KIND_META: Record<AttentionKind, { icon: LucideIcon; tone: string }> = {
-  dm: { icon: MessageCircleHeart, tone: "text-rose-500 dark:text-rose-400" },
-  "pr-ci": { icon: CircleX, tone: PR_TONE.failed.text },
-  "pr-review": { icon: GitPullRequest, tone: PR_TONE.review.text },
-  agent: { icon: CircleAlert, tone: "text-amber-500 dark:text-amber-400" },
+const KIND_META: Record<AttentionKind, { icon: Icon; tone: string }> = {
+  dm: { icon: ChatCircleDotsIcon, tone: "text-rose-500 dark:text-rose-400" },
+  "pr-ci": { icon: XCircleIcon, tone: PR_TONE.failed.text },
+  "pr-review": { icon: GitPullRequestIcon, tone: PR_TONE.review.text },
+  agent: { icon: WarningCircleIcon, tone: "text-amber-500 dark:text-amber-400" },
 };
 
 function AttentionRow({
@@ -153,15 +154,15 @@ function AttentionRow({
   return (
     <button
       onClick={onNavigate}
-      className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent/50"
+      className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-kumo-tint"
     >
       <Icon className={cn("mt-0.5 size-3.5 shrink-0", tone)} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium text-foreground">{item.title}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{item.subtitle}</span>
+        <span className="block truncate text-xs font-medium text-kumo-default">{item.title}</span>
+        <span className="block truncate text-[11px] text-kumo-subtle">{item.subtitle}</span>
       </span>
       {item.kind === "dm" && (
-        <span className="mt-0.5 shrink-0 font-mono text-[10px] text-muted-foreground/60">
+        <span className="mt-0.5 shrink-0 font-mono text-[10px] text-kumo-subtle/60">
           {fmtAge(item.sortTs, now)}
         </span>
       )}

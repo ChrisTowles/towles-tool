@@ -14,12 +14,12 @@ describe("Telemetry screen", () => {
 
   it("navigates to Telemetry and renders the day picker", async () => {
     await gotoScreen("Telemetry");
-    await waitForAnyDisplayed('[data-slot="select-trigger"]', "telemetry day picker");
+    await waitForAnyDisplayed('[aria-label="Telemetry day"]', "telemetry day picker");
   });
 
   it("renders the Overview/Log/Insights tabs", async () => {
     await browser.waitUntil(
-      async () => (await browser.$$('[data-slot="tabs-trigger"]').length) >= 3,
+      async () => (await browser.$$('[role="tab"]').length) >= 3,
       { timeout: 10000, timeoutMsg: "telemetry tab list never rendered" },
     );
   });

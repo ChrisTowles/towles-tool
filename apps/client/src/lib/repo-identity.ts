@@ -2,40 +2,39 @@
  * unknown icon or malformed color degrades to the default look, never a
  * fallback. This file is the one seam turning a hex into pixels. */
 import {
-  Anchor,
-  BookOpen,
-  Bot,
-  Boxes,
-  Brain,
-  Bug,
-  Cloud,
-  Code,
-  Cog,
-  Compass,
-  Container,
-  Cpu,
-  Database,
-  FlaskConical,
-  FolderGit2,
-  Gauge,
-  Globe,
-  Hammer,
-  Layers,
-  Leaf,
-  Package,
-  Palette,
-  Plane,
-  Puzzle,
-  Radio,
-  Rocket,
-  Server,
-  Shield,
-  Sparkles,
-  Terminal,
-  Wrench,
-  Zap,
-  type LucideIcon,
-} from "lucide-react";
+  AirplaneTiltIcon,
+  AnchorIcon,
+  BookOpenIcon,
+  BrainIcon,
+  BroadcastIcon,
+  BugIcon,
+  CloudIcon,
+  CodeIcon,
+  CompassIcon,
+  CpuIcon,
+  CubeTransparentIcon,
+  DatabaseIcon,
+  FlaskIcon,
+  GaugeIcon,
+  GearIcon,
+  GitBranchIcon,
+  GlobeIcon,
+  HammerIcon,
+  HardDrivesIcon,
+  LeafIcon,
+  LightningIcon,
+  PackageIcon,
+  PaletteIcon,
+  PuzzlePieceIcon,
+  RobotIcon,
+  RocketIcon,
+  ShieldIcon,
+  SparkleIcon,
+  StackIcon,
+  TerminalIcon,
+  WrenchIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import type { CSSProperties } from "react";
 
 /** `accent` (the default) is edge + tinted glyph; `tint` adds a background wash. */
@@ -47,43 +46,44 @@ export type RepoMeta = {
   style?: RepoIdentityStyle;
 };
 
-/** Lucide component names, as persisted; adding one here is what makes it selectable. */
-export const REPO_ICONS: Record<string, LucideIcon> = {
-  FolderGit2,
-  Rocket,
-  Bug,
-  Boxes,
-  Terminal,
-  Cloud,
-  Database,
-  Cpu,
-  Globe,
-  BookOpen,
-  Wrench,
-  FlaskConical,
-  Palette,
-  Zap,
-  Shield,
-  Package,
-  Server,
-  Code,
-  Layers,
-  Sparkles,
-  Hammer,
-  Radio,
-  Compass,
-  Bot,
-  Plane,
-  Cog,
-  Anchor,
-  Brain,
-  Container,
-  Gauge,
-  Leaf,
-  Puzzle,
+/** Keys are stable persisted ids (historically lucide component names); adding one
+ * here is what makes it selectable. */
+export const REPO_ICONS: Record<string, Icon> = {
+  FolderGit2: GitBranchIcon,
+  Rocket: RocketIcon,
+  Bug: BugIcon,
+  Boxes: CubeTransparentIcon,
+  Terminal: TerminalIcon,
+  Cloud: CloudIcon,
+  Database: DatabaseIcon,
+  Cpu: CpuIcon,
+  Globe: GlobeIcon,
+  BookOpen: BookOpenIcon,
+  Wrench: WrenchIcon,
+  FlaskConical: FlaskIcon,
+  Palette: PaletteIcon,
+  Zap: LightningIcon,
+  Shield: ShieldIcon,
+  Package: PackageIcon,
+  Server: HardDrivesIcon,
+  Code: CodeIcon,
+  Layers: StackIcon,
+  Sparkles: SparkleIcon,
+  Hammer: HammerIcon,
+  Radio: BroadcastIcon,
+  Compass: CompassIcon,
+  Bot: RobotIcon,
+  Plane: AirplaneTiltIcon,
+  Cog: GearIcon,
+  Anchor: AnchorIcon,
+  Brain: BrainIcon,
+  Container: PackageIcon,
+  Gauge: GaugeIcon,
+  Leaf: LeafIcon,
+  Puzzle: PuzzlePieceIcon,
 };
 
-export const DEFAULT_REPO_ICON: LucideIcon = FolderGit2;
+export const DEFAULT_REPO_ICON: Icon = GitBranchIcon;
 
 /** Mid-chroma for either surface, and clear of the reserved status hues — amber,
  * violet, sky-500 — so identity can't read as a signal. */
@@ -99,7 +99,7 @@ export const REPO_PALETTE: readonly string[] = [
   "#78716c",
 ];
 
-export function repoIcon(meta: RepoMeta | null | undefined): LucideIcon {
+export function repoIcon(meta: RepoMeta | null | undefined): Icon {
   const name = meta?.icon;
   if (!name) return DEFAULT_REPO_ICON;
   return REPO_ICONS[name] ?? DEFAULT_REPO_ICON;

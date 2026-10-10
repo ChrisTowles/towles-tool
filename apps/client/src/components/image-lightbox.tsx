@@ -1,11 +1,6 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useEffect } from "react";
+import { Button, Dialog } from "@cloudflare/kumo";
+import { CaretLeftIcon, CaretRightIcon, XIcon } from "@phosphor-icons/react";
 
 /** The subset of a `PastedImage` (`lib/agentboard.ts`) the viewer needs: a
  * stable id, a name to caption it with, and the bytes as a `data:` URL. */
@@ -47,46 +42,67 @@ export function ImageLightbox({
   const index = lightboxIndex(images, openId);
   const image = index < 0 ? null : images[index];
   const step = (delta: number) => onOpenChange(lightboxStep(images, openId, delta));
+  const isOpen = image !== null;
+
+  useEffect(() => {
+    if (!isOpen || images.length < 2) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        onOpenChange(lightboxStep(images, openId, -1));
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        onOpenChange(lightboxStep(images, openId, 1));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, images, openId, onOpenChange]);
 
   return (
-    <Dialog open={image !== null} onOpenChange={(open) => !open && onOpenChange(null)}>
-      <DialogContent
-        className="w-auto gap-3 sm:max-w-[min(92vw,72rem)]"
-        onKeyDown={(e) => {
-          if (images.length < 2) return;
-          if (e.key === "ArrowLeft") {
-            e.preventDefault();
-            step(-1);
-          } else if (e.key === "ArrowRight") {
-            e.preventDefault();
-            step(1);
-          }
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle className="truncate pr-8">{image?.name ?? ""}</DialogTitle>
-          <DialogDescription>
-            {images.length > 1
-              ? `${index + 1} of ${images.length} — ← → to move, Esc to close`
-              : "Esc to close"}
-          </DialogDescription>
-        </DialogHeader>
+    <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onOpenChange(null)}>
+      <Dialog className="flex w-auto max-w-[min(92vw,72rem)] flex-col gap-3 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Dialog.Title className="truncate text-lg font-semibold">
+              {image?.name ?? ""}
+            </Dialog.Title>
+            <Dialog.Description className="text-sm text-kumo-subtle">
+              {images.length > 1
+                ? `${index + 1} of ${images.length} — ← → to move, Esc to close`
+                : "Esc to close"}
+            </Dialog.Description>
+          </div>
+          <Dialog.Close
+            aria-label="Close"
+            render={(p) => (
+              <Button
+                {...p}
+                variant="ghost"
+                shape="square"
+                size="sm"
+                aria-label="Close"
+                icon={<XIcon className="size-4" />}
+              />
+            )}
+          />
+        </div>
         <div className="flex items-center gap-2">
           {images.length > 1 && (
             <button
               type="button"
               aria-label="Previous image"
               onClick={() => step(-1)}
-              className="rounded border border-border p-1 text-muted-foreground hover:text-foreground"
+              className="rounded border border-kumo-hairline p-1 text-kumo-subtle hover:text-kumo-default"
             >
-              <ChevronLeft className="size-4" />
+              <CaretLeftIcon className="size-4" />
             </button>
           )}
           {image && (
             <img
               src={image.previewUrl}
               alt={image.name}
-              className="max-h-[75vh] min-w-0 rounded border border-border object-contain"
+              className="max-h-[75vh] min-w-0 rounded border border-kumo-hairline object-contain"
             />
           )}
           {images.length > 1 && (
@@ -94,13 +110,13 @@ export function ImageLightbox({
               type="button"
               aria-label="Next image"
               onClick={() => step(1)}
-              className="rounded border border-border p-1 text-muted-foreground hover:text-foreground"
+              className="rounded border border-kumo-hairline p-1 text-kumo-subtle hover:text-kumo-default"
             >
-              <ChevronRight className="size-4" />
+              <CaretRightIcon className="size-4" />
             </button>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }

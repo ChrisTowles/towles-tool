@@ -1,24 +1,16 @@
 import { useState } from "react";
 import {
-  Check,
-  Copy,
-  ExternalLink,
-  FileJson,
-  KeyRound,
-  MessageCircle,
-  Settings,
-  TriangleAlert,
-} from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  ArrowSquareOutIcon,
+  BracketsCurlyIcon,
+  ChatCircleIcon,
+  CheckIcon,
+  CopyIcon,
+  GearIcon,
+  KeyIcon,
+  WarningIcon,
+} from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button, Dialog } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { isAuthError, isScopeError } from "@/lib/slack";
 import { openExternalUrl } from "@/lib/open-url";
@@ -67,10 +59,16 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     <Button
       size="sm"
       variant="outline"
-      className="gap-1.5 px-2 text-xs"
+      className="px-2 text-xs"
+      icon={
+        copied ? (
+          <CheckIcon className="size-3.5 text-emerald-500" />
+        ) : (
+          <CopyIcon className="size-3.5" />
+        )
+      }
       onClick={() => void copy()}
     >
-      {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
       {copied ? "Copied" : label}
     </Button>
   );
@@ -78,9 +76,9 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 export function ManifestBlock() {
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-muted/40">
-      <div className="flex items-center justify-between border-b border-border bg-muted/60 px-2.5 py-1.5">
-        <span className="font-mono text-[11px] text-muted-foreground">app manifest</span>
+    <div className="overflow-hidden rounded-md border border-kumo-hairline bg-muted/40">
+      <div className="flex items-center justify-between border-b border-kumo-hairline bg-muted/60 px-2.5 py-1.5">
+        <span className="font-mono text-[11px] text-kumo-subtle">app manifest</span>
         <CopyButton text={APP_MANIFEST} label="Copy manifest" />
       </div>
       <pre className="max-h-52 overflow-auto p-3 font-mono text-[11px] leading-relaxed text-foreground">
@@ -102,7 +100,7 @@ function ExternalLinkText({ url, children }: { url: string; children: React.Reac
       className="inline-flex items-center gap-0.5 font-medium text-violet-600 underline underline-offset-2 hover:text-violet-500 dark:text-violet-300"
     >
       {children}
-      <ExternalLink className="size-3" />
+      <ArrowSquareOutIcon className="size-3" />
     </button>
   );
 }
@@ -126,27 +124,34 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
  * would have nowhere to be seen. */
 export function AppManifestDialog() {
   return (
-    <Dialog onOpenChange={(open) => open && uiAction("slack.manifest_open", "slack")}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5 px-2 text-muted-foreground">
-          <FileJson className="size-3.5" />
-          App manifest
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Slack app manifest</DialogTitle>
-          <DialogDescription>
+    <Dialog.Root onOpenChange={(open) => open && uiAction("slack.manifest_open", "slack")}>
+      <Dialog.Trigger
+        render={(p) => (
+          <Button
+            {...p}
+            variant="ghost"
+            size="sm"
+            className="px-2 text-kumo-subtle"
+            icon={<BracketsCurlyIcon className="size-3.5" />}
+          >
+            App manifest
+          </Button>
+        )}
+      />
+      <Dialog size="lg" className="p-6">
+        <div className="mb-4 flex flex-col gap-1.5">
+          <Dialog.Title className="text-lg font-semibold">Slack app manifest</Dialog.Title>
+          <Dialog.Description className="text-kumo-subtle">
             Reactions arrive live only with <span className="font-mono">reactions:read</span> and
             the two reaction events. Paste this at{" "}
             <ExternalLinkText url={SLACK_APPS_URL}>api.slack.com/apps</ExternalLinkText> → your app
             → App Manifest, save, then reinstall from Install App and paste the fresh{" "}
             <span className="font-mono">xoxp-…</span> token into Settings.
-          </DialogDescription>
-        </DialogHeader>
+          </Dialog.Description>
+        </div>
         <ManifestBlock />
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -158,16 +163,16 @@ export function SetupGuide() {
     <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto w-full max-w-xl px-6 py-8">
         <div className="mb-4 flex items-center gap-2.5">
-          <MessageCircle className="size-5 text-violet-500" />
+          <ChatCircleIcon className="size-5 text-violet-500" />
           <h2 className="text-base font-semibold text-foreground">Connect a Slack DM</h2>
         </div>
-        <p className="mb-5 text-[13px] leading-relaxed text-muted-foreground">
+        <p className="mb-5 text-[13px] leading-relaxed text-kumo-subtle">
           Watch one direct message (e.g. your partner) and reply without leaving the app. A one-time
           Slack setup:
         </p>
         <ol className="flex flex-col gap-4">
           <Step n={1} title="Create a Slack app from the manifest">
-            <p className="text-muted-foreground">
+            <p className="text-kumo-subtle">
               Go to <ExternalLinkText url={SLACK_APPS_URL}>api.slack.com/apps</ExternalLinkText> →{" "}
               <span className="font-medium text-foreground">Create New App</span> →{" "}
               <span className="font-medium text-foreground">From a manifest</span>, choose your
@@ -178,19 +183,19 @@ export function SetupGuide() {
             </div>
           </Step>
           <Step n={2} title="Install it to your workspace">
-            <p className="text-muted-foreground">
+            <p className="text-kumo-subtle">
               On the app's <span className="font-medium text-foreground">Install App</span> page,
               click Install and then <span className="font-medium text-foreground">Allow</span>.
             </p>
           </Step>
           <Step n={3} title="Copy the User OAuth Token">
-            <p className="text-muted-foreground">
+            <p className="text-kumo-subtle">
               From <span className="font-medium text-foreground">OAuth &amp; Permissions</span>,
               copy the <span className="font-mono">xoxp-…</span> User OAuth Token.
             </p>
           </Step>
           <Step n={4} title="Generate an app-level token (for live updates)">
-            <p className="text-muted-foreground">
+            <p className="text-kumo-subtle">
               Recommended: under{" "}
               <span className="font-medium text-foreground">
                 Basic Information → App-Level Tokens
@@ -201,19 +206,20 @@ export function SetupGuide() {
             </p>
           </Step>
           <Step n={5} title="Paste both tokens and pick who to watch">
-            <p className="text-muted-foreground">
+            <p className="text-kumo-subtle">
               In Settings → Slack, paste the tokens and choose the person to watch.
             </p>
             <div className="mt-2">
               <Button
                 size="sm"
-                className="gap-1.5"
+                variant="primary"
+                icon={<GearIcon className="size-3.5" />}
                 onClick={() => {
                   uiAction("slack.open_settings", "slack");
                   openSettingsTab({ tab: "collectors", filter: "slack" });
                 }}
               >
-                <Settings className="size-3.5" /> Open Slack settings
+                Open Slack settings
               </Button>
             </div>
           </Step>
@@ -228,16 +234,16 @@ function ReauthNotice({ onRetry }: { onRetry: () => void }) {
   const { openSettingsTab } = useWorkspace();
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="max-w-md rounded-lg border border-border bg-card p-6">
+      <div className="max-w-md rounded-lg border border-kumo-hairline bg-kumo-base p-6">
         <div className="mb-2 flex items-center gap-2">
-          <KeyRound className="size-5 text-amber-500" />
+          <KeyIcon className="size-5 text-amber-500" />
           <h2 className="text-sm font-semibold text-foreground">Your Slack token expired</h2>
         </div>
-        <p className="mb-3 text-[13px] leading-relaxed text-muted-foreground">
+        <p className="mb-3 text-[13px] leading-relaxed text-kumo-subtle">
           Slack rejected the token (<span className="font-mono">invalid_auth</span>). Re-issue it
           and paste the fresh one:
         </p>
-        <ol className="mb-4 flex flex-col gap-1.5 text-[13px] text-muted-foreground">
+        <ol className="mb-4 flex flex-col gap-1.5 text-[13px] text-kumo-subtle">
           <li>
             1. Open your app at{" "}
             <ExternalLinkText url={SLACK_APPS_URL}>api.slack.com/apps</ExternalLinkText> → OAuth
@@ -252,13 +258,14 @@ function ReauthNotice({ onRetry }: { onRetry: () => void }) {
         <div className="flex gap-2">
           <Button
             size="sm"
-            className="gap-1.5"
+            variant="primary"
+            icon={<GearIcon className="size-3.5" />}
             onClick={() => {
               uiAction("slack.open_settings", "slack");
               openSettingsTab({ tab: "collectors", filter: "slack" });
             }}
           >
-            <Settings className="size-3.5" /> Open Slack settings
+            Open Slack settings
           </Button>
           <Button
             size="sm"
@@ -283,16 +290,16 @@ export function FetchError({ error, onRetry }: { error: string; onRetry: () => v
   const scope = isScopeError(error);
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="max-w-sm rounded-lg border border-border bg-card p-6 text-center">
+      <div className="max-w-sm rounded-lg border border-kumo-hairline bg-kumo-base p-6 text-center">
         {scope ? (
-          <KeyRound className="mx-auto mb-3 size-6 text-amber-500" />
+          <KeyIcon className="mx-auto mb-3 size-6 text-amber-500" />
         ) : (
-          <TriangleAlert className="mx-auto mb-3 size-6 text-red-500" />
+          <WarningIcon className="mx-auto mb-3 size-6 text-red-500" />
         )}
         <h2 className="mb-1 text-sm font-semibold text-foreground">
           {scope ? "Token needs more access" : "Couldn't load the conversation"}
         </h2>
-        <p className="mb-4 text-[13px] leading-relaxed break-words text-muted-foreground">
+        <p className="mb-4 text-[13px] leading-relaxed break-words text-kumo-subtle">
           {scope
             ? "Re-authorize your Slack token with the chat:write and reactions:write scopes, then retry."
             : error}

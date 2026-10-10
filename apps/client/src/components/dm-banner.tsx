@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { Check, MessageCircleHeart } from "lucide-react";
+import { ChatCircleDotsIcon, CheckIcon } from "@phosphor-icons/react";
 import { motion } from "motion/react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
 import { dmsNeedingAttention, fmtAge, storeDmDismiss, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
@@ -83,13 +83,13 @@ export function DmBanner() {
             alarm && "bg-red-500 text-white dark:text-white",
           )}
         >
-          <MessageCircleHeart className="size-4" />
+          <ChatCircleDotsIcon className="size-4" />
         </span>
-        <span className="shrink-0 font-semibold text-foreground">{dm.fromName}</span>
-        <span className="min-w-0 truncate text-foreground/75">{dm.text}</span>
+        <span className="shrink-0 font-semibold text-kumo-default">{dm.fromName}</span>
+        <span className="min-w-0 truncate text-kumo-default/75">{dm.text}</span>
         <span
           className={cn(
-            "shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[11px] text-foreground/60",
+            "shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[11px] text-kumo-default/60",
             warn && "bg-red-500/30 font-medium text-red-700 dark:text-red-300",
             alarm && "bg-red-500 text-white",
           )}
@@ -97,13 +97,14 @@ export function DmBanner() {
           {fmtAge(dm.ts, now)}
         </span>
         {pending.length > 1 && (
-          <span className="shrink-0 font-mono text-[11px] text-foreground/60">
+          <span className="shrink-0 font-mono text-[11px] text-kumo-default/60">
             +{pending.length - 1} more
           </span>
         )}
       </button>
 
       <Button
+        variant="primary"
         size="xs"
         className="shrink-0 bg-red-500 font-semibold text-white hover:bg-red-600"
         onClick={() => reply("button")}
@@ -114,7 +115,7 @@ export function DmBanner() {
         <Button
           variant="ghost"
           size="xs"
-          className="shrink-0 text-foreground/70"
+          className="shrink-0 text-kumo-default/70"
           onClick={() => {
             uiAction("dm_banner.open_slack", "slack");
             void openExternalUrl(dm.url!);
@@ -126,13 +127,13 @@ export function DmBanner() {
       <Button
         variant="ghost"
         size="xs"
-        className="shrink-0 text-foreground/70"
+        className="shrink-0 text-kumo-default/70"
+        icon={<CheckIcon className="size-3.5" />}
         onClick={() => {
           uiAction("dm_banner.dismiss", "slack");
           void storeDmDismiss(dm.channel, dm.ts);
         }}
       >
-        <Check className="size-3.5" />
         Handled
       </Button>
     </div>

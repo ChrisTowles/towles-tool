@@ -56,15 +56,15 @@ export function ThemeProvider({
     const root = window.document.documentElement;
     root.classList.remove("light", "dark");
 
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-      root.classList.add(systemTheme);
-      return;
-    }
-
-    root.classList.add(theme);
+    const mode =
+      theme === "system"
+        ? window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : theme;
+    root.classList.add(mode);
+    // Kumo resolves its palette from `data-mode`; `.dark` still drives `dark:`.
+    root.dataset.mode = mode;
   }, [theme]);
 
   useEffect(() => {

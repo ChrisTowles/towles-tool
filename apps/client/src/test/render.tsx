@@ -6,14 +6,14 @@ import { afterEach } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@cloudflare/kumo";
 import { WorkspaceProvider } from "@/lib/workspace";
 import { NowProvider } from "@/lib/now";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
 import { AgentboardStateProvider } from "@/lib/agentboard-state";
 
-// jsdom omits a few browser APIs that ThemeProvider (matchMedia) and the
-// vendored Radix primitives (ResizeObserver, pointer capture, scrollIntoView)
+// jsdom omits a few browser APIs that ThemeProvider (matchMedia) and the Base UI
+// primitives (ResizeObserver, pointer capture, scrollIntoView, getAnimations)
 // reach for on mount. Stub them so a plain render doesn't throw.
 if (!window.matchMedia) {
   window.matchMedia = (query: string) =>
@@ -38,6 +38,7 @@ if (!("ResizeObserver" in globalThis)) {
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
 if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = () => {};
+if (!Element.prototype.getAnimations) Element.prototype.getAnimations = () => [];
 if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = () => {};
 
 afterEach(cleanup);

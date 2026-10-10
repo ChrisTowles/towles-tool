@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { toast } from "@/lib/toast";
+import { Dialog, Input } from "@cloudflare/kumo";
 import { journalLog, storeAddTask } from "@/lib/data";
 import { NotInTauri, type IpcError } from "@/lib/errors";
 import { formatLogLine, parseQuickLog } from "@/lib/quick-log-format";
@@ -64,13 +63,12 @@ export function QuickLog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle>Quick log</DialogTitle>
-        </DialogHeader>
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog className="flex flex-col gap-4 p-6">
+        <Dialog.Title className="text-lg font-semibold">Quick log</Dialog.Title>
         <Input
           autoFocus
+          aria-label="Quick log"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -78,10 +76,8 @@ export function QuickLog() {
           }}
           placeholder="Log to today's note… (/todo for the Board)"
         />
-        <p className="text-muted-foreground text-xs">
-          {routesToTodo ? "→ Board" : "→ today's note"}
-        </p>
-      </DialogContent>
-    </Dialog>
+        <p className="text-xs text-kumo-subtle">{routesToTodo ? "→ Board" : "→ today's note"}</p>
+      </Dialog>
+    </Dialog.Root>
   );
 }

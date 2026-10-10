@@ -1,35 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BarChart3,
-  CircleAlert,
-  Database,
-  Gauge,
-  GitCompare,
-  Keyboard,
-  LayoutDashboard,
-  Lightbulb,
-  RefreshCw,
-  ScrollText,
-  ShieldCheck,
-  Zap,
-} from "lucide-react";
-import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+  ArrowClockwiseIcon,
+  CalendarDotsIcon,
+  ChartBarIcon,
+  DatabaseIcon,
+  GaugeIcon,
+  GitDiffIcon,
+  KeyboardIcon,
+  LightbulbIcon,
+  LightningIcon,
+  ScrollIcon,
+  ShieldCheckIcon,
+  SquaresFourIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button, DatePicker, Dialog, Popover, Tabs } from "@cloudflare/kumo";
 import { BarRow, Card, Empty, maxCount, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -114,6 +100,19 @@ function countBy<T>(items: T[], key: (item: T) => string): { key: string; count:
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   return [...counts.entries()].map(([k, count]) => ({ key: k, count }));
+}
+
+/** Telemetry days are local `YYYY-MM-DD` keys; parse at local midnight so the
+ * calendar highlights the same day it names. */
+function parseDay(day: string): Date {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatDay(date: Date): string {
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${mm}-${dd}`;
 }
 
 export function TelemetryScreen() {
@@ -465,30 +464,47 @@ export function TelemetryScreen() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
         <h2 className="flex items-center gap-2 font-heading text-lg font-semibold">
-          <Zap className="size-5 text-muted-foreground" />
+          <LightningIcon className="size-5 text-muted-foreground" />
           Telemetry
         </h2>
         <div className="flex items-center gap-2">
-          <Select
-            value={day ?? ""}
-            onValueChange={(v) => {
-              setDay(v);
-              uiAction("telemetry.day_change", "telemetry", v);
-            }}
+          <Popover>
+            <Popover.Trigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Telemetry day"
+                  icon={<CalendarDotsIcon className="size-3.5" />}
+                  disabled={days === null || days.length === 0}
+                  className="w-40 justify-start"
+                />
+              }
+            >
+              {day ?? (days === null ? "Loading…" : "No logs")}
+            </Popover.Trigger>
+            <Popover.Content align="end" className="p-2">
+              <DatePicker
+                mode="single"
+                selected={day ? parseDay(day) : undefined}
+                defaultMonth={day ? parseDay(day) : undefined}
+                disabled={(date) => !days?.includes(formatDay(date))}
+                onChange={(date) => {
+                  if (!date) return;
+                  const v = formatDay(date);
+                  setDay(v);
+                  uiAction("telemetry.day_change", "telemetry", v);
+                }}
+              />
+            </Popover.Content>
+          </Popover>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<ArrowClockwiseIcon className={cn("size-3.5", loading && "animate-spin")} />}
+            onClick={manualRefresh}
+            disabled={loading}
           >
-            <SelectTrigger className="h-8 w-40">
-              <SelectValue placeholder={days === null ? "Loading…" : "No logs"} />
-            </SelectTrigger>
-            <SelectContent>
-              {(days ?? []).map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" onClick={manualRefresh} disabled={loading}>
-            <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
             Refresh
           </Button>
         </div>
@@ -518,55 +534,102 @@ export function TelemetryScreen() {
       </div>
 
       <Tabs
-        orientation="vertical"
+        variant="underline"
         value={tab}
         onValueChange={switchTab}
-        className="min-h-0 flex-1 gap-0"
-      >
-        <TabsList
-          variant="line"
-          className="h-full w-44 shrink-0 items-stretch gap-1 rounded-none border-r border-border bg-card p-2"
-        >
-          <TabsTrigger value="overview" className="justify-start gap-2 px-2 py-1.5">
-            <LayoutDashboard className="size-4" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="dashboard" className="justify-start gap-2 px-2 py-1.5">
-            <BarChart3 className="size-4" />
-            Dashboard
-          </TabsTrigger>
-          <TabsTrigger value="builds" className="justify-start gap-2 px-2 py-1.5">
-            <GitCompare className="size-4" />
-            Builds
-          </TabsTrigger>
-          <TabsTrigger value="rules" className="justify-start gap-2 px-2 py-1.5">
-            <ShieldCheck className="size-4" />
-            Rules
-          </TabsTrigger>
-          <TabsTrigger value="attention" className="justify-start gap-2 px-2 py-1.5">
-            <Gauge className="size-4" />
-            Attention
-          </TabsTrigger>
-          <TabsTrigger value="keyboard" className="justify-start gap-2 px-2 py-1.5">
-            <Keyboard className="size-4" />
-            Keyboard
-          </TabsTrigger>
-          <TabsTrigger value="query" className="justify-start gap-2 px-2 py-1.5">
-            <Database className="size-4" />
-            Query
-          </TabsTrigger>
-          <TabsTrigger value="log" className="justify-start gap-2 px-2 py-1.5">
-            <ScrollText className="size-4" />
-            Log
-          </TabsTrigger>
-          <TabsTrigger value="insights" className="justify-start gap-2 px-2 py-1.5">
-            <Lightbulb className="size-4" />
-            Insights
-          </TabsTrigger>
-        </TabsList>
+        className="shrink-0 border-b border-kumo-hairline bg-kumo-base px-2"
+        tabs={[
+          {
+            value: "overview",
+            label: (
+              <span className="flex items-center gap-2">
+                <SquaresFourIcon className="size-4" />
+                Overview
+              </span>
+            ),
+          },
+          {
+            value: "dashboard",
+            label: (
+              <span className="flex items-center gap-2">
+                <ChartBarIcon className="size-4" />
+                Dashboard
+              </span>
+            ),
+          },
+          {
+            value: "builds",
+            label: (
+              <span className="flex items-center gap-2">
+                <GitDiffIcon className="size-4" />
+                Builds
+              </span>
+            ),
+          },
+          {
+            value: "rules",
+            label: (
+              <span className="flex items-center gap-2">
+                <ShieldCheckIcon className="size-4" />
+                Rules
+              </span>
+            ),
+          },
+          {
+            value: "attention",
+            label: (
+              <span className="flex items-center gap-2">
+                <GaugeIcon className="size-4" />
+                Attention
+              </span>
+            ),
+          },
+          {
+            value: "keyboard",
+            label: (
+              <span className="flex items-center gap-2">
+                <KeyboardIcon className="size-4" />
+                Keyboard
+              </span>
+            ),
+          },
+          {
+            value: "query",
+            label: (
+              <span className="flex items-center gap-2">
+                <DatabaseIcon className="size-4" />
+                Query
+              </span>
+            ),
+          },
+          {
+            value: "log",
+            label: (
+              <span className="flex items-center gap-2">
+                <ScrollIcon className="size-4" />
+                Log
+              </span>
+            ),
+          },
+          {
+            value: "insights",
+            label: (
+              <span className="flex items-center gap-2">
+                <LightbulbIcon className="size-4" />
+                Insights
+              </span>
+            ),
+          },
+        ]}
+      />
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <TabsContent value="overview" className="p-4">
+      <div
+        role="tabpanel"
+        aria-label={tab[0].toUpperCase() + tab.slice(1)}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
+        {tab === "overview" && (
+          <div className="p-4">
             <OverviewTab
               events={events}
               levelCounts={levelCounts}
@@ -579,9 +642,11 @@ export function TelemetryScreen() {
                 });
               }}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="dashboard" className="p-4">
+        {tab === "dashboard" && (
+          <div className="p-4">
             <DashboardTab
               summary={dashboard}
               loading={dashboardLoading}
@@ -592,17 +657,21 @@ export function TelemetryScreen() {
               onRefresh={() => void loadDashboard()}
               onOpenLog={openLogAt}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="builds" className="p-4">
+        {tab === "builds" && (
+          <div className="p-4">
             <BuildsTab
               snapshots={builds}
               loading={buildsLoading}
               onRefresh={() => void loadBuilds()}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="rules" className="p-4">
+        {tab === "rules" && (
+          <div className="p-4">
             <RulesTab
               scores={rules}
               loading={rulesLoading}
@@ -614,21 +683,29 @@ export function TelemetryScreen() {
               onOpenRule={openRule}
               onAddRule={() => openSettingsTab({ tab: "collectors", filter: "Telemetry rules" })}
             />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="attention" className="p-4">
+        {tab === "attention" && (
+          <div className="p-4">
             <AttentionTab summary={attention} loading={attentionLoading} />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="keyboard" className="p-4">
+        {tab === "keyboard" && (
+          <div className="p-4">
             <KeyboardTab score={keyboard} loading={keyboardLoading} />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="query" className="flex h-full min-h-0 flex-col p-4">
+        {tab === "query" && (
+          <div className="flex h-full min-h-0 flex-col p-4">
             <QueryTab />
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="log" className="p-4">
+        {tab === "log" && (
+          <div className="p-4">
             <Card
               title="Log"
               note={
@@ -690,13 +767,15 @@ export function TelemetryScreen() {
                 </>
               )}
             </Card>
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="insights" className="p-4">
+        {tab === "insights" && (
+          <div className="p-4">
             <InsightsTab events={events} onSelect={openRecord} />
-          </TabsContent>
-        </div>
-      </Tabs>
+          </div>
+        )}
+      </div>
 
       <RecordDialog record={selected} onOpen={openRecord} onClose={() => setSelected(null)} />
     </div>
@@ -752,7 +831,7 @@ function OverviewTab({
     <div className="flex flex-col gap-4">
       {dominant && dominant.count / events.length >= DOMINANCE_THRESHOLD && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <WarningCircleIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>
             <span className="font-mono">{dominant.key}</span> accounts for{" "}
             {Math.round((dominant.count / events.length) * 100)}% of today's records (
@@ -790,7 +869,7 @@ function OverviewTab({
         title="Recent errors"
         note={recentErrors.length > 0 ? undefined : "none"}
         action={
-          <Button variant="outline" size="sm" className="text-xs" onClick={onOpenLog}>
+          <Button variant="outline" size="sm" onClick={onOpenLog}>
             Open log
           </Button>
         }
@@ -982,21 +1061,21 @@ function RecordDialog({
   }, [record]);
 
   return (
-    <Dialog open={!!record} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="pr-6 font-mono text-base">{record?.name}</DialogTitle>
-          <DialogDescription>
+    <Dialog.Root open={!!record} onOpenChange={(o) => !o && onClose()}>
+      <Dialog size="xl" className="max-h-[85vh] overflow-y-auto p-6">
+        <div className="mb-4 flex flex-col gap-1.5">
+          <Dialog.Title className="pr-6 font-mono text-base">{record?.name}</Dialog.Title>
+          <Dialog.Description className="text-sm">
             {record?.kind} · {record?.target}
             {record?.durationMs !== null && record?.durationMs !== undefined
               ? ` · ${record.durationMs}ms`
               : ""}
             {record ? ` · ${record.ts}` : ""}
-          </DialogDescription>
-        </DialogHeader>
+          </Dialog.Description>
+        </div>
 
         {record && (
-          <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-foreground">
+          <pre className="overflow-x-auto rounded-md border border-kumo-hairline bg-kumo-recessed p-2.5 font-mono text-xs whitespace-pre-wrap text-kumo-default">
             {prettyRaw(record.raw)}
           </pre>
         )}
@@ -1004,8 +1083,8 @@ function RecordDialog({
         {record && children && children.length > 0 && (
           <TraceTree parent={record} descendants={children} onOpen={onOpen} />
         )}
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 

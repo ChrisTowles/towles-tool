@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { NotInTauri } from "@/lib/errors";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prChecksFailing, prNeedsYou } from "@/lib/pr-tone";

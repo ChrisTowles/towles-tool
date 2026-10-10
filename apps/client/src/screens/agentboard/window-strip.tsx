@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { windowColor, type AgWindow, type WindowsPayload } from "@/lib/agentboard";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
@@ -132,7 +132,7 @@ export function WindowStrip(props: {
       <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
       <Hint label="New window around a fresh session">
         <button type="button" onClick={onNewWindow} className={ADD_CLASS}>
-          <Plus className="size-3 text-violet-500" /> window
+          <PlusIcon className="size-3 text-violet-500" /> window
         </button>
       </Hint>
       <Hint
@@ -146,7 +146,7 @@ export function WindowStrip(props: {
           }}
           className={ADD_CLASS}
         >
-          <Plus className="size-3 text-violet-500" /> session
+          <PlusIcon className="size-3 text-violet-500" /> session
         </button>
       </Hint>
       {hasFocusedPane && (

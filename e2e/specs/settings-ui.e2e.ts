@@ -15,7 +15,7 @@ describe("Settings screen UI", () => {
   it("navigates to Settings and renders its tab list", async () => {
     await gotoScreen("Settings");
     await browser.waitUntil(
-      async () => (await browser.$$('[data-slot="tabs-trigger"]').length) > 0,
+      async () => (await browser.$$('[role="tab"]').length) > 0,
       { timeout: 10000, timeoutMsg: "settings tab list never rendered" },
     );
   });

@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
-import { MessageCircle, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { ArrowClockwiseIcon, ChatCircleIcon } from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { isAuthError, isScopeError, slackDmReact, slackDmSend, useSlackDm } from "@/lib/slack";
@@ -68,25 +68,25 @@ export function SlackScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex shrink-0 items-center gap-2.5 border-b border-border bg-card px-4 py-2.5">
-        <MessageCircle className="size-4 text-violet-500" />
+      <header className="flex shrink-0 items-center gap-2.5 border-b border-kumo-hairline bg-kumo-base px-4 py-2.5">
+        <ChatCircleIcon className="size-4 text-violet-500" />
         <span className="font-semibold text-foreground">{watchName}</span>
         {view?.configured && (
-          <span className="font-mono text-[11px] text-muted-foreground/60">direct message</span>
+          <span className="font-mono text-[11px] text-kumo-subtle/60">direct message</span>
         )}
         <div className="flex-1" />
         {view?.configured && <AppManifestDialog />}
         <Button
           variant="ghost"
           size="sm"
-          className="gap-1.5 px-2 text-muted-foreground"
+          className="text-kumo-subtle"
+          icon={<ArrowClockwiseIcon className={cn("size-3.5", loading && "animate-spin")} />}
           onClick={() => {
             uiAction("slack.refresh", "slack");
             refresh();
           }}
           disabled={loading}
         >
-          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
           Refresh
         </Button>
       </header>
@@ -104,7 +104,7 @@ export function SlackScreen() {
                 className="mx-auto flex w-full max-w-2xl flex-col gap-1.5 px-4 py-4"
               >
                 {messages.length === 0 && !loading && (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
+                  <p className="py-8 text-center text-sm text-kumo-subtle">
                     No messages yet. Say hello below.
                   </p>
                 )}
@@ -120,7 +120,10 @@ export function SlackScreen() {
               </div>
             </ScrollArea>
 
-            <div ref={composerRef} className="shrink-0 border-t border-border bg-card px-4 py-3">
+            <div
+              ref={composerRef}
+              className="shrink-0 border-t border-kumo-hairline bg-kumo-base px-4 py-3"
+            >
               <div className="mx-auto w-full max-w-2xl">
                 <Composer
                   placeholder={`Message ${watchName}…`}

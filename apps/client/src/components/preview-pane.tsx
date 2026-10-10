@@ -1,18 +1,16 @@
 import { useEffect, useState } from "react";
-import { AppWindow, ExternalLink, FileCode2, RotateCw, X } from "lucide-react";
-import { toast } from "sonner";
+import { Button, Input, Select } from "@cloudflare/kumo";
+import {
+  AppWindowIcon,
+  ArrowClockwiseIcon,
+  ArrowSquareOutIcon,
+  FileCodeIcon,
+  XIcon,
+} from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
 import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { AnnotateSurface } from "@/components/annotate-surface";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { FolderData } from "@/lib/agentboard";
 import { errorMessage } from "@/lib/errors";
 import { launchConfigs } from "@/lib/launch";
@@ -170,7 +168,7 @@ export function PreviewPane({
   return (
     <div
       className={cn(
-        "flex h-full flex-col overflow-hidden rounded-lg border bg-card",
+        "flex h-full flex-col overflow-hidden rounded-lg border border-kumo-hairline bg-kumo-base",
         focused && "border-violet-500/60",
       )}
     >
@@ -182,7 +180,7 @@ export function PreviewPane({
             <>
               {/* Identity + an address bar for it; the way back to the dev
                   server is a click, not a retyped URL. */}
-              <FileCode2 className="size-3 shrink-0 text-violet-500" />
+              <FileCodeIcon className="size-3 shrink-0 text-violet-500" />
               <span className="shrink-0 truncate text-[11px] font-medium">{file.title}</span>
               <Input
                 value={pathInput}
@@ -200,7 +198,9 @@ export function PreviewPane({
                 }}
                 placeholder="/absolute/path/to/file.md"
                 title="show another file — absolute path, Enter to open"
-                className="h-6 min-w-0 flex-1 font-mono text-[10px]"
+                aria-label="File path"
+                size="xs"
+                className="min-w-0 flex-1 font-mono text-[10px]"
               />
               {url && (
                 <Button
@@ -220,29 +220,30 @@ export function PreviewPane({
             <>
               {servers.length > 0 && (
                 <Select
-                  value={servers.find((s) => s.url === url)?.key ?? ""}
+                  aria-label="Dev server"
+                  size="xs"
+                  className="w-40 text-[11px]"
+                  placeholder="Dev server"
+                  value={servers.find((s) => s.url === url)?.key ?? null}
                   onValueChange={(key) => {
                     const s = servers.find((x) => x.key === key);
                     if (s) navigate(s.url, "config");
                   }}
-                >
-                  <SelectTrigger size="xs" className="w-40 text-[11px]">
-                    <SelectValue placeholder="Dev server" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {servers.map((s) => (
-                      <SelectItem key={s.key} value={s.key}>
+                  items={servers.map((s) => ({
+                    value: s.key,
+                    label: (
+                      <span className="flex items-center gap-1.5">
                         <span
                           className={cn(
                             "size-2 rounded-full",
-                            s.listening ? "bg-green-500" : "bg-muted-foreground/40",
+                            s.listening ? "bg-green-500" : "bg-kumo-line",
                           )}
                         />
                         {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      </span>
+                    ),
+                  }))}
+                />
               )}
               <Input
                 value={input}
@@ -251,7 +252,9 @@ export function PreviewPane({
                   if (e.key === "Enter" && input.trim()) navigate(input.trim(), "manual");
                 }}
                 placeholder="http://localhost:<port>/"
-                className="h-6 min-w-0 flex-1 font-mono text-[11px]"
+                aria-label="URL"
+                size="xs"
+                className="min-w-0 flex-1 font-mono text-[11px]"
               />
             </>
           )
@@ -268,7 +271,7 @@ export function PreviewPane({
                 uiAction("preview.reload", "agentboard", onFile ? "file" : "server");
               }}
             >
-              <RotateCw className="size-3" />
+              <ArrowClockwiseIcon className="size-3" />
             </IconBtn>
             <IconBtn
               title="open in browser"
@@ -279,7 +282,7 @@ export function PreviewPane({
                 void openExternalUrl(onFile ? fileUrl(sourceLabel) : url);
               }}
             >
-              <ExternalLink className="size-3" />
+              <ArrowSquareOutIcon className="size-3" />
             </IconBtn>
             <IconBtn
               title="close pane (preview stays a click away on the folder)"
@@ -290,7 +293,7 @@ export function PreviewPane({
                 onClose();
               }}
             >
-              <X className="size-3" />
+              <XIcon className="size-3" />
             </IconBtn>
           </>
         }
@@ -315,8 +318,8 @@ export function PreviewPane({
         {onFile ? (
           docError != null ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-              <FileCode2 className="size-6 text-muted-foreground/60" />
-              <div className="text-xs text-muted-foreground">
+              <FileCodeIcon className="size-6 text-kumo-subtle/60" />
+              <div className="text-xs text-kumo-subtle">
                 Couldn&apos;t read the file the agent pointed at — {docError}
               </div>
             </div>
@@ -336,8 +339,8 @@ export function PreviewPane({
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-            <AppWindow className="size-6 text-muted-foreground/60" />
-            <div className="text-xs text-muted-foreground">
+            <AppWindowIcon className="size-6 text-kumo-subtle/60" />
+            <div className="text-xs text-kumo-subtle">
               No dev server found in this checkout&apos;s{" "}
               <span className="font-mono">.claude/launch.json</span> — enter a URL above.
             </div>

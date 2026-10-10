@@ -1,7 +1,7 @@
 /** Track/untrack as one seam. The Settings pane and the rail's kebab both
  * untrack, and when each owned a copy they drifted — one checked the `Result`,
  * one emitted its `ui.action` event, one suppressed `NotInTauri`. */
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { NotInTauri } from "@/lib/errors";
 import type { ScreenId } from "@/lib/screens";
 import { invoke } from "@/lib/tauri";

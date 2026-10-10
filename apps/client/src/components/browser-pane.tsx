@@ -1,13 +1,20 @@
 // A real headless Chrome on the app-owned profile, streamed onto a canvas over
 // CDP. The process lives in Rust, so this is only a view and may unmount
 // freely — the logins live in the profile directory.
+import { Button, Input } from "@cloudflare/kumo";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppWindow, ArrowLeft, ArrowRight, ExternalLink, Loader2, RotateCw, X } from "lucide-react";
+import {
+  AppWindowIcon,
+  ArrowClockwiseIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowSquareOutIcon,
+  CircleNotchIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { AnnotateSurface } from "@/components/annotate-surface";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { browserPaneId, type FolderData } from "@/lib/agentboard";
 import {
   type BrowserState,
@@ -42,7 +49,7 @@ const HINT_KEY = "tt:browser-pane-hint-dismissed";
 
 const CHIP = {
   live: "border-emerald-500/50 bg-emerald-500/10 text-emerald-500",
-  starting: "border-muted-foreground/40 bg-muted text-muted-foreground",
+  starting: "border-kumo-line bg-kumo-recessed text-kumo-subtle",
   failed: "border-red-500/50 bg-red-500/10 text-red-500",
 } as const;
 
@@ -206,7 +213,7 @@ export function BrowserPane({
     <div
       className={cn(
         "flex h-full min-h-0 flex-col overflow-hidden rounded-lg border",
-        focused ? "border-violet-500/60" : "border-border",
+        focused ? "border-violet-500/60" : "border-kumo-hairline",
       )}
     >
       <PaneChrome
@@ -219,10 +226,11 @@ export function BrowserPane({
                 chip,
               )}
             >
-              {phase === "launching" && <Loader2 className="size-2.5 animate-spin" />}
+              {phase === "launching" && <CircleNotchIcon className="size-2.5 animate-spin" />}
               {chipLabel}
             </span>
             <Input
+              aria-label="Address"
               value={input}
               onFocus={() => setEditingUrl(true)}
               onBlur={() => setEditingUrl(false)}
@@ -231,7 +239,8 @@ export function BrowserPane({
                 if (e.key === "Enter" && input.trim()) navigate(input.trim());
               }}
               placeholder="https://…  (sign-ins made here stick)"
-              className="h-6 min-w-0 flex-1 font-mono text-[11px]"
+              size="xs"
+              className="min-w-0 flex-1 font-mono text-[11px]"
             />
           </>
         }
@@ -245,7 +254,7 @@ export function BrowserPane({
                 void browserNavigate(paneId, { action: "back" });
               }}
             >
-              <ArrowLeft className="size-3" />
+              <ArrowLeftIcon className="size-3" />
             </IconBtn>
             <IconBtn
               title="forward"
@@ -255,7 +264,7 @@ export function BrowserPane({
                 void browserNavigate(paneId, { action: "forward" });
               }}
             >
-              <ArrowRight className="size-3" />
+              <ArrowRightIcon className="size-3" />
             </IconBtn>
             <IconBtn
               title="reload"
@@ -266,7 +275,7 @@ export function BrowserPane({
                 void browserNavigate(paneId, { action: "reload" });
               }}
             >
-              <RotateCw className="size-3" />
+              <ArrowClockwiseIcon className="size-3" />
             </IconBtn>
             <IconBtn
               title="open in a Chrome window (same profile; reattach restarts the embedded view)"
@@ -277,7 +286,7 @@ export function BrowserPane({
                 void browserPopout(paneId);
               }}
             >
-              <ExternalLink className="size-3" />
+              <ArrowSquareOutIcon className="size-3" />
             </IconBtn>
             <IconBtn
               title="close pane"
@@ -288,13 +297,13 @@ export function BrowserPane({
                 onClose();
               }}
             >
-              <X className="size-3" />
+              <XIcon className="size-3" />
             </IconBtn>
           </>
         }
       />
       {showHint && (
-        <div className="flex shrink-0 items-center gap-2 border-b bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-kumo-recessed px-2 py-1 text-[11px] text-kumo-subtle">
           <span className="min-w-0 flex-1">
             Sign-ins made here stick — this pane keeps its own browser profile, separate from your
             personal Chrome.
@@ -396,8 +405,8 @@ export function BrowserPane({
 function Empty({ children }: { children: React.ReactNode; icon?: boolean }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-      <AppWindow className="size-6 text-muted-foreground/60" />
-      <div className="max-w-md text-xs text-muted-foreground">{children}</div>
+      <AppWindowIcon className="size-6 text-kumo-subtle/60" />
+      <div className="max-w-md text-xs text-kumo-subtle">{children}</div>
     </div>
   );
 }

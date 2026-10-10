@@ -1,4 +1,4 @@
-import { Input } from "@/components/ui/input";
+import { Input } from "@cloudflare/kumo";
 import type { UserSettings } from "@/lib/settings";
 import { FieldRow, type FilterSection, type Flush, type Update } from "./common";
 
@@ -19,6 +19,7 @@ export function generalSections(
               description="Command used to open a repo (e.g. code, cursor, nvim). Runs as “<editor> <dir>”."
             >
               <Input
+                aria-label="Preferred editor"
                 value={settings.preferredEditor}
                 onChange={(e) =>
                   update((s) => ({ ...s, preferredEditor: e.target.value }), { defer: true })

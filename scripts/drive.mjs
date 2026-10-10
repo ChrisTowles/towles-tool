@@ -163,8 +163,8 @@ function extractSessionFlag(args) {
 }
 
 /** A full event sequence rather than the native W3C click endpoint: that one
- * fires something Radix `DropdownMenu`/`Popover` triggers don't react to, so
- * `DismissableLayer` never flips `data-state` to `open` (#35).
+ * fires something pointerdown-opened menu/popover triggers don't react to, so
+ * they never open (#35).
  * @param {string} sessionId @param {string} elId
  * @returns {Promise<Result<void, DriveError>>} */
 async function dispatchClick(sessionId, elId) {

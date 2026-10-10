@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Sparkles, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { SparkleIcon, XIcon } from "@phosphor-icons/react";
+import { Button } from "@cloudflare/kumo";
 import { openExternalUrl } from "@/lib/open-url";
 import { uiAction } from "@/lib/ui-action";
 import { useWorkspace } from "@/lib/workspace";
@@ -18,8 +18,8 @@ export function UpdateBanner() {
 
   return (
     <div className="flex shrink-0 items-center gap-2.5 border-b border-l-2 border-l-sky-500 bg-sky-500/5 px-3 py-1.5 text-xs">
-      <Sparkles className="size-4 shrink-0 text-sky-500" />
-      <span className="text-foreground">
+      <SparkleIcon className="size-4 shrink-0 text-sky-500" />
+      <span className="text-kumo-default">
         Towles Tool <span className="font-medium">{update.latestVersion}</span> is available —
         you're on {update.currentVersion}
       </span>
@@ -40,14 +40,15 @@ export function UpdateBanner() {
       <Button
         variant="ghost"
         size="xs"
-        className="text-muted-foreground"
+        shape="square"
+        className="text-kumo-subtle"
+        aria-label="Dismiss"
         onClick={() => {
           uiAction("update_banner.dismiss", activeTab);
           setDismissed(true);
         }}
-      >
-        <X className="size-3.5" />
-      </Button>
+        icon={<XIcon className="size-3.5" />}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Dot, fmtMins, IconBtn } from "@/components/agentboard-bits";
@@ -111,11 +111,14 @@ function PaneSubagentTotal({ session }: { session: SessionData }) {
   const count = d!.subagentCount ?? 0;
   const finished = Math.max(0, count - active.length);
   return (
-    <HoverCard openDelay={200}>
-      <HoverCardTrigger asChild>
-        <span className="shrink-0 cursor-default font-mono text-[10.5px] text-violet-500">
-          Σ {fmtTokens(sessionTotalTokens(d))} (+{count})
-        </span>
+    <HoverCard>
+      <HoverCardTrigger
+        delay={200}
+        render={
+          <span className="shrink-0 cursor-default font-mono text-[10.5px] text-violet-500" />
+        }
+      >
+        Σ {fmtTokens(sessionTotalTokens(d))} (+{count})
       </HoverCardTrigger>
       <HoverCardContent side="bottom" align="end" className="w-64">
         <p className="mb-1.5 text-[11px] leading-snug text-muted-foreground">
@@ -267,7 +270,7 @@ export function PaneHeader({
             onClick={() => actions.close(session.id)}
             className="hover:text-red-500"
           >
-            <X className="size-3" />
+            <XIcon className="size-3" />
           </IconBtn>
         </>
       }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Activity, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { ArrowClockwiseIcon, PulseIcon } from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button } from "@cloudflare/kumo";
 import { Card, Empty, StatTile } from "@/components/store-bits";
 import { formatMemory } from "@/components/status-bar";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -53,18 +53,23 @@ export function TaskExplorerScreen() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
+      <header className="flex items-center justify-between gap-2 border-b border-kumo-hairline bg-kumo-base px-4 py-3">
         <h2 className="flex items-center gap-2 font-heading text-lg font-semibold">
-          <Activity className="size-5 text-muted-foreground" />
+          <PulseIcon className="size-5 text-kumo-subtle" />
           Task Explorer
         </h2>
-        <Button variant="outline" size="sm" onClick={manualRefresh} disabled={loading}>
-          <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+        <Button
+          variant="outline"
+          size="sm"
+          icon={<ArrowClockwiseIcon className={cn("size-3.5", loading && "animate-spin")} />}
+          onClick={manualRefresh}
+          disabled={loading}
+        >
           Refresh
         </Button>
       </header>
 
-      <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-border p-4 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-kumo-hairline p-4 lg:grid-cols-4">
         <StatTile label="Processes" value={String(processCount)} />
         <StatTile label="Terminals" value={String(terminalCount)} />
         <StatTile label="CPU" value={`${totalCpu.toFixed(0)}%`} detail="all groups, all cores" />
@@ -97,7 +102,7 @@ function TotalRow({ groups }: { groups: ProcessGroup[] }) {
   const cpuPercent = groups.reduce((n, g) => n + g.totalCpuPercent, 0);
   const memoryBytes = groups.reduce((n, g) => n + g.totalMemoryBytes, 0);
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm font-medium">
+    <div className="flex items-center gap-2.5 rounded-lg border border-kumo-hairline bg-kumo-base px-3.5 py-2.5 text-sm font-medium">
       <span className="flex-1">
         Total · {groups.length} group{groups.length === 1 ? "" : "s"} · {processCount} process
         {processCount === 1 ? "" : "es"}
@@ -119,7 +124,7 @@ function ProcessGroupCard({ group }: { group: ProcessGroup }) {
       note={`${group.rows.length} process${group.rows.length === 1 ? "" : "es"} · ${group.totalCpuPercent.toFixed(0)}% CPU · ${formatMemory(group.totalMemoryBytes)}`}
     >
       <div className="-mx-1.5 flex flex-col">
-        <div className="flex items-center gap-2.5 px-1.5 py-1 font-mono text-[10.5px] uppercase tracking-wider text-muted-foreground">
+        <div className="flex items-center gap-2.5 px-1.5 py-1 font-mono text-[10.5px] uppercase tracking-wider text-kumo-subtle">
           <span className="w-16 shrink-0">PID</span>
           <span className="flex-1">Name</span>
           <span className="w-24 shrink-0 text-right">Status</span>
@@ -137,11 +142,11 @@ function ProcessGroupCard({ group }: { group: ProcessGroup }) {
 function ProcessRowLine({ row }: { row: ProcessRow }) {
   return (
     <div className="flex items-center gap-2.5 rounded-md px-1.5 py-1.5 text-sm hover:bg-accent/40">
-      <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{row.pid}</span>
+      <span className="w-16 shrink-0 font-mono text-xs text-kumo-subtle">{row.pid}</span>
       <span className="flex-1 truncate font-mono text-xs text-foreground" title={row.name}>
         {row.name}
       </span>
-      <span className="w-24 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
+      <span className="w-24 shrink-0 text-right font-mono text-[11px] text-kumo-subtle">
         {row.status}
       </span>
       <span className="w-16 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">

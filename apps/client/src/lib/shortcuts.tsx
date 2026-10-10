@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type RefObject } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog } from "@cloudflare/kumo";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { keyboardScore, latestKeyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import { isInTerminal, isTextField, macKeymap } from "@/lib/keymap";
@@ -183,7 +183,7 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-jump-next",
     scope: "agentboard",
     keys: "mod+shift+n",
-    description: "Jump to next session needing you",
+    description: "Jump to the next item in the work queue",
     answersNeedsYou: true,
     allowInEditable: true,
   },
@@ -191,7 +191,7 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-jump-prev",
     scope: "agentboard",
     keys: "mod+shift+p",
-    description: "Jump to previous session needing you",
+    description: "Jump to the previous item in the work queue",
     answersNeedsYou: true,
     allowInEditable: true,
   },
@@ -567,18 +567,16 @@ export function ShortcutHelp({
   }, []);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
       {/* Capped + scrollable: an uncapped sheet runs off both ends of a laptop window. */}
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Keyboard shortcuts</DialogTitle>
-        </DialogHeader>
+      <Dialog className="flex max-h-[85vh] flex-col gap-4 overflow-y-auto p-6" size="xl">
+        <Dialog.Title className="text-lg font-semibold">Keyboard shortcuts</Dialog.Title>
         <div className="flex flex-col gap-4">
           {[...byScope.entries()].map(([scope, shortcuts]) => {
             const active = activeScopes.includes(scope);
             return (
               <div key={scope} className={active ? undefined : "opacity-50"}>
-                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-kumo-subtle">
                   {scopeTitle(scope)}
                   {!active && " — inactive here"}
                 </div>
@@ -592,7 +590,7 @@ export function ShortcutHelp({
                       </KbdGroup>
                       <span className="min-w-0 flex-1">
                         {s.description}
-                        {s.when && <span className="text-muted-foreground"> — {s.when}</span>}
+                        {s.when && <span className="text-kumo-subtle"> — {s.when}</span>}
                       </span>
                       <UsageTally used={usage.get(s.id) ?? 0} />
                     </div>
@@ -602,8 +600,8 @@ export function ShortcutHelp({
             );
           })}
         </div>
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -612,7 +610,7 @@ function UsageTally({ used }: { used: number }) {
   return (
     <span
       className={`w-20 shrink-0 text-right font-mono text-[11px] tabular-nums ${
-        used > 0 ? "text-muted-foreground" : "text-muted-foreground/50"
+        used > 0 ? "text-kumo-subtle" : "text-kumo-subtle/50"
       }`}
     >
       {used > 0 ? `${used}× / 14d` : "not used yet"}

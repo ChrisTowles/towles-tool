@@ -1,27 +1,18 @@
 // A goal and a base branch (or, reviewing, an open PR's head) become a worktree via
 // `task_create`. Submit hands off without awaiting, binding the worktree dir so the
 // rail row is on screen before the git work runs.
-import { Check, ChevronDown, CircleDot, ImagePlus, Sparkles, Undo2, X } from "lucide-react";
+import {
+  ArrowUUpLeftIcon,
+  CaretDownIcon,
+  CheckIcon,
+  ImageSquareIcon,
+  RecordIcon,
+  SparkleIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Button, Checkbox, Combobox, Input, Popover, Select } from "@cloudflare/kumo";
 import {
   ClaudeEffort,
   ClaudeLaunchOptions,
@@ -156,6 +147,53 @@ function saveIssueScopeMine(repoKey: string, mine: boolean): void {
 }
 
 /** A default only; the branch field stays editable. */
+function IssueList({
+  issues,
+  isSelected,
+  onToggle,
+}: {
+  issues: IssueItem[];
+  isSelected: (issue: IssueItem) => boolean;
+  onToggle: (issue: IssueItem) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+  const shown = issues.filter((i) => `${i.number} ${i.title}`.toLowerCase().includes(needle));
+  return (
+    <div className="flex flex-col gap-1 p-1">
+      <Input
+        aria-label="Search issues"
+        size="xs"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search issues…"
+      />
+      <div className="max-h-64 overflow-y-auto">
+        {shown.length === 0 && <p className="p-3 text-xs text-kumo-subtle">No open issues.</p>}
+        {shown.map((issue) => (
+          <button
+            key={issue.number}
+            type="button"
+            onClick={() => onToggle(issue)}
+            className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-left hover:bg-kumo-tint"
+          >
+            <CheckIcon
+              className={cn("mt-0.5 size-3 shrink-0", !isSelected(issue) && "invisible")}
+            />
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="w-full truncate text-xs">{issue.title}</span>
+              <span className="text-[10.5px] text-kumo-subtle">
+                #{issue.number}
+                {issue.labels.length > 0 ? ` · ${issue.labels.slice(0, 2).join(", ")}` : ""}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function goalToBranch(goal: string): string {
   const slug = slugify(goal.slice(0, BRANCH_SLUG_SOURCE_CHARS));
   return slug ? `feat/${slug}` : "";
@@ -217,7 +255,6 @@ export function InlineNewTask({
   // On by default; unchecking is the "I just want the worktree" escape hatch.
   const [launchClaude, setLaunchClaude] = useState(true);
   const [branches, setBranches] = useState<BaseBranch[]>([]);
-  const [baseOpen, setBaseOpen] = useState(false);
   // One slot, so no `showError` has to remember to clear the other.
   const [notice, setNotice] = useState<{ text: string; kind: "error" | "note" } | null>(null);
   const showError = (text: string) => setNotice({ text, kind: "error" });
@@ -570,12 +607,10 @@ export function InlineNewTask({
   }
 
   return (
-    <div className="mx-3 my-1.5 flex flex-col gap-2 rounded-lg border border-border bg-card p-2.5">
+    <div className="mx-3 my-1.5 flex flex-col gap-2 rounded-lg border border-kumo-hairline bg-card p-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium text-muted-foreground">
-          ✦ New task — {repo.name}
-        </span>
-        <div className="flex rounded-md border border-border p-px" role="group">
+        <span className="text-[11px] font-medium text-kumo-subtle">✦ New task — {repo.name}</span>
+        <div className="flex rounded-md border border-kumo-hairline p-px" role="group">
           {(
             [
               ["new", "New work"],
@@ -588,8 +623,8 @@ export function InlineNewTask({
               aria-pressed={mode === value}
               onClick={() => switchMode(value)}
               className={cn(
-                "rounded-[5px] px-1.5 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground",
-                mode === value && "bg-accent text-foreground",
+                "rounded-[5px] px-1.5 py-0.5 text-[10.5px] text-kumo-subtle hover:text-kumo-default",
+                mode === value && "bg-accent text-kumo-default",
               )}
             >
               {label}
@@ -663,16 +698,16 @@ export function InlineNewTask({
             <span
               key={`${issue.repo}#${issue.number}`}
               title={issue.title}
-              className="flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground"
+              className="flex items-center gap-1 rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 font-mono text-[10.5px] text-kumo-subtle"
             >
               #{issue.number}
               <button
                 type="button"
                 aria-label={`Detach issue #${issue.number}`}
                 onClick={() => toggleIssue(issue)}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-kumo-subtle hover:text-kumo-default"
               >
-                <X className="size-2.5" />
+                <XIcon className="size-2.5" />
               </button>
             </span>
           ))}
@@ -695,16 +730,16 @@ export function InlineNewTask({
                 <img
                   src={img.previewUrl}
                   alt={img.name}
-                  className="size-12 rounded border border-border object-cover"
+                  className="size-12 rounded border border-kumo-hairline object-cover"
                 />
               </button>
               <button
                 type="button"
                 aria-label={`Remove ${img.name}`}
                 onClick={() => removeImage(img.id)}
-                className="absolute -top-1 -right-1 rounded-full border border-border bg-background p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
+                className="absolute -top-1 -right-1 rounded-full border border-kumo-hairline bg-kumo-base p-0.5 text-kumo-subtle opacity-0 transition-opacity group-hover:opacity-100 hover:text-kumo-default focus-visible:opacity-100"
               >
-                <X className="size-2.5" />
+                <XIcon className="size-2.5" />
               </button>
             </div>
           ))}
@@ -714,8 +749,9 @@ export function InlineNewTask({
       <div className="flex items-center justify-end gap-2">
         <Button
           variant="outline"
-          size="sm"
-          className="mr-auto h-6 gap-1 px-1.5 text-[10.5px]"
+          size="xs"
+          className="mr-auto"
+          icon={<ImageSquareIcon className="size-3" />}
           title="Attach the image currently on your clipboard"
           onClick={() => {
             void pasteFromHostClipboard().then((found) => {
@@ -723,7 +759,6 @@ export function InlineNewTask({
             });
           }}
         >
-          <ImagePlus className="size-3" />
           Attach image
         </Button>
         {!reviewing && (
@@ -734,17 +769,16 @@ export function InlineNewTask({
               if (o) setIssuesWanted(true);
             }}
           >
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-6 gap-1 px-1.5 text-[10.5px]">
-                <CircleDot className="size-3" />
-                Pick issue
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="start">
-              <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
-                <span className="text-[10.5px] text-muted-foreground">
-                  GitHub issues — {repo.name}
-                </span>
+            <Popover.Trigger
+              render={
+                <Button variant="outline" size="xs" icon={<RecordIcon className="size-3" />}>
+                  Pick issue
+                </Button>
+              }
+            />
+            <Popover.Content className="w-80 p-0" align="start">
+              <div className="flex items-center justify-between gap-2 border-b border-kumo-hairline px-2 py-1.5">
+                <span className="text-[10.5px] text-kumo-subtle">GitHub issues — {repo.name}</span>
                 <button
                   type="button"
                   onClick={() => setIssueAssignedToMe(!issueAssignedToMe)}
@@ -756,52 +790,26 @@ export function InlineNewTask({
               {issuesError ? (
                 <p className="p-3 text-[11px] text-red-500">{issuesError}</p>
               ) : issues === null ? (
-                <p className="p-3 text-[11px] text-muted-foreground">Loading issues…</p>
+                <p className="p-3 text-[11px] text-kumo-subtle">Loading issues…</p>
               ) : (
-                <Command>
-                  <CommandInput placeholder="Search issues…" className="text-xs" />
-                  <CommandList className="max-h-64">
-                    <CommandEmpty>No open issues.</CommandEmpty>
-                    {issues.map((issue) => {
-                      const selected = selectedIssues.some(
-                        (i) => i.repo === issue.repo && i.number === issue.number,
-                      );
-                      return (
-                        <CommandItem
-                          key={issue.number}
-                          value={`${issue.number} ${issue.title}`}
-                          onSelect={() => toggleIssue(issue)}
-                          className="flex items-start gap-2"
-                        >
-                          <Check
-                            className={cn("mt-0.5 size-3 shrink-0", !selected && "invisible")}
-                          />
-                          <span className="flex min-w-0 flex-col gap-0.5">
-                            <span className="w-full truncate text-xs">{issue.title}</span>
-                            <span className="text-[10.5px] text-muted-foreground">
-                              #{issue.number}
-                              {issue.labels.length > 0
-                                ? ` · ${issue.labels.slice(0, 2).join(", ")}`
-                                : ""}
-                            </span>
-                          </span>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandList>
-                </Command>
+                <IssueList
+                  issues={issues}
+                  isSelected={(issue) =>
+                    selectedIssues.some((i) => i.repo === issue.repo && i.number === issue.number)
+                  }
+                  onToggle={toggleIssue}
+                />
               )}
-            </PopoverContent>
+            </Popover.Content>
           </Popover>
         )}
         {!reviewing && preOverwrite && (
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 gap-1 px-1.5 text-[10.5px]"
+            size="xs"
+            icon={<ArrowUUpLeftIcon className="size-3" />}
             onClick={undoOverwrite}
           >
-            <Undo2 className="size-3" />
             Undo
           </Button>
         )}
@@ -812,150 +820,141 @@ export function InlineNewTask({
             <Button
               key={improver.id}
               variant="outline"
-              size="sm"
+              size="xs"
               className={cn(
-                "h-6 gap-1 px-1.5 text-[10.5px]",
                 otherImprovers.length > 0 &&
                   i === preferredImprovers.length - 1 &&
                   "rounded-r-none",
               )}
+              icon={<SparkleIcon className="size-3" />}
               title={improver.prompt || undefined}
               disabled={improverDisabled}
               onClick={() => void runImprover(improver)}
             >
-              <Sparkles className="size-3" />
               {suggesting === improver.id ? "Asking claude…" : improver.label}
             </Button>
           ))}
         {!reviewing && otherImprovers.length > 0 && (
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="-ml-[9px] h-6 rounded-l-none border-l-0 px-1 text-[10.5px]"
-                title="More prompt improvers — mark one Preferred in Settings to give it its own button"
-                disabled={improverDisabled}
-              >
-                <ChevronDown className="size-3" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-56 p-1" align="end">
+            <Popover.Trigger
+              render={
+                <Button
+                  variant="outline"
+                  size="xs"
+                  shape="square"
+                  className="-ml-[9px] rounded-l-none border-l-0"
+                  title="More prompt improvers — mark one Preferred in Settings to give it its own button"
+                  disabled={improverDisabled}
+                  aria-label="More prompt improvers"
+                  icon={<CaretDownIcon className="size-3" />}
+                />
+              }
+            />
+            <Popover.Content className="w-56 p-1" align="end">
               {otherImprovers.map((improver) => (
                 <button
                   key={improver.id}
                   type="button"
                   title={improver.prompt || undefined}
                   onClick={() => void runImprover(improver)}
-                  className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs hover:bg-accent"
+                  className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs hover:bg-kumo-tint"
                 >
-                  <Sparkles className="size-3 shrink-0" />
+                  <SparkleIcon className="size-3 shrink-0" />
                   <span className="truncate">
                     {suggesting === improver.id ? "Asking claude…" : improver.label}
                   </span>
                 </button>
               ))}
-            </PopoverContent>
+            </Popover.Content>
           </Popover>
         )}
       </div>
       {!reviewing && (
         <>
           <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] text-muted-foreground">title</span>
+            <span className="text-[10.5px] text-kumo-subtle">title</span>
             <Input
+              aria-label="Task title"
               value={title}
               onChange={(e) => setTitleEdit(e.target.value)}
+              size="sm"
               placeholder="auto-generated from your goal"
-              className="min-w-0 text-xs"
+              className="min-w-0"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] text-muted-foreground">branch</span>
+            <span className="text-[10.5px] text-kumo-subtle">branch</span>
             <Input
+              aria-label="Branch name"
               value={branch}
               onChange={(e) => setBranchEdit(e.target.value)}
+              size="sm"
+              variant={branchProblem ? "error" : "default"}
               placeholder="auto-generated from your goal"
-              className={cn("min-w-0 font-mono text-xs", branchProblem && "border-red-500")}
+              className="min-w-0 font-mono"
             />
             {branchProblem && <p className="text-[10.5px] text-red-500">{branchProblem}</p>}
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] text-muted-foreground">base</span>
-            <Popover open={baseOpen} onOpenChange={setBaseOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={baseOpen}
-                  className="min-w-0 justify-start truncate font-mono text-xs font-normal"
-                >
-                  <span className="truncate">{baseLabel}</span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-(--radix-popover-trigger-width) p-0">
-                <Command>
-                  <CommandInput placeholder="Search branches…" />
-                  <CommandList>
-                    <CommandEmpty>No branches found.</CommandEmpty>
-                    {sortedBranches.map((b) => (
-                      <CommandItem
-                        key={b.name}
-                        value={b.label}
-                        className="min-w-0 truncate font-mono text-xs"
-                        onSelect={() => {
-                          setBase(b.name);
-                          setBaseOpen(false);
-                        }}
-                      >
-                        <span className="truncate">{b.label}</span>
-                      </CommandItem>
-                    ))}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+            <span className="text-[10.5px] text-kumo-subtle">base</span>
+            <Combobox
+              items={sortedBranches}
+              value={branches.find((b) => b.name === base) ?? null}
+              onValueChange={(next) => {
+                const picked = next as BaseBranch | null;
+                if (picked) setBase(picked.name);
+              }}
+              isItemEqualToValue={(a: BaseBranch, b: BaseBranch) => a.name === b.name}
+              size="sm"
+            >
+              <Combobox.TriggerValue
+                className="min-w-0 truncate font-mono text-xs"
+                placeholder={baseLabel}
+              />
+              <Combobox.Content>
+                <Combobox.Input aria-label="Search branches" placeholder="Search branches…" />
+                <Combobox.Empty>No branches found.</Combobox.Empty>
+                <Combobox.List>
+                  {(b: BaseBranch) => (
+                    <Combobox.Item key={b.name} value={b}>
+                      <span className="block truncate font-mono text-xs">{b.label}</span>
+                    </Combobox.Item>
+                  )}
+                </Combobox.List>
+              </Combobox.Content>
+            </Combobox>
           </div>
         </>
       )}
       <div className="flex items-center gap-2">
-        <Select value={model} onValueChange={(v) => setModel(v as ModelChoice)}>
-          <SelectTrigger className="min-w-0 flex-1 font-mono text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MODEL_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={effort} onValueChange={(v) => setEffort(v as EffortChoice)}>
-          <SelectTrigger className="min-w-0 flex-1 font-mono text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {EFFORT_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Select
+          aria-label="Model"
+          size="sm"
+          className="min-w-0 flex-1 font-mono"
+          value={model}
+          onValueChange={(v) => setModel(v as ModelChoice)}
+          items={MODEL_OPTIONS}
+        />
+        <Select
+          aria-label="Effort"
+          size="sm"
+          className="min-w-0 flex-1 font-mono"
+          value={effort}
+          onValueChange={(v) => setEffort(v as EffortChoice)}
+          items={EFFORT_OPTIONS}
+        />
       </div>
       <label
-        htmlFor="new-task-launch-claude"
         className="flex cursor-pointer items-start gap-2"
         title="Off: create the worktree and its terminal session but leave it at a bare shell — nothing is typed into the PTY. The goal still becomes the board card and the session's label."
       >
         <Checkbox
-          id="new-task-launch-claude"
+          aria-label="Start Claude on the goal"
           checked={launchClaude}
-          onCheckedChange={(v) => setLaunchClaude(v === true)}
+          onCheckedChange={(v) => setLaunchClaude(v)}
           className="mt-0.5"
         />
-        <span className="text-[11px] leading-snug text-muted-foreground">
+        <span className="text-[11px] leading-snug text-kumo-subtle">
           Start Claude on the goal — off leaves the new task at a bare shell
         </span>
       </label>
@@ -963,7 +962,7 @@ export function InlineNewTask({
         <p
           className={cn(
             "text-[11px]",
-            notice.kind === "error" ? "text-red-500" : "text-muted-foreground",
+            notice.kind === "error" ? "text-red-500" : "text-kumo-subtle",
           )}
         >
           {notice.text}
@@ -985,11 +984,16 @@ export function InlineNewTask({
           </Button>
         )}
         {reviewing ? (
-          <Button size="sm" disabled={!prCheck || !!prCheck.error} onClick={() => submit(true)}>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!prCheck || !!prCheck.error}
+            onClick={() => submit(true)}
+          >
             Start review
           </Button>
         ) : (
-          <Button size="sm" disabled={!branch} onClick={() => submit(true)}>
+          <Button variant="primary" size="sm" disabled={!branch} onClick={() => submit(true)}>
             Start task
           </Button>
         )}

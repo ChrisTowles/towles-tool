@@ -1,18 +1,9 @@
 // The new-task form's "Review PR" source: pick an open pull request (or type any
 // number) and preflight it with `task_check_pr`, which answers the branch and dir
 // the review task would get — its existing head, never a new branch.
-import { GitPullRequest } from "lucide-react";
+import { Combobox } from "@cloudflare/kumo";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   type PrCheck,
   PrCheckSchema,
@@ -29,6 +20,16 @@ export function parsePrNumber(text: string): number | null {
   return n > 0 ? n : null;
 }
 
+type PrOption = { kind: "pr"; pr: PullRequest } | { kind: "typed"; number: number };
+
+function matchesPr(option: PrOption, query: string): boolean {
+  if (option.kind === "typed") return true;
+  const { pr } = option;
+  return `#${pr.number} ${pr.title} ${pr.author}`
+    .toLowerCase()
+    .includes(query.trim().toLowerCase());
+}
+
 export function ReviewPrPicker({
   root,
   check,
@@ -38,7 +39,6 @@ export function ReviewPrPicker({
   check: PrCheck | null;
   onCheck: (check: PrCheck | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [prs, setPrs] = useState<PullRequest[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -59,7 +59,6 @@ export function ReviewPrPicker({
   }, [root]);
 
   async function pick(number: number) {
-    setOpen(false);
     setSearch("");
     setChecking(number);
     setCheckError(null);
@@ -72,68 +71,67 @@ export function ReviewPrPicker({
 
   const typed = parsePrNumber(search);
   const typedUnlisted = typed !== null && !prs?.some((pr) => pr.number === typed);
+  const options: PrOption[] = [
+    ...(typed !== null && typedUnlisted ? [{ kind: "typed" as const, number: typed }] : []),
+    ...(prs ?? []).map((pr) => ({ kind: "pr" as const, pr })),
+  ];
   const problem = checkError ?? check?.error ?? null;
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10.5px] text-muted-foreground">pull request</span>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            className="min-w-0 justify-start gap-1.5 truncate text-xs font-normal"
-          >
-            <GitPullRequest className="size-3 shrink-0" />
-            <span className="truncate">
-              {checking !== null
-                ? `Checking #${checking}…`
-                : check
-                  ? `#${check.pr.number} ${check.pr.title}`
-                  : "Pick a pull request to review"}
-            </span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-80 p-0" align="start">
+      <span className="text-[10.5px] text-kumo-subtle">pull request</span>
+      <Combobox
+        items={options}
+        value={null}
+        inputValue={search}
+        onInputValueChange={setSearch}
+        onValueChange={(next) => {
+          const option = next as PrOption | null;
+          if (!option) return;
+          void pick(option.kind === "typed" ? option.number : option.pr.number);
+        }}
+        filter={matchesPr}
+        size="sm"
+      >
+        <Combobox.TriggerValue className="w-full min-w-0 truncate text-xs">
+          {checking !== null
+            ? `Checking #${checking}…`
+            : check
+              ? `#${check.pr.number} ${check.pr.title}`
+              : "Pick a pull request to review"}
+        </Combobox.TriggerValue>
+        <Combobox.Content className="w-80">
           {listError && <p className="p-3 text-[11px] text-red-500">{listError}</p>}
-          <Command>
-            <CommandInput
-              value={search}
-              onValueChange={setSearch}
-              placeholder="Search open PRs, or type a number…"
-              className="text-xs"
-            />
-            <CommandList className="max-h-64">
-              <CommandEmpty>
-                {prs === null && !listError ? "Loading pull requests…" : "No open pull requests."}
-              </CommandEmpty>
-              {typed !== null && typedUnlisted && (
-                <CommandItem value={`#${typed} ${search}`} onSelect={() => void pick(typed)}>
-                  <span className="text-xs">Review PR #{typed}</span>
-                </CommandItem>
-              )}
-              {prs?.map((pr) => (
-                <CommandItem
-                  key={pr.number}
-                  value={`#${pr.number} ${pr.title} ${pr.author}`}
-                  onSelect={() => void pick(pr.number)}
-                  className="flex flex-col items-start gap-0.5"
-                >
-                  <span className="w-full truncate text-xs">{pr.title}</span>
-                  <span className="text-[10.5px] text-muted-foreground">
-                    #{pr.number} · {pr.author}
-                    {pr.isDraft ? " · draft" : ""}
-                    {pr.crossRepository ? " · fork" : ""}
+          <Combobox.Input
+            aria-label="Search pull requests"
+            placeholder="Search open PRs, or type a number…"
+            className="text-xs"
+          />
+          <Combobox.Empty>
+            {prs === null && !listError ? "Loading pull requests…" : "No open pull requests."}
+          </Combobox.Empty>
+          <Combobox.List>
+            {(option: PrOption) =>
+              option.kind === "typed" ? (
+                <Combobox.Item key="typed" value={option}>
+                  <span className="text-xs">Review PR #{option.number}</span>
+                </Combobox.Item>
+              ) : (
+                <Combobox.Item key={option.pr.number} value={option}>
+                  <span className="block w-full truncate text-xs">{option.pr.title}</span>
+                  <span className="block text-[10.5px] text-kumo-subtle">
+                    #{option.pr.number} · {option.pr.author}
+                    {option.pr.isDraft ? " · draft" : ""}
+                    {option.pr.crossRepository ? " · fork" : ""}
                   </span>
-                </CommandItem>
-              ))}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+                </Combobox.Item>
+              )
+            }
+          </Combobox.List>
+        </Combobox.Content>
+      </Combobox>
       {check && !problem && (
-        <p className="truncate font-mono text-[10.5px] text-muted-foreground">
+        <p className="truncate font-mono text-[10.5px] text-kumo-subtle">
           {check.branch} → {check.pr.baseBranch}
         </p>
       )}

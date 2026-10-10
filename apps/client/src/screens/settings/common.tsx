@@ -1,17 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { Check, ChevronsUpDown, Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Combobox, Input, SensitiveInput, Switch } from "@cloudflare/kumo";
 import { isEmptyQuery, matchesFilter } from "@/lib/settings-filter";
 import { slackListUsers, type SlackUser } from "@/lib/slack";
 import type { UserSettings } from "@/lib/settings";
@@ -55,7 +43,7 @@ export function SettingRow({
     <div className="flex items-center justify-between gap-4">
       <div>
         <div className="text-sm font-medium">{label}</div>
-        <div className="text-sm text-muted-foreground">{description}</div>
+        <div className="text-sm text-kumo-subtle">{description}</div>
       </div>
       <div className="flex items-center gap-3">
         {extra}
@@ -78,7 +66,7 @@ export function TabHeading({
     <div className="flex items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-semibold">{title}</h2>
-        <p className="text-sm text-muted-foreground">{note}</p>
+        <p className="text-sm text-kumo-subtle">{note}</p>
       </div>
       {action}
     </div>
@@ -98,7 +86,7 @@ export function FieldRow({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="text-sm font-medium">{label}</div>
-      <div className="text-sm text-muted-foreground">{description}</div>
+      <div className="text-sm text-kumo-subtle">{description}</div>
       {children}
     </div>
   );
@@ -124,6 +112,7 @@ export function ToggleRow({
   return (
     <SettingRow label={label} description={description} extra={extra}>
       <Switch
+        aria-label={label}
         checked={checked}
         onCheckedChange={(v) => {
           uiAction("settings.toggle", "settings", `${id} ${v ? "on" : "off"}`);
@@ -155,6 +144,7 @@ export function CadenceRow({
     <SettingRow label={label} description={description}>
       <div className="flex items-center gap-2">
         <Input
+          aria-label={label}
           type="number"
           min={1}
           value={value}
@@ -165,7 +155,7 @@ export function CadenceRow({
           onBlur={onCommit}
           className="w-20"
         />
-        <span className="text-sm text-muted-foreground">{unit}</span>
+        <span className="text-sm text-kumo-subtle">{unit}</span>
       </div>
     </SettingRow>
   );
@@ -182,43 +172,52 @@ export function clampHour(raw: string): number {
   return Math.min(23, Math.max(0, n));
 }
 
+// SensitiveInput owns its reveal state with no callback, so it is read off the
+// parts on the way down: the masked field reveals on click or Enter/Space, and
+// the eye button toggles.
+function revealEvent(target: EventTarget, key?: string) {
+  const part = (target as Element).closest("[data-kumo-part]");
+  const kind = part?.getAttribute("data-kumo-part");
+  const reveal =
+    kind === "masked-container"
+      ? !key || key === "Enter" || key === " "
+      : kind === "toggle-visibility" && !key;
+  if (!reveal || !part) return;
+  const hide = part.getAttribute("aria-label") === "Hide value";
+  uiAction("settings.secret_reveal", "settings", hide ? "hide" : "show");
+}
+
 /** Password-style input with a show/hide toggle, for secret tokens. */
 export function RevealInput({
+  "aria-label": ariaLabel,
   value,
   onChange,
   placeholder,
   onCommit,
 }: {
+  "aria-label": string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   /** Commit the debounced write now (blur) rather than waiting out the delay. */
   onCommit?: () => void;
 }) {
-  const [shown, setShown] = useState(false);
   return (
-    <div className="relative">
-      <Input
-        type={shown ? "text" : "password"}
+    <div
+      className="contents"
+      onClickCapture={(e) => revealEvent(e.target)}
+      onKeyDownCapture={(e) => revealEvent(e.target, e.key)}
+    >
+      <SensitiveInput
+        aria-label={ariaLabel}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onCommit}
         placeholder={placeholder}
-        className="pr-9 font-mono text-xs"
+        className="font-mono text-xs"
         spellCheck={false}
         autoComplete="off"
       />
-      <button
-        type="button"
-        onClick={() => {
-          uiAction("settings.secret_reveal", "settings", shown ? "hide" : "show");
-          setShown((s) => !s);
-        }}
-        aria-label={shown ? "Hide token" : "Show token"}
-        className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-      >
-        {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-      </button>
     </div>
   );
 }
@@ -253,7 +252,7 @@ export function WeekdayChips({
               "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
               on
                 ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background text-muted-foreground hover:bg-muted",
+                : "border-kumo-hairline bg-background text-kumo-subtle hover:bg-muted",
             )}
           >
             {label}
@@ -281,7 +280,6 @@ export function SlackUserPicker({
 }) {
   const [users, setUsers] = useState<SlackUser[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -298,6 +296,7 @@ export function SlackUserPicker({
   if (failed || (users !== null && users.length === 0)) {
     return (
       <Input
+        aria-label="Slack user ID"
         value={userId}
         onChange={(e) => onIdChange(e.target.value)}
         onBlur={onIdCommit}
@@ -308,58 +307,49 @@ export function SlackUserPicker({
     );
   }
   if (users === null) {
-    return <div className="text-xs text-muted-foreground">Loading members…</div>;
+    return <div className="text-xs text-kumo-subtle">Loading members…</div>;
   }
 
-  const selected = users.find((u) => u.id === userId);
-  const label = selected?.name || userName || userId || "Select a person…";
+  const selected = users.find((u) => u.id === userId) ?? null;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between font-normal"
-        >
-          <span className="truncate">{label}</span>
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search people…" />
-          <CommandList>
-            <CommandEmpty>No match.</CommandEmpty>
-            <CommandGroup>
-              {users.map((u) => (
-                <CommandItem
-                  key={u.id}
-                  value={`${u.name} ${u.id}`}
-                  onSelect={() => {
-                    uiAction("settings.slack_user_pick", "settings");
-                    onPick(u);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn("mr-2 size-4", u.id === userId ? "opacity-100" : "opacity-0")}
-                  />
-                  <span className="truncate">{u.name}</span>
-                  <span className="ml-2 font-mono text-[10px] text-muted-foreground">{u.id}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <Combobox
+      items={users}
+      value={selected}
+      onValueChange={(next) => {
+        const user = next as SlackUser | null;
+        if (!user) return;
+        uiAction("settings.slack_user_pick", "settings");
+        onPick(user);
+      }}
+      itemToStringLabel={(u: SlackUser) => u.name}
+      isItemEqualToValue={(a: SlackUser, b: SlackUser) => a.id === b.id}
+      filter={(u: SlackUser, query: string) =>
+        `${u.name} ${u.id}`.toLowerCase().includes(query.trim().toLowerCase())
+      }
+    >
+      <Combobox.TriggerValue
+        className="w-full"
+        placeholder={userName || userId || "Select a person…"}
+      />
+      <Combobox.Content>
+        <Combobox.Input aria-label="Search people" placeholder="Search people…" />
+        <Combobox.Empty>No match.</Combobox.Empty>
+        <Combobox.List>
+          {(u: SlackUser) => (
+            <Combobox.Item key={u.id} value={u}>
+              <span className="truncate">{u.name}</span>
+              <span className="ml-2 font-mono text-[10px] text-kumo-subtle">{u.id}</span>
+            </Combobox.Item>
+          )}
+        </Combobox.List>
+      </Combobox.Content>
+    </Combobox>
   );
 }
 
 /** Shown in wired tabs while settings load, or when there's no Tauri host. */
 export function SettingsLoading() {
-  return <div className="text-sm text-muted-foreground">Loading settings…</div>;
+  return <div className="text-sm text-kumo-subtle">Loading settings…</div>;
 }
 
 function rowKeywords(section: FilterSection, row: FilterRow): string[] {
@@ -373,7 +363,7 @@ function rowKeywords(section: FilterSection, row: FilterRow): string[] {
 /** Empty state shown when the current filter hides every row in a tab. */
 export function NoMatches({ query }: { query: string }) {
   return (
-    <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+    <div className="rounded-md border border-dashed p-6 text-center text-sm text-kumo-subtle">
       No settings match “{query.trim()}”.
     </div>
   );

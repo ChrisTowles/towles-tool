@@ -37,8 +37,9 @@ resizable, so the question is *this row's* room.
 ## Two animation idioms — the choice is mechanical, not stylistic
 
 `tw-animate-css` is the default: the vendored `components/ui/*` animate with
-`data-open:animate-in fade-in-0 …`, which works because Radix keeps a closing
-element mounted until its animation ends.
+`data-open:animate-in fade-in-0 …`, and Kumo's overlays animate themselves; both
+work because their Base UI primitives keep a closing element mounted
+until its animation ends.
 
 Nothing else has that luxury. The rail renders a backend snapshot, so a removed
 row is simply absent from the next payload and React unmounts it before any CSS

@@ -1,7 +1,7 @@
 /** The working-context band above the panes — deliberately the rail's folder
  * row at a larger size, sharing its grammar (`agentboard-folder-header.tsx`,
  * the `visual-design` skill). Pane *chrome* is `agentboard-pane.tsx`. */
-import { FolderPlus, GitPullRequest, Plus, Trash2 } from "lucide-react";
+import { FolderPlusIcon, GitPullRequestIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import {
   BaseMovedChip,
@@ -137,7 +137,7 @@ export function WorkingContext({
                   }}
                   className="hover:text-violet-500"
                 >
-                  <Plus className="size-3.5" />
+                  <PlusIcon className="size-3.5" />
                 </IconBtn>
               )}
               {!missing && (
@@ -149,7 +149,7 @@ export function WorkingContext({
                   }}
                   className="hover:text-violet-500"
                 >
-                  <FolderPlus className="size-3.5" />
+                  <FolderPlusIcon className="size-3.5" />
                 </IconBtn>
               )}
               <RepoMenu
@@ -284,7 +284,7 @@ function ActionableCallouts({
                   onClick={() => void openExternalUrl(item.pr!.url)}
                   className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
-                  <GitPullRequest className="size-3" />#{item.pr.number}
+                  <GitPullRequestIcon className="size-3" />#{item.pr.number}
                 </button>
               </Hint>
             )}
@@ -295,7 +295,7 @@ function ActionableCallouts({
                   onClick={() => onDeleteWorktree(folderDir, folderLabel)}
                   className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-1.5 font-mono text-[10.5px] text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
                 >
-                  <Trash2 className="size-3" /> delete
+                  <TrashIcon className="size-3" /> delete
                 </button>
               </Hint>
             )}

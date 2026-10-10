@@ -1,7 +1,7 @@
 // The rail rows that aren't a PTY session. A view pane is a *view of* the
 // folder, so it carries no status and closes without asking.
 import { useState } from "react";
-import { AppWindow, Box, Eye, FolderTree } from "lucide-react";
+import { AppWindowIcon, CubeIcon, EyeIcon, TreeStructureIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { IconBtn } from "@/components/agentboard-bits";
 import { cn } from "@/lib/utils";
@@ -55,12 +55,16 @@ export function viewPaneKind(paneId: string): ViewPaneKind | null {
 
 const VIEW_PANE_META: Record<
   ViewPaneKind,
-  { Icon: typeof FolderTree; label: string; title: string }
+  { Icon: typeof TreeStructureIcon; label: string; title: string }
 > = {
-  files: { Icon: FolderTree, label: "files", title: "This checkout's file tree and editor" },
-  preview: { Icon: Eye, label: "preview", title: "This checkout's live dev server" },
-  browser: { Icon: AppWindow, label: "chrome", title: "A real Chrome with persistent sign-ins" },
-  jarvis: { Icon: Box, label: "jarvis", title: "A native Bevy surface tiled in this window" },
+  files: { Icon: TreeStructureIcon, label: "files", title: "This checkout's file tree and editor" },
+  preview: { Icon: EyeIcon, label: "preview", title: "This checkout's live dev server" },
+  browser: {
+    Icon: AppWindowIcon,
+    label: "chrome",
+    title: "A real Chrome with persistent sign-ins",
+  },
+  jarvis: { Icon: CubeIcon, label: "jarvis", title: "A native Bevy surface tiled in this window" },
 };
 
 /** A view pane as a rail row: quieter than a session (nothing running to

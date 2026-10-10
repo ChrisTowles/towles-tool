@@ -3,7 +3,7 @@
 // transparent text, and the two must keep identical metrics or the colours slide.
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import { Textarea } from "@/components/ui/textarea";
+import { InputArea } from "@cloudflare/kumo";
 import {
   acceptCompletion,
   completionLead,
@@ -17,10 +17,9 @@ import type { IssueItem } from "@/lib/data";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
-/** `md:text-xs` is not redundant: tailwind-merge dedupes only within a modifier,
- * so a bare `text-xs` loses to shadcn's `md:text-sm` above 768px and the caret
- * drifts further from the mirror with every character typed. */
-const SHARED_BOX = "px-2.5 py-2 text-xs leading-normal md:text-xs";
+/** Kumo's textarea draws its edge as a ring, not a border, so the mirror needs
+ * no border to stay metric-identical. */
+const SHARED_BOX = "px-2.5 py-2 text-xs leading-normal";
 
 export function GoalEditor({
   value,
@@ -148,7 +147,7 @@ export function GoalEditor({
           ref={mirror}
           aria-hidden
           className={cn(
-            "pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent whitespace-pre-wrap break-words",
+            "pointer-events-none absolute inset-0 overflow-hidden rounded-lg whitespace-pre-wrap break-words",
             SHARED_BOX,
           )}
         >
@@ -173,18 +172,18 @@ export function GoalEditor({
           {/* A trailing newline collapses without this, so the mirror ends one
             line short of the textarea while typing at the end. */}
           {ghost ? (
-            <span className="text-muted-foreground/60">{ghost}</span>
+            <span className="text-kumo-subtle/60">{ghost}</span>
           ) : value.endsWith("\n") ? (
             " "
           ) : null}
         </div>
-        <Textarea
+        <InputArea
           {...textareaProps}
           ref={ref}
           value={value}
           // Transparent text, visible caret: the mirror underneath has the glyphs.
           className={cn(
-            "relative bg-transparent text-transparent caret-foreground",
+            "relative !bg-transparent !text-transparent caret-kumo-default",
             SHARED_BOX,
             className,
           )}
@@ -266,13 +265,13 @@ export function GoalEditor({
           }}
         />
         {open && (
-          <div className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md">
+          <div className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-kumo-hairline bg-kumo-overlay shadow-md">
             {issuesError ? (
               <p className="p-2 text-[11px] text-red-500">{issuesError}</p>
             ) : issues === null ? (
-              <p className="p-2 text-[11px] text-muted-foreground">Loading issues…</p>
+              <p className="p-2 text-[11px] text-kumo-subtle">Loading issues…</p>
             ) : matches.length === 0 ? (
-              <p className="p-2 text-[11px] text-muted-foreground">No matching issues.</p>
+              <p className="p-2 text-[11px] text-kumo-subtle">No matching issues.</p>
             ) : (
               matches.map((issue, i) => (
                 <button
@@ -286,10 +285,10 @@ export function GoalEditor({
                   onMouseEnter={() => setActive(i)}
                   className={cn(
                     "flex w-full items-baseline gap-2 px-2 py-1.5 text-left",
-                    i === active && "bg-accent",
+                    i === active && "bg-kumo-tint",
                   )}
                 >
-                  <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                  <span className="shrink-0 font-mono text-[10.5px] text-kumo-subtle">
                     #{issue.number}
                   </span>
                   <span className="truncate text-xs">{issue.title}</span>
@@ -301,7 +300,7 @@ export function GoalEditor({
         {shown.length > 0 && (
           <div
             role="listbox"
-            className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-border bg-popover shadow-md"
+            className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-kumo-hairline bg-kumo-overlay shadow-md"
           >
             {shown.map((suffix, i) => (
               <button
@@ -316,10 +315,10 @@ export function GoalEditor({
                 onMouseEnter={() => setCompActive(i)}
                 className={cn(
                   "flex w-full truncate px-2 py-1 text-left text-xs",
-                  i === compActive && "bg-accent",
+                  i === compActive && "bg-kumo-tint",
                 )}
               >
-                <span className="whitespace-pre text-muted-foreground">
+                <span className="whitespace-pre text-kumo-subtle">
                   {completionLead(comp.before)}
                 </span>
                 <span className="font-semibold">{suffix}</span>
@@ -331,7 +330,7 @@ export function GoalEditor({
       {/* Persistent, because the placeholder that used to carry this vanishes
           on the first keystroke — which is exactly when someone is composing a
           goal and might want to reference an issue. */}
-      <p className="flex items-center gap-1.5 text-[10.5px] text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-[10.5px] text-kumo-subtle">
         <button
           type="button"
           aria-label="Link an issue"
@@ -345,7 +344,7 @@ export function GoalEditor({
           #
         </button>
         <span>to link an issue · Tab completes</span>
-        {hint ? <span className="text-muted-foreground/70">· {hint}</span> : null}
+        {hint ? <span className="text-kumo-subtle/70">· {hint}</span> : null}
       </p>
     </div>
   );

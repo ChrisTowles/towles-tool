@@ -1,8 +1,8 @@
 /** What a repo's rail subtree *contains*. How each row *looks* belongs to
  * `FolderHeader`, `SessionRow` and `ViewPaneRow`. */
 import { type ReactElement } from "react";
-import { toast } from "sonner";
-import { FolderPlus } from "lucide-react";
+import { toast } from "@/lib/toast";
+import { FolderPlusIcon } from "@phosphor-icons/react";
 import {
   Chevron,
   CollapsedLive,
@@ -450,7 +450,7 @@ export function RepoGroup({
             }}
             className="hover:text-violet-500"
           >
-            <FolderPlus className="size-3.5" />
+            <FolderPlusIcon className="size-3.5" />
           </IconBtn>
           <RepoMenu
             ghost

@@ -4,44 +4,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 // keeps `echarts.ECharts` available without emitting a runtime dependency.
 import type * as echarts from "echarts";
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  BarChart3,
-  Check,
-  CircleCheck,
-  Clock,
-  Copy,
-  DatabaseZap,
-  Flame,
-  Lightbulb,
-  List,
-  MessagesSquare,
-  RefreshCw,
-  Repeat2,
-  Search,
-  SquareCode,
-  type LucideIcon,
-} from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+  ArrowClockwiseIcon,
+  ArrowDownIcon,
+  ArrowsDownUpIcon,
+  ArrowUpIcon,
+  ChartBarIcon,
+  ChatsCircleIcon,
+  CheckCircleIcon,
+  CheckIcon,
+  ClockIcon,
+  CodeBlockIcon,
+  CopyIcon,
+  FireIcon,
+  LightbulbIcon,
+  LightningIcon,
+  ListIcon,
+  MagnifyingGlassIcon,
+  RepeatIcon,
+  type Icon,
+} from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button, Dialog, Input, Select, Tabs, Tooltip } from "@cloudflare/kumo";
 import { Card, StatTile } from "@/components/store-bits";
 import {
   claudeSessionsBreakdown,
@@ -118,11 +101,11 @@ function toolColor(name: string | null | undefined): string {
   return TOOL_COLORS[name] ?? (name.startsWith("mcp") ? PALETTE[2] : FALLBACK_COLOR);
 }
 
-const INSIGHT_META: Record<InsightKind, { label: string; icon: LucideIcon; color: string }> = {
-  tokenOutlier: { label: "Token outlier", icon: Flame, color: PALETTE[3] },
-  rereadLoop: { label: "Re-read loop", icon: Repeat2, color: PALETTE[7] },
-  cacheChurn: { label: "Cache churn", icon: DatabaseZap, color: PALETTE[6] },
-  marathon: { label: "Marathon session", icon: MessagesSquare, color: PALETTE[0] },
+const INSIGHT_META: Record<InsightKind, { label: string; icon: Icon; color: string }> = {
+  tokenOutlier: { label: "Token outlier", icon: FireIcon, color: PALETTE[3] },
+  rereadLoop: { label: "Re-read loop", icon: RepeatIcon, color: PALETTE[7] },
+  cacheChurn: { label: "Cache churn", icon: LightningIcon, color: PALETTE[6] },
+  marathon: { label: "Marathon session", icon: ChatsCircleIcon, color: PALETTE[0] },
 };
 
 function cssVar(name: string): string {
@@ -727,12 +710,12 @@ function SortableTh({
         {children}
         {active ? (
           dir === "asc" ? (
-            <ArrowUp className="size-3" />
+            <ArrowUpIcon className="size-3" />
           ) : (
-            <ArrowDown className="size-3" />
+            <ArrowDownIcon className="size-3" />
           )
         ) : (
-          <ArrowUpDown className="size-3 opacity-30" />
+          <ArrowsDownUpIcon className="size-3 opacity-30" />
         )}
       </span>
     </th>
@@ -751,11 +734,15 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
   return (
     <span className="inline-flex items-center gap-0.5">
       {cwd && !session.programmatic && (
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <Tooltip
+          content="Open in editor"
+          render={
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="xs"
+              shape="square"
+              aria-label="Open in editor"
+              icon={<CodeBlockIcon className="size-3.5" />}
               onClick={(e) => {
                 e.stopPropagation();
                 uiAction("claude_sessions.open_in_editor", "claude-sessions");
@@ -766,45 +753,56 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
                   sessionId: session.sessionId,
                 });
               }}
-            >
-              <SquareCode />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Open in editor</TooltipContent>
-        </Tooltip>
+            />
+          }
+        />
       )}
-      <Tooltip>
-        <TooltipTrigger asChild>
+      <Tooltip
+        content="Copy session ID"
+        render={
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="xs"
+            shape="square"
+            aria-label="Copy session ID"
+            icon={
+              copiedKey === "id" ? (
+                <CheckIcon className="size-3.5 text-green-500" />
+              ) : (
+                <CopyIcon className="size-3.5" />
+              )
+            }
             onClick={(e) => {
               e.stopPropagation();
               uiAction("claude_sessions.copy", "claude-sessions", "id");
               copy("id", session.sessionId);
             }}
-          >
-            {copiedKey === "id" ? <Check className="text-green-500" /> : <Copy />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Copy session ID</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
+          />
+        }
+      />
+      <Tooltip
+        content="Copy session file path"
+        render={
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="xs"
+            shape="square"
+            aria-label="Copy session file path"
+            icon={
+              copiedKey === "path" ? (
+                <CheckIcon className="size-3.5 text-green-500" />
+              ) : (
+                <CopyIcon className="size-3.5" />
+              )
+            }
             onClick={(e) => {
               e.stopPropagation();
               uiAction("claude_sessions.copy", "claude-sessions", "path");
               copy("path", session.path);
             }}
-          >
-            {copiedKey === "path" ? <Check className="text-green-500" /> : <Copy />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Copy session file path</TooltipContent>
-      </Tooltip>
+          />
+        }
+      />
     </span>
   );
 }
@@ -852,20 +850,20 @@ function BreakdownDialog({
   const maxTurn = Math.max(1, ...topTurns.map((t) => t.inputTokens + t.outputTokens));
 
   return (
-    <Dialog open={!!session} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 pr-6">
+    <Dialog.Root open={!!session} onOpenChange={(o) => !o && onClose()}>
+      <Dialog size="xl" className="max-h-[85vh] overflow-y-auto p-6">
+        <div className="mb-4 flex flex-col gap-1.5">
+          <Dialog.Title className="flex items-center gap-2 pr-6 text-lg">
             <span className="min-w-0 truncate">
               {session?.title ?? session?.sessionId.slice(0, 8)}
             </span>
             {session && <SessionButtons session={session} />}
-          </DialogTitle>
-          <DialogDescription>
+          </Dialog.Title>
+          <Dialog.Description className="text-sm">
             {session?.project} · {session?.date} ·{" "}
             {formatTokens((session?.inputTokens ?? 0) + (session?.outputTokens ?? 0))} in+out
-          </DialogDescription>
-        </DialogHeader>
+          </Dialog.Description>
+        </div>
 
         {loading ? (
           <p className="text-sm text-muted-foreground">Parsing session…</p>
@@ -940,8 +938,8 @@ function BreakdownDialog({
         ) : (
           <p className="text-sm text-muted-foreground">Could not load this session.</p>
         )}
-      </DialogContent>
-    </Dialog>
+      </Dialog>
+    </Dialog.Root>
   );
 }
 
@@ -1136,7 +1134,7 @@ function InsightsTab({ days, nonce, active }: { days: string; nonce: number; act
   if (insights.length === 0)
     return (
       <div className="flex items-center gap-2.5 p-4 text-sm text-muted-foreground">
-        <CircleCheck className="size-4 shrink-0" style={{ color: PALETTE[1] }} />
+        <CheckCircleIcon className="size-4 shrink-0" style={{ color: PALETTE[1] }} />
         No waste patterns in this window — sessions look healthy.
       </div>
     );
@@ -1193,7 +1191,7 @@ function InsightsTab({ days, nonce, active }: { days: string; nonce: number; act
       })}
       <p className="text-[11px] text-muted-foreground">
         Click a finding for its turn/tool breakdown, or{" "}
-        <Copy className="inline size-3 align-[-2px]" /> to copy the session ID or file path.
+        <CopyIcon className="inline size-3 align-[-2px]" /> to copy the session ID or file path.
       </p>
       <BreakdownDialog session={breakdownFor} onClose={() => setBreakdownFor(null)} />
     </div>
@@ -1261,33 +1259,32 @@ export function ClaudeSessionsScreen() {
         <h2 className="font-heading text-lg font-semibold">Claude Sessions</h2>
         <div className="flex items-center gap-2">
           <Select
+            size="sm"
+            label="Range"
             value={days}
             onValueChange={(v) => {
+              if (typeof v !== "string") return;
               uiAction("claude_sessions.range", "claude-sessions", v);
               setDays(v);
             }}
+            className="w-36"
           >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {DAY_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
+            {DAY_OPTIONS.map((o) => (
+              <Select.Option key={o.value} value={o.value}>
+                {o.label}
+              </Select.Option>
+            ))}
           </Select>
           <Button
             variant="outline"
             size="sm"
+            icon={<ArrowClockwiseIcon className="size-3.5" />}
             onClick={() => {
               uiAction("claude_sessions.refresh", "claude-sessions");
               setRefreshNonce((n) => n + 1);
               void refresh(days);
             }}
           >
-            <RefreshCw className="size-3.5" />
             Refresh
           </Button>
         </div>
@@ -1317,38 +1314,60 @@ export function ClaudeSessionsScreen() {
           </div>
 
           <Tabs
-            orientation="vertical"
+            variant="underline"
             value={tab}
             onValueChange={(v) => {
               uiAction("claude_sessions.tab", "claude-sessions", v);
               setTab(v as typeof tab);
             }}
-            className="min-h-0 flex-1 gap-0"
-          >
-            <TabsList
-              variant="line"
-              className="h-full w-44 shrink-0 items-stretch gap-1 rounded-none border-r border-border bg-card p-2"
-            >
-              <TabsTrigger value="overview" className="justify-start gap-2 px-2 py-1.5">
-                <BarChart3 className="size-4" />
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="sessions" className="justify-start gap-2 px-2 py-1.5">
-                <List className="size-4" />
-                Sessions{searching ? " · search" : ""}
-              </TabsTrigger>
-              <TabsTrigger value="insights" className="justify-start gap-2 px-2 py-1.5">
-                <Lightbulb className="size-4" />
-                Insights
-              </TabsTrigger>
-              <TabsTrigger value="cadence" className="justify-start gap-2 px-2 py-1.5">
-                <Clock className="size-4" />
-                Cadence
-              </TabsTrigger>
-            </TabsList>
+            className="shrink-0 border-b border-kumo-hairline bg-kumo-base px-2"
+            tabs={[
+              {
+                value: "overview",
+                label: (
+                  <span className="flex items-center gap-2">
+                    <ChartBarIcon className="size-4" />
+                    Overview
+                  </span>
+                ),
+              },
+              {
+                value: "sessions",
+                label: (
+                  <span className="flex items-center gap-2">
+                    <ListIcon className="size-4" />
+                    {"Sessions" + (searching ? " · search" : "")}
+                  </span>
+                ),
+              },
+              {
+                value: "insights",
+                label: (
+                  <span className="flex items-center gap-2">
+                    <LightbulbIcon className="size-4" />
+                    Insights
+                  </span>
+                ),
+              },
+              {
+                value: "cadence",
+                label: (
+                  <span className="flex items-center gap-2">
+                    <ClockIcon className="size-4" />
+                    Cadence
+                  </span>
+                ),
+              },
+            ]}
+          />
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <TabsContent value="overview" className="flex flex-col gap-4 p-4">
+          <div
+            role="tabpanel"
+            aria-label={tab[0].toUpperCase() + tab.slice(1)}
+            className="min-h-0 flex-1 overflow-y-auto"
+          >
+            {tab === "overview" && (
+              <div className="flex flex-col gap-4 p-4">
                 <Card title="Tokens by day">
                   <DayStackChart days={summary.days} />
                 </Card>
@@ -1363,19 +1382,23 @@ export function ClaudeSessionsScreen() {
                     <RankedBarChart bars={summary.byModel.map((b) => ({ label: b.model, ...b }))} />
                   </Card>
                 </div>
-              </TabsContent>
+              </div>
+            )}
 
-              <TabsContent value="sessions" className="p-4">
+            {tab === "sessions" && (
+              <div className="p-4">
                 <Card
                   title={searching ? "Search results" : "Top sessions"}
                   action={
                     <div className="relative w-72 self-center">
-                      <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input
+                        size="sm"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="Search titles & prompts…"
-                        className="h-8 pl-8 text-sm"
+                        aria-label="Search sessions"
+                        className="pl-8"
                       />
                     </div>
                   }
@@ -1385,21 +1408,25 @@ export function ClaudeSessionsScreen() {
                     {searching
                       ? "Matches session titles and what you typed, newest first."
                       : "Ranked by input+output tokens; amber marks outliers vs the median."}{" "}
-                    Click <Copy className="inline size-3 align-[-2px]" /> to copy the session ID or
-                    file path.
+                    Click <CopyIcon className="inline size-3 align-[-2px]" /> to copy the session ID
+                    or file path.
                   </p>
                 </Card>
-              </TabsContent>
+              </div>
+            )}
 
-              <TabsContent value="insights">
+            {tab === "insights" && (
+              <div>
                 <InsightsTab days={days} nonce={refreshNonce} active={tab === "insights"} />
-              </TabsContent>
+              </div>
+            )}
 
-              <TabsContent value="cadence">
+            {tab === "cadence" && (
+              <div>
                 <CadenceTab days={days} nonce={refreshNonce} active={tab === "cadence"} />
-              </TabsContent>
-            </div>
-          </Tabs>
+              </div>
+            )}
+          </div>
         </>
       ) : (
         <p className="p-6 text-sm text-muted-foreground">Not available outside the app.</p>

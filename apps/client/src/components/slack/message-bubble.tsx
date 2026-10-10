@@ -1,4 +1,4 @@
-import { MessageSquareReply, SmilePlus } from "lucide-react";
+import { ArrowBendUpLeftIcon, SmileyIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { fmtClock } from "@/lib/data";
 import type { DmMessage } from "@/lib/slack";
@@ -54,7 +54,7 @@ export function MessageBubble({
             onPick={(name) => actions.onToggleReaction(message.tsRaw, name, true)}
             trigger={
               <button type="button" title="Add reaction" className={HOVER_ACTION}>
-                <SmilePlus className="size-3.5" />
+                <SmileyIcon className="size-3.5" />
               </button>
             }
           />
@@ -65,7 +65,7 @@ export function MessageBubble({
               onClick={() => actions.onOpenThread?.(threadTs)}
               className={HOVER_ACTION}
             >
-              <MessageSquareReply className="size-3.5" />
+              <ArrowBendUpLeftIcon className="size-3.5" />
             </button>
           )}
         </div>
@@ -83,7 +83,7 @@ export function MessageBubble({
           onClick={() => actions.onOpenThread?.(threadTs)}
           className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[11px] font-medium text-violet-600 hover:bg-violet-500/10 dark:text-violet-300"
         >
-          <MessageSquareReply className="size-3" />
+          <ArrowBendUpLeftIcon className="size-3" />
           {message.replyCount} {message.replyCount === 1 ? "reply" : "replies"}
           {message.latestReplyTs > 0 && (
             <span className="font-mono text-[10.5px] font-normal text-muted-foreground/70">

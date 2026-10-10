@@ -1,18 +1,17 @@
+import { Badge, Button, LayerCard, Tooltip } from "@cloudflare/kumo";
 import {
-  CircleCheck,
-  CircleDot,
-  CircleX,
-  Clock,
-  ExternalLink,
-  EyeOff,
-  type LucideIcon,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+  ArrowSquareOutIcon,
+  CheckCircleIcon,
+  CircleDashedIcon,
+  ClockIcon,
+  RecordIcon,
+  EyeSlashIcon,
+  type Icon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
 import { fmtAge, type CollectRun, type IssueItem, type PrItem } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
-import { checksTone, PR_TONE, type ChecksTone } from "@/lib/pr-tone";
+import { checksTone, type ChecksTone } from "@/lib/pr-tone";
 import { cn } from "@/lib/utils";
 
 /** Shared atoms for screens rendering store-snapshot data (Cockpit, Pull
@@ -22,24 +21,32 @@ export function Panel({
   title,
   note,
   icon,
+  action,
   children,
 }: {
   title: string;
   note?: string;
   icon: React.ReactNode;
+  /** A header control beside `note`, e.g. the work queue's Start button. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col overflow-hidden rounded-lg border">
-      <div className="flex items-center justify-between border-b bg-muted/40 px-3 py-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
+    <LayerCard render={<section />}>
+      <LayerCard.Secondary className="flex items-center justify-between">
+        <div className="flex items-center gap-2 font-medium text-kumo-default">
           {icon}
           {title}
         </div>
-        {note && <span className="text-xs text-muted-foreground">{note}</span>}
-      </div>
-      <div className="flex flex-col divide-y">{children}</div>
-    </section>
+        <div className="flex items-center gap-3">
+          {note && <span className="text-xs text-kumo-subtle">{note}</span>}
+          {action}
+        </div>
+      </LayerCard.Secondary>
+      <LayerCard.Primary className="flex flex-col divide-y divide-kumo-hairline p-0">
+        {children}
+      </LayerCard.Primary>
+    </LayerCard>
   );
 }
 
@@ -145,23 +152,25 @@ export function maxCount(rows: { count: number }[]): number {
   return Math.max(1, ...rows.map((r) => r.count));
 }
 
-/** Icon + label per checks tone — the color comes from `lib/pr-tone.ts`, where
- * red/amber are reserved for genuine failure/needs-you. */
-const CHECKS_FACE: Record<ChecksTone, { icon: LucideIcon; label: string }> = {
-  passing: { icon: CircleCheck, label: "passing" },
-  failed: { icon: CircleX, label: "failing" },
-  plain: { icon: CircleDot, label: "no checks" },
-  running: { icon: Clock, label: "pending" },
+/** Icon, label and Kumo badge hue per checks tone — red is reserved for
+ * genuine failure, and in-flight CI is teal (progress, not "act now"). */
+const CHECKS_FACE: Record<
+  ChecksTone,
+  { icon: Icon; label: string; variant: "green" | "red" | "neutral" | "teal" }
+> = {
+  passing: { icon: CheckCircleIcon, label: "passing", variant: "green" },
+  failed: { icon: XCircleIcon, label: "failing", variant: "red" },
+  plain: { icon: CircleDashedIcon, label: "no checks", variant: "neutral" },
+  running: { icon: ClockIcon, label: "pending", variant: "teal" },
 };
 
 /** CI check-rollup badge. `checksTone` renders unknown strings as pending, so a
  * new collector value degrades visibly. Ignores PR state: a merged PR passes. */
 export function ChecksBadge({ checks }: { checks: string }) {
-  const tone = checksTone(checks);
-  const { icon: Icon, label } = CHECKS_FACE[tone];
+  const { icon: Icon, label, variant } = CHECKS_FACE[checksTone(checks)];
   return (
-    <Badge className={cn("shrink-0", PR_TONE[tone].badge)}>
-      <Icon className="size-3" /> {label}
+    <Badge variant={variant} className="shrink-0" icon={<Icon size={12} weight="bold" />}>
+      {label}
     </Badge>
   );
 }
@@ -169,20 +178,20 @@ export function ChecksBadge({ checks }: { checks: string }) {
 /** Inline row dismissal, for screens with no per-row dropdown to hang it off. */
 export function DismissButton({ onDismiss, label }: { onDismiss: () => void; label: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
+    <Tooltip
+      content={label}
+      render={
         <Button
-          size="icon"
+          size="sm"
+          shape="square"
           variant="ghost"
-          className="size-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+          className="shrink-0 opacity-0 group-hover:opacity-100"
           aria-label={label}
           onClick={onDismiss}
-        >
-          <EyeOff className="size-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+          icon={<EyeSlashIcon size={14} />}
+        />
+      }
+    />
   );
 }
 
@@ -202,7 +211,7 @@ export function PrRow({
     <div
       data-focus-kind="pr"
       data-focus-id={`${pr.repo}#${pr.number}`}
-      className="group flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-accent/40"
+      className="group flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-kumo-tint"
     >
       <a
         href={pr.url}
@@ -216,17 +225,22 @@ export function PrRow({
       >
         <div className="min-w-0 flex-1">
           <div className="truncate">{pr.title}</div>
-          <div className="truncate font-mono text-xs text-muted-foreground">
+          <div className="truncate font-mono text-xs text-kumo-subtle">
             {pr.repo} #{pr.number} · {fmtAge(pr.updatedTs, now)}
           </div>
         </div>
       </a>
       {reviewRequested && (
-        <Badge className={cn("shrink-0", PR_TONE.review.badge)}>review you</Badge>
+        <Badge variant="orange" className="shrink-0">
+          review you
+        </Badge>
       )}
       <ChecksBadge checks={pr.checks} />
       {actions ?? (
-        <ExternalLink className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
+        <ArrowSquareOutIcon
+          size={14}
+          className="shrink-0 text-kumo-subtle opacity-0 group-hover:opacity-100"
+        />
       )}
     </div>
   );
@@ -243,7 +257,7 @@ export function IssueRow({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="group flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-accent/40">
+    <div className="group flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-kumo-tint">
       <a
         href={issue.url}
         target="_blank"
@@ -254,23 +268,26 @@ export function IssueRow({
         }}
         className="flex min-w-0 flex-1 items-center gap-3"
       >
-        <CircleDot className="size-4 shrink-0 text-green-600 dark:text-green-500" />
+        <RecordIcon size={16} weight="bold" className="shrink-0 text-kumo-success" />
         <div className="min-w-0 flex-1">
           <div className="truncate">{issue.title}</div>
-          <div className="truncate font-mono text-xs text-muted-foreground">
+          <div className="truncate font-mono text-xs text-kumo-subtle">
             {issue.repo} #{issue.number} · {fmtAge(issue.updatedTs, now)}
           </div>
         </div>
       </a>
       <div className="flex shrink-0 items-center gap-1">
         {issue.labels.slice(0, 2).map((l) => (
-          <Badge key={l} variant="outline" className="text-[10px]">
+          <Badge key={l} variant="outline">
             {l}
           </Badge>
         ))}
       </div>
       {actions ?? (
-        <ExternalLink className="size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
+        <ArrowSquareOutIcon
+          size={14}
+          className="shrink-0 text-kumo-subtle opacity-0 group-hover:opacity-100"
+        />
       )}
     </div>
   );

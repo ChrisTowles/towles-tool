@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { X } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { CodeServerPane } from "@/components/code-server-pane";
@@ -59,7 +59,7 @@ export function FolderFilesPane({
             onClick={onClose}
             className="hover:text-sky-500"
           >
-            <X className="size-3" />
+            <XIcon className="size-3" />
           </IconBtn>
         }
       />

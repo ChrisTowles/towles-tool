@@ -79,7 +79,7 @@ bun run drive -- <verb>             # drive the dev:drive window (status|invoke|
 bun run e2e                         # regression suite vs the real shell (see below)
 cd apps/client && bun run lint      # oxlint (types/react/unicorn/oxc rules; warnings are non-blocking)
 cd apps/client && bun run format    # oxfmt, in place (100-col, matches rustfmt's width)
-cd apps/client && bunx shadcn@latest add <name>   # vendor a shadcn/ui component
+cd apps/client && npx kumo doc <Name>             # a Kumo component's props/examples
 ```
 
 **`bun start` reinstalls `tt` first**, from the checkout it is about to run:

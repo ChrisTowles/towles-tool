@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { ArrowClockwiseIcon } from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { Button } from "@cloudflare/kumo";
 import { Card, Empty } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -177,7 +177,7 @@ export function BuildsTab({
           }}
           disabled={loading}
         >
-          <RefreshCw className={cn("size-3", loading && "animate-spin")} />
+          <ArrowClockwiseIcon className={cn("size-3", loading && "animate-spin")} />
           Refresh
         </Button>
       </div>

@@ -1,4 +1,4 @@
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { invoke } from "@/lib/tauri";
 import { NotInTauri } from "@/lib/errors";
 import { storeAddTask, storeAttachTaskIssue, storeItemDismiss } from "@/lib/data";
@@ -12,7 +12,7 @@ import type { NewTaskSubmit } from "@/components/inline-new-task";
 export const RAIL_COLLAPSE_KEY = "__rail__";
 
 /** `onOpenChange` for a dialog whose only close-side effect is clearing
- * whatever state made it open — Radix fires `false` on outside-click, Esc,
+ * whatever state made it open — Base UI fires `false` on outside-click, Esc,
  * and the built-in close button alike, so this covers all three at once. */
 export const closeOnFalse = (fn: () => void) => (isOpen: boolean) => {
   if (!isOpen) fn();

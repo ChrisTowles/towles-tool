@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { FolderGit2, FolderPlus } from "lucide-react";
+import { FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
 import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-working-context";
 import { RailIconStrip, RollupChip } from "@/components/agentboard-rail";
@@ -8,7 +8,7 @@ import { NativePane } from "@/components/native-pane";
 import { useNow, useNowInterval } from "@/lib/now";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import type { FilesOpenRequest } from "@/components/files-pane";
-import { Button } from "@/components/ui/button";
+import { Button } from "@cloudflare/kumo";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cleanupMissing, closeOnFalse } from "./agentboard/helpers";
@@ -36,7 +36,6 @@ import {
   moveFocus,
   consumePendingAgentboardNav,
   consumePendingOpenSessions,
-  cycleNeedsYou,
   cycleNotBusy,
   exitPaneId,
   filesPaneId,
@@ -94,6 +93,7 @@ import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
 import { railMove, railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { useStoreSnapshot } from "@/lib/data";
+import { buildWorkQueue, cycleQueue } from "@/lib/cockpit-queue";
 import { useFocusTarget } from "@/lib/focus-target";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
@@ -108,7 +108,7 @@ import { useWorkspace } from "@/lib/workspace";
 import { repoParentDirs } from "@/lib/new-repo";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 /** Release the shell's claim on the keyboard when focus moves off its pane. */
 /** A stub row's peek, toggled per repo. The event is emitted outside the
@@ -256,6 +256,10 @@ export function AgentboardScreen() {
     [shownRepos, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed, collapsed, wins],
   );
   const railTree = useMemo(() => railNodes(railVis), [railVis]);
+  const workQueue = useMemo(
+    () => buildWorkQueue(shownRepos, snapshot.prs),
+    [shownRepos, snapshot.prs],
+  );
   const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
   const cursorKey = cursorNode?.key ?? null;
   const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
@@ -621,11 +625,11 @@ export function AgentboardScreen() {
     setJumpRecall(buildJumpRecall(shownRepos, folder, target, now, jumpNonce.current));
   }
 
+  // Walks the Cockpit's work queue, not the rail: answer one, press next, and
+  // the most urgent remaining item is where you land.
   function jumpToNeedsYou(direction: "next" | "prev") {
-    jumpTo(
-      cycleNeedsYou(shownRepos, selected?.sessionId ?? null, direction),
-      "Nothing needs you right now.",
-    );
+    const id = cycleQueue(workQueue, selected?.sessionId ?? null, direction);
+    jumpTo(id ? (sessionById.get(id) ?? null) : null, "Queue's empty — nothing needs you.");
   }
 
   // Declines when the digit addresses nothing, so an unused number keeps
@@ -1243,11 +1247,16 @@ export function AgentboardScreen() {
                     <div ref={focusRef} className="flex flex-col">
                       {repos.length === 0 && (
                         <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
-                          <FolderGit2 className="size-8 text-muted-foreground" />
+                          <GitBranchIcon className="size-8 text-muted-foreground" />
                           <p className="text-sm text-muted-foreground">No repos on the rail yet.</p>
                           <div className="flex items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={openRepoManager}>
-                              <FolderPlus className="size-3.5" /> Manage repos
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={openRepoManager}
+                              icon={<FolderPlusIcon className="size-3.5" />}
+                            >
+                              Manage repos
                             </Button>
                           </div>
                         </div>

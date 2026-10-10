@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { X } from "lucide-react";
+import { XIcon } from "@phosphor-icons/react";
 import type { JumpRecall } from "@/lib/jump-recall";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +47,7 @@ export function JumpRecallCard({
             onClick={onDismiss}
             className="pointer-events-auto ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
-            <X className="size-3" />
+            <XIcon className="size-3" />
           </button>
         </div>
         {recall.said && (

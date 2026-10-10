@@ -1,28 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FolderGit2, FolderPlus, GripVertical } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { DotsSixVerticalIcon, FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
+import { toast } from "@/lib/toast";
+import { ToggleGroup } from "@cloudflare/kumo/primitives/toggle-group";
+import { Toggle } from "@cloudflare/kumo/primitives/toggle";
+import { Button, Dialog, Input, InputArea, Popover, Select, Switch } from "@cloudflare/kumo";
 import { useAgentboardState, type RepoCandidate, type RepoData } from "@/lib/agentboard";
 import {
   applyRepoOrder,
@@ -317,24 +298,17 @@ function NotifyThresholdRow({
   return (
     <SettingRow label="Notification threshold" description={current.description}>
       <Select
+        aria-label="Notification threshold"
+        className="w-44"
         value={value}
         disabled={disabled}
         onValueChange={(v) => {
+          if (!v) return;
           uiAction("settings.notify_threshold", "settings", v);
           onValue(v as NotifyLevel);
         }}
-      >
-        <SelectTrigger className="w-44" aria-label="Notification threshold">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {NOTIFY_LEVELS.map((level) => (
-            <SelectItem key={level.value} value={level.value}>
-              {level.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        items={NOTIFY_LEVELS.map((level) => ({ value: level.value, label: level.label }))}
+      />
     </SettingRow>
   );
 }
@@ -385,7 +359,7 @@ function AgentboardSettings() {
     timer.current = setTimeout(() => void persist(), 600);
   };
 
-  // Commit a pending edit if the pane unmounts (Radix drops it on tab switch).
+  // Commit a pending edit if the pane unmounts (a tab switch drops it).
   const persistRef = useRef(persist);
   persistRef.current = persist;
   useEffect(
@@ -396,21 +370,22 @@ function AgentboardSettings() {
   );
 
   if (roots === null) {
-    return <div className="text-sm text-muted-foreground">Loading…</div>;
+    return <div className="text-sm text-kumo-subtle">Loading…</div>;
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div>
         <div className="text-sm font-medium">Scan roots</div>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-kumo-subtle">
           One directory per line. The repo list below scans these for git repos. Leave empty to use{" "}
           <span className="font-mono">~/code</span>. A leading <span className="font-mono">~</span>{" "}
           expands to your home directory.
         </p>
       </div>
-      <Textarea
+      <InputArea
         value={roots}
+        aria-label="Scan roots"
         onChange={(e) => edit(e.target.value)}
         onBlur={() => void persist()}
         rows={5}
@@ -418,7 +393,7 @@ function AgentboardSettings() {
         className="font-mono text-xs"
         spellCheck={false}
       />
-      {saved && <span className="text-xs text-muted-foreground">Saved.</span>}
+      {saved && <span className="text-xs text-kumo-subtle">Saved.</span>}
     </div>
   );
 }
@@ -446,8 +421,8 @@ function RepoManager() {
     setCandidates((await invoke<RepoCandidate[]>("ab_discover_repos")).unwrapOr([]));
   };
 
-  // This pane only exists while the Agentboard tab is the selected one (Radix
-  // unmounts the other panes), so a mount is exactly "the tab was shown".
+  // This pane only exists while the Agentboard tab is the selected one (only
+  // that pane renders), so a mount is exactly "the tab was shown".
   useEffect(() => {
     void refresh();
   }, []);
@@ -506,10 +481,10 @@ function RepoManager() {
   return (
     // A bottom rule + generous gap: this block ends in a list of rows, and the
     // settings rows that follow look just like them without a hard break.
-    <div className="flex flex-col gap-3 border-b border-border pb-5">
+    <div className="flex flex-col gap-3 border-b border-kumo-hairline pb-5">
       <div>
         <div className="text-sm font-medium">Repos</div>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-kumo-subtle">
           Everything about the rail's repo list lives here: which repos are tracked, the order they
           sit in (drag a row), and each one's glyph and color so you can pick it out — especially in
           the collapsed icon strip — without reading names. Identity is decoration only: it never
@@ -526,16 +501,16 @@ function RepoManager() {
       />
 
       {repos.length === 0 && (
-        <p className="text-sm text-muted-foreground/70">
+        <p className="text-sm text-kumo-subtle/70">
           No repos tracked yet — track one from the list below.
         </p>
       )}
 
       <section aria-label="Tracked repos" className="flex flex-col gap-1">
-        <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <h4 className="text-xs font-medium uppercase tracking-wide text-kumo-subtle">
           On the rail
         </h4>
-        <div className="flex flex-col overflow-hidden rounded-md border border-border">
+        <div className="flex flex-col overflow-hidden rounded-md border border-kumo-hairline">
           {visibleRepos.map((repo) => (
             <RepoIdentityRow
               key={repo.key}
@@ -562,7 +537,7 @@ function RepoManager() {
                 e.preventDefault();
                 drop("end");
               }}
-              className="m-1 h-6 rounded-md border border-dashed border-border/70"
+              className="m-1 h-6 rounded-md border border-dashed border-kumo-hairline/70"
             />
           )}
         </div>
@@ -573,34 +548,35 @@ function RepoManager() {
           variant="outline"
           size="sm"
           className="self-start"
+          icon={<FolderPlusIcon className="size-3.5" />}
           onClick={() => void track(query.trim())}
         >
-          <FolderPlus className="size-3.5" /> Add path {query.trim()}
+          Add path {query.trim()}
         </Button>
       )}
 
       {visibleCandidates.length > 0 && (
         <section aria-label="Repos not tracked" className="flex flex-col gap-1">
-          <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-kumo-subtle">
             Found under your scan roots ({visibleCandidates.length})
           </h4>
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-kumo-subtle/70">
             Not on the rail. Track one to give it a glyph, a color, and a place in the order — or
             search above to narrow this list.
           </p>
           {/* Filled + bordered so this list reads as its own block: it sits
               between the tracked list and the notification settings below,
               and without containment its rows look like more settings. */}
-          <div className="flex max-h-64 flex-col overflow-y-auto rounded-md border border-dashed border-border bg-muted/30">
+          <div className="flex max-h-64 flex-col overflow-y-auto rounded-md border border-dashed border-kumo-hairline bg-muted/30">
             {visibleCandidates.map((c) => (
               <div
                 key={c.dir}
-                className="flex items-center gap-3 border-t border-border/60 px-2 py-2 first:border-t-0"
+                className="flex items-center gap-3 border-t border-kumo-hairline/60 px-2 py-2 first:border-t-0"
               >
-                <FolderGit2 aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <GitBranchIcon aria-hidden className="size-4 shrink-0 text-kumo-subtle" />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm">{c.name}</span>
-                  <span className="truncate font-mono text-xs text-muted-foreground">{c.dir}</span>
+                  <span className="truncate font-mono text-xs text-kumo-subtle">{c.dir}</span>
                 </div>
                 <Button
                   variant="outline"
@@ -616,29 +592,42 @@ function RepoManager() {
         </section>
       )}
 
-      <AlertDialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Untrack {confirm?.name} from the rail?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirm?.sessionIds.length}{" "}
-              {confirm?.sessionIds.length === 1 ? "session is" : "sessions are"} still running.
-              Untracking will stop {confirm?.sessionIds.length === 1 ? "it" : "them"}.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (confirm) void untrack(confirm.dir, confirm.name, confirm.sessionIds);
-                setConfirm(null);
-              }}
-            >
-              Stop &amp; untrack
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog.Root open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
+        <Dialog className="p-6">
+          <Dialog.Title className="text-lg font-semibold">
+            Untrack {confirm?.name} from the rail?
+          </Dialog.Title>
+          <Dialog.Description className="mt-2 text-kumo-subtle">
+            {confirm?.sessionIds.length}{" "}
+            {confirm?.sessionIds.length === 1 ? "session is" : "sessions are"} still running.
+            Untracking will stop {confirm?.sessionIds.length === 1 ? "it" : "them"}.
+          </Dialog.Description>
+          <div className="mt-6 flex justify-end gap-2">
+            <Dialog.Close
+              render={(p) => (
+                <Button {...p} variant="secondary">
+                  Cancel
+                </Button>
+              )}
+            />
+            <Dialog.Close
+              render={(p) => (
+                <Button
+                  {...p}
+                  variant="primary"
+                  onClick={(e) => {
+                    p.onClick?.(e);
+                    if (confirm) void untrack(confirm.dir, confirm.name, confirm.sessionIds);
+                    setConfirm(null);
+                  }}
+                >
+                  Stop &amp; untrack
+                </Button>
+              )}
+            />
+          </div>
+        </Dialog>
+      </Dialog.Root>
     </div>
   );
 }
@@ -773,7 +762,7 @@ function RepoIdentityRow({
         // `border-l-2 … border-l-transparent` reserves the edge so `edgeStyle`'s
         // inline `borderLeftColor` has a border to paint and unthemed rows don't
         // shift width — the same idiom the rail header uses.
-        "flex items-center gap-2 border-t border-l-2 border-border border-l-transparent px-2 py-2 first:border-t-transparent",
+        "flex items-center gap-2 border-t border-l-2 border-kumo-hairline border-l-transparent px-2 py-2 first:border-t-transparent",
         dragging && "opacity-50",
         dropTarget && "border-t-violet-500",
       )}
@@ -789,47 +778,51 @@ function RepoIdentityRow({
         onDragEnd={onDragEnd}
         aria-label={`Reorder ${repo.name}`}
         title="Drag to reorder"
-        className="shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing"
+        className="shrink-0 cursor-grab text-kumo-subtle active:cursor-grabbing"
       >
-        <GripVertical className="size-4" />
+        <DotsSixVerticalIcon className="size-4" />
       </span>
       <Icon
         aria-hidden
-        className={cn("size-4 shrink-0", !hasRepoColor(meta) && "text-muted-foreground")}
+        className={cn("size-4 shrink-0", !hasRepoColor(meta) && "text-kumo-subtle")}
         style={accent.iconStyle}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{repo.name}</span>
-        <span className="truncate font-mono text-xs text-muted-foreground">{dir}</span>
+        <span className="truncate font-mono text-xs text-kumo-subtle">{dir}</span>
       </div>
-      {saved && <span className="shrink-0 text-xs text-muted-foreground">Saved.</span>}
+      {saved && <span className="shrink-0 text-xs text-kumo-subtle">Saved.</span>}
 
       <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="px-2 text-xs">
-            Icon
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-56 p-2" align="end">
-          <div className="grid grid-cols-8 gap-1">
+        <Popover.Trigger
+          render={
+            <Button variant="outline" size="sm" className="px-2 text-xs">
+              Icon
+            </Button>
+          }
+        />
+        <Popover.Content className="w-56 p-2" align="end">
+          <ToggleGroup
+            aria-label="Icon"
+            value={meta?.icon ? [meta.icon] : []}
+            onValueChange={(v) => {
+              if (v[0]) setIcon(v[0]);
+            }}
+            className="grid grid-cols-8 gap-1"
+          >
             {Object.entries(REPO_ICONS).map(([name, Choice]) => (
-              <button
+              <Toggle
                 key={name}
-                type="button"
+                value={name}
                 title={name}
                 aria-label={name}
-                aria-pressed={meta?.icon === name}
-                onClick={() => setIcon(name)}
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground",
-                  meta?.icon === name && "bg-accent text-foreground",
-                )}
+                className="flex size-6 items-center justify-center rounded-md text-kumo-subtle outline-none hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-focus data-[pressed]:bg-kumo-tint data-[pressed]:text-kumo-default"
               >
                 <Choice className="size-3.5" style={accent.iconStyle} />
-              </button>
+              </Toggle>
             ))}
-          </div>
-        </PopoverContent>
+          </ToggleGroup>
+        </Popover.Content>
       </Popover>
 
       <Popover
@@ -842,29 +835,33 @@ function RepoIdentityRow({
           }
         }}
       >
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="px-2 text-xs">
-            Color
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-56 p-2" align="end">
-          <div className="grid grid-cols-5 gap-1.5">
+        <Popover.Trigger
+          render={
+            <Button variant="outline" size="sm" className="px-2 text-xs">
+              Color
+            </Button>
+          }
+        />
+        <Popover.Content className="w-56 p-2" align="end">
+          <ToggleGroup
+            aria-label="Color"
+            value={meta?.color ? [meta.color] : []}
+            onValueChange={(v) => {
+              if (v[0]) setColor(v[0], "palette");
+            }}
+            className="grid grid-cols-5 gap-1.5"
+          >
             {REPO_PALETTE.map((swatch) => (
-              <button
+              <Toggle
                 key={swatch}
-                type="button"
+                value={swatch}
                 title={swatch}
                 aria-label={swatch}
-                aria-pressed={meta?.color === swatch}
-                onClick={() => setColor(swatch, "palette")}
                 style={{ backgroundColor: swatch }}
-                className={cn(
-                  "size-6 rounded-md border border-border",
-                  meta?.color === swatch && "ring-2 ring-ring ring-offset-1 ring-offset-background",
-                )}
+                className="size-6 rounded-md border border-kumo-hairline outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus data-[pressed]:ring-2 data-[pressed]:ring-kumo-focus data-[pressed]:ring-offset-1 data-[pressed]:ring-offset-kumo-base"
               />
             ))}
-          </div>
+          </ToggleGroup>
           <div className="mt-2 flex items-center gap-1.5">
             <Input
               value={hex}
@@ -876,15 +873,16 @@ function RepoIdentityRow({
               placeholder="#3b82f6"
               spellCheck={false}
               aria-label="Custom color"
-              aria-invalid={hexError !== null}
-              className="h-7 flex-1 font-mono text-xs"
+              variant={hexError ? "error" : "default"}
+              size="xs"
+              className="flex-1 font-mono text-xs"
             />
           </div>
-          {hexError && <p className="mt-1 text-xs text-red-500">{hexError}</p>}
-        </PopoverContent>
+          {hexError && <p className="mt-1 text-xs text-kumo-danger">{hexError}</p>}
+        </Popover.Content>
       </Popover>
 
-      <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <label className="flex shrink-0 items-center gap-1.5 text-xs text-kumo-subtle">
         <Switch
           checked={(meta?.style ?? "accent") === "tint"}
           onCheckedChange={setStyle}
@@ -898,7 +896,7 @@ function RepoIdentityRow({
       <Button
         variant="ghost"
         size="sm"
-        className="px-2 text-xs text-muted-foreground hover:text-foreground"
+        className="px-2 text-xs text-kumo-subtle hover:text-kumo-default"
         onClick={onUntrack}
       >
         Untrack

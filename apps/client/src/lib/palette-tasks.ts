@@ -18,7 +18,7 @@ export type PaletteTaskTarget =
 export type PaletteTaskEntry = {
   key: string;
   id: number;
-  /** cmdk keys rows on this; the id keeps two same-titled quick todos apart. */
+  /** The palette keys rows on this; the id keeps two same-titled quick todos apart. */
   value: string;
   title: string;
   repo: string | null;

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { latestKeyboardScore } from "@/lib/keyboard-score";
 import type { ScreenId } from "@/lib/screens";
 import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
@@ -101,7 +101,7 @@ export function mouseAction(id: string, screen: ScreenId): void {
   state = noteNudge(state, id, now);
   toast(`${shortcutHint(id)} does that`, {
     description: shortcut.description,
-    duration: 4000,
+    timeout: 4000,
   });
 }
 

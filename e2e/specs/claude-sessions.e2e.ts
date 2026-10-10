@@ -28,7 +28,7 @@ describe("Claude Sessions screen", () => {
   });
 
   it("renders the day-range picker", async () => {
-    await waitForAnyDisplayed('[data-slot="select-trigger"]', "day-range picker");
+    await waitForAnyDisplayed('[role="combobox"]', "day-range picker");
   });
 
   it("switches to the Sessions tab and shows the search box", async () => {

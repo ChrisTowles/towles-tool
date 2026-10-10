@@ -1,7 +1,7 @@
 // One PTY session in the rail — the row that has to hold the most status in
 // the least width, since a folder can have several.
 import { useState } from "react";
-import { MoreVertical } from "lucide-react";
+import { DotsThreeVerticalIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import {
   CacheBadge,
@@ -12,13 +12,7 @@ import {
   IconBtn,
   PortDriftBadge,
 } from "@/components/agentboard-bits";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Button, DropdownMenu } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
 import {
   claudeTitleName,
@@ -88,8 +82,8 @@ export function SessionRow({
         onMouseLeave={() => setHovered(false)}
         className={cn(
           "relative ml-1.5 flex cursor-pointer items-center gap-2 border-l-2 border-transparent py-1 pr-3 pl-9",
-          hovered && !needs && "bg-accent",
-          active && !needs && "border-l-violet-500 bg-accent",
+          hovered && !needs && "bg-kumo-tint",
+          active && !needs && "border-l-violet-500 bg-kumo-tint",
           cursor && "ring-1 ring-inset ring-violet-500",
           // Needs-you wins over hover/active for both the edge and the fill —
           // a thin 2px border alone was too easy to miss scanning the rail, so
@@ -121,7 +115,7 @@ export function SessionRow({
             <span
               className={cn(
                 "min-w-0 flex-1 truncate",
-                session.live ? "text-foreground" : "text-muted-foreground",
+                session.live ? "text-kumo-default" : "text-kumo-subtle",
               )}
             >
               {label}
@@ -136,7 +130,7 @@ export function SessionRow({
               <span className="flex h-3 items-center gap-1.5">
                 {session.live && <PortDriftBadge drift={session.portDrift ?? []} />}
                 {!agent && session.shellKind && (
-                  <span className="text-muted-foreground/50">{session.shellKind}</span>
+                  <span className="text-kumo-subtle">{session.shellKind}</span>
                 )}
                 <ModelBadge session={session} className="h-3" />
                 <CacheBadge
@@ -157,14 +151,14 @@ export function SessionRow({
                     {/* Fixed 6ch slot: elapsed is 4–7 chars ("0:04" ..
                       "1:02:30"); without a reserved width the status word
                       after it drifts per row. */}
-                    <span className="inline-block w-[6ch] text-right text-muted-foreground/70">
+                    <span className="inline-block w-[6ch] text-right text-kumo-subtle">
                       {fmtElapsed(now - session.createdAt)}
                     </span>
                   </Hint>
                 )}
                 {/* Fixed 7ch slot: the status word is short and uniform
                   ("Waiting", "Working", "Done"), so it lines up across rows. */}
-                <span className="inline-block w-[7ch] truncate font-sans text-[11px] text-muted-foreground">
+                <span className="inline-block w-[7ch] truncate font-sans text-[11px] text-kumo-subtle">
                   {sessionStatusText(session)}
                 </span>
               </span>
@@ -172,7 +166,7 @@ export function SessionRow({
             {/* Hover-only, not hover-or-active: the selected row otherwise
               carries a resting ✕/menu forever, hiding the meta it overlays. */}
             {hovered && (
-              <span className="absolute inset-y-0 right-2 z-10 flex items-center gap-1 bg-accent pl-1.5">
+              <span className="absolute inset-y-0 right-2 z-10 flex items-center gap-1 bg-kumo-tint pl-1.5">
                 <RowControls session={session} folderDir={folderDir} actions={actions} />
               </span>
             )}
@@ -253,32 +247,34 @@ function RowControls({
       </IconBtn>
       <DropdownMenu>
         <Hint label="More actions">
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon-xs"
-              aria-label="More actions"
-              className="text-muted-foreground"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MoreVertical className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenu.Trigger
+            render={
+              <Button
+                variant="outline"
+                size="xs"
+                shape="square"
+                aria-label="More actions"
+                className="text-kumo-subtle"
+                onClick={(e) => e.stopPropagation()}
+                icon={<DotsThreeVerticalIcon className="size-3.5" />}
+              />
+            }
+          />
         </Hint>
-        <DropdownMenuContent align="end" className="w-auto min-w-48">
+        <DropdownMenu.Content align="end" className="w-auto min-w-48">
           {items.map((item) => (
-            <DropdownMenuItem
+            <DropdownMenu.Item
               key={item.label}
-              onSelect={item.onSelect}
+              onClick={item.onSelect}
               className="whitespace-nowrap"
             >
               <span className={cn("w-4 text-center font-mono text-xs", item.className)}>
                 {item.glyph}
               </span>
               {item.label}
-            </DropdownMenuItem>
+            </DropdownMenu.Item>
           ))}
-        </DropdownMenuContent>
+        </DropdownMenu.Content>
       </DropdownMenu>
     </>
   );
