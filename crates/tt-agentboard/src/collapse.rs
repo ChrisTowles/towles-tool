@@ -1,7 +1,7 @@
 //! Persisted folder-rail collapse/expand state (issue #52). Keyed by the
 //! frontend's own opaque row key — `RepoData.key` for a solo-repo row, or
 //! `"<repoKey>::<folderDir>"` for a sub-folder row inside a multi-checkout
-//! repo (see `apps/client/src/screens/agentboard.tsx`'s `RepoGroup`). Both are
+//! repo (see `apps/client/src/screens/cockpit.tsx`'s `RepoGroup`). Both are
 //! stable across restarts and across Agentboard windows (derived from the git
 //! remote origin URL, or the folder's own path when there's no remote).
 //!

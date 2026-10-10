@@ -51,7 +51,7 @@ editor.
 ## Opening a file from outside the pane
 
 `tt open src/main.rs:42`, a `path:line` link in a terminal and Claude Code's
-`openFile` all end in `filesOpenRequests` on the Agentboard screen — **this is
+`openFile` all end in `filesOpenRequests` on the Cockpit screen — **this is
 where a clicked file goes**, the external editor being what's left for a link
 that resolves to no file at all. The path need not be inside the checkout: a
 workbench opens a file from anywhere, so `filesPaneTarget` hands the pane a
@@ -74,7 +74,7 @@ reach the workbench:
 - **A diff** goes neither way: the CLI's `open` does file-vs-file only and the
   web payload has no command lever, so VS Code's *git* diff — `git:` URIs,
   staging gutters, decorations — can only be asked for from inside the workbench.
-  The Agentboard's uncommitted chip invokes `code_server_show_changes`, which
+  The Cockpit's uncommitted chip invokes `code_server_show_changes`, which
   reaches the bridge extension. VS Code has one diff command per SCM group and
   none spanning them, so both halves of the chip's one number open, with
   `git.viewStagedChanges` pinned because `git.viewChanges` would replace it in

@@ -738,7 +738,7 @@ export function searchRepos(repos: RepoData[], query: string): RepoData[] {
 }
 
 /** One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. The
- * rail level is the tree walk in `rail-nodes.ts`; this covers the rest. */
+ * rail level walks the queue's rows (`railRows`); this covers the rest. */
 export type FocusLevel = "rail" | "window" | "pane";
 
 export type FocusMove =
@@ -833,7 +833,7 @@ export function isFolderUnmanaged(f: FolderData): boolean {
 }
 
 /** A stub row's contents leave the list until the stub is peeked open — the one
- * answer for the tree walk (`railNodes`) and the render (`RepoGroup`) alike. */
+ * answer for the render (`RepoGroup`). */
 export function withoutFolded(
   folders: FolderData[],
   folded: Set<string> | undefined,
@@ -1532,7 +1532,9 @@ export type AgentboardNav =
       isDir: boolean;
       line: number | null;
       nonce: number;
-    };
+    }
+  /** The global `queue-next` chord: open the queue's head in place. */
+  | { kind: "queue-next" };
 
 let pendingNav: AgentboardNav | null = null;
 const navListeners = new Set<(req: AgentboardNav) => void>();

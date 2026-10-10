@@ -52,7 +52,7 @@ export function useAttention(args: {
           sub: checksFailing ? "Checks failing" : "Review requested",
           border: checksFailing ? PR_TONE.failed.border : PR_TONE.review.border,
           onClick: () => {
-            uiAction("agentboard.attention_open", "agentboard", "pr");
+            uiAction("agentboard.attention_open", "cockpit", "pr");
             void openExternalUrl(p.url);
           },
           onDismiss: () => void dismissAttentionPr(p.repo, p.number, p.updatedTs),
@@ -70,7 +70,7 @@ export function useAttention(args: {
         sub: `Starts in ${fmtCountdown(soon.startTs - now)}`,
         border: "border-l-blue-500",
         onClick: () => {
-          uiAction("agentboard.attention_open", "agentboard", "event");
+          uiAction("agentboard.attention_open", "cockpit", "event");
           openTab("cockpit");
         },
       });
@@ -79,7 +79,7 @@ export function useAttention(args: {
   }, [snapshot.prs, snapshot.events, now, openTab]);
 
   async function clearDismissals() {
-    uiAction("agentboard.dismissals_clear", "agentboard");
+    uiAction("agentboard.dismissals_clear", "cockpit");
     setClearingDismissals(true);
     const cleared = await storeDismissalsClear();
     if (cleared.isOk()) {

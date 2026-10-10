@@ -11,7 +11,7 @@ native surface can host Solari's ray-tracing pipeline (see
 [README.md](README.md)).
 
 It renders in two places, both fed by the same `NativePane` component:
-the strip at the bottom of the Agentboard rail, and a **first-class pane
+the strip at the bottom of the Cockpit rail, and a **first-class pane
 kind** — `~jarvis:<folderDir>` (`lib/agentboard.ts`,
 `components/jarvis-pane.tsx`) tiled beside a checkout's terminals from the
 `jarvis` button on its folder header, persisted and restored like the

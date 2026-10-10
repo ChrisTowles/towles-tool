@@ -155,7 +155,7 @@ claude plugin test packages/app
 The hook is a no-op unless the session looks towles-tool-relevant — either it's
 running inside a terminal the app itself spawned (`TT_SESSION_ID`/
 `TT_APP_INSTANCE` set), or its working directory is inside a checkout on the
-Agentboard rail (a tracked repo, or any worktree under one). That test is
+Cockpit's Checkouts drawer (a tracked repo, or any worktree under one). That test is
 `tt task nudge --only-if-tracked`'s, not the script's: only `tt` can read the
 tracked set, and a shell approximation of it recognised *this* repo alone, so
 `gh pr create` in every other checkout was dropped in silence. This plugin is

@@ -20,7 +20,7 @@ import { subscribeSummon } from "@/lib/summon";
 import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
 import { TaskQueueProvider } from "@/lib/queue";
-import { QueueNextShortcut } from "@/components/queue-panel";
+import { QueueNextShortcut } from "@/components/cockpit-rail";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
 import { SCREENS } from "@/lib/screens";
 import { useShortcutCoachSetting } from "@/lib/shortcut-coach";
@@ -113,7 +113,7 @@ function TaskStartBridge() {
           toast.error(
             `Couldn't start task ${payload.taskId} — ${payload.repoRoot} isn't tracked on Agentboard`,
           ),
-        () => openTabRef.current("agentboard"),
+        () => openTabRef.current("cockpit"),
       ),
     [],
   );
@@ -122,7 +122,7 @@ function TaskStartBridge() {
     () =>
       subscribePreviewShow(
         () => reposRef.current,
-        () => openTabRef.current("agentboard"),
+        () => openTabRef.current("cockpit"),
       ),
     [],
   );
@@ -130,7 +130,7 @@ function TaskStartBridge() {
     () =>
       subscribeSummon(
         () => reposRef.current,
-        () => openTabRef.current("agentboard"),
+        () => openTabRef.current("cockpit"),
       ),
     [],
   );
@@ -138,7 +138,7 @@ function TaskStartBridge() {
     () =>
       subscribeEditorOpenFile(
         () => reposRef.current,
-        () => openTabRef.current("agentboard"),
+        () => openTabRef.current("cockpit"),
       ),
     [],
   );

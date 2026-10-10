@@ -63,7 +63,7 @@ its notes* — and it is **asynchronous where `task_delete` blocks**: a pane
 has no PTY until the frontend renders it and the goal is typed into that
 PTY, so the host can only emit `task://start` for the frontend to run down
 its normal `createTask` path (`apps/client/src/lib/task-start.ts` →
-`screens/agentboard/use-task-creation.ts`). Hence `status: "starting"`, not
+`screens/cockpit/use-task-creation.ts`). Hence `status: "starting"`, not
 `"started"` — the tool genuinely cannot know. Don't "fix" this by minting the
 worktree in Rust and leaving the launch to the frontend: that forks the
 start path in two, and the frontend's half already encodes the

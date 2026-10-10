@@ -43,7 +43,7 @@ export function ResumePicker() {
     // Agentboard owns the pane→PTY machinery, so hand off rather than
     // duplicating it. It may not be mounted yet at boot, which is exactly why
     // the open-session bridge stashes a queue (see `requestOpenSession`).
-    openTab("agentboard");
+    openTab("cockpit");
     // Oldest first: Agentboard activates each folder as it restores it, so the
     // last one handed over is the one left on screen — that should be the
     // session you were most recently in.

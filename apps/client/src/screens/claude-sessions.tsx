@@ -746,7 +746,7 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
               onClick={(e) => {
                 e.stopPropagation();
                 uiAction("claude_sessions.open_in_editor", "claude-sessions");
-                openTab("agentboard");
+                openTab("cockpit");
                 requestAgentboardNav({
                   kind: "open-claude-session",
                   folderDir: cwd,

@@ -1,17 +1,7 @@
 import { Badge, Button, LayerCard, Tooltip } from "@cloudflare/kumo";
-import {
-  ArrowSquareOutIcon,
-  CheckCircleIcon,
-  CircleDashedIcon,
-  ClockIcon,
-  RecordIcon,
-  EyeSlashIcon,
-  type Icon,
-  XCircleIcon,
-} from "@phosphor-icons/react";
-import { fmtAge, type CollectRun, type IssueItem, type PrItem } from "@/lib/data";
+import { ArrowSquareOutIcon, RecordIcon, EyeSlashIcon } from "@phosphor-icons/react";
+import { fmtAge, type CollectRun, type IssueItem } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
-import { checksTone, type ChecksTone } from "@/lib/pr-tone";
 import { cn } from "@/lib/utils";
 
 /** Shared atoms for screens rendering store-snapshot data (Cockpit, Pull
@@ -152,29 +142,6 @@ export function maxCount(rows: { count: number }[]): number {
   return Math.max(1, ...rows.map((r) => r.count));
 }
 
-/** Icon, label and Kumo badge hue per checks tone — red is reserved for
- * genuine failure, and in-flight CI is teal (progress, not "act now"). */
-const CHECKS_FACE: Record<
-  ChecksTone,
-  { icon: Icon; label: string; variant: "green" | "red" | "neutral" | "teal" }
-> = {
-  passing: { icon: CheckCircleIcon, label: "passing", variant: "green" },
-  failed: { icon: XCircleIcon, label: "failing", variant: "red" },
-  plain: { icon: CircleDashedIcon, label: "no checks", variant: "neutral" },
-  running: { icon: ClockIcon, label: "pending", variant: "teal" },
-};
-
-/** CI check-rollup badge. `checksTone` renders unknown strings as pending, so a
- * new collector value degrades visibly. Ignores PR state: a merged PR passes. */
-export function ChecksBadge({ checks }: { checks: string }) {
-  const { icon: Icon, label, variant } = CHECKS_FACE[checksTone(checks)];
-  return (
-    <Badge variant={variant} className="shrink-0" icon={<Icon size={12} weight="bold" />}>
-      {label}
-    </Badge>
-  );
-}
-
 /** Inline row dismissal, for screens with no per-row dropdown to hang it off. */
 export function DismissButton({ onDismiss, label }: { onDismiss: () => void; label: string }) {
   return (
@@ -195,58 +162,8 @@ export function DismissButton({ onDismiss, label }: { onDismiss: () => void; lab
   );
 }
 
-/** One pull-request row. `actions` renders a trailing control *outside* the
- * anchor, so nested interactive elements stay valid; without it, a glyph. */
-export function PrRow({
-  pr,
-  now,
-  actions,
-}: {
-  pr: PrItem;
-  now: number;
-  actions?: React.ReactNode;
-}) {
-  const reviewRequested = pr.reviewState === "review_requested";
-  return (
-    <div
-      data-focus-kind="pr"
-      data-focus-id={`${pr.repo}#${pr.number}`}
-      className="group flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-kumo-tint"
-    >
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noreferrer"
-        onClick={(e) => {
-          e.preventDefault();
-          void openExternalUrl(pr.url);
-        }}
-        className="flex min-w-0 flex-1 items-center gap-3"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="truncate">{pr.title}</div>
-          <div className="truncate font-mono text-xs text-kumo-subtle">
-            {pr.repo} #{pr.number} · {fmtAge(pr.updatedTs, now)}
-          </div>
-        </div>
-      </a>
-      {reviewRequested && (
-        <Badge variant="orange" className="shrink-0">
-          review you
-        </Badge>
-      )}
-      <ChecksBadge checks={pr.checks} />
-      {actions ?? (
-        <ArrowSquareOutIcon
-          size={14}
-          className="shrink-0 text-kumo-subtle opacity-0 group-hover:opacity-100"
-        />
-      )}
-    </div>
-  );
-}
-
-/** One issue-queue row; `actions` works as in {@link PrRow}. */
+/** One issue row. `actions` renders a trailing control *outside* the anchor, so
+ * nested interactive elements stay valid; without it, a glyph. */
 export function IssueRow({
   issue,
   now,

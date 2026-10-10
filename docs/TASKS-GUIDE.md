@@ -20,7 +20,7 @@ flowchart TB
     subgraph gesture["⚡ One gesture in"]
         direction LR
         CLI["<b>tt task new</b> &quot;goal&quot;"]
-        APP["Agentboard <b>+</b> button"]
+        APP["Cockpit <b>+</b> button"]
         CLI ~~~ APP
     end
 
@@ -82,5 +82,5 @@ module in `tt-tasks` is where that lives.
 Manage tasks with `tt task` (`init`, `new`, `ls`, `env`, `rm`, `clean`) —
 never raw `git worktree`. Claude Code's own worktree surfaces
 (`claude --worktree`, the app's parallel sessions) make their own worktrees
-and are not tasks. The Agentboard rail shows the whole fleet and can create a
+and are not tasks. Cockpit's Checkouts drawer shows the whole fleet and can create a
 task from its `+` button. Full convention and rules: [CLAUDE.md](CLAUDE.md).

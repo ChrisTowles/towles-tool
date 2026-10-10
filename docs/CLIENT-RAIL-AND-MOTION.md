@@ -1,10 +1,17 @@
-# The Agentboard rail, and how things animate
+# The Cockpit rail, and how things animate
 
 Two `apps/client` areas whose rules only matter once you are inside them — split
 out of [`apps/client/CLAUDE.md`](../apps/client/CLAUDE.md), which every session
 pays for, and which keeps the conventions that apply everywhere.
 
-## The rail is six files, split by what a row *is*
+## The rail is the queue, and the checkout tree is a drawer in it
+
+`components/cockpit-rail.tsx` is the rail proper: Next up, the queue's lanes,
+and the drawers under them (Issues, Checkouts). Its row kinds are queue items —
+a task, an unfiled worktree, a PR, a CI failure — told apart by `QueueKey`, not
+by file. The tree below lives only inside the Checkouts drawer.
+
+## The checkout tree is six files, split by what a row *is*
 
 `components/agentboard-rail.tsx` is the rail's own chrome (collapsed strip,
 rollup tally) — not the tree, which is `agentboard-repo-group` (a repo) →
@@ -17,8 +24,7 @@ seventh file, not a grown one.
 **Folding is per-repo, and always reversible in place.** The rail filter demotes
 idle checkouts; `isFolderUnmanaged` demotes the worktrees agents make for
 themselves, whatever the filter says. Both leave a counted stub row that peeks
-open (`withoutFolded` is the one answer for the render and for
-`lib/rail-nodes.ts`'s walk, so the keyboard sees exactly what you see), and
+open (`withoutFolded` is the one answer for the render), and
 neither ever folds a checkout you are working in, one with a live session, or
 one with something waiting on you.
 

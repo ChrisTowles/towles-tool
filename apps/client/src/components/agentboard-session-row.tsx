@@ -8,7 +8,6 @@ import {
   ModelBadge,
   Dot,
   Glyph,
-  HotkeyBadge,
   IconBtn,
   PortDriftBadge,
 } from "@/components/agentboard-bits";
@@ -33,8 +32,6 @@ export function SessionRow({
   compactPct,
   title,
   active,
-  cursor,
-  hotkey,
   renaming,
   actions,
   onSelect,
@@ -46,10 +43,6 @@ export function SessionRow({
   compactPct: number;
   title?: string;
   active: boolean;
-  /** Under the rail cursor — the row the arrows are steering. */
-  cursor: boolean;
-  /** 1–9 while the jump chord is held and this row is one of the first nine. */
-  hotkey?: number;
   renaming: boolean;
   actions: SessionActions;
   onSelect: () => void;
@@ -84,7 +77,6 @@ export function SessionRow({
           "relative ml-1.5 flex cursor-pointer items-center gap-2 border-l-2 border-transparent py-1 pr-3 pl-9",
           hovered && !needs && "bg-kumo-tint",
           active && !needs && "border-l-violet-500 bg-kumo-tint",
-          cursor && "ring-1 ring-inset ring-violet-500",
           // Needs-you wins over hover/active for both the edge and the fill —
           // a thin 2px border alone was too easy to miss scanning the rail, so
           // the whole row washes amber, not just its left pixel.
@@ -95,7 +87,7 @@ export function SessionRow({
           active && needs && "ring-1 ring-inset ring-violet-500/70",
         )}
       >
-        {hotkey === undefined ? <Glyph agent={agent} /> : <HotkeyBadge n={hotkey} />}
+        <Glyph agent={agent} />
         <Dot session={session} />
         {needs && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
         {renaming ? (

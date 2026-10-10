@@ -227,7 +227,7 @@ export function BoardScreen() {
       taskId: task.id,
       goal: task.text,
     });
-    openTab("agentboard");
+    openTab("cockpit");
   }
 
   function promote(id: number, repo: string) {
@@ -330,7 +330,7 @@ export function BoardScreen() {
   const openOnAgentboard = useCallback(
     (railKey: string) => {
       uiAction("board.open_agentboard", "board");
-      openTabWithFocus({ screen: "agentboard", kind: "repo", id: railKey });
+      openTabWithFocus({ screen: "cockpit", kind: "repo", id: railKey });
     },
     [openTabWithFocus],
   );
@@ -339,7 +339,7 @@ export function BoardScreen() {
     (folderDir: string, sessionId: string) => {
       uiAction("board.open_agent_session", "board");
       requestAgentboardNav({ kind: "session", folderDir, sessionId });
-      openTab("agentboard");
+      openTab("cockpit");
     },
     [openTab],
   );

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { invoke, isTauri } from "./tauri";
 import {
   TaskQueueSchema,
+  type Lane,
   type QueueItem,
   type QueueKey,
   type TaskQueue,
@@ -21,11 +22,16 @@ export function TaskQueueProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isTauri()) return;
     let disposed = false;
+    let accepted = false;
     let unlisten: (() => void) | undefined;
     const accept = (raw: unknown) => {
       const parsed = TaskQueueSchema.safeParse(raw);
-      if (parsed.success) setState({ queue: parsed.data, live: true });
-      else console.error("queue://changed: unexpected payload", parsed.error);
+      if (!parsed.success) {
+        console.error("queue://changed: unexpected payload", parsed.error);
+        return;
+      }
+      accepted = true;
+      setState({ queue: parsed.data, live: true });
     };
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
@@ -35,8 +41,17 @@ export function TaskQueueProvider({ children }: { children: ReactNode }) {
         return;
       }
       unlisten = sub;
-      const initial = await invoke<unknown>("queue_get");
-      if (initial.isOk() && initial.value != null && !disposed) accept(initial.value);
+      // `null` until the store has opened, and the app emits only on a change
+      // after that — so keep asking until something lands.
+      const settled = () => disposed || accepted;
+      for (let attempt = 0; attempt < 30 && !settled(); attempt++) {
+        const initial = await invoke<unknown>("queue_get");
+        if (initial.isOk() && initial.value != null && !disposed) {
+          accept(initial.value);
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
     })();
     return () => {
       disposed = true;
@@ -152,4 +167,52 @@ export function rankMove(
   const neighbour = tasks[direction === "up" ? at - 1 : at + 1];
   if (!neighbour || neighbour.key.kind !== "task") return null;
   return direction === "up" ? { before: neighbour.key.id } : { after: neighbour.key.id };
+}
+
+export const LANES = ["on_you", "running", "parked", "backlog"] as const satisfies readonly Lane[];
+
+/** The rail's rows top-down, folded lanes skipped — what the cursor and the
+ * 1–9 jump digits walk. The backend already sorts by lane. */
+export function railRows(queue: TaskQueue, folded: ReadonlySet<Lane>): QueueItem[] {
+  return queue.items.filter((i) => !folded.has(i.lane));
+}
+
+/** The row standing for a checkout, so picking it any other way still rings it. */
+export function rowForFolder(queue: TaskQueue, folderDir: string | null): QueueItem | undefined {
+  return folderDir === null ? undefined : queue.items.find((i) => i.folderDir === folderDir);
+}
+
+/** One step through `rows` from `fromKey`; off the list lands on the first row. */
+export function stepRow(
+  rows: readonly QueueItem[],
+  fromKey: string | null,
+  step: 1 | -1,
+): QueueItem | undefined {
+  if (rows.length === 0) return undefined;
+  const at = fromKey === null ? -1 : rows.findIndex((r) => keyId(r.key) === fromKey);
+  if (at === -1) return rows[0];
+  return rows[Math.min(rows.length - 1, Math.max(0, at + step))];
+}
+
+/** The head of On you — what "the next thing needing you" means. */
+export function onYouHead(queue: TaskQueue): QueueItem | undefined {
+  return queue.items.find((i) => i.lane === "on_you");
+}
+
+/** When the head of On you changes: open it in place when nothing you're
+ * doing would be interrupted, else announce it. A focused terminal is never
+ * taken from you, and neither is a row that still needs you. */
+export function nextUpArrival(
+  prevHeadKey: string | null | undefined,
+  head: QueueItem | undefined,
+  ctx: { terminalFocused: boolean; selectedKey: string | null; selectedOnYou: boolean },
+): "open" | "announce" | null {
+  if (!head) return null;
+  const key = keyId(head.key);
+  if (key === prevHeadKey || key === ctx.selectedKey) return null;
+  if (prevHeadKey === undefined) {
+    return ctx.selectedKey === null && !ctx.terminalFocused ? "open" : null;
+  }
+  if (ctx.terminalFocused) return "announce";
+  return ctx.selectedKey === null || !ctx.selectedOnYou ? "open" : "announce";
 }

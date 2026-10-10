@@ -108,10 +108,10 @@ describe("Command palette navigation", () => {
     await expectActiveTab("Board");
   });
 
-  it("navigates to Agentboard via the palette", async () => {
+  it("navigates to Cockpit via the palette", async () => {
     await openPalette();
-    await navigateTo("Agentboard");
-    await expectActiveTab("Agentboard");
+    await navigateTo("Cockpit");
+    await expectActiveTab("Cockpit");
   });
 
   it("narrows the list to items matching a typed query", async () => {

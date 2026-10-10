@@ -4,7 +4,12 @@ import {
   itemUrl,
   keyId,
   nextItem,
+  nextUpArrival,
+  onYouHead,
   primaryAction,
+  railRows,
+  rowForFolder,
+  stepRow,
   rankMove,
   snoozeUntil,
   tomorrowMorning,
@@ -121,5 +126,48 @@ describe("schema + nextItem", () => {
     };
     const parsed = TaskQueueSchema.parse(raw);
     expect(nextItem(parsed)?.title).toBe("t2");
+  });
+});
+
+describe("rail rows", () => {
+  const q = queue([item(1), item(2, { lane: "running" }), item(3, { lane: "backlog" })]);
+  it("skip folded lanes and find a checkout's row", () => {
+    expect(railRows(q, new Set(["running"])).map((i) => i.title)).toEqual(["t1", "t3"]);
+    expect(rowForFolder(q, "/w2")?.title).toBe("t2");
+    expect(rowForFolder(q, null)).toBeUndefined();
+    expect(onYouHead(q)?.title).toBe("t1");
+  });
+  it("step within bounds, from nothing to the first", () => {
+    const rows = railRows(q, new Set());
+    expect(stepRow(rows, null, 1)?.title).toBe("t1");
+    expect(stepRow(rows, "task:1", 1)?.title).toBe("t2");
+    expect(stepRow(rows, "task:3", 1)?.title).toBe("t3");
+    expect(stepRow(rows, "task:1", -1)?.title).toBe("t1");
+    expect(stepRow([], null, 1)).toBeUndefined();
+  });
+});
+
+describe("nextUpArrival", () => {
+  const head = item(2);
+  const idle = { terminalFocused: false, selectedKey: null, selectedOnYou: false };
+  it("opens on first sight only when nothing is selected or typed in", () => {
+    expect(nextUpArrival(undefined, head, idle)).toBe("open");
+    expect(nextUpArrival(undefined, head, { ...idle, terminalFocused: true })).toBeNull();
+    expect(nextUpArrival(undefined, head, { ...idle, selectedKey: "task:9" })).toBeNull();
+  });
+  it("ignores an unchanged head or one already on screen", () => {
+    expect(nextUpArrival("task:2", head, idle)).toBeNull();
+    expect(nextUpArrival("task:1", head, { ...idle, selectedKey: "task:2" })).toBeNull();
+    expect(nextUpArrival("task:1", undefined, idle)).toBeNull();
+  });
+  it("never takes a focused terminal or a row that still needs you", () => {
+    expect(nextUpArrival("task:1", head, { ...idle, terminalFocused: true })).toBe("announce");
+    const busy = { ...idle, selectedKey: "task:1", selectedOnYou: true };
+    expect(nextUpArrival("task:1", head, busy)).toBe("announce");
+  });
+  it("opens once you're done with what you had open", () => {
+    const answered = { ...idle, selectedKey: "task:1", selectedOnYou: false };
+    expect(nextUpArrival("task:1", head, answered)).toBe("open");
+    expect(nextUpArrival("task:1", head, idle)).toBe("open");
   });
 });
