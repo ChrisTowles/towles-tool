@@ -15,6 +15,7 @@ use thiserror::Error;
 pub mod bridge;
 pub mod claude_cli;
 pub mod cleanup;
+pub mod coalesce;
 pub mod collapse;
 pub mod engine;
 pub mod env_drift;
@@ -61,6 +62,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 // reachable through its module path; the 2026-07-19 CLI trim removed the
 // last importer of the wider re-export list.
 pub use bridge::StatePayload;
+pub use coalesce::Coalescer;
 pub use engine::{GitInvalidation, RailRow, UnrecordedWorktree};
 pub use env_drift::PortDrift;
 pub use git_info::{CommitStat, commit_stats, compute_git_info, prune_stale_worktree};

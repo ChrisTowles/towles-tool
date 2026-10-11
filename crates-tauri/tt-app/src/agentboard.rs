@@ -27,6 +27,8 @@ pub struct Ab {
     /// Session ids seen with a live PTY at least once, so [`prune_dead_shells`]
     /// can tell "just exited" from "hasn't started yet".
     pub ever_live: Mutex<HashSet<String>>,
+    /// Needs-you edges waiting out the notification coalescing window.
+    pub coalescer: Mutex<tt_agentboard::Coalescer>,
 }
 
 /// Consecutive `claude agents` failures before the board says so out loud. Two,
@@ -146,50 +148,57 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
     payload
 }
 
-/// Fire a desktop notification per session that just flipped into needs-you.
+/// Hold freshly flipped needs-you edges for the coalescing window, then fire
+/// one desktop notification for the batch. Focus and the settings toggle are
+/// judged when the window closes, so a user who came back meanwhile isn't pinged.
 /// Status-report only — acting on the agent happens in the real PTY.
 pub fn notify_needs_you(app: &AppHandle, edges: &[tt_agentboard::NeedsYouEdge]) {
+    let Some(ab) = app.try_state::<Ab>() else {
+        return;
+    };
+    let Some(due_ms) = ab.coalescer.lock().unwrap().push(now_ms(), edges) else {
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let wait = u64::try_from(due_ms - now_ms()).unwrap_or(0);
+        tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+        let batch = app.state::<Ab>().coalescer.lock().unwrap().take_due(now_ms());
+        if let Some(batch) = batch {
+            fire_needs_you(&app, &batch);
+        }
+    });
+}
+
+fn fire_needs_you(app: &AppHandle, batch: &[tt_agentboard::NeedsYouEdge]) {
     use tauri_plugin_notification::NotificationExt;
 
-    if edges.is_empty() {
+    let Some((title, body)) = tt_agentboard::coalesce::summarize(batch) else {
         return;
-    }
+    };
     let focused = app.get_webview_window("main").and_then(|w| w.is_focused().ok()).unwrap_or(false);
     if focused {
-        tracing::debug!(edges = edges.len(), "notify_needs_you: skipped, window focused");
+        tracing::debug!(edges = batch.len(), "notify_needs_you: skipped, window focused");
         return;
     }
     if !crate::settings::notify_allowed(tt_config::NotifyKind::NeedsYou) {
-        tracing::debug!(edges = edges.len(), "notify_needs_you: skipped, notifications off");
+        tracing::debug!(edges = batch.len(), "notify_needs_you: skipped, notifications off");
         return;
     }
-    for edge in edges {
-        // The only record of a native notification firing — correlate against
-        // `window.focus_changed` to see if the OS raised the window off it.
-        tracing::info!(
-            repo = edge.repo,
-            session = edge.session,
-            reason = ?edge.reason,
-            "notify_needs_you: fired"
-        );
-        let _ = app
-            .notification()
-            .builder()
-            .title(format!("{} — {}", edge.repo, edge.session))
-            .body(needs_you_body(edge))
-            .show();
-    }
-}
-
-/// Text label only — no interaction happens here.
-fn needs_you_body(edge: &tt_agentboard::NeedsYouEdge) -> String {
-    use tt_agentboard::NeedsYouReason::*;
-    let what = match edge.reason {
-        WaitingForInput => "is waiting for input",
-        Errored => "errored",
-        Finished => "finished",
-    };
-    format!("{} {}", edge.session, what)
+    // The only record of a native notification firing — correlate against
+    // `window.focus_changed` to see if the OS raised the window off it. One
+    // record per notification; `edges` is how many agents it covered, and
+    // repo/session/reason name the longest-waiting one.
+    let head = &batch[0];
+    tracing::info!(
+        repo = head.repo,
+        session = head.session,
+        reason = ?head.reason,
+        edges = batch.len(),
+        coalesced = batch.len() - 1,
+        "notify_needs_you: fired"
+    );
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 #[tauri::command]
