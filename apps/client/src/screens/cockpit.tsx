@@ -2,17 +2,11 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
 import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-working-context";
-import { CockpitHeader } from "@/components/cockpit-header";
-import { CockpitIssues } from "@/components/cockpit-issues";
 import {
   CockpitRail,
   FOLDED_BY_DEFAULT,
   NextUpBanner,
-  openQueueLink,
-  QueueDetail,
-  RailDrawer,
   rerankQueueItem,
-  startQueueItem,
 } from "@/components/cockpit-rail";
 import { RailIconStrip, RollupChip } from "@/components/agentboard-rail";
 import { RepoGroup } from "@/components/agentboard-repo-group";
@@ -34,7 +28,7 @@ import { useWindowLayout } from "./cockpit/use-window-layout";
 import { useWorktreeDelete } from "./cockpit/use-worktree-delete";
 import { PaneGrid } from "./cockpit/pane-grid";
 import { RailHeader } from "./cockpit/rail-header";
-import { defaultTaskRepo, RailNewTask, repoOfFolder } from "./cockpit/rail-new-task";
+import { defaultTaskRepo, RailNewTask } from "./cockpit/rail-new-task";
 import { WindowStrip } from "./cockpit/window-strip";
 import {
   DeleteWorktreeDialog,
@@ -102,14 +96,13 @@ import { codeServerOpenClaudeSession } from "@/lib/code-server";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
-import { isItemDismissed, useStoreSnapshot } from "@/lib/data";
+import { useStoreSnapshot } from "@/lib/data";
 import {
   cycleQueue,
   keyId,
   nextItem,
   nextUpArrival,
   onYouHead,
-  primaryAction,
   railRows,
   rowForFolder,
   stepRow,
@@ -118,6 +111,10 @@ import {
 import type { Lane, QueueItem } from "@/lib/schemas/queue";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { focusTargetStore, useFocusTarget } from "@/lib/focus-target";
+import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
+import { railHotkeyTargets } from "@/lib/rail-hotkeys";
+import { railMove, railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
+import { isWorkspaceScreen, type ScreenId, type WorkspaceScreen } from "@/lib/screens";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -128,11 +125,11 @@ import {
   useShowUnmanagedWorktrees,
 } from "@/lib/rail-prefs";
 import { useWorkspace } from "@/lib/workspace";
+import { setWorkspaceScreen } from "@/lib/workspace-mode";
 import { repoParentDirs } from "@/lib/new-repo";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
 import { toast } from "@/lib/toast";
-import { cn } from "@/lib/utils";
 
 /** A stub row's peek, toggled per repo. The event is emitted outside the
  * updater: a state updater must stay pure, or StrictMode double-counts it. */
@@ -140,9 +137,10 @@ function togglePeek(
   revealed: Set<string>,
   set: Dispatch<SetStateAction<Set<string>>>,
   event: "agentboard.idle_peek" | "agentboard.unmanaged_peek",
+  screen: ScreenId,
 ) {
   return (repoKey: string) => {
-    uiAction(event, "cockpit", revealed.has(repoKey) ? "hide" : "show");
+    uiAction(event, screen, revealed.has(repoKey) ? "hide" : "show");
     set((keys) => {
       const next = new Set(keys);
       if (!next.delete(repoKey)) next.add(repoKey);
@@ -165,18 +163,27 @@ function terminalFocused(): boolean {
   );
 }
 
-const CHECKOUTS_OPEN_KEY = "tt-cockpit-checkouts-open";
 const LAST_TASK_REPO_KEY = "tt-cockpit-last-task-repo";
 
-/** Cockpit — the agent board, driven by the queue. The rail is everything
- * waiting on you (Next up, then the lanes); picking a row puts that item's
- * terminals and panes beside it. Agent status is reported, never re-rendered. */
+/** Cockpit and Agent Board — one instance, two views of the same checkouts.
+ * Cockpit's rail is them as a queue (Next up, then the lanes), worked one at a
+ * time; Agent Board's is every repo → checkout → session, walked by place. Either way,
+ * picking a row puts its terminals and panes beside it, and the panes, shells
+ * and selection are the same ones. Agent status is reported, never re-rendered. */
 export function CockpitScreen() {
   const state = useAgentboardState();
-  const { snapshot, live: storeLive } = useStoreSnapshot();
+  const { snapshot } = useStoreSnapshot();
   const { openTab, activeTab, openSettingsTab } = useWorkspace();
+  // Which rail is up: the last of the two screens this instance was shown as.
+  const [mode, setMode] = useState<WorkspaceScreen>(
+    isWorkspaceScreen(activeTab) ? activeTab : "cockpit",
+  );
+  if (isWorkspaceScreen(activeTab) && activeTab !== mode) setMode(activeTab);
+  useEffect(() => setWorkspaceScreen(mode), [mode]);
+  const tree = mode === "agentboard";
+  const onScreen = isWorkspaceScreen(activeTab);
   // Deep-link focus: a "needs you" popover row scrolls its PR or repo into view here.
-  const focusRef = useFocusTarget<HTMLDivElement>("cockpit");
+  const focusRef = useFocusTarget<HTMLDivElement>(mode);
   const now = useNow();
   const repos = state.repos;
 
@@ -187,19 +194,15 @@ export function CockpitScreen() {
   // The tile that last claimed a click — the sole driver of the violet ring.
   const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
   const [focusLevel, setFocusLevel] = useState<FocusLevel>("rail");
+  // Agent Board's cursor: one row of `railTree`, kept as the node so a row that
+  // disappears can hand the cursor to whatever now stands for it.
+  const [railCursor, setRailCursor] = useState<RailNode | null>(null);
   const { queue, live: queueLive } = useTaskQueue();
-  // The picked row. A row with a checkout also drives `activeFolderDir`; one
-  // without (a backlog task, a PR, a CI failure) shows its detail instead.
-  const [selKey, setSelKey] = useState<string | null>(null);
   const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(() => new Set(FOLDED_BY_DEFAULT));
   // Next up changed while you were busy: the key it was announced for.
   const [announced, setAnnounced] = useState<string | null>(null);
   // The row whose snooze menu is open — `z` opens it from the keyboard.
   const [snoozeKey, setSnoozeKey] = useState<string | null>(null);
-  const [issuesOpen, setIssuesOpen] = useState(false);
-  const [checkoutsOpen, setCheckoutsOpen] = useState(
-    () => localStorage.getItem(CHECKOUTS_OPEN_KEY) === "1",
-  );
   // The nonce lets a re-request of the *same* session still fire.
   const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
     id: string;
@@ -218,14 +221,17 @@ export function CockpitScreen() {
   // Only *crashes* land here — a clean logout takes its pane with it.
   const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
   const expectedKills = useRef<Set<string>>(new Set());
-  const { collapsed, toggleCollapsed, railCollapsed, toggleRail } = useCollapseState(state);
+  const { collapsed, toggleCollapsed, applyCollapse, railCollapsed, toggleRail } = useCollapseState(
+    state,
+    mode,
+  );
   // Filtered-out folders demote to a per-repo "N idle" stub, never hidden.
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether worktrees `tt task` didn't create get rail folders at all.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
   const [jarvisPane, setJarvisPane] = useJarvisPane();
   const [browserPane] = useBrowserPane();
-  const nativeVisible = activeTab === "cockpit";
+  const nativeVisible = onScreen;
   // The idle stub's peek is view state — it belongs to one glance at one repo.
   // Quiet is a persisted view mode instead: its switch is in the rail header,
   // so the hiding is never something you can't find your way back out of.
@@ -235,11 +241,17 @@ export function CockpitScreen() {
   // Never persisted: a rail that opened already narrowed to yesterday's search
   // is a rail with repos missing and no memory of why.
   const [query, setQuery] = useState("");
-  const toggleIdleRevealed = togglePeek(idleRevealed, setIdleRevealed, "agentboard.idle_peek");
+  const toggleIdleRevealed = togglePeek(
+    idleRevealed,
+    setIdleRevealed,
+    "agentboard.idle_peek",
+    mode,
+  );
   const toggleUnmanagedRevealed = togglePeek(
     unmanagedRevealed,
     setUnmanagedRevealed,
     "agentboard.unmanaged_peek",
+    mode,
   );
   const [renaming, setRenaming] = useState<string | null>(null);
   // Live PTY titles (Claude emits `✳ <title>`), preferred over the backend label.
@@ -291,25 +303,34 @@ export function CockpitScreen() {
   // even while nothing is held — the handlers address them without a repaint.
   const hotkeysHeld = useModifierHeld("ab-jump-session-1");
   const rows = useMemo(() => railRows(queue, foldedLanes), [queue, foldedLanes]);
-  const selItem = selKey === null ? undefined : queue.items.find((i) => keyId(i.key) === selKey);
-  // A row with no checkout is its own view; otherwise the ring follows the
-  // checkout on screen, however it got there.
-  const detailItem = selItem && !selItem.folderDir ? selItem : undefined;
-  const ringItem = detailItem ?? rowForFolder(queue, activeFolderDir);
+  const railVis = useMemo(
+    () => ({
+      repos: shownRepos,
+      idleDirs,
+      idleRevealed,
+      unmanagedDirs,
+      unmanagedRevealed,
+      collapsed,
+      wins,
+    }),
+    [shownRepos, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed, collapsed, wins],
+  );
+  const railTree = useMemo(() => railNodes(railVis), [railVis]);
+  const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
+  const cursorKey = cursorNode?.key ?? null;
+  const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
+  // Every row is a checkout, so the ring follows the one on screen, however it got there.
+  const ringItem = rowForFolder(queue, activeFolderDir);
   const ringKey = ringItem ? keyId(ringItem.key) : null;
   const head = nextItem(queue);
-  // The collapsed strip has no rows to badge, so it offers no numbers.
-  const railHotkeys = useMemo(
-    () =>
-      hotkeysHeld && !railCollapsed
-        ? new Map(rows.slice(0, 9).map((r, i) => [keyId(r.key), i + 1]))
-        : undefined,
-    [hotkeysHeld, railCollapsed, rows],
-  );
-  const openIssues = useMemo(
-    () => snapshot.issues.filter((i) => !isItemDismissed(i)),
-    [snapshot.issues],
-  );
+  // The collapsed strip has no rows to badge, so it offers no numbers. Keyed by
+  // queue row on Cockpit, by session on Agent Board.
+  const railHotkeys = useMemo(() => {
+    if (!hotkeysHeld || railCollapsed) return undefined;
+    return tree
+      ? new Map(hotkeyTargets.map((t, i) => [t.sessionId, i + 1]))
+      : new Map(rows.slice(0, 9).map((r, i) => [keyId(r.key), i + 1]));
+  }, [hotkeysHeld, railCollapsed, tree, hotkeyTargets, rows]);
 
   // Read live by the terminal://notify listener, which must not re-subscribe.
   const selectedRef = useRef<string | null>(null);
@@ -323,9 +344,9 @@ export function CockpitScreen() {
   });
   // Same, for the rail: the mount-only nav-request handler's closure would only
   // ever see the empty first-render snapshot.
-  const railRef = useRef({ repos, folderNameByDir, queue });
+  const railRef = useRef({ repos, folderNameByDir, queue, railTree });
   useEffect(() => {
-    railRef.current = { repos, folderNameByDir, queue };
+    railRef.current = { repos, folderNameByDir, queue, railTree };
   });
 
   // One-shot "prompt cache about to expire" toast per session per cache generation.
@@ -349,7 +370,7 @@ export function CockpitScreen() {
   const parentDirs = useMemo(() => repoParentDirs(state.repos.map((r) => r.dir)), [state.repos]);
 
   const openRepoManager = () => {
-    uiAction("repo.manage_opened", "cockpit");
+    uiAction("repo.manage_opened", mode);
     openSettingsTab({ tab: "agentboard" });
   };
 
@@ -384,7 +405,7 @@ export function CockpitScreen() {
 
   // Same, for the folder's Chrome pane — a real browser whose sign-ins stick.
   function openBrowser(dir: string) {
-    uiAction("agentboard.open_browser_pane", "cockpit");
+    uiAction("agentboard.open_browser_pane", mode);
     setActiveFolderDir(dir);
     addPaneToActive(dir, browserPaneId(dir));
     setFocusedPaneId(browserPaneId(dir));
@@ -466,7 +487,7 @@ export function CockpitScreen() {
 
   // Same, for the native pane — a window rectangle rendered by Bevy, not DOM.
   function openJarvis(dir: string) {
-    uiAction("agentboard.open_jarvis_pane", "cockpit");
+    uiAction("agentboard.open_jarvis_pane", mode);
     placeViewPane(dir, jarvisPaneId(dir));
   }
 
@@ -490,7 +511,7 @@ export function CockpitScreen() {
   // because it is what expands a `~`. Only a link that resolves to nothing at
   // all falls through to the external editor.
   async function openTerminalPath(dir: string, termId: string, path: string, line: number | null) {
-    uiAction("terminal.link_open_file", "cockpit");
+    uiAction("terminal.link_open_file", mode);
     const resolved = (
       await invoke<string | null>("term_resolve_path", { path, cwd: dir, termId })
     ).unwrapOr(null);
@@ -588,11 +609,14 @@ export function CockpitScreen() {
     replacePaneInPlace(sessionId, exitPaneId(sessionId));
   }
 
-  // Reaching a checkout any way at all hands the ring to its queue row, and
-  // drops a detail view that would otherwise cover its panes.
-  function setCursorFor(folderDir: string) {
-    const row = rowForFolder(railRef.current.queue, folderDir);
-    setSelKey(row ? keyId(row.key) : null);
+  // Reaching a checkout any way at all hands Agent Board's cursor to it, its
+  // session's row when there is one; the queue's ring follows `activeFolderDir`.
+  function setCursorFor(folderDir: string, sessionId?: string) {
+    const nodes = railRef.current.railTree;
+    const node =
+      (sessionId === undefined ? undefined : nodes.find((n) => n.sessionId === sessionId)) ??
+      nodes.find((n) => n.kind !== "session" && n.dir === folderDir);
+    if (node) setRailCursor(node);
   }
 
   function selectFolder(folderDir: string) {
@@ -612,7 +636,7 @@ export function CockpitScreen() {
 
   function selectSession(folderDir: string, sessionId: string) {
     setJumpRecall(null);
-    setCursorFor(folderDir);
+    setCursorFor(folderDir, sessionId);
     mountSession(folderDir, sessionId);
     setSelected({ folderDir, sessionId });
     setFocusedPaneId(sessionId);
@@ -669,19 +693,11 @@ export function CockpitScreen() {
     jumpTo(id ? (sessionById.get(id) ?? null) : null, "Queue's empty — nothing needs you.");
   }
 
-  /** Open a queue row in place: its session, its checkout, or its detail. */
+  /** Open a queue row in place: its session, else its checkout. */
   function selectQueueItem(item: QueueItem) {
-    const key = keyId(item.key);
     setAnnounced(null);
-    if (item.folderDir) {
-      if (item.sessionId) selectSession(item.folderDir, item.sessionId);
-      else selectFolder(item.folderDir);
-    } else {
-      setFocusLevel("rail");
-      blurTerminal();
-    }
-    // After the select, whose own ring sync would name the checkout's row.
-    setSelKey(key);
+    if (item.sessionId) selectSession(item.folderDir, item.sessionId);
+    else selectFolder(item.folderDir);
     if (item.reason === "land") toast.info("Run /done in the task's terminal to land it.");
   }
 
@@ -699,6 +715,12 @@ export function CockpitScreen() {
   // Declines when the digit addresses nothing, so an unused number keeps
   // whatever the platform does with the chord rather than silently eating it.
   function jumpToHotkey(n: number): boolean {
+    if (tree) {
+      const session = hotkeyTargets[n - 1];
+      if (!session) return false;
+      selectSession(session.folderDir, session.sessionId);
+      return true;
+    }
     const target = rows[n - 1];
     if (!target) return false;
     selectQueueItem(target);
@@ -721,12 +743,6 @@ export function CockpitScreen() {
     });
   }
 
-  function toggleCheckouts(show = !checkoutsOpen) {
-    uiAction("cockpit.checkouts_toggle", "cockpit", show ? "open" : "close");
-    setCheckoutsOpen(show);
-    localStorage.setItem(CHECKOUTS_OPEN_KEY, show ? "1" : "0");
-  }
-
   // The head of On you changed: open it where nothing would be interrupted,
   // else say so above the panes. Never moves DOM focus.
   const onYou = onYouHead(queue);
@@ -740,23 +756,35 @@ export function CockpitScreen() {
       selectedOnYou: ringItem?.lane === "on_you",
     });
     lastOnYouKey.current = onYouKey;
-    if (!onYou) return;
+    // Agent Board is walked by place: the queue's pull is Cockpit's business.
+    if (!onYou || tree) return;
     if (verdict === "open") selectQueueItem(onYou);
     else if (verdict === "announce") setAnnounced(onYouKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on a new head only; the rest is read at that moment
   }, [onYouKey, queueLive]);
-  const announcedItem =
-    announced !== null && announced === onYouKey && announced !== ringKey ? onYou : undefined;
-
-  // A deep link to a checkout's repo row: that row lives in the Checkouts drawer.
+  // A deep link to a PR lands on its checkout's row, which a folded lane would hide.
   useEffect(
     () =>
       focusTargetStore.subscribe(() => {
         const t = focusTargetStore.get();
-        if (t?.screen === "cockpit" && t.kind === "repo") setCheckoutsOpen(true);
+        if (t?.screen !== "cockpit" || t.kind !== "pr") return;
+        const row = railRef.current.queue.items.find(
+          (i) => i.pr && `${i.pr.repo}#${i.pr.number}` === t.id,
+        );
+        if (row)
+          setFoldedLanes((cur) => {
+            if (!cur.has(row.lane)) return cur;
+            const next = new Set(cur);
+            next.delete(row.lane);
+            return next;
+          });
       }),
     [],
   );
+  const announcedItem =
+    !tree && announced !== null && announced === onYouKey && announced !== ringKey
+      ? onYou
+      : undefined;
 
   function jumpToNotBusy() {
     jumpTo(
@@ -766,22 +794,17 @@ export function CockpitScreen() {
   }
 
   // ab-focus-terminal (Enter): real DOM focus, so the next keystroke lands in
-  // the shell instead of nowhere. A row with no checkout acts instead.
+  // the shell instead of nowhere.
   function focusActiveTerminal(): boolean {
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
       if (active.tagName === "BUTTON" || active.tagName === "A") return false;
       if (active.closest('[role="dialog"], [role="alertdialog"]')) return false;
     }
-    if (detailItem) {
-      const action = primaryAction(detailItem);
-      if (action === "start") void startQueueItem(detailItem);
-      else if (action === "open-link") openQueueLink(detailItem);
-      return true;
-    }
     if (!activeFolderDir || !activeFolder) return false;
     const sessionPaneId = activeWin?.panes.find((id) => sessionById.has(id));
     const targetId =
+      (tree ? (cursorNode?.sessionId ?? undefined) : undefined) ??
       (selected?.folderDir === activeFolderDir ? selected.sessionId : undefined) ??
       sessionPaneId ??
       activeFolder.sessions[0]?.id;
@@ -822,13 +845,54 @@ export function CockpitScreen() {
     return true;
   }
 
+  // Declining when nothing changes leaves the chord to the platform.
+  function collapseWholeRail(collapse: boolean): boolean {
+    const changes = collapse
+      ? railCollapseAll(shownRepos, collapsed)
+      : railExpandAll(shownRepos, collapsed);
+    if (changes.length === 0) return false;
+    applyCollapse(changes);
+    return true;
+  }
+
+  // The tree cursor lands: a session row selects its session, a checkout row (a
+  // solo repo's header included) makes that checkout the working context, and a
+  // multi-checkout repo header speaks for no one checkout, so it only rings.
+  function landOnRow(key: string) {
+    const node = railTree.find((n) => n.key === key);
+    if (!node) return;
+    if (node.sessionId !== null && node.dir !== null) {
+      selectSession(node.dir, node.sessionId);
+      return;
+    }
+    if (node.dir !== null) {
+      selectFolder(node.dir);
+      return;
+    }
+    setRailCursor(node);
+    setFocusLevel("rail");
+  }
+
+  function moveTreeCursor(direction: "up" | "down" | "left" | "right"): boolean {
+    const move = railMove({ nodes: railTree, cursor: cursorKey, direction, collapsed });
+    if (!move) return false;
+    if (move.kind === "collapse") {
+      applyCollapse([{ key: move.key, collapsed: move.collapsed }]);
+      return true;
+    }
+    if (move.kind === "exit") return leaveRailRight();
+    landOnRow(move.key);
+    return true;
+  }
+
   // One cursor over rail, window strip and panes. In the rail it walks the
-  // queue's rows; past it, `moveFocus` owns the transitions.
+  // queue's rows or Agent Board's tree; past it, `moveFocus` owns the transitions.
   function focusByArrow(direction: "up" | "down" | "left" | "right"): boolean {
+    if (focusLevel === "rail" && tree) return moveTreeCursor(direction);
     if (focusLevel === "rail") {
       if (direction === "up") return moveQueueCursor(-1);
       if (direction === "down") return moveQueueCursor(1);
-      return direction === "right" && !detailItem ? leaveRailRight() : false;
+      return direction === "right" ? leaveRailRight() : false;
     }
     const move = moveFocus({
       level: focusLevel,
@@ -881,11 +945,7 @@ export function CockpitScreen() {
     }
     const picked = repoKey
       ? repos.find((r) => r.key === repoKey)
-      : defaultTaskRepo(
-          repos,
-          (repoOfFolder(repos, selItem?.folderDir) ?? activeRepo)?.key,
-          localStorage.getItem(LAST_TASK_REPO_KEY),
-        );
+      : defaultTaskRepo(repos, activeRepo?.key, localStorage.getItem(LAST_TASK_REPO_KEY));
     if (!picked) return;
     setRailTaskRepoKey(picked.key);
   }
@@ -897,7 +957,7 @@ export function CockpitScreen() {
     const branch = folderRecreateBranch(folder);
     const task = folderTask(folder);
     if (!branch || !task) return;
-    uiAction("agentboard.recreate_worktree", "cockpit");
+    uiAction("agentboard.recreate_worktree", mode);
     void taskCreation.createTask(
       { name: repo.name, dir: folder.repoRoot, key: repo.key, originUrl: repo.originUrl },
       {
@@ -1086,7 +1146,7 @@ export function CockpitScreen() {
     // Closed here rather than in `untrackRepo` because `closeSession` also clears
     // this screen's local pane state; the seam is handed an empty id list.
     for (const id of target.sessionIds) await closeSession(id);
-    for (const dir of target.dirs) await untrackRepo(dir, target.label, [], "cockpit");
+    for (const dir of target.dirs) await untrackRepo(dir, target.label, [], mode);
   }
 
   function requestRemoveRepo(dirs: string[], label: string) {
@@ -1234,28 +1294,32 @@ export function CockpitScreen() {
         "ab-focus-down-bracket": () => focusByArrow("down"),
         "ab-focus-left": () => focusByArrow("left"),
         "ab-focus-right": () => focusByArrow("right"),
-        "queue-down": () => moveQueueCursor(1),
-        "queue-up": () => moveQueueCursor(-1),
-        "queue-start": () => {
-          if (detailItem?.key.kind !== "task" || primaryAction(detailItem) !== "start")
-            return false;
-          void startQueueItem(detailItem);
-        },
-        "queue-snooze": () => {
-          if (!ringItem?.reason || ringItem.snoozed) return false;
-          setSnoozeKey(keyId(ringItem.key));
-        },
-        // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the
-        // first matching handler wins.
-        "queue-rank-top": () => {
-          if (ringItem) void rerankQueueItem(queue.items, ringItem, "top");
-        },
-        "queue-rank-up": () => {
-          if (ringItem) void rerankQueueItem(queue.items, ringItem, "up");
-        },
-        "queue-rank-down": () => {
-          if (ringItem) void rerankQueueItem(queue.items, ringItem, "down");
-        },
+        // Each rail's own chords, and only while it's up: Alt+Shift+↑ is the
+        // queue's rank-top on Cockpit and collapse-all on Agent Board.
+        ...(tree
+          ? {
+              "ab-collapse-all": () => collapseWholeRail(true),
+              "ab-expand-all": () => collapseWholeRail(false),
+            }
+          : {
+              "queue-down": () => moveQueueCursor(1),
+              "queue-up": () => moveQueueCursor(-1),
+              "queue-snooze": () => {
+                if (!ringItem?.reason || ringItem.snoozed) return false;
+                setSnoozeKey(keyId(ringItem.key));
+              },
+              // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the
+              // first matching handler wins.
+              "queue-rank-top": () => {
+                if (ringItem) void rerankQueueItem(queue.items, ringItem, "top");
+              },
+              "queue-rank-up": () => {
+                if (ringItem) void rerankQueueItem(queue.items, ringItem, "up");
+              },
+              "queue-rank-down": () => {
+                if (ringItem) void rerankQueueItem(queue.items, ringItem, "down");
+              },
+            }),
         "ab-focus-terminal": focusActiveTerminal,
         "ab-split-session": splitIntoWindow,
         "ab-new-terminal-right": () => {
@@ -1264,13 +1328,17 @@ export function CockpitScreen() {
       }),
       // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers are stable within a render; only the state they close over (listed) should rebuild the map
       [
+        tree,
         activeFolderDir,
         collapsed,
         queue,
         rows,
+        railTree,
+        cursorKey,
+        cursorNode,
+        hotkeyTargets,
         ringKey,
         ringItem,
-        detailItem,
         selected,
         focusedPaneId,
         focusLevel,
@@ -1291,13 +1359,175 @@ export function CockpitScreen() {
         worktreeDelete.deleteBusy,
       ],
     ),
-    "cockpit",
-    activeTab === "cockpit",
+    mode,
+    onScreen,
+  );
+
+  // Both rails open the new-task form under their header; the header and the
+  // tree are Agent Board's alone.
+  const newTaskForm = railTaskRepoKey !== null && (
+    <RailNewTask
+      repos={repos}
+      repoKey={railTaskRepoKey}
+      onRepoChange={(key) => {
+        uiAction("cockpit.new_task_repo", mode);
+        setRailTaskRepoKey(key);
+      }}
+      onCancel={() => setRailTaskRepoKey(null)}
+      onSubmit={(repo, input) => {
+        localStorage.setItem(LAST_TASK_REPO_KEY, repo.key);
+        setRailTaskRepoKey(null);
+        void taskCreation.createTask(
+          {
+            name: repo.name,
+            dir: repo.folders[0].dir,
+            key: repo.key,
+            originUrl: repo.originUrl,
+          },
+          input,
+        );
+      }}
+    />
+  );
+  const railHeader = (
+    <RailHeader
+      attention={attention.items}
+      missingRepoCount={missingRepoCount}
+      agentScanOk={state.agentScanOk !== false}
+      dismissedPrCount={attention.dismissedPrCount}
+      clearingDismissals={attention.clearingDismissals}
+      filter={filter}
+      recentHours={recentHours}
+      onSetFilter={setFilter}
+      onSetRecentHours={setRecentHours}
+      quietCount={quietCount}
+      showQuiet={showQuiet}
+      onSetShowQuiet={setShowQuiet}
+      query={query}
+      onSetQuery={setQuery}
+      queryHidden={queryHidden}
+      showUnmanagedWorktrees={showUnmanagedWorktrees}
+      onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
+      jarvisPane={jarvisPane}
+      onSetJarvisPane={setJarvisPane}
+      onOpenRepoManager={openRepoManager}
+      onCleanupMissing={() => void cleanupMissing()}
+      onClearDismissals={() => void attention.clearDismissals()}
+      onCollapseRail={toggleRail}
+      parentDirs={parentDirs}
+    />
+  );
+  const checkoutTree = (
+    <div className="flex flex-col">
+      {repos.length === 0 && (
+        <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
+          <GitBranchIcon className="size-8 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">No repos on the rail yet.</p>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={openRepoManager}
+              icon={<FolderPlusIcon className="size-3.5" />}
+            >
+              Manage repos
+            </Button>
+          </div>
+        </div>
+      )}
+      {/* An empty tree under a query is the search's answer,
+      not an empty rail — say which, and offer the way out. */}
+      {repos.length > 0 && shownRepos.length === 0 && (
+        <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
+          <p className="text-sm text-muted-foreground">
+            No repo or branch matches <span className="font-mono text-foreground">{query}</span>.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => setQuery("")}>
+            Clear filter
+          </Button>
+          {quietCount > 0 && !showQuiet && (
+            <p className="text-xs text-muted-foreground/70">
+              {quietCount} quiet checkout{quietCount === 1 ? " is" : "s are"} hidden — the ▤ button
+              above searches them too once shown.
+            </p>
+          )}
+        </div>
+      )}
+      {/* initial={false} so the rail drawing itself on launch
+      isn't mistaken for repos arriving — only genuine
+      track/untrack animates. */}
+      <AnimatePresence initial={false}>
+        {shownRepos.map((repo) => (
+          <motion.div key={repo.key} {...railRowMotion}>
+            <RepoGroup
+              repo={repo}
+              idleDirs={idleDirs.get(repo.key)}
+              idleRevealed={idleRevealed.has(repo.key)}
+              onToggleIdle={() => toggleIdleRevealed(repo.key)}
+              unmanagedDirs={unmanagedDirs.get(repo.key)}
+              unmanagedRevealed={unmanagedRevealed.has(repo.key)}
+              onToggleUnmanaged={() => toggleUnmanagedRevealed(repo.key)}
+              quietDirs={quietDirs.get(repo.key)}
+              now={now}
+              compactPct={state.compactRecommendPercent}
+              prs={snapshot.prs}
+              tasks={snapshot.tasks}
+              selectedSessionId={selected?.sessionId ?? null}
+              activePaneId={focusedPaneId}
+              activeFolderDir={activeFolderDir}
+              cursorKey={tree ? cursorKey : null}
+              hotkeys={tree ? railHotkeys : undefined}
+              collapsed={collapsed}
+              renaming={renaming}
+              titles={titles}
+              wins={wins}
+              actions={actions}
+              onToggle={toggleCollapsed}
+              onSelectFolder={selectFolder}
+              onSelect={selectSession}
+              onNewSession={newSession}
+              onNewTask={(target) => openRailNewTask(target.key)}
+              onRemoveRepo={requestRemoveRepo}
+              onDeleteWorktree={requestDeleteWorktree}
+              onRecreateWorktree={(folder) => recreateWorktree(repo, folder)}
+              settingUpDirs={taskCreation.settingUpDirs}
+              onRenameCommit={commitRename}
+              onOpenFiles={openFiles}
+              onOpenPreview={openPreview}
+              // Undefined while `agentboard.jarvisPane` is off:
+              // no entry point rather than a disabled pane.
+              onOpenBrowser={browserPane ? openBrowser : undefined}
+              onOpenJarvis={jarvisPane ? openJarvis : undefined}
+              onClosePane={closePane}
+              taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
+              taskFormInitialGoal={taskCreation.reopenTasks.get(repo.key)?.goal}
+              onCancelTaskForm={() => taskCreation.closeTaskForm(repo.key)}
+              onSubmitTaskForm={(input) => {
+                const reopening = taskCreation.reopenTasks.get(repo.key);
+                taskCreation.closeTaskForm(repo.key);
+                void taskCreation.createTask(
+                  {
+                    name: repo.name,
+                    dir: repo.folders[0].dir,
+                    key: repo.key,
+                    originUrl: repo.originUrl,
+                  },
+                  {
+                    ...input,
+                    taskId: reopening?.taskId,
+                    reopen: reopening !== undefined,
+                  },
+                );
+              }}
+            />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
   );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <CockpitHeader snapshot={snapshot} live={storeLive} now={now} />
       <div className="flex min-h-0 flex-1">
         {/* Rail collapsed to icons: fixed-width strip outside the panel group.
             The group itself is NOT keyed on the collapse — remounting it would
@@ -1314,7 +1544,9 @@ export function CockpitScreen() {
           />
         )}
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-          {/* Rail: rollup tally + header + attention strip + Repo → Folder → Session tree. */}
+          {/* Rail: rollup tally, then the queue (Cockpit) or the Repo → Folder →
+              Session tree (Agent Board). Only its contents swap: the panel
+              keeps its identity, so the panes beside it never remount. */}
           {!railCollapsed && (
             <>
               {/* The rail is a sidebar, so it keeps the width it was dragged to
@@ -1340,216 +1572,38 @@ export function CockpitScreen() {
                   />
                   {/* min-h-0 is load-bearing: without it this flex child grows past the
                       rail's height and rows below the fold become unreachable. */}
+                  {tree && railHeader}
                   <ScrollArea className="min-h-0 flex-1">
                     <div ref={focusRef}>
-                      <CockpitRail
-                        queue={queue}
-                        live={queueLive}
-                        now={now}
-                        head={head}
-                        selectedKey={ringKey}
-                        folded={foldedLanes}
-                        hotkeys={railHotkeys}
-                        snoozeKey={snoozeKey}
-                        onSnoozeKeyChange={setSnoozeKey}
-                        onToggleLane={toggleLane}
-                        onSelect={pickQueueItem}
-                        onOpenHead={() => {
-                          mouseAction("queue-next", "cockpit");
-                          openNextUp();
-                        }}
-                        onNewTask={() => {
-                          mouseAction("ab-new-task", "cockpit");
-                          openRailNewTask();
-                        }}
-                        newTaskForm={
-                          railTaskRepoKey !== null && (
-                            <RailNewTask
-                              repos={repos}
-                              repoKey={railTaskRepoKey}
-                              onRepoChange={(key) => {
-                                uiAction("cockpit.new_task_repo", "cockpit");
-                                setRailTaskRepoKey(key);
-                              }}
-                              onCancel={() => setRailTaskRepoKey(null)}
-                              onSubmit={(repo, input) => {
-                                localStorage.setItem(LAST_TASK_REPO_KEY, repo.key);
-                                setRailTaskRepoKey(null);
-                                void taskCreation.createTask(
-                                  {
-                                    name: repo.name,
-                                    dir: repo.folders[0].dir,
-                                    key: repo.key,
-                                    originUrl: repo.originUrl,
-                                  },
-                                  input,
-                                );
-                              }}
-                            />
-                          )
-                        }
-                      >
-                        <RailDrawer
-                          title="Issues"
-                          count={openIssues.length}
-                          open={issuesOpen}
-                          onToggle={() => {
-                            uiAction(
-                              "cockpit.issues_toggle",
-                              "cockpit",
-                              issuesOpen ? "close" : "open",
-                            );
-                            setIssuesOpen(!issuesOpen);
+                      {tree ? (
+                        <>
+                          {newTaskForm}
+                          {checkoutTree}
+                        </>
+                      ) : (
+                        <CockpitRail
+                          queue={queue}
+                          live={queueLive}
+                          now={now}
+                          head={head}
+                          selectedKey={ringKey}
+                          folded={foldedLanes}
+                          hotkeys={railHotkeys}
+                          snoozeKey={snoozeKey}
+                          onSnoozeKeyChange={setSnoozeKey}
+                          onToggleLane={toggleLane}
+                          onSelect={pickQueueItem}
+                          onOpenHead={() => {
+                            mouseAction("queue-next", "cockpit");
+                            openNextUp();
                           }}
-                        >
-                          <CockpitIssues issues={openIssues} repos={repos} now={now} />
-                        </RailDrawer>
-                        {/* Every tracked checkout, task or not: where a main
-                            checkout's shell, repo management and the new-task
-                            form live. */}
-                        <RailDrawer
-                          title="Checkouts"
-                          count={repos.length}
-                          open={checkoutsOpen}
-                          onToggle={() => toggleCheckouts()}
-                        >
-                          <RailHeader
-                            attention={attention.items}
-                            missingRepoCount={missingRepoCount}
-                            agentScanOk={state.agentScanOk !== false}
-                            dismissedPrCount={attention.dismissedPrCount}
-                            clearingDismissals={attention.clearingDismissals}
-                            filter={filter}
-                            recentHours={recentHours}
-                            onSetFilter={setFilter}
-                            onSetRecentHours={setRecentHours}
-                            quietCount={quietCount}
-                            showQuiet={showQuiet}
-                            onSetShowQuiet={setShowQuiet}
-                            query={query}
-                            onSetQuery={setQuery}
-                            queryHidden={queryHidden}
-                            showUnmanagedWorktrees={showUnmanagedWorktrees}
-                            onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
-                            jarvisPane={jarvisPane}
-                            onSetJarvisPane={setJarvisPane}
-                            onOpenRepoManager={openRepoManager}
-                            onCleanupMissing={() => void cleanupMissing()}
-                            onClearDismissals={() => void attention.clearDismissals()}
-                            onCollapseRail={toggleRail}
-                            parentDirs={parentDirs}
-                          />
-                          <div className="flex flex-col">
-                            {repos.length === 0 && (
-                              <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
-                                <GitBranchIcon className="size-8 text-muted-foreground" />
-                                <p className="text-sm text-muted-foreground">
-                                  No repos on the rail yet.
-                                </p>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={openRepoManager}
-                                    icon={<FolderPlusIcon className="size-3.5" />}
-                                  >
-                                    Manage repos
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                            {/* An empty tree under a query is the search's answer,
-                              not an empty rail — say which, and offer the way out. */}
-                            {repos.length > 0 && shownRepos.length === 0 && (
-                              <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
-                                <p className="text-sm text-muted-foreground">
-                                  No repo or branch matches{" "}
-                                  <span className="font-mono text-foreground">{query}</span>.
-                                </p>
-                                <Button size="sm" variant="outline" onClick={() => setQuery("")}>
-                                  Clear filter
-                                </Button>
-                                {quietCount > 0 && !showQuiet && (
-                                  <p className="text-xs text-muted-foreground/70">
-                                    {quietCount} quiet checkout{quietCount === 1 ? " is" : "s are"}{" "}
-                                    hidden — the ▤ button above searches them too once shown.
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                            {/* initial={false} so the rail drawing itself on launch
-                              isn't mistaken for repos arriving — only genuine
-                              track/untrack animates. */}
-                            <AnimatePresence initial={false}>
-                              {shownRepos.map((repo) => (
-                                <motion.div key={repo.key} {...railRowMotion}>
-                                  <RepoGroup
-                                    repo={repo}
-                                    idleDirs={idleDirs.get(repo.key)}
-                                    idleRevealed={idleRevealed.has(repo.key)}
-                                    onToggleIdle={() => toggleIdleRevealed(repo.key)}
-                                    unmanagedDirs={unmanagedDirs.get(repo.key)}
-                                    unmanagedRevealed={unmanagedRevealed.has(repo.key)}
-                                    onToggleUnmanaged={() => toggleUnmanagedRevealed(repo.key)}
-                                    quietDirs={quietDirs.get(repo.key)}
-                                    now={now}
-                                    compactPct={state.compactRecommendPercent}
-                                    prs={snapshot.prs}
-                                    tasks={snapshot.tasks}
-                                    selectedSessionId={selected?.sessionId ?? null}
-                                    activePaneId={focusedPaneId}
-                                    activeFolderDir={activeFolderDir}
-                                    collapsed={collapsed}
-                                    renaming={renaming}
-                                    titles={titles}
-                                    wins={wins}
-                                    actions={actions}
-                                    onToggle={toggleCollapsed}
-                                    onSelectFolder={selectFolder}
-                                    onSelect={selectSession}
-                                    onNewSession={newSession}
-                                    onNewTask={(target) => openRailNewTask(target.key)}
-                                    onRemoveRepo={requestRemoveRepo}
-                                    onDeleteWorktree={requestDeleteWorktree}
-                                    onRecreateWorktree={(folder) => recreateWorktree(repo, folder)}
-                                    settingUpDirs={taskCreation.settingUpDirs}
-                                    onRenameCommit={commitRename}
-                                    onOpenFiles={openFiles}
-                                    onOpenPreview={openPreview}
-                                    // Undefined while `agentboard.jarvisPane` is off:
-                                    // no entry point rather than a disabled pane.
-                                    onOpenBrowser={browserPane ? openBrowser : undefined}
-                                    onOpenJarvis={jarvisPane ? openJarvis : undefined}
-                                    onClosePane={closePane}
-                                    taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
-                                    taskFormInitialGoal={
-                                      taskCreation.reopenTasks.get(repo.key)?.goal
-                                    }
-                                    onCancelTaskForm={() => taskCreation.closeTaskForm(repo.key)}
-                                    onSubmitTaskForm={(input) => {
-                                      const reopening = taskCreation.reopenTasks.get(repo.key);
-                                      taskCreation.closeTaskForm(repo.key);
-                                      void taskCreation.createTask(
-                                        {
-                                          name: repo.name,
-                                          dir: repo.folders[0].dir,
-                                          key: repo.key,
-                                          originUrl: repo.originUrl,
-                                        },
-                                        {
-                                          ...input,
-                                          taskId: reopening?.taskId,
-                                          reopen: reopening !== undefined,
-                                        },
-                                      );
-                                    }}
-                                  />
-                                </motion.div>
-                              ))}
-                            </AnimatePresence>
-                          </div>
-                        </RailDrawer>
-                      </CockpitRail>
+                          onNewTask={() => {
+                            mouseAction("ab-new-task", mode);
+                            openRailNewTask();
+                          }}
+                          newTaskForm={newTaskForm}
+                        />
+                      )}
                     </div>
                   </ScrollArea>
 
@@ -1607,8 +1661,7 @@ export function CockpitScreen() {
                   }}
                 />
               )}
-              {detailItem && <QueueDetail item={detailItem} now={now} />}
-              {!detailItem && activeFolder && activeRepo && (
+              {activeFolder && activeRepo && (
                 <WorkingContext
                   repo={activeRepo}
                   folder={activeFolder}
@@ -1626,7 +1679,7 @@ export function CockpitScreen() {
                   onDeleteWorktree={requestDeleteWorktree}
                 />
               )}
-              {!detailItem && wins && activeFolderDir && (
+              {wins && activeFolderDir && (
                 <WindowStrip
                   windows={windowsForFolder}
                   activeWinId={activeWin?.id}
@@ -1640,8 +1693,7 @@ export function CockpitScreen() {
                 />
               )}
 
-              {/* Hidden, never unmounted, behind a detail view: the pool holds live shells. */}
-              <div className={cn("flex min-h-0 flex-1 flex-col", detailItem && "hidden")}>
+              <div className="flex min-h-0 flex-1 flex-col">
                 <PaneGrid
                   open={open}
                   // The standby board lists checkouts: quiet ones stay off it.
@@ -1666,7 +1718,7 @@ export function CockpitScreen() {
                   exitLabels={exitLabels}
                   filesOpenRequests={filesOpenRequests}
                   previewRequests={previewRequests}
-                  nativeVisible={nativeVisible && !detailItem}
+                  nativeVisible={nativeVisible}
                   labelFor={labelFor}
                   focusTerminalRequest={focusTerminalRequest}
                   onSelectSession={(dir, id) => {

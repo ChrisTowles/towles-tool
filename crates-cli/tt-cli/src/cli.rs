@@ -77,8 +77,12 @@ pub enum TaskCommands {
         #[arg(long, value_name = "NAME|DIR")]
         repo: String,
 
-        /// Board column the task starts in
-        #[arg(long, default_value = "backlog")]
+        /// Board column the task starts in — checked before anything is created
+        #[arg(
+            long,
+            default_value = "backlog",
+            value_parser = clap::builder::PossibleValuesParser::new(tt_store::TASK_STATUSES)
+        )]
         status: String,
 
         /// Free-form notes stored on the board task
@@ -143,7 +147,7 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
-    /// Record the branch a task's worktree is on now, after a `git switch` inside it
+    /// Record the branch a task's worktree is on now, after a `git switch` inside it — and its board row, if it has none
     Sync {
         /// Task directory name under .claude/worktrees/ (default: the task containing cwd)
         name: Option<String>,

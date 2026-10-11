@@ -74,10 +74,6 @@ export function keyId(key: QueueKey): string {
       return `task:${key.id}`;
     case "unfiled":
       return `unfiled:${key.folderDir}`;
-    case "pr":
-      return `pr:${key.repo}#${key.number}`;
-    case "ci":
-      return `ci:${key.repo}@${key.branch}`;
   }
 }
 
@@ -109,26 +105,9 @@ export const REASON_FACE: Record<WaitReason, Face> = {
   review: { label: "review", variant: "blue" },
   fix_ci: { label: "fix CI", variant: "red" },
   address_review: { label: "changes asked", variant: "orange" },
-  review_pr: { label: "review PR", variant: "blue" },
   land: { label: "land", variant: "green" },
   cleanup: { label: "clean up", variant: "neutral" },
-  start: { label: "start", variant: "neutral" },
 };
-
-/** What Enter does: a task with a live agent or a worktree is opened, never
- * re-started; a PR or CI row with no checkout opens on GitHub. */
-export type QueueAction = "open-session" | "open-folder" | "open-link" | "start";
-
-export function primaryAction(item: QueueItem): QueueAction {
-  if (item.sessionId) return "open-session";
-  if (item.folderDir) return "open-folder";
-  return item.key.kind === "pr" || item.key.kind === "ci" ? "open-link" : "start";
-}
-
-/** Where `open-link` goes: the PR, else the first failing run. */
-export function itemUrl(item: QueueItem): string | null {
-  return item.pr?.url ?? item.ci[0]?.url ?? null;
-}
 
 export const HOUR_MS = 60 * 60 * 1000;
 
@@ -169,7 +148,7 @@ export function rankMove(
   return direction === "up" ? { before: neighbour.key.id } : { after: neighbour.key.id };
 }
 
-export const LANES = ["on_you", "running", "parked", "backlog"] as const satisfies readonly Lane[];
+export const LANES = ["on_you", "running", "parked", "idle"] as const satisfies readonly Lane[];
 
 /** The rail's rows top-down, folded lanes skipped — what the cursor and the
  * 1–9 jump digits walk. The backend already sorts by lane. */

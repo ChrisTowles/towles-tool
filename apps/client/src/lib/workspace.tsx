@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { ScreenId } from "@/lib/screens";
+import { isWorkspaceScreen, type ScreenId } from "@/lib/screens";
 import { focusTargetStore, type FocusTarget } from "@/lib/focus-target";
 import { settingsTargetStore, type SettingsTarget } from "@/lib/settings-target";
 import { ACTIVE_TAB_KEY, loadWorkspaceTabs, OPEN_TABS_KEY } from "@/lib/workspace-persistence";
@@ -15,6 +15,9 @@ type WorkspaceState = {
   zen: boolean;
   paletteOpen: boolean;
   openTab: (id: ScreenId) => void;
+  /** Cockpit or Agent Board, whichever was used last — for a jump that lands on
+   * a terminal or pane, which both show. */
+  openWorkspace: () => void;
   openTabWithFocus: (target: FocusTarget) => void;
   openSettingsTab: (target?: SettingsTarget) => void;
   /** The last remaining tab can't be closed; closing the active one moves
@@ -62,6 +65,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setRecent((prev) => [id, ...prev.filter((x) => x !== id)]);
     setActiveTab(id);
   }, []);
+
+  const openWorkspace = useCallback(
+    () => openTab(recent.find(isWorkspaceScreen) ?? "cockpit"),
+    [openTab, recent],
+  );
 
   const openTabWithFocus = useCallback(
     (target: FocusTarget) => {
@@ -112,6 +120,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       zen,
       paletteOpen,
       openTab,
+      openWorkspace,
       openTabWithFocus,
       openSettingsTab,
       closeTab,
@@ -128,6 +137,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       zen,
       paletteOpen,
       openTab,
+      openWorkspace,
       openTabWithFocus,
       openSettingsTab,
       closeTab,

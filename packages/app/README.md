@@ -155,7 +155,7 @@ claude plugin test packages/app
 The hook is a no-op unless the session looks towles-tool-relevant — either it's
 running inside a terminal the app itself spawned (`TT_SESSION_ID`/
 `TT_APP_INSTANCE` set), or its working directory is inside a checkout on the
-Cockpit's Checkouts drawer (a tracked repo, or any worktree under one). That test is
+Agent Board (a tracked repo, or any worktree under one). That test is
 `tt task nudge --only-if-tracked`'s, not the script's: only `tt` can read the
 tracked set, and a shell approximation of it recognised *this* repo alone, so
 `gh pr create` in every other checkout was dropped in silence. This plugin is
@@ -168,6 +168,14 @@ command itself fails (say, an installed `tt` older than this plugin), the hook
 reports that to the session instead of staying silent.
 
 ## Installation
+
+In Claude Code 2.1.275 or later, one step:
+
+```text
+/plugin install towles-tool-app --marketplace ChrisTowles/towles-tool
+```
+
+Or from a shell:
 
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool

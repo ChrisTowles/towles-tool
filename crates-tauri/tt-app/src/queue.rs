@@ -131,17 +131,7 @@ fn key_kind(key: &QueueKey) -> &'static str {
     match key {
         QueueKey::Task { .. } => "task",
         QueueKey::Unfiled { .. } => "unfiled",
-        QueueKey::Pr { .. } => "pr",
-        QueueKey::Ci { .. } => "ci",
     }
-}
-
-/// Same guards and branch naming as MCP `task_start`, then the same `+` flow.
-#[tauri::command]
-pub fn queue_start(app: AppHandle, store: State<StoreState>, id: i64) -> Result<(), String> {
-    let task = store.with(|s| s.task_by_id(id).map_err(|e| e.to_string()))?;
-    let req = tt_mcp::task_start_request(&task, None, None)?;
-    crate::mcp_http::emit_task_start(&app, req)
 }
 
 /// File a worktree's loose agent as a task: adopt its detected row, or mint one.

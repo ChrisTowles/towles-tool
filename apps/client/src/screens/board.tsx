@@ -90,7 +90,7 @@ const ALL_TASKS_LANE = "__all_tasks__";
  * follow whether an agent is live on the worktree, `done` follows closing. */
 export function BoardScreen() {
   const { snapshot } = useStoreSnapshot();
-  const { activeTab, openTab, openTabWithFocus } = useWorkspace();
+  const { activeTab, openWorkspace, openTabWithFocus } = useWorkspace();
   // Deep-link focus: a promoted-todo / board deep link scrolls the card here.
   const focusRef = useFocusTarget<HTMLDivElement>("board");
   const filterInputRef = useRef<HTMLInputElement>(null);
@@ -227,7 +227,7 @@ export function BoardScreen() {
       taskId: task.id,
       goal: task.text,
     });
-    openTab("cockpit");
+    openWorkspace();
   }
 
   function promote(id: number, repo: string) {
@@ -330,7 +330,7 @@ export function BoardScreen() {
   const openOnAgentboard = useCallback(
     (railKey: string) => {
       uiAction("board.open_agentboard", "board");
-      openTabWithFocus({ screen: "cockpit", kind: "repo", id: railKey });
+      openTabWithFocus({ screen: "agentboard", kind: "repo", id: railKey });
     },
     [openTabWithFocus],
   );
@@ -339,9 +339,9 @@ export function BoardScreen() {
     (folderDir: string, sessionId: string) => {
       uiAction("board.open_agent_session", "board");
       requestAgentboardNav({ kind: "session", folderDir, sessionId });
-      openTab("cockpit");
+      openWorkspace();
     },
-    [openTab],
+    [openWorkspace],
   );
 
   return (

@@ -15,7 +15,7 @@ inside a cross-origin iframe — nothing here can see or drive them.
 
 ## Adding a screen is a 4-file ritual — there's no single source of truth
 
-1. `ScreenId` + `ScreenMeta` (icon/keywords/`fullBleed`) in `lib/screens.ts`.
+1. `ScreenId` + `ScreenMeta` (icon/keywords/`fullBleed`/`host`) in `lib/screens.ts`.
 2. The component into `SCREEN_COMPONENTS` in `screens/index.tsx`.
 3. A `NAV_SECTIONS` group in `lib/screens.ts` — miss this and the screen is
    reachable only via palette / tab restore, not the sidebar.
@@ -73,18 +73,28 @@ mac Ctrl chord no binding claims never matches on its main key alone.
 the `pcKeybindings` setting makes a Mac take Ctrl exactly as Linux does, and the
 chords Cocoa takes before any DOM keydown are `tt-app`'s `macos_keys.rs`.
 
-## The rail is the queue, with one cursor
+## Two rails, one workspace, one cursor each
 
-Cockpit's rail is the task queue (`components/cockpit-rail.tsx`), and
-`railRows` (`lib/queue.tsx`) is the one walk the cursor (j/k, Ctrl+Shift+↑/↓)
-and the 1–9 jump digits read — folded lanes skipped, so the keyboard sees what
-you see. The ring follows the checkout on screen however it got there
-(`rowForFolder`), so a row picked from the Checkouts drawer still rings its
-queue row. A row with no checkout (a backlog task, a PR, a CI failure) shows its
-detail where the panes go — the pane grid stays mounted, only `hidden`. The
-repo → checkout → session tree survives only inside the Checkouts drawer, as
-a mouse surface. When the head of On you changes, `nextUpArrival` decides to
-open or announce it; a focused terminal is never taken.
+Cockpit and Agent Board are **one mounted `CockpitScreen`** (`agentboard` sets
+`host: "cockpit"`, and `App` renders a host once), so they share every PTY,
+pane and selection — two instances would double-mount each terminal, and one
+unmounting kills its shell. `mode` (the last of the two shown) picks the rail;
+their shared bindings are scope `workspace`, and each rail's own chords are
+only in the handler map while it's up (Alt+Shift+↑ is rank-top on one,
+collapse-all on the other). A jump to a terminal from elsewhere goes through
+`openWorkspace()`, so it lands on whichever was used last.
+
+Cockpit's rail is the task queue (`components/cockpit-rail.tsx`): **Agent
+Board's checkouts, one row each, ordered to work one at a time** — so a thing
+with no checkout (a backlog task, a PR, a CI run) is on neither. `railRows`
+(`lib/queue.tsx`) is the one walk the cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9
+jump digits read — folded lanes skipped, so the keyboard sees what you see —
+and the ring follows the checkout on screen however it got there
+(`rowForFolder`). When the head of On you changes, `nextUpArrival` decides to
+open or announce it; a focused terminal is never taken. Agent Board's rail is
+the repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
+cursor, the digits, the fold chords); the queue never moves it. Exactly one row
+wears `ring-violet-500`; the violet *edge* answers which checkout you're in.
 
 ## A pane has no PTY until it is rendered
 

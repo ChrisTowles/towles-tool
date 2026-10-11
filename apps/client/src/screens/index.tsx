@@ -12,6 +12,8 @@ import { TelemetryScreen } from "@/screens/telemetry";
 
 export const SCREEN_COMPONENTS: Record<ScreenId, ComponentType> = {
   cockpit: CockpitScreen,
+  // Never mounted on its own: `App` shows it through Cockpit's instance (`host`).
+  agentboard: CockpitScreen,
   board: BoardScreen,
   slack: SlackScreen,
   doctor: DoctorScreen,

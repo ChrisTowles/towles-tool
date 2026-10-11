@@ -18,6 +18,7 @@ import {
   type RepoData,
 } from "@/lib/agentboard";
 import { mouseAction } from "@/lib/shortcut-coach";
+import { workspaceScreen } from "@/lib/workspace-mode";
 
 /** The rail collapsed to an icon strip, one icon per checkout — each keeps its
  * folder's live-status dot and amber needs-you count, so collapsing the rail
@@ -108,7 +109,7 @@ export function RailIconStrip({
             type="button"
             aria-label="Expand the folder rail"
             onClick={() => {
-              mouseAction("ab-toggle-rail", "cockpit");
+              mouseAction("ab-toggle-rail", workspaceScreen());
               onExpand();
             }}
             className="flex size-8 items-center justify-center rounded-md text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"

@@ -42,6 +42,14 @@ target as an argument.
 
 ## Installation
 
+In Claude Code 2.1.275 or later, one step:
+
+```text
+/plugin install tt --marketplace ChrisTowles/towles-tool
+```
+
+Or from a shell:
+
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool
 claude plugin enable tt@towles-tool

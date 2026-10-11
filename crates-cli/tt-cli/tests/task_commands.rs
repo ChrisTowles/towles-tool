@@ -560,6 +560,27 @@ fn new_refuses_a_closed_issue_and_creates_nothing() {
 }
 
 #[test]
+fn new_refuses_an_unknown_status_and_creates_nothing() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+
+    tt().args([
+        "task",
+        "new",
+        "one",
+        "--repo",
+        &root_s,
+        "--status",
+        "in_progress",
+    ])
+    .assert()
+    .failure()
+    .stderr(contains("invalid value 'in_progress'").and(contains("backlog, doing, done")));
+    assert!(!task_dir(&checkout, "one").exists());
+}
+
+#[test]
 fn new_rejects_issue_beside_pr_and_help_lists_both() {
     tt().args(["task", "new", "--issue", "7", "--pr", "12", "--repo", "r"])
         .assert()
@@ -1029,6 +1050,30 @@ fn sync_records_a_branch_switched_inside_the_task() {
         .assert()
         .success()
         .stdout(contains("feat-one: already on feat/two"));
+}
+
+/// A task worktree `tt task new` couldn't record (its store write failed after the
+/// worktree existed) gets its row from `sync`, once.
+#[test]
+fn sync_records_a_board_row_for_a_worktree_that_has_none() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    let tt = tt_isolated(&tmp);
+    let loose = task_dir(&checkout, "loose");
+    let loose_s = loose.to_string_lossy().to_string();
+    git(&checkout, &["worktree", "add", "-q", "-b", "feat/loose", &loose_s]);
+
+    let out = tt().args(["task", "sync", "loose", "--json", "--root", &root_s]).output().unwrap();
+    assert!(out.status.success(), "sync failed: {}", String::from_utf8_lossy(&out.stderr));
+    let synced: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(synced["recorded"], true);
+    assert_eq!(synced["current"], "feat/loose");
+
+    let again = tt().args(["task", "sync", "loose", "--json", "--root", &root_s]).output().unwrap();
+    let again: serde_json::Value = serde_json::from_slice(&again.stdout).unwrap();
+    assert_eq!(again["recorded"], false, "the second sync finds the row the first made");
+    assert_eq!(again["taskId"], synced["taskId"]);
 }
 
 #[test]

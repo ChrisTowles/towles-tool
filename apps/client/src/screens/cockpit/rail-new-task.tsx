@@ -13,15 +13,6 @@ export function defaultTaskRepo(
   );
 }
 
-/** The repo owning a queue row's checkout, found by dir. A backlog task, PR or CI row has none. */
-export function repoOfFolder(
-  repos: readonly RepoData[],
-  folderDir: string | null | undefined,
-): RepoData | undefined {
-  if (!folderDir) return undefined;
-  return repos.find((r) => r.dir === folderDir || r.folders.some((f) => f.dir === folderDir));
-}
-
 /** The existing inline new-task form behind a repo picker, for the rail header's `+`. */
 export function RailNewTask({
   repos,

@@ -728,7 +728,7 @@ function SortableTh({
  * breakdown dialog header. */
 function SessionButtons({ session }: { session: ClaudeSession }) {
   const { copiedKey, copy } = useClipboardCopy();
-  const { openTab } = useWorkspace();
+  const { openWorkspace } = useWorkspace();
   const { cwd } = session;
 
   return (
@@ -746,7 +746,7 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
               onClick={(e) => {
                 e.stopPropagation();
                 uiAction("claude_sessions.open_in_editor", "claude-sessions");
-                openTab("cockpit");
+                openWorkspace();
                 requestAgentboardNav({
                   kind: "open-claude-session",
                   folderDir: cwd,

@@ -40,10 +40,10 @@ of what this repo does, Desktop now does as well.
 
   ![The Board kanban across three repos, filtering across them, then a merged PR attaching to a task and rolling it to done](docs/images/demos/board.gif)
 
-- **A task queue that says what's next.** The Cockpit orders every open task
-  by your priority, with the work blocked on you up top: an agent asking or
-  erroring jumps the line, then CI to fix, PRs to land, and the next task to
-  start. `⌘.` opens Next up from anywhere, straight into its real terminal.
+- **A task queue that says what's next.** The Cockpit lays Agent Board's
+  checkouts out as a queue, by your priority, with the work blocked on you up
+  top: an agent asking or erroring jumps the line, then CI to fix and PRs to
+  land. `⌘.` opens Next up from anywhere, straight into its real terminal.
 
 - **Always-on local event log.** Every subprocess and user action lands as
   JSONL at `<data_dir>/telemetry/events-<date>.jsonl`, rotated daily, tagged

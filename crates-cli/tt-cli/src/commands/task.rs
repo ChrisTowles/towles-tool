@@ -237,13 +237,16 @@ fn cmd_new(
     let title = title.as_str();
     let goal = issue.as_ref().map(|planned| planned.goal.as_str()).or(goal);
 
-    // A store that can't open (or a rejected status) is a soft failure: the worktree
-    // exists and is usable, so warn rather than abort.
+    // A store that can't open is a soft failure: the worktree exists and is
+    // usable, so warn rather than abort. (`--status` is checked by clap, up front.)
     let issue = issue.as_ref().map(|planned| &planned.issue);
     let task_id = match record_board_task(title, status, notes, goal, &repo_root, &created, issue) {
         Ok(id) => Some(id),
         Err(e) => {
-            warnings.push(format!("worktree created, but the board task was not recorded: {e}"));
+            warnings.push(format!(
+                "worktree created, but the board task was not recorded: {e} — `tt task sync {}` records it",
+                tt_tasks::task_name_from_dir(&created.dir)
+            ));
             None
         }
     };
@@ -619,18 +622,24 @@ fn cmd_sync(name: Option<&str>, json: bool, root: Option<&Path>) -> Result<(), S
     let dir_s = dir.to_string_lossy();
     let store = board_store_holding(&sr.checkout, &dir)
         .ok_or_else(|| "could not open the board store".to_string())?;
-    let task = store
-        .task_for_worktree_dir(&dir_s)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("no board task is bound to {dir_s}"))?;
+    let bound = store.task_for_worktree_dir(&dir_s).map_err(|e| e.to_string())?;
+    let recorded = bound.is_none();
+    let task = match bound {
+        Some(task) => task,
+        None => record_unbound_task(&store, &sr.checkout, &dir, &name)?,
+    };
     let resync = ops::sync_task_branch(&store, task.id, "cli").map_err(|e| match e.remedy() {
         Some(remedy) => format!("{e}\n    → {remedy}"),
         None => e.to_string(),
     })?;
+    if recorded && !json {
+        ui::success(&format!("{name}: recorded board task #{}", task.id));
+    }
     if json {
         let mut value = serde_json::json!(resync);
         value["taskId"] = task.id.into();
         value["name"] = name.into();
+        value["recorded"] = recorded.into();
         println!("{}", serde_json::to_string_pretty(&value).unwrap_or_default());
     } else if resync.changed {
         let from = resync.previous.as_deref().unwrap_or("(none)");
@@ -639,6 +648,26 @@ fn cmd_sync(name: Option<&str>, json: bool, root: Option<&Path>) -> Result<(), S
         ui::success(&format!("{name}: already on {}", resync.current));
     }
     Ok(())
+}
+
+/// A task worktree with no board row — `tt task new` creates the worktree first, so
+/// a store it couldn't write leaves one — gets the row it should have had, bound
+/// to it; the branch is recorded by the sync that follows.
+fn record_unbound_task(
+    store: &tt_store::Store,
+    checkout: &Path,
+    dir: &Path,
+    name: &str,
+) -> Result<tt_store::TaskItem, String> {
+    if !dir.is_dir() {
+        return Err(format!("no task worktree at {}", dir.display()));
+    }
+    let err = |e: tt_store::Error| e.to_string();
+    let task = store.add_task(name, "doing", None, None, now_ms()).map_err(err)?;
+    let (root, dir) = (checkout.to_string_lossy(), dir.to_string_lossy());
+    store.set_task_worktree(task.id, &root, None, None, Some(&dir)).map_err(err)?;
+    tracing::info!(task_id = task.id, "task.recorded");
+    store.task_by_id(task.id).map_err(err)
 }
 
 /// Render a guard refusal for the terminal: each reason with its remedy, since a reason

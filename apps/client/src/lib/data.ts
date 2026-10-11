@@ -523,7 +523,12 @@ export function useAppTask(): AppTask | null {
     let active = true;
     void (async () => {
       const s = await invoke<AppTask>("app_task");
-      if (active) setTask(s.unwrapOr(null));
+      if (!active) return;
+      const t = s.unwrapOr(null);
+      setTask(t);
+      // The native title `tt-app`'s setup sets (lib.rs). WebKitGTK never syncs
+      // the two, and a page titled otherwise reads to WebDriver as another window.
+      if (t) document.title = `Towles Tool — ${t.label}`;
     })();
     return () => {
       active = false;
