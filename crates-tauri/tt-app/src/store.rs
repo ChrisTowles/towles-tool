@@ -27,6 +27,8 @@ const GH_MUTATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 #[derive(Clone)]
 pub struct StoreState {
     store: Arc<Mutex<Option<Store>>>,
+    /// Plain-words reason the store is unusable, for Doctor. Set once.
+    unavailable: Arc<Mutex<Option<String>>>,
 }
 
 /// Open tasks, PRs, CI runs and snoozes — the store's half of a queue build.
@@ -40,19 +42,36 @@ pub type QueueStoreInputs = (
 impl StoreState {
     /// Leaves the state empty on failure so the app still starts.
     pub fn open() -> StoreState {
-        let store = match Store::open_default() {
-            Ok(s) => Some(s),
-            Err(e) => {
-                eprintln!("store: unavailable ({e}); store commands will error until restart");
-                None
-            }
+        let state = StoreState {
+            store: Arc::new(Mutex::new(None)),
+            unavailable: Arc::new(Mutex::new(None)),
         };
-        StoreState { store: Arc::new(Mutex::new(store)) }
+        match Store::open_default() {
+            Ok(s) => *state.store.lock().unwrap() = Some(s),
+            Err(e) => state.mark_unavailable(&e),
+        }
+        state
     }
 
     #[cfg(test)]
     fn from_option(store: Option<Store>) -> StoreState {
-        StoreState { store: Arc::new(Mutex::new(store)) }
+        StoreState { store: Arc::new(Mutex::new(store)), unavailable: Arc::default() }
+    }
+
+    /// Why the store is unusable, `None` when healthy.
+    pub fn unavailable_reason(&self) -> Option<String> {
+        self.unavailable.lock().unwrap().clone()
+    }
+
+    /// Record why the store is unusable: logged once, surfaced in Doctor.
+    fn mark_unavailable(&self, e: &tt_store::Error) {
+        let mut reason = self.unavailable.lock().unwrap();
+        if reason.is_some() {
+            return;
+        }
+        tracing::warn!(error = %e, "store: unavailable; store commands will error until restart");
+        eprintln!("store: unavailable ({e}); store commands will error until restart");
+        *reason = Some(e.to_string());
     }
 
     /// `None` is "the store could not answer", not "no rows" — the caller keeps
@@ -116,7 +135,17 @@ impl StoreState {
         match tt_agentboard::task_status::sync_worktree_task_statuses(store, payload, now_ms) {
             Ok(changed) => changed,
             Err(e) => {
-                tracing::warn!(error = %e, "store: failed to sync worktree task statuses");
+                // A newer build may have migrated the shared db under this one;
+                // retrying every tick would only repeat `no such column`.
+                if let Err(newer @ tt_store::Error::SchemaTooNew { .. }) =
+                    store.ensure_schema_current()
+                {
+                    drop(guard);
+                    *self.store.lock().unwrap() = None;
+                    self.mark_unavailable(&newer);
+                } else {
+                    tracing::warn!(error = %e, "store: failed to sync worktree task statuses");
+                }
                 0
             }
         }

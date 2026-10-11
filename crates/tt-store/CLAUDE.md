@@ -37,7 +37,7 @@ never folded into `SCHEMA_V1`**: `CREATE TABLE IF NOT EXISTS` is a no-op on an
 existing db, which would then silently lack the column.
 
 **There is a floor, not an unbounded upgrade path.** `MIN_SUPPORTED_VERSION`
-(16) is the oldest db `Store::open` accepts; below it, `check_version_floor`
+(16) is the oldest db `Store::open` accepts; below it, `ensure_schema_current`
 returns `Error::SchemaTooOld` telling the user to delete the file. The
 rebuild-style migrations (`CREATE TABLE tasks_vN` + `INSERT … SELECT <fixed
 column list>`) that once carried a v1 db forward are gone. If you ever add one
