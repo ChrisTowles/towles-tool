@@ -4,7 +4,6 @@ import {
   TaskQueueSchema,
   type Lane,
   type QueueItem,
-  type QueueKey,
   type TaskQueue,
   type WaitReason,
 } from "./schemas/queue";
@@ -68,18 +67,8 @@ export function useTaskQueue(): { queue: TaskQueue; live: boolean } {
   return ctx;
 }
 
-export function keyId(key: QueueKey): string {
-  switch (key.kind) {
-    case "task":
-      return `task:${key.id}`;
-    case "unfiled":
-      return `unfiled:${key.folderDir}`;
-  }
-}
-
 export function nextItem(queue: TaskQueue): QueueItem | undefined {
-  const next = queue.next;
-  return next ? queue.items.find((i) => keyId(i.key) === keyId(next)) : undefined;
+  return queue.items.find((i) => i.taskId === queue.next);
 }
 
 /** The next/previous stop for `ab-jump-next`: queue items that have a session,
@@ -138,14 +127,11 @@ export function rankMove(
   index: number,
   direction: "up" | "down" | "top",
 ): "top" | { before: number } | { after: number } | null {
-  const tasks = items.filter((i) => i.key.kind === "task");
-  const item = items[index];
-  if (!item || item.key.kind !== "task") return null;
+  if (!items[index]) return null;
   if (direction === "top") return "top";
-  const at = tasks.indexOf(item);
-  const neighbour = tasks[direction === "up" ? at - 1 : at + 1];
-  if (!neighbour || neighbour.key.kind !== "task") return null;
-  return direction === "up" ? { before: neighbour.key.id } : { after: neighbour.key.id };
+  const neighbour = items[direction === "up" ? index - 1 : index + 1];
+  if (!neighbour) return null;
+  return direction === "up" ? { before: neighbour.taskId } : { after: neighbour.taskId };
 }
 
 export const LANES = ["on_you", "running", "parked", "idle"] as const satisfies readonly Lane[];
@@ -161,14 +147,14 @@ export function rowForFolder(queue: TaskQueue, folderDir: string | null): QueueI
   return folderDir === null ? undefined : queue.items.find((i) => i.folderDir === folderDir);
 }
 
-/** One step through `rows` from `fromKey`; off the list lands on the first row. */
+/** One step through `rows` from task `fromId`; off the list lands on the first row. */
 export function stepRow(
   rows: readonly QueueItem[],
-  fromKey: string | null,
+  fromId: number | null,
   step: 1 | -1,
 ): QueueItem | undefined {
   if (rows.length === 0) return undefined;
-  const at = fromKey === null ? -1 : rows.findIndex((r) => keyId(r.key) === fromKey);
+  const at = fromId === null ? -1 : rows.findIndex((r) => r.taskId === fromId);
   if (at === -1) return rows[0];
   return rows[Math.min(rows.length - 1, Math.max(0, at + step))];
 }
@@ -182,16 +168,15 @@ export function onYouHead(queue: TaskQueue): QueueItem | undefined {
  * doing would be interrupted, else announce it. A focused terminal is never
  * taken from you, and neither is a row that still needs you. */
 export function nextUpArrival(
-  prevHeadKey: string | null | undefined,
+  prevHeadId: number | null | undefined,
   head: QueueItem | undefined,
-  ctx: { terminalFocused: boolean; selectedKey: string | null; selectedOnYou: boolean },
+  ctx: { terminalFocused: boolean; selectedId: number | null; selectedOnYou: boolean },
 ): "open" | "announce" | null {
   if (!head) return null;
-  const key = keyId(head.key);
-  if (key === prevHeadKey || key === ctx.selectedKey) return null;
-  if (prevHeadKey === undefined) {
-    return ctx.selectedKey === null && !ctx.terminalFocused ? "open" : null;
+  if (head.taskId === prevHeadId || head.taskId === ctx.selectedId) return null;
+  if (prevHeadId === undefined) {
+    return ctx.selectedId === null && !ctx.terminalFocused ? "open" : null;
   }
   if (ctx.terminalFocused) return "announce";
-  return ctx.selectedKey === null || !ctx.selectedOnYou ? "open" : "announce";
+  return ctx.selectedId === null || !ctx.selectedOnYou ? "open" : "announce";
 }

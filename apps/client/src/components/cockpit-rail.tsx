@@ -11,10 +11,12 @@ import {
 } from "@phosphor-icons/react";
 import { HotkeyBadge } from "@/components/agentboard-bits";
 import { Hint } from "@/components/hint";
-import { requestAgentboardNav } from "@/lib/agentboard";
+import { requestAgentboardNav, type RepoData } from "@/lib/agentboard";
 import { fmtAge } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { keyId, LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
+import { identityColor } from "@/lib/identity-color";
+import { LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
+import { repoAccentStyles } from "@/lib/repo-identity";
 import type { Lane, QueueItem, TaskQueue, WaitReason } from "@/lib/schemas/queue";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
@@ -54,10 +56,10 @@ async function report(r: Awaited<ReturnType<typeof invoke>>) {
 
 export async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<void> {
   if (!item.reason) return;
-  uiAction("queue.snooze", "cockpit", `${item.key.kind}:${preset}`);
+  uiAction("queue.snooze", "cockpit", preset);
   await report(
     await invoke<void>("queue_snooze", {
-      key: item.key,
+      id: item.taskId,
       reason: item.reason,
       untilMs: snoozeUntil(preset, Date.now()),
     }),
@@ -70,20 +72,14 @@ export async function rerankQueueItem(
   direction: "up" | "down" | "top",
 ): Promise<void> {
   const to = rankMove(items, items.indexOf(item), direction);
-  if (!to || item.key.kind !== "task") return;
+  if (!to) return;
   uiAction("queue.reorder", "cockpit", direction);
-  await report(await invoke<void>("queue_move", { id: item.key.id, to }));
+  await report(await invoke<void>("queue_move", { id: item.taskId, to }));
 }
 
 async function unsnoozeItem(item: QueueItem) {
-  uiAction("queue.unsnooze", "cockpit", item.key.kind);
-  await report(await invoke<void>("queue_unsnooze", { key: item.key }));
-}
-
-async function fileItem(item: QueueItem) {
-  if (item.key.kind !== "unfiled") return;
-  uiAction("queue.file", "cockpit");
-  await report(await invoke<number>("queue_file_unfiled", { folderDir: item.key.folderDir }));
+  uiAction("queue.unsnooze", "cockpit");
+  await report(await invoke<void>("queue_unsnooze", { id: item.taskId }));
 }
 
 /** `queue-next` from any screen, terminals included: Cockpit opens the head in place. */
@@ -104,19 +100,20 @@ export function QueueNextShortcut() {
   return null;
 }
 
-/** The left rail: Agent Board's checkouts as one queue — Next up, then every
- * lane. Rows only select — the checkout's terminals open beside it; nothing
+/** The left rail: the tasks that own a checkout, as one queue — Next up, then
+ * every lane. Rows only select — the checkout's terminals open beside it; nothing
  * here acts on an agent. */
 export function CockpitRail({
   queue,
+  repoByFolder,
   live,
   now,
   head,
-  selectedKey,
+  selectedId,
   folded,
   hotkeys,
-  snoozeKey,
-  onSnoozeKeyChange,
+  snoozeId,
+  onSnoozeIdChange,
   onToggleLane,
   onSelect,
   onOpenHead,
@@ -124,16 +121,18 @@ export function CockpitRail({
   newTaskForm,
 }: {
   queue: TaskQueue;
+  /** Checkout dir → its repo, for the row's identity tag. */
+  repoByFolder: ReadonlyMap<string, RepoData>;
   live: boolean;
   now: number;
   head: QueueItem | undefined;
-  selectedKey: string | null;
+  selectedId: number | null;
   folded: ReadonlySet<Lane>;
-  /** Row key → jump digit, only while the chord is held. */
-  hotkeys: Map<string, number> | undefined;
-  /** The row whose snooze menu is open. */
-  snoozeKey: string | null;
-  onSnoozeKeyChange: (key: string | null) => void;
+  /** Task id → jump digit, only while the chord is held. */
+  hotkeys: Map<number, number> | undefined;
+  /** The task whose snooze menu is open. */
+  snoozeId: number | null;
+  onSnoozeIdChange: (id: number | null) => void;
   onToggleLane: (lane: Lane) => void;
   onSelect: (item: QueueItem) => void;
   /** The hero's Open — the mouse twin of `queue-next`. */
@@ -163,15 +162,16 @@ export function CockpitRail({
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
       ) : queue.items.length === 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
-          No checkouts yet — add a repo or start a task.
+          No tasks with a checkout — start one with +.
         </p>
       ) : (
         <>
           {head && (
             <Hero
               item={head}
+              repo={repoByFolder.get(head.folderDir)}
               now={now}
-              selected={keyId(head.key) === selectedKey}
+              selected={head.taskId === selectedId}
               onOpen={onOpenHead}
               onLater={() => void rerankQueueItem(queue.items, head, "down")}
               onSnooze={(preset) => void snoozeQueueItem(head, preset)}
@@ -195,16 +195,17 @@ export function CockpitRail({
                 </button>
                 {!isFolded &&
                   items.map((item) => {
-                    const id = keyId(item.key);
+                    const id = item.taskId;
                     return (
                       <QueueRow
                         key={id}
                         item={item}
+                        repo={repoByFolder.get(item.folderDir)}
                         now={now}
-                        selected={id === selectedKey}
+                        selected={id === selectedId}
                         hotkey={hotkeys?.get(id)}
-                        snoozeOpen={snoozeKey === id}
-                        onSnoozeOpenChange={(o) => onSnoozeKeyChange(o ? id : null)}
+                        snoozeOpen={snoozeId === id}
+                        onSnoozeOpenChange={(o) => onSnoozeIdChange(o ? id : null)}
                         onSelect={() => onSelect(item)}
                       />
                     );
@@ -220,6 +221,7 @@ export function CockpitRail({
 
 function Hero({
   item,
+  repo,
   now,
   selected,
   onOpen,
@@ -227,6 +229,7 @@ function Hero({
   onSnooze,
 }: {
   item: QueueItem;
+  repo: RepoData | undefined;
   now: number;
   selected: boolean;
   onOpen: () => void;
@@ -235,7 +238,7 @@ function Hero({
 }) {
   return (
     <motion.div
-      key={keyId(item.key)}
+      key={item.taskId}
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
@@ -247,14 +250,13 @@ function Hero({
         Next up{item.reason && ` · ${HERO_KICKER[item.reason]}`}
       </div>
       <div className="mt-0.5 truncate font-semibold">{item.title}</div>
-      <div className="truncate font-mono text-xs text-kumo-subtle">
-        {[
-          item.repo,
-          item.branch,
-          item.sinceMs != null ? `waiting ${fmtAge(item.sinceMs, now)}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+      <div className="flex min-w-0 items-center gap-1.5 text-xs">
+        <RepoTag repo={repo} fallback={item.repo} />
+        <span className="truncate font-mono text-kumo-subtle">
+          {[item.branch, item.sinceMs != null ? `waiting ${fmtAge(item.sinceMs, now)}` : null]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
       </div>
       {item.said && item.said !== item.title && (
         <div className="mt-2 line-clamp-2 rounded-md border-l-2 border-kumo-warning bg-kumo-tint px-2 py-1 text-xs">
@@ -268,11 +270,9 @@ function Hero({
           </Button>
         )}
         {item.reason && <SnoozeMenu onSnooze={onSnooze} />}
-        {item.key.kind === "task" && (
-          <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
-            Later
-          </Button>
-        )}
+        <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
+          Later
+        </Button>
       </div>
     </motion.div>
   );
@@ -307,9 +307,27 @@ export function SnoozeMenu({
   );
 }
 
+/** Which repo a row is: its chosen color, else the hashed identity hue. A fact,
+ * so bare tinted type and a dot — never a box. */
+function RepoTag({ repo, fallback }: { repo: RepoData | undefined; fallback: string }) {
+  const name = repo?.name ?? fallback;
+  const color = repoAccentStyles(repo?.meta).iconStyle;
+  return (
+    <span
+      style={color}
+      className={cn(
+        "flex shrink-0 items-center gap-1 font-mono font-medium",
+        !color && identityColor(name).text,
+      )}
+    >
+      <span className="size-2 rounded-full bg-current" />
+      {name}
+    </span>
+  );
+}
+
 function rowMeta(item: QueueItem, now: number): string {
   return [
-    item.key.kind === "unfiled" ? "not a task" : null,
     item.branch,
     item.pr ? `PR #${item.pr.number}` : null,
     item.ci.length > 0 ? item.ci.map((c) => c.workflow).join(", ") : null,
@@ -328,6 +346,7 @@ function rowMeta(item: QueueItem, now: number): string {
 
 function QueueRow({
   item,
+  repo,
   now,
   selected,
   hotkey,
@@ -336,6 +355,7 @@ function QueueRow({
   onSelect,
 }: {
   item: QueueItem;
+  repo: RepoData | undefined;
   now: number;
   selected: boolean;
   hotkey: number | undefined;
@@ -373,8 +393,9 @@ function QueueRow({
         ) : null}
         <span className="min-w-0 flex-1">
           <span className="block truncate">{item.title}</span>
-          <span className="block truncate font-mono text-xs text-kumo-subtle">
-            {rowMeta(item, now)}
+          <span className="flex min-w-0 items-center gap-1.5 text-xs">
+            <RepoTag repo={repo} fallback={item.repo} />
+            <span className="truncate font-mono text-kumo-subtle">{rowMeta(item, now)}</span>
           </span>
         </span>
         {item.sinceMs != null && (
@@ -383,12 +404,6 @@ function QueueRow({
           </span>
         )}
       </button>
-      {/* An idle checkout has nothing in flight to file. */}
-      {item.key.kind === "unfiled" && item.lane !== "idle" && (
-        <Button size="xs" variant="outline" onClick={() => void fileItem(item)}>
-          File
-        </Button>
-      )}
       {item.snoozed && (
         <Button size="xs" variant="ghost" onClick={() => void unsnoozeItem(item)}>
           Wake

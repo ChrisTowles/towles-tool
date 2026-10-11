@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   cycleQueue,
-  keyId,
   nextItem,
   nextUpArrival,
   onYouHead,
@@ -16,7 +15,7 @@ import { TaskQueueSchema, type QueueItem, type TaskQueue } from "./schemas/queue
 
 function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
   return {
-    key: { kind: "task", id },
+    taskId: id,
     lane: "on_you",
     reason: "answer",
     also: [],
@@ -37,7 +36,7 @@ function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
   };
 }
 
-const queue = (items: QueueItem[]): TaskQueue => ({ next: items[0]?.key ?? null, items });
+const queue = (items: QueueItem[]): TaskQueue => ({ next: items[0]?.taskId ?? null, items });
 
 describe("cycleQueue", () => {
   const q = queue([item(1), item(2), item(3, { lane: "running" })]);
@@ -55,13 +54,6 @@ describe("cycleQueue", () => {
   });
 });
 
-describe("keyId", () => {
-  it("keys a task by id and a loose checkout by its dir", () => {
-    expect(keyId({ kind: "task", id: 3 })).toBe("task:3");
-    expect(keyId({ kind: "unfiled", folderDir: "/x" })).toBe("unfiled:/x");
-  });
-});
-
 describe("rankMove", () => {
   const items = [item(1), item(2), item(3)];
   it("moves before/after the neighbouring task, or to the top", () => {
@@ -69,11 +61,9 @@ describe("rankMove", () => {
     expect(rankMove(items, 1, "down")).toEqual({ after: 3 });
     expect(rankMove(items, 2, "top")).toBe("top");
   });
-  it("declines past either end and for unfiled rows", () => {
+  it("declines past either end", () => {
     expect(rankMove(items, 0, "up")).toBeNull();
     expect(rankMove(items, 2, "down")).toBeNull();
-    const unfiled = item(4, { key: { kind: "unfiled", folderDir: "/x" } });
-    expect(rankMove([...items, unfiled], 3, "up")).toBeNull();
   });
 });
 
@@ -89,10 +79,7 @@ describe("snooze presets", () => {
 
 describe("schema + nextItem", () => {
   it("parses the Rust shape and finds the head", () => {
-    const raw = {
-      next: { kind: "unfiled", folderDir: "/x" },
-      items: [item(1), item(2, { key: { kind: "unfiled", folderDir: "/x" } })],
-    };
+    const raw = { next: 2, items: [item(1), item(2)] };
     const parsed = TaskQueueSchema.parse(raw);
     expect(nextItem(parsed)?.title).toBe("t2");
   });
@@ -109,34 +96,34 @@ describe("rail rows", () => {
   it("step within bounds, from nothing to the first", () => {
     const rows = railRows(q, new Set());
     expect(stepRow(rows, null, 1)?.title).toBe("t1");
-    expect(stepRow(rows, "task:1", 1)?.title).toBe("t2");
-    expect(stepRow(rows, "task:3", 1)?.title).toBe("t3");
-    expect(stepRow(rows, "task:1", -1)?.title).toBe("t1");
+    expect(stepRow(rows, 1, 1)?.title).toBe("t2");
+    expect(stepRow(rows, 3, 1)?.title).toBe("t3");
+    expect(stepRow(rows, 1, -1)?.title).toBe("t1");
     expect(stepRow([], null, 1)).toBeUndefined();
   });
 });
 
 describe("nextUpArrival", () => {
   const head = item(2);
-  const idle = { terminalFocused: false, selectedKey: null, selectedOnYou: false };
+  const idle = { terminalFocused: false, selectedId: null, selectedOnYou: false };
   it("opens on first sight only when nothing is selected or typed in", () => {
     expect(nextUpArrival(undefined, head, idle)).toBe("open");
     expect(nextUpArrival(undefined, head, { ...idle, terminalFocused: true })).toBeNull();
-    expect(nextUpArrival(undefined, head, { ...idle, selectedKey: "task:9" })).toBeNull();
+    expect(nextUpArrival(undefined, head, { ...idle, selectedId: 9 })).toBeNull();
   });
   it("ignores an unchanged head or one already on screen", () => {
-    expect(nextUpArrival("task:2", head, idle)).toBeNull();
-    expect(nextUpArrival("task:1", head, { ...idle, selectedKey: "task:2" })).toBeNull();
-    expect(nextUpArrival("task:1", undefined, idle)).toBeNull();
+    expect(nextUpArrival(2, head, idle)).toBeNull();
+    expect(nextUpArrival(1, head, { ...idle, selectedId: 2 })).toBeNull();
+    expect(nextUpArrival(1, undefined, idle)).toBeNull();
   });
   it("never takes a focused terminal or a row that still needs you", () => {
-    expect(nextUpArrival("task:1", head, { ...idle, terminalFocused: true })).toBe("announce");
-    const busy = { ...idle, selectedKey: "task:1", selectedOnYou: true };
-    expect(nextUpArrival("task:1", head, busy)).toBe("announce");
+    expect(nextUpArrival(1, head, { ...idle, terminalFocused: true })).toBe("announce");
+    const busy = { ...idle, selectedId: 1, selectedOnYou: true };
+    expect(nextUpArrival(1, head, busy)).toBe("announce");
   });
   it("opens once you're done with what you had open", () => {
-    const answered = { ...idle, selectedKey: "task:1", selectedOnYou: false };
-    expect(nextUpArrival("task:1", head, answered)).toBe("open");
-    expect(nextUpArrival("task:1", head, idle)).toBe("open");
+    const answered = { ...idle, selectedId: 1, selectedOnYou: false };
+    expect(nextUpArrival(1, head, answered)).toBe("open");
+    expect(nextUpArrival(1, head, idle)).toBe("open");
   });
 });

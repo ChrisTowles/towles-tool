@@ -177,9 +177,8 @@ CREATE TABLE IF NOT EXISTS ci_runs (
 
 /// v21: personal Slack agents — resumable sessions, thread ownership, an echo guard
 /// for what the agents posted as Chris, self-set reminders, and a per-turn audit log.
-/// v24: "not now" on any queue row (task, unfiled checkout, PR, CI branch), keyed
-/// by the row's snooze key and to the queue reason it was set on, so a new reason
-/// resurfaces it. `until_ms` NULL means until that reason changes. Replaces v22's
+/// v24: "not now" on a queue row, keyed by the row's snooze key and to the queue
+/// reason it was set on, so a new reason resurfaces it. `until_ms` NULL means until that reason changes. Replaces v22's
 /// task-only `task_snoozes`, whose rows carry over as `task:<id>`.
 const SCHEMA_QUEUE_SNOOZES_V24: &str = "\
 CREATE TABLE IF NOT EXISTS queue_snoozes (

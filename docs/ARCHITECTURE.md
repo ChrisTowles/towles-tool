@@ -104,11 +104,11 @@ the CLI and the app can consume it.
   free. Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
-  And **the task queue** (`queue::build`): every checkout on Agent Board as one
-  row — its task's, when a task owns it — with a lane and wait reason derived
+  And **the task queue** (`queue::build`): every board task that owns a checkout
+  on Agent Board, one row each, with a lane and wait reason derived
   per emit from `needs_reason`, the PR and CI caches and the rail's landed state
-  (`ops::work_state`), ordered by the user's global `rank`. A PR, CI run or
-  backlog task with no checkout is not a row.
+  (`ops::work_state`), ordered by the user's global `rank`. A PR, CI run,
+  backlog task with no checkout, or checkout no task owns is not a row.
 - `tt-claude-code` — transcript/session parsing models.
 - `tt-doctor` — doctor checks logic (the app screen consumes it).
 - `tt-update` — checks GitHub Releases for a newer version. Uses `native-tls`,

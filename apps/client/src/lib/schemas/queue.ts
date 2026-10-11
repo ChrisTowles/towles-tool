@@ -15,12 +15,6 @@ export type WaitReason = z.infer<typeof WaitReasonSchema>;
 export const LaneSchema = z.enum(["on_you", "running", "parked", "idle"]);
 export type Lane = z.infer<typeof LaneSchema>;
 
-export const QueueKeySchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("task"), id: z.number() }),
-  z.object({ kind: z.literal("unfiled"), folderDir: z.string() }),
-]);
-export type QueueKey = z.infer<typeof QueueKeySchema>;
-
 export const QueuePrSchema = z.object({
   repo: z.string(),
   number: z.number(),
@@ -38,7 +32,7 @@ export const QueueCiSchema = z.object({
 });
 
 export const QueueItemSchema = z.object({
-  key: QueueKeySchema,
+  taskId: z.number(),
   lane: LaneSchema,
   reason: WaitReasonSchema.nullable(),
   also: z.array(WaitReasonSchema),
@@ -59,7 +53,7 @@ export const QueueItemSchema = z.object({
 export type QueueItem = z.infer<typeof QueueItemSchema>;
 
 export const TaskQueueSchema = z.object({
-  next: QueueKeySchema.nullable(),
+  next: z.number().nullable(),
   items: z.array(QueueItemSchema),
 });
 export type TaskQueue = z.infer<typeof TaskQueueSchema>;

@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tt_agentboard::StatePayload;
-use tt_agentboard::queue::{QueueInputs, QueueKey, TaskQueue};
+use tt_agentboard::queue::{QueueInputs, TaskQueue, snooze_key};
 use tt_store::RankMove;
 
 use crate::store::{StoreState, now_ms};
@@ -56,7 +56,7 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
         return;
     }
     if last.as_ref().map(|q| &q.next) != Some(&queue.next) {
-        let head = queue.items.iter().find(|i| Some(&i.key) == queue.next.as_ref());
+        let head = queue.items.iter().find(|i| Some(i.task_id) == queue.next);
         tracing::info!(
             reason = head.and_then(|i| i.reason).map(|r| r.as_str()),
             waited_ms = head.and_then(|i| i.since_ms).map(|s| now_ms() - s),
@@ -99,83 +99,24 @@ pub fn queue_move(
 pub fn queue_snooze(
     app: AppHandle,
     store: State<StoreState>,
-    key: QueueKey,
+    id: i64,
     reason: String,
     until_ms: Option<i64>,
 ) -> Result<(), String> {
     let result = store.with(|s| {
-        s.snooze_queue_item(&key.snooze_key(), &reason, until_ms, now_ms())
-            .map_err(|e| e.to_string())
+        s.snooze_queue_item(&snooze_key(id), &reason, until_ms, now_ms()).map_err(|e| e.to_string())
     });
-    tracing::info!(kind = key_kind(&key), reason, until_ms, ok = result.is_ok(), "queue.snoozed");
+    tracing::info!(task_id = id, reason, until_ms, ok = result.is_ok(), "queue.snoozed");
     result?;
     after_write(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn queue_unsnooze(
-    app: AppHandle,
-    store: State<StoreState>,
-    key: QueueKey,
-) -> Result<(), String> {
-    let result =
-        store.with(|s| s.unsnooze_queue_item(&key.snooze_key()).map_err(|e| e.to_string()));
-    tracing::info!(kind = key_kind(&key), ok = result.is_ok(), "queue.unsnoozed");
+pub fn queue_unsnooze(app: AppHandle, store: State<StoreState>, id: i64) -> Result<(), String> {
+    let result = store.with(|s| s.unsnooze_queue_item(&snooze_key(id)).map_err(|e| e.to_string()));
+    tracing::info!(task_id = id, ok = result.is_ok(), "queue.unsnoozed");
     result?;
     after_write(&app);
     Ok(())
-}
-
-fn key_kind(key: &QueueKey) -> &'static str {
-    match key {
-        QueueKey::Task { .. } => "task",
-        QueueKey::Unfiled { .. } => "unfiled",
-    }
-}
-
-/// File a worktree's loose agent as a task: adopt its detected row, or mint one.
-/// The main checkout is refused — a task owns its dir, and removal would follow.
-#[tauri::command]
-pub fn queue_file_unfiled(
-    app: AppHandle,
-    store: State<StoreState>,
-    state: State<QueueState>,
-    folder_dir: String,
-) -> Result<i64, String> {
-    let folder = state
-        .payload
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|p| {
-            p.repos.iter().flat_map(|r| &r.folders).find(|f| f.dir == folder_dir).cloned()
-        })
-        .ok_or_else(|| format!("no checkout at {folder_dir}"))?;
-    if !folder.is_worktree {
-        return Err(
-            "the main checkout can't be filed as a task — start a task for this work instead"
-                .into(),
-        );
-    }
-    let id = store.with(|s| {
-        let err = |e: tt_store::Error| e.to_string();
-        if let Some(row) = s.task_for_worktree_dir(&folder_dir).map_err(err)? {
-            return s.adopt_detected_worktree(row.id).map(|t| t.id).map_err(err);
-        }
-        let task = s.add_task(&folder.branch, "backlog", None, None, now_ms()).map_err(err)?;
-        s.set_task_worktree(
-            task.id,
-            &folder.repo_root,
-            None,
-            Some(&folder.branch),
-            Some(&folder_dir),
-        )
-        .map_err(err)?;
-        Ok(task.id)
-    });
-    tracing::info!(ok = id.is_ok(), "task.filed");
-    let id = id?;
-    after_write(&app);
-    Ok(id)
 }
