@@ -817,8 +817,19 @@ fn rm_reports_unlanded_commits_it_does_not_block_on() {
     let tmp = tempfile::tempdir().unwrap();
     let checkout = make_checkout(tmp.path());
     let root_s = checkout.to_string_lossy().to_string();
+    let tt = tt_isolated(tmp.path());
 
-    new_task(&root_s, "feat/unlanded").assert().success();
+    tt().args([
+        "task",
+        "new",
+        "feat/unlanded",
+        "--repo",
+        &root_s,
+        "-b",
+        "feat/unlanded",
+    ])
+    .assert()
+    .success();
     let task = task_dir(&checkout, "feat-unlanded");
     std::fs::write(task.join("kept.txt"), "committed work").unwrap();
     git(&task, &["add", "kept.txt"]);
@@ -827,7 +838,8 @@ fn rm_reports_unlanded_commits_it_does_not_block_on() {
     tt().args(["task", "rm", "feat-unlanded", "--root", &root_s])
         .assert()
         .success()
-        .stdout(contains("have not reached main").and(contains("stay on the branch")));
+        .stdout(contains("have not reached main").and(contains("stay on the branch")))
+        .stdout(contains("as abandoned (feat/unlanded)"));
 
     assert!(!task.exists());
     // The commit survives on its branch — that is why this is not a guard.
@@ -845,14 +857,26 @@ fn rm_reports_unlanded_commits_it_does_not_block_on() {
 }
 
 /// A task whose branch really did land reports that instead, so "removed" and
-/// "removed, but you still owe a push" never look the same.
+/// "removed, but you still owe a push" never look the same — and its board row
+/// closes as done, though no merged PR was ever linked to it.
 #[test]
 fn rm_reports_a_merged_branch_as_having_nothing_outstanding() {
     let tmp = tempfile::tempdir().unwrap();
     let checkout = make_checkout(tmp.path());
     let root_s = checkout.to_string_lossy().to_string();
+    let tt = tt_isolated(tmp.path());
 
-    new_task(&root_s, "feat/landed").assert().success();
+    tt().args([
+        "task",
+        "new",
+        "feat/landed",
+        "--repo",
+        &root_s,
+        "-b",
+        "feat/landed",
+    ])
+    .assert()
+    .success();
     let task = task_dir(&checkout, "feat-landed");
     // Two commits: squashing one yields a patch-identical commit, indistinguishable
     // from a rebase. Collapsing several is what only the tree probe recognises.
@@ -868,7 +892,8 @@ fn rm_reports_a_merged_branch_as_having_nothing_outstanding() {
     tt().args(["task", "rm", "feat-landed", "--root", &root_s])
         .assert()
         .success()
-        .stdout(contains("squash-merged into main").and(contains("nothing outstanding")));
+        .stdout(contains("squash-merged into main").and(contains("nothing outstanding")))
+        .stdout(contains("as done (feat/landed)"));
 }
 
 #[test]

@@ -456,7 +456,14 @@ pub fn delete_task_blocking(
     };
 
     // Decided before anything is destroyed; recorded after the worktree is gone.
-    let outcome = outcome.unwrap_or_else(|| inferred_outcome_for(app, board_id, Some(dir)));
+    let outcome = match outcome {
+        Some(outcome) => tt_agentboard::task_removal::CloseAs::Chosen(outcome),
+        None => tt_agentboard::task_removal::CloseAs::Inferred(inferred_outcome_for(
+            app,
+            board_id,
+            Some(dir),
+        )),
+    };
 
     // A gone directory can't resolve, so `root` stays `None` — safe **only**
     // because `TearDownBindings` skips the removal step for a missing dir;

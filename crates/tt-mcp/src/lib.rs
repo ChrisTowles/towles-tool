@@ -1392,7 +1392,7 @@ pub fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "id": { "type": "integer", "description": "The task's id (from task_list or task_status)." },
-                    "outcome": { "type": "string", "enum": ["done", "abandoned"], "description": "How the task ended, recorded on its closed row. Omitted: inferred from the task's own evidence — done if a linked PR merged, else abandoned." },
+                    "outcome": { "type": "string", "enum": ["done", "abandoned"], "description": "How the task ended, recorded on its closed row. Omitted: inferred from the task's own evidence — done if its branch landed or a linked PR merged, else abandoned." },
                     "force": { "type": "boolean", "description": "Skip the guards and delete the worktree anyway, discarding uncommitted changes and unreachable commits for good. Default false." },
                 },
                 "required": ["id"],

@@ -72,13 +72,16 @@ fn remove_task_fully(
 ) -> Result<task_removal::Outcome, String> {
     let store = board_store_holding(checkout, dir);
     let now_ms = now_ms();
-    let outcome = outcome.unwrap_or_else(|| {
-        store
-            .as_ref()
-            .and_then(|s| s.task_for_worktree_dir(&dir.to_string_lossy()).ok().flatten())
-            .map(|row| row.inferred_outcome())
-            .unwrap_or(tt_store::TaskOutcome::Done)
-    });
+    let outcome = match outcome {
+        Some(outcome) => task_removal::CloseAs::Chosen(outcome),
+        None => task_removal::CloseAs::Inferred(
+            store
+                .as_ref()
+                .and_then(|s| s.task_for_worktree_dir(&dir.to_string_lossy()).ok().flatten())
+                .map(|row| row.inferred_outcome())
+                .unwrap_or(tt_store::TaskOutcome::Done),
+        ),
+    };
     let removal = task_removal::TaskRemoval {
         opts,
         dir,

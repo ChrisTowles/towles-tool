@@ -102,12 +102,32 @@ pub struct TaskRemoval<'a> {
     /// `None` skips step 5 — a real state for a caller that can't resolve which
     /// per-checkout store owns the row.
     pub rows: Option<&'a dyn BoardRows>,
-    /// Recorded on the board row at step 5. Headless callers infer it (merged
-    /// PR / landed work ⇒ done, else abandoned).
-    pub outcome: TaskOutcome,
+    /// Recorded on the board row at step 5 — see [`CloseAs`].
+    pub outcome: CloseAs,
     pub now_ms: i64,
     /// What an already-gone directory means to this caller — see [`MissingDir`].
     pub on_missing: MissingDir,
+}
+
+/// The outcome step 5 records.
+#[derive(Debug, Clone, Copy)]
+pub enum CloseAs {
+    /// The user said which — recorded as given.
+    Chosen(TaskOutcome),
+    /// A headless guess from the row's own evidence (merged PR, done status),
+    /// overruled to done when git proves the branch landed: a squash merge whose
+    /// PR the board never linked is still finished work, not abandoned work.
+    Inferred(TaskOutcome),
+}
+
+impl CloseAs {
+    fn resolve(self, landed: bool) -> TaskOutcome {
+        match self {
+            Self::Chosen(outcome) => outcome,
+            Self::Inferred(_) if landed => TaskOutcome::Done,
+            Self::Inferred(outcome) => outcome,
+        }
+    }
 }
 
 /// [`ops::RemoveOutcome`] with the bindings teardown folded into `Removed`.
@@ -164,6 +184,8 @@ pub fn remove_task_and_bindings(
 ) -> Result<Outcome, ops::OpsError> {
     let mut messages = Vec::new();
     let name;
+    // A gone directory has no branch left to probe, so only the row's evidence counts.
+    let mut landed = false;
 
     let bindings_only =
         !task.dir.is_dir() && matches!(task.on_missing, MissingDir::TearDownBindings);
@@ -177,6 +199,7 @@ pub fn remove_task_and_bindings(
         match ops::remove_task(task.opts, &mut |phase| hooks.on_phase(phase))? {
             RemoveOutcome::Removed(removed) => {
                 name = removed.name;
+                landed = removed.landed;
                 messages.extend(removed.messages);
             }
             RemoveOutcome::Blocked { name, blocked, messages: notes } => {
@@ -192,7 +215,7 @@ pub fn remove_task_and_bindings(
         task.repos_path,
         task.rows,
         task.dir,
-        task.outcome,
+        task.outcome.resolve(landed),
         task.now_ms,
     ));
     Ok(Outcome::Removed { name, messages })
@@ -314,7 +337,7 @@ mod tests {
                 dir: &dir,
                 repos_path: &path,
                 rows: Some(&store),
-                outcome: TaskOutcome::Done,
+                outcome: CloseAs::Chosen(TaskOutcome::Done),
                 now_ms: NOW,
                 on_missing: MissingDir::TearDownBindings,
             },
@@ -347,7 +370,7 @@ mod tests {
                 dir: &dir,
                 repos_path: &path,
                 rows: None,
-                outcome: TaskOutcome::Abandoned,
+                outcome: CloseAs::Chosen(TaskOutcome::Abandoned),
                 now_ms: NOW,
                 on_missing: MissingDir::Fail,
             },
