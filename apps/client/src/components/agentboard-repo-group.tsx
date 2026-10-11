@@ -20,7 +20,7 @@ import {
 } from "@/components/agentboard-pane-rows";
 import { SessionRow } from "@/components/agentboard-session-row";
 import { InlineNewTask, type NewTaskRepo, type NewTaskSubmit } from "@/components/inline-new-task";
-import { hasRepoColor, repoAccentStyles, repoIcon } from "@/lib/repo-identity";
+import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import {
   folderBusy,
@@ -317,7 +317,7 @@ export function RepoGroup({
         <FolderHeader
           scope="repo"
           title={repo.name}
-          meta={repo.meta}
+          identity={repo}
           folder={folder}
           quiet={quiet.has(folder.dir)}
           needs={repo.needs}
@@ -405,7 +405,7 @@ export function RepoGroup({
   const RepoIcon = repoIcon(repo.meta);
   // Sticky header: every background on this row must resolve to a fully opaque
   // color, or rows scrolling underneath show through and read as a glitch.
-  const accent = repoAccentStyles(repo.meta, "var(--card)");
+  const accent = repoAccentStyles(repo, "var(--card)");
   // Identity never outranks status: a repo waiting on you keeps the amber. The
   // active selection is a ring, not a fill, so it layers over the wash.
   const statusOwnsRow = repo.needs > 0;
@@ -425,10 +425,7 @@ export function RepoGroup({
           className="flex min-w-0 flex-1 items-center gap-2"
         >
           <Chevron collapsed={repoCollapsed} />
-          <RepoIcon
-            className={cn("size-3.5 shrink-0", !hasRepoColor(repo.meta) && "text-muted-foreground")}
-            style={accent.iconStyle}
-          />
+          <RepoIcon className="size-3.5 shrink-0" style={accent.iconStyle} />
           {scopePrefix && (
             <span className="shrink-0 font-mono text-sm text-muted-foreground/60">
               {scopePrefix}

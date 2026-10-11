@@ -379,6 +379,7 @@ fn new_repo_row(entry: &RepoEntry, git: &GitInfo, folder: FolderData) -> RepoDat
         folders: vec![folder],
         needs,
         meta: None,
+        color: Default::default(),
     }
 }
 

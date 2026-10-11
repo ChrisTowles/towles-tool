@@ -20,7 +20,7 @@ import {
 import { Dot } from "@/components/agentboard-bits";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import { boardAgentStatus, type BoardAgentStatus } from "@/lib/board-agent-status";
-import { repoAccentStyles, repoIcon, type RepoMeta } from "@/lib/repo-identity";
+import { repoAccentStyles, repoIcon, type RepoIdentity } from "@/lib/repo-identity";
 import { useBoardGroupByRepo } from "@/lib/board-prefs";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
@@ -130,14 +130,13 @@ export function BoardScreen() {
 
   // Keyed the way lanes are: GitHub `owner/name`, bridged from each repo's
   // origin URL. From the rail's own snapshot — no second poll.
-  const repoMetaByKey = useMemo(() => {
-    const m = new Map<string, RepoMeta>();
+  const repoByKey = useMemo(() => {
+    const m = new Map<string, RepoIdentity>();
     for (const r of agentState.repos) {
-      if (!r.meta) continue;
       // Folded to match how lanes and cards key themselves — an origin URL's
       // casing need not match the slug a task was stamped with.
       const key = ownerRepoFromOrigin(r.originUrl);
-      if (key) m.set(foldRepoKey(key), r.meta);
+      if (key) m.set(foldRepoKey(key), r);
     }
     return m;
   }, [agentState.repos]);
@@ -480,9 +479,8 @@ export function BoardScreen() {
 
             <div className="flex flex-col gap-4">
               {lanes.map((lane) => {
-                const laneMeta =
-                  lane.key === ALL_TASKS_LANE ? undefined : repoMetaByKey.get(lane.key);
-                const laneAccent = repoAccentStyles(laneMeta);
+                const laneRepo = lane.key === ALL_TASKS_LANE ? undefined : repoByKey.get(lane.key);
+                const laneAccent = repoAccentStyles(laneRepo);
                 return (
                   <section key={lane.key}>
                     {/* Flat mode's single lane is every repo's, so it gets no
@@ -494,7 +492,7 @@ export function BoardScreen() {
                         className="mb-1 flex items-center gap-1.5 rounded-md border-l-2 border-l-transparent px-1.5 py-1"
                         style={{ ...laneAccent.edgeStyle, ...laneAccent.surfaceStyle }}
                       >
-                        <LaneGlyph meta={laneMeta} />
+                        <LaneGlyph repo={laneRepo} />
                         <span
                           className={cn(
                             // `pr-px`: the italic variant's final glyph overhangs
@@ -528,7 +526,7 @@ export function BoardScreen() {
                                 key={task.id}
                                 task={task}
                                 repos={repos}
-                                repoMeta={repoMetaByKey.get(repoKey)}
+                                repoIdentity={repoByKey.get(repoKey)}
                                 repoLabel={
                                   groupByRepo || repoKey === NO_REPO_GROUP
                                     ? undefined
@@ -614,16 +612,16 @@ function NotesField({
   );
 }
 
-function LaneGlyph({ meta }: { meta?: RepoMeta }) {
-  if (!meta) {
+function LaneGlyph({ repo }: { repo?: RepoIdentity }) {
+  if (!repo) {
     return <GitBranchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
   }
-  const Icon = repoIcon(meta);
+  const Icon = repoIcon(repo.meta);
   return (
     <Icon
       aria-hidden
       className="size-3.5 shrink-0 text-muted-foreground"
-      style={repoAccentStyles(meta).iconStyle}
+      style={repoAccentStyles(repo).iconStyle}
     />
   );
 }
@@ -654,7 +652,7 @@ function AgentStatusChip({ agent, onOpen }: { agent: BoardAgentStatus; onOpen: (
 function Card({
   task,
   repos,
-  repoMeta,
+  repoIdentity,
   repoLabel,
   onOpenAgentboard,
   agent,
@@ -675,7 +673,7 @@ function Card({
 }: {
   task: TaskItem;
   repos: string[];
-  repoMeta?: RepoMeta;
+  repoIdentity?: RepoIdentity;
   /** Set only in flat (no-swimlane) mode, where no lane header names the repo. */
   repoLabel?: string;
   /** Undefined when the repo isn't on the rail — the affordances don't render. */
@@ -739,8 +737,8 @@ function Card({
         .join("\n")
     : undefined;
   // The wash mixes into the card's own opaque background.
-  const accent = repoAccentStyles(repoMeta, "var(--background)");
-  const RepoGlyph = repoMeta ? repoIcon(repoMeta) : null;
+  const accent = repoAccentStyles(repoIdentity, "var(--background)");
+  const RepoGlyph = repoIdentity ? repoIcon(repoIdentity.meta) : null;
   const identityStyle = { ...accent.edgeStyle, ...accent.surfaceStyle };
   const branch = task.worktree?.branch;
   const detached = branch !== undefined && !hasWorktree;

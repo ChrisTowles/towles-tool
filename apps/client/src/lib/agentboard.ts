@@ -235,9 +235,10 @@ export type RepoData = {
   originUrl?: string | null;
   folders: FolderData[];
   needs: number;
-  /** Absent — or absent fields — means "render unthemed": never synthesize a
-   * color from the name. */
+  /** The chosen icon, style and pinned color; absent fields take the defaults. */
   meta?: RepoMeta;
+  /** The resolved color: the pin, else the one the backend dealt this repo. */
+  color: string;
 };
 
 export type Panes = [string, ...string[]];

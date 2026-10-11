@@ -53,7 +53,7 @@ export function RailIconStrip({
     // only thing distinguishing one 36px square from the next. Status still
     // outranks it; a needs-you square never takes the calmer identity wash.
     const RepoIcon = repoIcon(repo.meta);
-    const accent = repoAccentStyles(repo.meta);
+    const accent = repoAccentStyles(repo);
     // Attention (amber) still outranks identity. Being the active folder is a
     // ring layered on top instead, so it doesn't erase the identity wash.
     const statusOwnsEdge = needs > 0;

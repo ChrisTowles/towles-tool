@@ -1,6 +1,7 @@
-/** Per-repo chosen icon + color. The persisted `meta` blob is **untrusted**: an
- * unknown icon or malformed color degrades to the default look, never a
- * fallback. This file is the one seam turning a hex into pixels. */
+/** Per-repo identity. Every repo has a color — its pin (`meta.color`), else one
+ * the backend deals it like a chart series — and an optional chosen icon. The
+ * persisted `meta` blob is **untrusted**: an unknown icon degrades to the
+ * default. This file is the one seam turning a hex into pixels. */
 import {
   AirplaneTiltIcon,
   AnchorIcon,
@@ -42,9 +43,13 @@ export type RepoIdentityStyle = "accent" | "tint";
 
 export type RepoMeta = {
   icon?: string;
+  /** The pinned color; absent means the repo is dealt one. */
   color?: string;
   style?: RepoIdentityStyle;
 };
+
+/** What a repo looks like: its resolved color plus its chosen icon and style. */
+export type RepoIdentity = { color: string; meta?: RepoMeta };
 
 /** Keys are stable persisted ids (historically lucide component names); adding one
  * here is what makes it selectable. */
@@ -122,7 +127,7 @@ export function normalizeHex(s: string): string | null {
   return `#${body}`;
 }
 
-/** All `undefined` for an unthemed repo, so a call site can spread them blind.
+/** All `undefined` with no repo, so a call site can spread them blind.
  * `edgeStyle` yields whenever a status accent owns the edge. */
 export type RepoAccentStyles = {
   iconStyle: CSSProperties | undefined;
@@ -137,13 +142,13 @@ const EMPTY_ACCENT: RepoAccentStyles = {
 };
 
 export function repoAccentStyles(
-  meta: RepoMeta | null | undefined,
+  repo: RepoIdentity | undefined,
   /** What the wash mixes into: a **sticky** surface must pass `"var(--card)"`. */
   base = "transparent",
 ): RepoAccentStyles {
-  const hex = meta?.color ? normalizeHex(meta.color) : null;
+  const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return EMPTY_ACCENT;
-  const style: RepoIdentityStyle = meta?.style ?? "accent";
+  const style: RepoIdentityStyle = repo?.meta?.style ?? "accent";
   return {
     iconStyle: { color: hex },
     edgeStyle: { borderLeftColor: `color-mix(in srgb, ${hex} 70%, transparent)` },
@@ -152,17 +157,13 @@ export function repoAccentStyles(
   };
 }
 
-export function hasRepoColor(meta: RepoMeta | null | undefined): boolean {
-  return meta?.color ? normalizeHex(meta.color) !== null : false;
-}
-
 /** A list row that belongs to one repo: tinted through, with a solid left edge
  * the width of the row's `border-l`. */
 export function repoRowStyle(
-  meta: RepoMeta | null | undefined,
+  repo: RepoIdentity | undefined,
   base = "transparent",
 ): CSSProperties | undefined {
-  const hex = meta?.color ? normalizeHex(meta.color) : null;
+  const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return undefined;
   return {
     backgroundColor: `color-mix(in srgb, ${hex} 12%, ${base})`,
@@ -170,13 +171,13 @@ export function repoRowStyle(
   };
 }
 
-/** A surface that *is* one repo wears the color whole, at the hashed wash's
+/** A surface that *is* one repo wears the color whole, at the identity wash's
  * alphas. `accent` can't withhold the fill here the way it does on a row. */
 export function repoBandStyle(
-  meta: RepoMeta | null | undefined,
+  repo: RepoIdentity | undefined,
   base = "transparent",
 ): CSSProperties | undefined {
-  const hex = meta?.color ? normalizeHex(meta.color) : null;
+  const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return undefined;
   return {
     backgroundColor: `color-mix(in srgb, ${hex} 10%, ${base})`,

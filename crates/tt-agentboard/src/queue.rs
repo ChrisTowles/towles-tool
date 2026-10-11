@@ -439,6 +439,7 @@ mod tests {
                 folders,
                 needs: 0,
                 meta: None,
+                color: Default::default(),
             }],
             compact_recommend_percent: 30,
             windows: Default::default(),

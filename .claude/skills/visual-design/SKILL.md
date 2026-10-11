@@ -27,12 +27,13 @@ specimens, token/recipe tables, the ΔE rationale — is
   (`/15` hover), flag dot beside the status dot; a thin border alone was
   tested and rejected. When a row is both active and needs-you, amber wins the
   border and fill; violet stays on the glyph.
-- **Identity wash** (`identityColor()`, `lib/identity-color.ts`): a surface
-  that *is* one repo/checkout wears its hashed accent as a /10 wash. Key by
-  what the surface identifies — checkout for the app header, repo for the
-  working-context band — and never mix keys on one surface. Absence is a
-  state: an unwashed header *means* main checkout. Status and attention always
-  render unchanged on top.
+- **Identity wash**: a surface that *is* one repo/checkout wears its accent as
+  a /10 wash. **Every repo has a color** (`RepoData.color`, `lib/repo-identity.ts`):
+  its pin, else one the backend deals like a chart series, so no two clash —
+  never hash a repo's color client-side. A *checkout* (the app header) still
+  takes its hashed `identityColor()`. Never mix keys on one surface. Absence is
+  a state: an unwashed header *means* main checkout. Status and attention
+  always render unchanged on top.
 - **A box is a control or an alert, never a fact.** Rail facts (diff counts,
   branch, base-moved) are bare `font-mono`; the box arrives on hover. Only
   needs-you, port drift, safe-to-delete and deleting keep a resting box. A

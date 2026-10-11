@@ -42,7 +42,7 @@ import {
 } from "@/components/agentboard-bits";
 import { DevServersButton } from "@/components/dev-servers";
 import { Input } from "@cloudflare/kumo";
-import { hasRepoColor, repoAccentStyles, repoIcon, type RepoMeta } from "@/lib/repo-identity";
+import { repoAccentStyles, repoIcon, type RepoIdentity } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import {
   branchRedundant,
@@ -64,7 +64,7 @@ import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
 export function FolderHeader({
   scope,
   title,
-  meta,
+  identity,
   folder,
   quiet,
   needs,
@@ -94,7 +94,7 @@ export function FolderHeader({
   scope: "repo" | "folder";
   title: string;
   /** Set only at repo scope; absent renders the default look. */
-  meta?: RepoMeta;
+  identity?: RepoIdentity;
   folder: FolderData;
   /** Marked quiet *and* on screen anyway — peeked, or the active checkout. The
    * badge is the row admitting it: quiet normally means gone. */
@@ -138,8 +138,8 @@ export function FolderHeader({
 }) {
   const scopePrefix = pathScope(folder.dir);
   // A repo-scope header is sticky, so its tint mixes into an opaque base.
-  const HeaderIcon = repoIcon(meta);
-  const accent = repoAccentStyles(meta, "var(--card)");
+  const HeaderIcon = repoIcon(identity?.meta);
+  const accent = repoAccentStyles(identity, "var(--card)");
   const missing = folder.dirMissing;
   // A task's human-authored title applies to worktree rows only — on the
   // primary checkout it would misname the repo itself (see `taskForFolder`).
@@ -236,13 +236,7 @@ export function FolderHeader({
               {missing ? (
                 <FolderMinusIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
               ) : scope === "repo" ? (
-                <HeaderIcon
-                  className={cn(
-                    "size-3.5 shrink-0",
-                    !hasRepoColor(meta) && "text-muted-foreground",
-                  )}
-                  style={accent.iconStyle}
-                />
+                <HeaderIcon className="size-3.5 shrink-0" style={accent.iconStyle} />
               ) : (
                 <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
               )}

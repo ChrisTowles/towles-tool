@@ -815,6 +815,12 @@ impl Engine {
         for repo in &mut payload.repos {
             repo.meta = self.repo_meta.meta_for(&repo.dir).cloned();
         }
+        let pins: Vec<_> =
+            payload.repos.iter().map(|r| r.meta.as_ref().and_then(|m| m.color.as_ref())).collect();
+        let colors = crate::repo_meta::resolve_colors(&pins);
+        for (repo, color) in payload.repos.iter_mut().zip(colors) {
+            repo.color = color;
+        }
 
         payload.windows = self.windows.payload().clone();
         payload.collapsed = self.collapse.payload().collapsed.clone();

@@ -1,6 +1,7 @@
 //! Persisted per-repo *identity*: the icon and color the user chose for a
 //! tracked repo, so the same repo is recognizable at a glance in the rail, on
-//! the Board's task cards, and anywhere else its work shows up.
+//! the Board's task cards, and anywhere else its work shows up. A color here is
+//! a *pin*; every repo still has one, dealt by [`resolve_colors`].
 //!
 //! Stored in `<agentboard_shared_dir>/repo_meta.json`, keyed by the repo's
 //! absolute dir — the same key `repos.json` lists. **Shared, not task-scoped**:
@@ -56,8 +57,45 @@ impl HexColor {
     }
 }
 
+/// The palette's first color — what a row holds until [`resolve_colors`] deals it one.
+impl Default for HexColor {
+    fn default() -> Self {
+        Self(AUTO_PALETTE[0].to_string())
+    }
+}
+
+/// The colors an unpinned repo is dealt, in dealing order: the client picker's
+/// `REPO_PALETTE`, ordered so neighbours contrast.
+pub const AUTO_PALETTE: [&str; 9] = [
+    "#3b82f6", "#e11d48", "#059669", "#d946ef", "#0891b2", "#65a30d", "#ec4899", "#14b8a6",
+    "#78716c",
+];
+
+/// Every repo's color, in order, the way a chart colors its series: a pinned
+/// repo keeps its pin, and the rest are dealt the first palette color no pin or
+/// earlier repo holds — the least-held one once the palette runs out.
+pub fn resolve_colors(pins: &[Option<&HexColor>]) -> Vec<HexColor> {
+    let mut held: HashMap<&str, usize> = HashMap::new();
+    for pin in pins.iter().flatten() {
+        *held.entry(pin.as_str()).or_default() += 1;
+    }
+    pins.iter()
+        .map(|pin| match pin {
+            Some(color) => (*color).clone(),
+            None => {
+                let dealt = AUTO_PALETTE
+                    .iter()
+                    .min_by_key(|c| held.get(**c).copied().unwrap_or(0))
+                    .expect("the palette is not empty");
+                *held.entry(dealt).or_default() += 1;
+                HexColor(dealt.to_string())
+            }
+        })
+        .collect()
+}
+
 /// Identity for one repo. Every field optional: an untouched repo has no entry
-/// at all, and the UI falls back to its generic icon and neutral color.
+/// at all, gets the generic icon, and is dealt its color.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoMeta {
@@ -66,6 +104,7 @@ pub struct RepoMeta {
     /// round-trips it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// The pinned color; absent ⇒ dealt one by [`resolve_colors`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<HexColor>,
     /// Absent ⇒ [`RepoAccentStyle::Accent`].
@@ -211,6 +250,23 @@ mod tests {
         assert_eq!(HexColor::parse("#AbC").unwrap().as_str(), "#aabbcc");
         assert_eq!(HexColor::parse("7C3AED").unwrap().as_str(), "#7c3aed");
         assert_eq!(HexColor::parse("  #7c3aed  ").unwrap().as_str(), "#7c3aed");
+    }
+
+    #[test]
+    fn unpinned_repos_are_dealt_colors_no_pin_holds() {
+        let rose = HexColor::parse("#e11d48").unwrap();
+        let custom = HexColor::parse("#123456").unwrap();
+        let got = resolve_colors(&[None, Some(&rose), None, Some(&custom), None]);
+        let got: Vec<&str> = got.iter().map(HexColor::as_str).collect();
+        assert_eq!(got, ["#3b82f6", "#e11d48", "#059669", "#123456", "#d946ef"]);
+    }
+
+    #[test]
+    fn past_the_palette_the_least_held_color_is_dealt() {
+        let pins = vec![None; AUTO_PALETTE.len() + 2];
+        let got = resolve_colors(&pins);
+        assert_eq!(got[AUTO_PALETTE.len()].as_str(), AUTO_PALETTE[0]);
+        assert_eq!(got[AUTO_PALETTE.len() + 1].as_str(), AUTO_PALETTE[1]);
     }
 
     #[test]

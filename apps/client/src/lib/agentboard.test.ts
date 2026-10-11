@@ -1597,7 +1597,7 @@ describe("isFolderFiltered", () => {
 });
 
 function repo(key: string, folders: FolderData[]): RepoData {
-  return { key, dir: key, name: key, folders, needs: 0 };
+  return { key, dir: key, name: key, folders, needs: 0, color: "#3b82f6" };
 }
 
 describe("paneCloseTarget", () => {

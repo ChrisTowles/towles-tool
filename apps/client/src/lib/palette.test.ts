@@ -70,7 +70,7 @@ function folder(overrides: Partial<FolderData>): FolderData {
 }
 
 function repo(name: string, folders: FolderData[]): RepoData {
-  return { key: name, dir: name, name, folders, needs: 0 };
+  return { key: name, dir: name, name, folders, needs: 0, color: "#3b82f6" };
 }
 
 function pr(overrides: Partial<PrItem>): PrItem {

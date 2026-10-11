@@ -14,7 +14,6 @@ import {
   untrackedCandidates,
 } from "@/lib/repo-manager";
 import {
-  hasRepoColor,
   normalizeHex,
   repoAccentStyles,
   repoIcon,
@@ -660,7 +659,8 @@ function RepoIdentityRow({
   const [saved, setSaved] = useState(false);
   const dir = repo.dir;
   const Icon = repoIcon(meta);
-  const accent = repoAccentStyles(meta);
+  // Unpinned, the color is the one the backend dealt — so the row previews it.
+  const accent = repoAccentStyles({ color: meta?.color ?? repo.color, meta });
   // `meta` lags an in-flight commit by a full await and `ab_set_repo_meta`
   // replaces the identity *wholesale*, so a second click built off the render
   // closure would send a payload missing the first field and erase it.
@@ -737,6 +737,11 @@ function RepoIdentityRow({
     const style: RepoIdentityStyle = tint ? "tint" : "accent";
     void commit({ ...latest.current, style }, "repo.style_set", style);
   };
+  const unpin = () => {
+    setHex("");
+    setHexError(null);
+    void commit({ ...latest.current, color: undefined }, "repo.color_unpinned");
+  };
   const reset = () => {
     setHex("");
     setHexError(null);
@@ -746,8 +751,7 @@ function RepoIdentityRow({
   return (
     <div
       // The rail header's own identity decoration, so a repo's color is
-      // visible where you set it. Both are `undefined` without a color, so
-      // plain repos stay plain.
+      // visible where you set it.
       style={{ ...accent.edgeStyle, ...accent.surfaceStyle }}
       onDragOver={(e) => {
         e.preventDefault();
@@ -782,11 +786,7 @@ function RepoIdentityRow({
       >
         <DotsSixVerticalIcon className="size-4" />
       </span>
-      <Icon
-        aria-hidden
-        className={cn("size-4 shrink-0", !hasRepoColor(meta) && "text-kumo-subtle")}
-        style={accent.iconStyle}
-      />
+      <Icon aria-hidden className="size-4 shrink-0" style={accent.iconStyle} />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{repo.name}</span>
         <span className="truncate font-mono text-xs text-kumo-subtle">{dir}</span>
@@ -838,11 +838,19 @@ function RepoIdentityRow({
         <Popover.Trigger
           render={
             <Button variant="outline" size="sm" className="px-2 text-xs">
-              Color
+              Color · {meta?.color ? "pinned" : "auto"}
             </Button>
           }
         />
         <Popover.Content className="w-56 p-2" align="end">
+          <div className="mb-2 flex items-center justify-between gap-2 text-xs text-kumo-subtle">
+            {meta?.color ? "Pinned — kept as is" : "Auto — dealt one no other repo holds"}
+            {meta?.color && (
+              <Button variant="ghost" size="xs" onClick={unpin}>
+                Auto
+              </Button>
+            )}
+          </div>
           <ToggleGroup
             aria-label="Color"
             value={meta?.color ? [meta.color] : []}

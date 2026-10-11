@@ -313,13 +313,12 @@ type RepoLook = {
 };
 
 /** Which repo a row is — the headspace you'd be switching into — worn by the
- * whole row in the repo's chosen color. An unthemed repo stays neutral: a
- * color is never synthesized from the name. */
+ * whole row in the repo's color. */
 function repoLook(repo: RepoData | undefined, fallback: string): RepoLook {
   return {
     name: repo?.name ?? fallback,
-    textStyle: repoAccentStyles(repo?.meta).iconStyle,
-    rowStyle: repoRowStyle(repo?.meta),
+    textStyle: repoAccentStyles(repo).iconStyle,
+    rowStyle: repoRowStyle(repo),
   };
 }
 

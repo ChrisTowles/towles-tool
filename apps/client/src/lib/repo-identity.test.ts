@@ -39,13 +39,13 @@ describe("repoIcon", () => {
 });
 
 describe("repoAccentStyles", () => {
-  it("contributes nothing without a valid color — never invents one", () => {
+  it("contributes nothing without a repo or a valid color", () => {
     expect(repoAccentStyles(undefined)).toEqual({
       iconStyle: undefined,
       edgeStyle: undefined,
       surfaceStyle: undefined,
     });
-    expect(repoAccentStyles({ icon: "Rocket", color: "nope" }).iconStyle).toBeUndefined();
+    expect(repoAccentStyles({ color: "nope", meta: { icon: "Rocket" } }).iconStyle).toBeUndefined();
   });
 
   it("tints the glyph and edge, but washes the surface only for style: tint", () => {
@@ -54,12 +54,12 @@ describe("repoAccentStyles", () => {
     expect(accent.edgeStyle?.borderLeftColor).toContain("#3b82f6");
     expect(accent.surfaceStyle).toBeUndefined();
 
-    const tint = repoAccentStyles({ color: "#3b82f6", style: "tint" });
+    const tint = repoAccentStyles({ color: "#3b82f6", meta: { style: "tint" } });
     expect(tint.surfaceStyle?.backgroundColor).toBe("color-mix(in srgb, #3b82f6 8%, transparent)");
   });
 
   it("mixes the wash into a caller-supplied opaque base (sticky surfaces)", () => {
-    const tint = repoAccentStyles({ color: "#3b82f6", style: "tint" }, "var(--card)");
+    const tint = repoAccentStyles({ color: "#3b82f6", meta: { style: "tint" } }, "var(--card)");
     expect(tint.surfaceStyle?.backgroundColor).toBe("color-mix(in srgb, #3b82f6 8%, var(--card))");
   });
 });
