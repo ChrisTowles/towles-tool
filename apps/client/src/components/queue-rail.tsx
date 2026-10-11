@@ -1,6 +1,6 @@
-import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { motion } from "motion/react";
-import { Badge, Button, DropdownMenu } from "@cloudflare/kumo";
+import { Badge, Button } from "@cloudflare/kumo";
 import {
   ArrowDownIcon,
   CaretDownIcon,
@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import { HotkeyBadge } from "@/components/agentboard-bits";
 import { QueueRepoChips } from "@/components/queue-repo-chips";
+import { QueueRepoFilter } from "@/components/queue-repo-filter";
 import { requestAgentboardNav, type RepoData } from "@/lib/agentboard";
 import { fmtAge } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -42,10 +43,10 @@ const LANE_TITLE: Record<Lane, string> = {
 
 export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "idle"];
 
-const SNOOZES: { preset: SnoozePreset; label: string }[] = [
-  { preset: "1h", label: "For an hour" },
-  { preset: "tomorrow", label: "Until tomorrow 9:00" },
-  { preset: "until_change", label: "Until it changes" },
+const SNOOZES: { preset: SnoozePreset; short: string; label: string }[] = [
+  { preset: "1h", short: "1h", label: "for an hour" },
+  { preset: "tomorrow", short: "Tomorrow", label: "until tomorrow 9:00" },
+  { preset: "until_change", short: "Till it changes", label: "until it changes" },
 ];
 
 async function report(r: Awaited<ReturnType<typeof invoke>>) {
@@ -103,6 +104,9 @@ export function QueueNextShortcut() {
  * here acts on an agent. */
 export function QueueRail({
   queue,
+  allItems,
+  repoFilter,
+  onRepoFilterChange,
   repoByFolder,
   live,
   now,
@@ -120,7 +124,12 @@ export function QueueRail({
   onPickRepo,
   newTaskForm,
 }: {
+  /** Already narrowed to `repoFilter`. */
   queue: TaskQueue;
+  /** The whole queue, for the filter's pills. */
+  allItems: readonly QueueItem[];
+  repoFilter: ReadonlySet<string>;
+  onRepoFilterChange: (picked: ReadonlySet<string>) => void;
   /** Checkout dir → its repo, for the row's identity tag. */
   repoByFolder: ReadonlyMap<string, RepoData>;
   live: boolean;
@@ -149,8 +158,19 @@ export function QueueRail({
     <div className="flex flex-col">
       <QueueRepoChips repos={repos} activeKey={newTaskRepoKey} onPick={onPickRepo} />
       {newTaskForm}
+      <QueueRepoFilter
+        repos={repos}
+        items={allItems}
+        repoByFolder={repoByFolder}
+        picked={repoFilter}
+        onChange={onRepoFilterChange}
+      />
       {!live ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
+      ) : queue.items.length === 0 && repoFilter.size > 0 ? (
+        <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
+          Nothing queued in the picked repos.
+        </p>
       ) : queue.items.length === 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
           No tasks with a checkout — start one from a repo above.
@@ -260,7 +280,7 @@ function Hero({
             Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>
           </Button>
         )}
-        {item.reason && <SnoozeMenu onSnooze={onSnooze} />}
+        {item.reason && <SnoozeButtons onSnooze={onSnooze} />}
         <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
           Later
         </Button>
@@ -269,32 +289,44 @@ function Hero({
   );
 }
 
-export function SnoozeMenu({
+/** The snooze presets as buttons, one click each. `z` lands focus on the first. */
+export function SnoozeButtons({
   onSnooze,
-  open,
-  onOpenChange,
+  autoFocus = false,
+  onDismiss,
 }: {
   onSnooze: (preset: SnoozePreset) => void;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  autoFocus?: boolean;
+  onDismiss?: () => void;
 }) {
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (autoFocus) first.current?.focus();
+  }, [autoFocus]);
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
-      <DropdownMenu.Trigger
-        render={
-          <Button size="xs" variant="ghost" icon={<ClockIcon />} aria-label="Snooze">
-            Snooze
-          </Button>
-        }
-      />
-      <DropdownMenu.Content align="start" className="w-auto min-w-44">
-        {SNOOZES.map((s) => (
-          <DropdownMenu.Item key={s.preset} onClick={() => onSnooze(s.preset)}>
-            {s.label}
-          </DropdownMenu.Item>
-        ))}
-      </DropdownMenu.Content>
-    </DropdownMenu>
+    <div
+      role="group"
+      aria-label="Snooze"
+      className="flex shrink-0 items-center gap-0.5"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onDismiss?.();
+      }}
+    >
+      <ClockIcon aria-hidden className="mr-0.5 size-3.5 text-kumo-subtle" />
+      {SNOOZES.map((s, i) => (
+        <button
+          key={s.preset}
+          ref={i === 0 ? first : undefined}
+          type="button"
+          aria-label={`Snooze ${s.label}`}
+          title={`Snooze ${s.label}`}
+          onClick={() => onSnooze(s.preset)}
+          className="rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none"
+        >
+          {s.short}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -409,12 +441,23 @@ function QueueRow({
           Wake
         </Button>
       )}
+      {/* Only on the row you're on or over, so the queue still reads as titles. */}
       {item.reason && !item.snoozed && (
-        <SnoozeMenu
-          onSnooze={(preset) => void snoozeQueueItem(item, preset)}
-          open={snoozeOpen}
-          onOpenChange={onSnoozeOpenChange}
-        />
+        <div
+          className={cn(
+            "shrink-0",
+            selected || snoozeOpen ? "flex" : "hidden group-focus-within:flex group-hover:flex",
+          )}
+        >
+          <SnoozeButtons
+            autoFocus={snoozeOpen}
+            onDismiss={() => onSnoozeOpenChange(false)}
+            onSnooze={(preset) => {
+              onSnoozeOpenChange(false);
+              void snoozeQueueItem(item, preset);
+            }}
+          />
+        </div>
       )}
     </div>
   );

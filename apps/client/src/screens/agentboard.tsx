@@ -100,6 +100,7 @@ import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
 import { useStoreSnapshot } from "@/lib/data";
 import {
   cycleQueue,
+  filterQueue,
   nextItem,
   nextUpArrival,
   onYouHead,
@@ -195,6 +196,13 @@ export function AgentBoardScreen() {
   // disappears can hand the cursor to whatever now stands for it.
   const [railCursor, setRailCursor] = useState<RailNode | null>(null);
   const { queue, live: queueLive } = useTaskQueue();
+  // Never persisted, like the tree's search: a queue that opens narrowed to
+  // yesterday's repos is a queue with work missing and no memory of why.
+  const [repoFilter, setRepoFilter] = useState<ReadonlySet<string>>(() => new Set());
+  const shownQueue = useMemo(
+    () => filterQueue(queue, repoFilter, (dir) => repoByFolder.get(dir)?.key),
+    [queue, repoFilter, repoByFolder],
+  );
   const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(() => new Set(FOLDED_BY_DEFAULT));
   // Next up changed while you were busy: the key it was announced for.
   const [announced, setAnnounced] = useState<number | null>(null);
@@ -299,7 +307,7 @@ export function AgentBoardScreen() {
   // computed from, so what you press is what you read. The targets are kept
   // even while nothing is held — the handlers address them without a repaint.
   const hotkeysHeld = useModifierHeld("ab-jump-session-1");
-  const rows = useMemo(() => railRows(queue, foldedLanes), [queue, foldedLanes]);
+  const rows = useMemo(() => railRows(shownQueue, foldedLanes), [shownQueue, foldedLanes]);
   const railVis = useMemo(
     () => ({
       repos: shownRepos,
@@ -317,9 +325,9 @@ export function AgentBoardScreen() {
   const cursorKey = cursorNode?.key ?? null;
   const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
   // Every row owns a checkout, so the ring follows the one on screen, however it got there.
-  const ringItem = rowForFolder(queue, activeFolderDir);
+  const ringItem = rowForFolder(shownQueue, activeFolderDir);
   const ringId = ringItem?.taskId ?? null;
-  const head = nextItem(queue);
+  const head = nextItem(shownQueue);
   // The collapsed strip has no rows to badge, so it offers no numbers. Keyed by
   // session on the tree, by task on the queue.
   const showHotkeys = hotkeysHeld && !railCollapsed;
@@ -346,9 +354,9 @@ export function AgentBoardScreen() {
   });
   // Same, for the rail: the mount-only nav-request handler's closure would only
   // ever see the empty first-render snapshot.
-  const railRef = useRef({ repos, folderNameByDir, queue, railTree });
+  const railRef = useRef({ repos, folderNameByDir, queue, shownQueue, railTree });
   useEffect(() => {
-    railRef.current = { repos, folderNameByDir, queue, railTree };
+    railRef.current = { repos, folderNameByDir, queue, shownQueue, railTree };
   });
 
   // One-shot "prompt cache about to expire" toast per session per cache generation.
@@ -709,7 +717,7 @@ export function AgentBoardScreen() {
   }
 
   function openNextUp() {
-    const target = nextItem(railRef.current.queue);
+    const target = nextItem(railRef.current.shownQueue);
     if (target) selectQueueItem(target);
     else toast.info("Queue's empty — nothing needs you.");
   }
@@ -777,6 +785,8 @@ export function AgentBoardScreen() {
         const row = railRef.current.queue.items.find(
           (i) => i.pr && `${i.pr.repo}#${i.pr.number}` === t.id,
         );
+        // A filter that hides the row gives way to it.
+        if (row && !railRef.current.shownQueue.items.includes(row)) setRepoFilter(new Set());
         if (row)
           setFoldedLanes((cur) => {
             if (!cur.has(row.lane)) return cur;
@@ -1318,13 +1328,13 @@ export function AgentBoardScreen() {
               // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the
               // first matching handler wins.
               "queue-rank-top": () => {
-                if (ringItem) void rerankQueueItem(queue.items, ringItem, "top");
+                if (ringItem) void rerankQueueItem(shownQueue.items, ringItem, "top");
               },
               "queue-rank-up": () => {
-                if (ringItem) void rerankQueueItem(queue.items, ringItem, "up");
+                if (ringItem) void rerankQueueItem(shownQueue.items, ringItem, "up");
               },
               "queue-rank-down": () => {
-                if (ringItem) void rerankQueueItem(queue.items, ringItem, "down");
+                if (ringItem) void rerankQueueItem(shownQueue.items, ringItem, "down");
               },
             }),
         "ab-focus-terminal": focusActiveTerminal,
@@ -1338,7 +1348,7 @@ export function AgentBoardScreen() {
         tree,
         activeFolderDir,
         collapsed,
-        queue,
+        shownQueue,
         rows,
         railTree,
         cursorKey,
@@ -1586,7 +1596,10 @@ export function AgentBoardScreen() {
                         </>
                       ) : (
                         <QueueRail
-                          queue={queue}
+                          queue={shownQueue}
+                          allItems={queue.items}
+                          repoFilter={repoFilter}
+                          onRepoFilterChange={setRepoFilter}
                           repoByFolder={repoByFolder}
                           live={queueLive}
                           now={now}

@@ -142,6 +142,22 @@ export function railRows(queue: TaskQueue, folded: ReadonlySet<Lane>): QueueItem
   return queue.items.filter((i) => !folded.has(i.lane));
 }
 
+/** The queue narrowed to the repos in `repoKeys` (none picked shows every
+ * repo), with Next up re-picked from what's left the way the backend picks it:
+ * the first task on you. */
+export function filterQueue(
+  queue: TaskQueue,
+  repoKeys: ReadonlySet<string>,
+  repoKeyOf: (folderDir: string) => string | undefined,
+): TaskQueue {
+  if (repoKeys.size === 0) return queue;
+  const items = queue.items.filter((i) => {
+    const key = repoKeyOf(i.folderDir);
+    return key !== undefined && repoKeys.has(key);
+  });
+  return { items, next: items.find((i) => i.lane === "on_you")?.taskId ?? null };
+}
+
 /** The row standing for a checkout, so picking it any other way still rings it. */
 export function rowForFolder(queue: TaskQueue, folderDir: string | null): QueueItem | undefined {
   return folderDir === null ? undefined : queue.items.find((i) => i.folderDir === folderDir);

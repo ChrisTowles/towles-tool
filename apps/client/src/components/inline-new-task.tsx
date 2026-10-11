@@ -39,6 +39,7 @@ import { ReviewPrPicker } from "@/components/review-pr-picker";
 import { invoke } from "@/lib/tauri";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
+import { baseChips, parseRecentBases, rememberBase } from "@/lib/recent-bases";
 import { cn } from "@/lib/utils";
 import { slugify } from "@/lib/slug";
 
@@ -136,6 +137,10 @@ export const BRANCH_SLUG_SOURCE_CHARS = 50;
  * only your own issues matter. */
 function issueScopeKey(repoKey: string): string {
   return `tt-new-task-issue-mine:${repoKey}`;
+}
+
+function recentBasesKey(repoKey: string): string {
+  return `tt-new-task-recent-bases:${repoKey}`;
 }
 
 function loadIssueScopeMine(repoKey: string): boolean {
@@ -281,6 +286,10 @@ export function InlineNewTask({
   const reviewing = mode === "review";
 
   const sortedBranches = [...branches].toSorted((a, b) => a.name.localeCompare(b.name));
+  const [recentBases] = useState(() =>
+    parseRecentBases(localStorage.getItem(recentBasesKey(repo.key))),
+  );
+  const quickBases = baseChips(branches, recentBases);
 
   // The selected branch's honest label (`origin/main` when that's what creation
   // will branch from), falling back to the raw value until the list loads.
@@ -588,6 +597,11 @@ export function InlineNewTask({
         ? "task.start"
         : "task.start_no_claude";
     uiAction(action, "agentboard");
+    if (worktree)
+      localStorage.setItem(
+        recentBasesKey(repo.key),
+        JSON.stringify(rememberBase(recentBases, base)),
+      );
     onSubmit({
       goal: goal.trim(),
       title: title.trim() || branch,
@@ -892,6 +906,29 @@ export function InlineNewTask({
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[10.5px] text-kumo-subtle">base</span>
+            {quickBases.length > 1 && (
+              <div role="group" aria-label="Recent bases" className="flex flex-wrap gap-1">
+                {quickBases.map((b) => (
+                  <button
+                    key={b.name}
+                    type="button"
+                    aria-pressed={b.name === base}
+                    onClick={() => {
+                      uiAction("task.base_quick_pick", "agentboard");
+                      setBase(b.name);
+                    }}
+                    className={cn(
+                      "rounded-md border px-2 py-0.5 font-mono text-xs",
+                      b.name === base
+                        ? "border-kumo-brand bg-kumo-brand/15 text-kumo-default"
+                        : "border-kumo-hairline text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default",
+                    )}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <Combobox
               items={sortedBranches}
               value={branches.find((b) => b.name === base) ?? null}
