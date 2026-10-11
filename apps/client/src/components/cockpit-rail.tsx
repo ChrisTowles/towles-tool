@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { motion } from "motion/react";
 import { Badge, Button, DropdownMenu } from "@cloudflare/kumo";
 import {
@@ -16,7 +16,7 @@ import { fmtAge } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { identityColor } from "@/lib/identity-color";
 import { LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
-import { repoAccentStyles } from "@/lib/repo-identity";
+import { repoAccentStyles, repoRowStyle } from "@/lib/repo-identity";
 import type { Lane, QueueItem, TaskQueue, WaitReason } from "@/lib/schemas/queue";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
@@ -236,27 +236,28 @@ function Hero({
   onLater: () => void;
   onSnooze: (preset: SnoozePreset) => void;
 }) {
+  const look = repoLook(repo, item.repo);
   return (
     <motion.div
       key={item.taskId}
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
+      style={look.rowStyle}
       className={cn(
-        "m-2 rounded-lg border border-kumo-brand/40 bg-kumo-brand/5 p-3",
+        "m-2 rounded-lg border border-l-4 border-kumo-brand/40 p-3",
+        look.rowClass,
         selected && "ring-1 ring-kumo-brand",
       )}
     >
       <div className="text-[11px] font-semibold tracking-wide text-kumo-brand uppercase">
         Next up{item.reason && ` · ${HERO_KICKER[item.reason]}`}
       </div>
-      <div className="mt-0.5 truncate font-semibold">{item.title}</div>
-      <div className="flex min-w-0 items-center gap-1.5 text-xs">
-        <RepoTag repo={repo} fallback={item.repo} />
-        <span className="truncate font-mono text-kumo-subtle">
-          {[item.branch, item.sinceMs != null ? `waiting ${fmtAge(item.sinceMs, now)}` : null]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
+      <RepoName look={look} className="mt-1 text-lg" />
+      <div className="truncate font-semibold">{item.title}</div>
+      <div className="truncate font-mono text-xs text-kumo-subtle">
+        {[item.branch, item.sinceMs != null ? `waiting ${fmtAge(item.sinceMs, now)}` : null]
+          .filter(Boolean)
+          .join(" · ")}
       </div>
       {item.said && item.said !== item.title && (
         <div className="mt-2 line-clamp-2 rounded-md border-l-2 border-kumo-warning bg-kumo-tint px-2 py-1 text-xs">
@@ -307,22 +308,38 @@ export function SnoozeMenu({
   );
 }
 
-/** Which repo a row is: its chosen color, else the hashed identity hue. A fact,
- * so bare tinted type and a dot — never a box. */
-function RepoTag({ repo, fallback }: { repo: RepoData | undefined; fallback: string }) {
+type RepoLook = {
+  name: string;
+  textStyle: CSSProperties | undefined;
+  textClass: string | undefined;
+  rowStyle: CSSProperties | undefined;
+  rowClass: string | undefined;
+};
+
+/** Which repo a row is — the headspace you'd be switching into — in its chosen
+ * color, else the hashed identity hue, worn by the whole row. */
+function repoLook(repo: RepoData | undefined, fallback: string): RepoLook {
   const name = repo?.name ?? fallback;
-  const color = repoAccentStyles(repo?.meta).iconStyle;
+  const textStyle = repoAccentStyles(repo?.meta).iconStyle;
+  const rowStyle = repoRowStyle(repo?.meta);
+  const hashed = identityColor(name);
+  return {
+    name,
+    textStyle,
+    textClass: textStyle ? undefined : hashed.text,
+    rowStyle,
+    rowClass: rowStyle ? undefined : hashed.row,
+  };
+}
+
+function RepoName({ look, className }: { look: RepoLook; className?: string }) {
   return (
-    <span
-      style={color}
-      className={cn(
-        "flex shrink-0 items-center gap-1 font-mono font-medium",
-        !color && identityColor(name).text,
-      )}
+    <div
+      style={look.textStyle}
+      className={cn("truncate leading-tight font-bold", look.textClass, className)}
     >
-      <span className="size-2 rounded-full bg-current" />
-      {name}
-    </span>
+      {look.name}
+    </div>
   );
 }
 
@@ -364,13 +381,16 @@ function QueueRow({
   onSelect: () => void;
 }) {
   const face = item.reason ? REASON_FACE[item.reason] : null;
+  const look = repoLook(repo, item.repo);
   return (
     <div
       data-focus-kind={item.pr ? "pr" : undefined}
       data-focus-id={item.pr ? `${item.pr.repo}#${item.pr.number}` : undefined}
+      style={look.rowStyle}
       className={cn(
-        "group flex items-center gap-2 border-t border-kumo-line px-3 py-1.5 text-sm",
-        selected && "bg-kumo-tint shadow-[inset_3px_0_0_var(--color-kumo-brand)]",
+        "group flex items-center gap-2 border-t border-l-4 border-t-kumo-line px-3 py-2 text-sm",
+        look.rowClass,
+        selected && "ring-2 ring-kumo-brand ring-inset",
         item.lane !== "on_you" && "text-kumo-subtle",
       )}
     >
@@ -392,10 +412,10 @@ function QueueRow({
           <span className="w-20 shrink-0" />
         ) : null}
         <span className="min-w-0 flex-1">
+          <RepoName look={look} className="text-base" />
           <span className="block truncate">{item.title}</span>
-          <span className="flex min-w-0 items-center gap-1.5 text-xs">
-            <RepoTag repo={repo} fallback={item.repo} />
-            <span className="truncate font-mono text-kumo-subtle">{rowMeta(item, now)}</span>
+          <span className="block truncate font-mono text-xs text-kumo-subtle">
+            {rowMeta(item, now)}
           </span>
         </span>
         {item.sinceMs != null && (
