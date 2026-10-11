@@ -152,8 +152,7 @@ export const SHORTCUTS = defineShortcuts([
     id: "ab-new-task",
     scope: "cockpit",
     keys: "mod+shift+d",
-    description: "New task — goal, issues, branch",
-    when: FOLDER_FOCUSED,
+    description: "New task — pick a repo, goal, issues, branch",
     tip: () =>
       `${shortcutHint("ab-start-task")} then starts it, so a task never leaves the keyboard.`,
     allowInEditable: true,
