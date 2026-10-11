@@ -169,6 +169,14 @@ reports that to the session instead of staying silent.
 
 ## Installation
 
+In Claude Code 2.1.275 or later, one step:
+
+```text
+/plugin install towles-tool-app --marketplace ChrisTowles/towles-tool
+```
+
+Or from a shell:
+
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool
 claude plugin enable towles-tool-app@towles-tool
