@@ -1,0 +1,24 @@
+name: Zig baseline CPU
+description: >-
+  Put a `zig` shim first on PATH that adds `-Dcpu=baseline` to every
+  `zig build`, so libghostty compiles for the generic x86-64 CPU.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        # libghostty-vt-sys runs `zig build` for the *native* CPU (it passes
+        # `-Dtarget` only when cross-compiling), and GitHub's ubuntu pool mixes
+        # CPU generations: a cached `target/` built on a wider runner dies with
+        # SIGILL on a narrower one. Pinning the baseline CPU makes the artifact
+        # portable, so one rust-cache entry per job serves every runner.
+        real=$(command -v zig)
+        dir="$RUNNER_TEMP/zig-baseline"
+        mkdir -p "$dir"
+        cat > "$dir/zig" <<SHIM
+        #!/usr/bin/env bash
+        if [ "\$1" = build ]; then shift; exec "$real" build -Dcpu=baseline "\$@"; fi
+        exec "$real" "\$@"
+        SHIM
+        chmod +x "$dir/zig"
+        echo "$dir" >> "$GITHUB_PATH"

@@ -115,8 +115,8 @@ jobs:
             libxdo-dev
 
       # tt-vt (a dependency of tt-app) shells out to `zig build` against a
-      # ghostty source checkout — same provisioning as ci.yml's rust-vt/rust-app
-      # jobs, needed on every platform in this matrix.
+      # ghostty source checkout — same provisioning as ci.yml's rust-app job,
+      # needed on every platform in this matrix.
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:

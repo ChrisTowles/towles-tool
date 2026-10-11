@@ -160,11 +160,16 @@ opt-level = 3
 # profile does not depend on whether Cargo propagates package overrides into a
 # derived profile: a Debug-mode zig parser is ~1000x slower and would quietly
 # make tt-vt's tests crawl (see crates/tt-vt/CLAUDE.md).
+#
+# Debuginfo is cut to line tables (none for dependencies): it is most of the
+# target dir's size, and so of the rust-cache entries and the link time.
 [profile.ci]
 inherits = "dev"
+debug = "line-tables-only"
 
 [profile.ci.package."*"]
 opt-level = 0
+debug = false
 
 [profile.ci.package.libghostty-vt-sys]
 opt-level = 3
