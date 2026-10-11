@@ -38,17 +38,13 @@ import {
 } from "@phosphor-icons/react";
 import type { CSSProperties } from "react";
 
-/** `accent` (the default) is edge + tinted glyph; `tint` adds a background wash. */
-export type RepoIdentityStyle = "accent" | "tint";
-
 export type RepoMeta = {
   icon?: string;
   /** The pinned color; absent means the repo is dealt one. */
   color?: string;
-  style?: RepoIdentityStyle;
 };
 
-/** What a repo looks like: its resolved color plus its chosen icon and style. */
+/** What a repo looks like: its resolved color plus its chosen icon. */
 export type RepoIdentity = { color: string; meta?: RepoMeta };
 
 /** Keys are stable persisted ids (historically lucide component names); adding one
@@ -156,12 +152,10 @@ export function repoAccentStyles(
 ): RepoAccentStyles {
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return EMPTY_ACCENT;
-  const style: RepoIdentityStyle = repo?.meta?.style ?? "accent";
   return {
     iconStyle: { color: hex },
     edgeStyle: { borderLeftColor: `color-mix(in srgb, ${hex} 70%, transparent)` },
-    surfaceStyle:
-      style === "tint" ? { backgroundColor: `color-mix(in srgb, ${hex} 8%, ${base})` } : undefined,
+    surfaceStyle: { backgroundColor: `color-mix(in srgb, ${hex} 8%, ${base})` },
   };
 }
 

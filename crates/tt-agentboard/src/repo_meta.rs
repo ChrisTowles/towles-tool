@@ -18,18 +18,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// How strongly a repo's color shows up in the UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RepoAccentStyle {
-    /// Tint the icon and draw a thin edge. The restrained default — applied by
-    /// the client when `RepoMeta::style` is absent, so there's no Rust-side
-    /// `Default` to drift from it.
-    Accent,
-    /// Also wash the row/card surface with a low-alpha fill.
-    Tint,
-}
-
 /// A `#rrggbb` color, lowercased. Parsed at the edge so nothing downstream
 /// has to re-check that the string is safe to interpolate into a style.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -136,9 +124,6 @@ pub struct RepoMeta {
     /// The pinned color; absent ⇒ dealt one by [`resolve_colors`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<HexColor>,
-    /// Absent ⇒ [`RepoAccentStyle::Accent`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub style: Option<RepoAccentStyle>,
 }
 
 impl RepoMeta {
@@ -267,11 +252,7 @@ mod tests {
     use super::*;
 
     fn meta(icon: &str, color: &str) -> RepoMeta {
-        RepoMeta {
-            icon: Some(icon.to_string()),
-            color: HexColor::parse(color),
-            style: Some(RepoAccentStyle::Accent),
-        }
+        RepoMeta { icon: Some(icon.to_string()), color: HexColor::parse(color) }
     }
 
     #[test]
@@ -411,23 +392,18 @@ mod tests {
 
     #[test]
     fn serializes_to_the_shape_the_client_reads() {
-        // The client types this as `{ icon?, color?, style?: "accent" | "tint" }`
-        // and an unset field must be *absent*, not null — pin both.
-        let full = RepoMeta {
-            icon: Some("Rocket".into()),
-            color: HexColor::parse("#7c3aed"),
-            style: Some(RepoAccentStyle::Tint),
-        };
+        // The client types this as `{ icon?, color? }` and an unset field must
+        // be *absent*, not null — pin both.
+        let full = RepoMeta { icon: Some("Rocket".into()), color: HexColor::parse("#7c3aed") };
         assert_eq!(
             serde_json::to_string(&full).unwrap(),
-            r##"{"icon":"Rocket","color":"#7c3aed","style":"tint"}"##
+            r##"{"icon":"Rocket","color":"#7c3aed"}"##
         );
         assert_eq!(serde_json::to_string(&RepoMeta::default()).unwrap(), "{}");
 
-        // And it round-trips back, including an absent style.
-        let partial: RepoMeta = serde_json::from_str(r#"{"icon":"Bug"}"#).unwrap();
-        assert_eq!(partial.icon.as_deref(), Some("Bug"));
-        assert!(partial.style.is_none(), "absent style ⇒ the client's Accent default");
+        // A file written while repos had a tint switch still loads.
+        let old: RepoMeta = serde_json::from_str(r#"{"icon":"Bug","style":"tint"}"#).unwrap();
+        assert_eq!(old.icon.as_deref(), Some("Bug"));
     }
 
     #[test]

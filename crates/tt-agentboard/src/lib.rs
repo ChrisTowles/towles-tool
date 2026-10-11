@@ -69,7 +69,7 @@ pub use git_info::{CommitStat, commit_stats, compute_git_info, prune_stale_workt
 pub use git_meter::{GitWork, GitWorkMeter};
 pub use launch::{LaunchConfig, port_listening, read_launch_file};
 pub use notify::{NeedsYouEdge, NeedsYouWatch};
-pub use repo_meta::{HexColor, RepoAccentStyle, RepoMeta};
+pub use repo_meta::{HexColor, RepoMeta};
 pub use repos::{RepoEntry, default_repos_path, load_repos, remove_repo_persisted, repo_entries};
 pub use sessions::SessionRecord;
 pub use turn_end::TurnEndWatch;

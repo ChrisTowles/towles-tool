@@ -3,7 +3,7 @@ import { DotsSixVerticalIcon, FolderPlusIcon, GitBranchIcon } from "@phosphor-ic
 import { toast } from "@/lib/toast";
 import { ToggleGroup } from "@cloudflare/kumo/primitives/toggle-group";
 import { Toggle } from "@cloudflare/kumo/primitives/toggle";
-import { Button, Dialog, Input, InputArea, Popover, Select, Switch } from "@cloudflare/kumo";
+import { Button, Dialog, Input, InputArea, Popover, Select } from "@cloudflare/kumo";
 import { useAgentboardState, type RepoCandidate, type RepoData } from "@/lib/agentboard";
 import {
   applyRepoOrder,
@@ -19,7 +19,6 @@ import {
   repoIcon,
   REPO_ICONS,
   REPO_PALETTE,
-  type RepoIdentityStyle,
   type RepoMeta,
 } from "@/lib/repo-identity";
 import { liveSessionIds, trackRepo, untrackRepo } from "@/lib/repo-actions";
@@ -72,7 +71,6 @@ export function agentboardSections(
         "reorder",
         "icon",
         "color",
-        "tint",
       ],
       node: <RepoManager />,
     },
@@ -672,7 +670,6 @@ function RepoIdentityRow({
       dir,
       icon: next?.icon ?? null,
       color: next?.color ?? null,
-      style: next?.style ?? null,
     });
     if (res.isErr()) {
       if (!NotInTauri.is(res.error)) {
@@ -733,10 +730,6 @@ function RepoIdentityRow({
     },
     [],
   );
-  const setStyle = (tint: boolean) => {
-    const style: RepoIdentityStyle = tint ? "tint" : "accent";
-    void commit({ ...latest.current, style }, "repo.style_set", style);
-  };
   const unpin = () => {
     setHex("");
     setHexError(null);
@@ -890,14 +883,6 @@ function RepoIdentityRow({
         </Popover.Content>
       </Popover>
 
-      <label className="flex shrink-0 items-center gap-1.5 text-xs text-kumo-subtle">
-        <Switch
-          checked={(meta?.style ?? "accent") === "tint"}
-          onCheckedChange={setStyle}
-          aria-label={`Tint the ${repo.name} row background`}
-        />
-        Tint
-      </label>
       <Button variant="ghost" size="sm" className="px-2 text-xs" onClick={reset}>
         Reset
       </Button>
