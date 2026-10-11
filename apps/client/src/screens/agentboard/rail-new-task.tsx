@@ -1,4 +1,3 @@
-import { Select } from "@cloudflare/kumo";
 import { InlineNewTask, type NewTaskSubmit } from "@/components/inline-new-task";
 import type { RepoData } from "@/lib/agentboard";
 
@@ -13,34 +12,18 @@ export function defaultTaskRepo(
   );
 }
 
-/** The existing inline new-task form behind a repo picker, for the rail header's `+`. */
+/** The existing inline new-task form, for one repo — picked by its queue chip or tree `+`. */
 export function RailNewTask({
-  repos,
-  repoKey,
-  onRepoChange,
+  repo,
   onCancel,
   onSubmit,
 }: {
-  repos: readonly RepoData[];
-  repoKey: string;
-  onRepoChange: (key: string) => void;
+  repo: RepoData;
   onCancel: () => void;
   onSubmit: (repo: RepoData, input: NewTaskSubmit) => void;
 }) {
-  const repo = repos.find((r) => r.key === repoKey);
-  if (!repo) return null;
   return (
     <div className="border-b border-kumo-hairline" data-testid="rail-new-task">
-      <div className="px-2 pt-2">
-        <Select
-          aria-label="Repo for the new task"
-          size="sm"
-          className="w-full"
-          value={repo.key}
-          onValueChange={(v) => onRepoChange(String(v))}
-          items={repos.map((r) => ({ value: r.key, label: r.name }))}
-        />
-      </div>
       <InlineNewTask
         key={repo.key}
         repo={{

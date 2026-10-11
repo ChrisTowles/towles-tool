@@ -7,10 +7,9 @@ import {
   CaretRightIcon,
   ClockIcon,
   PlayIcon,
-  PlusIcon,
 } from "@phosphor-icons/react";
 import { HotkeyBadge } from "@/components/agentboard-bits";
-import { Hint } from "@/components/hint";
+import { QueueRepoChips } from "@/components/queue-repo-chips";
 import { requestAgentboardNav, type RepoData } from "@/lib/agentboard";
 import { fmtAge } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -116,7 +115,9 @@ export function QueueRail({
   onToggleLane,
   onSelect,
   onOpenHead,
-  onNewTask,
+  repos,
+  newTaskRepoKey,
+  onPickRepo,
   newTaskForm,
 }: {
   queue: TaskQueue;
@@ -137,31 +138,22 @@ export function QueueRail({
   /** The hero's Open — the mouse twin of `queue-next`. */
   onOpenHead: () => void;
   /** The header `+` — the mouse twin of `ab-new-task`. */
-  onNewTask: () => void;
+  /** Every tracked repo, one new-task chip each. */
+  repos: readonly RepoData[];
+  newTaskRepoKey: string | null;
+  onPickRepo: (repo: RepoData) => void;
   /** The new-task form, open under the header. */
   newTaskForm?: ReactNode;
 }) {
   return (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between px-3 pt-2">
-        <span className="text-xs font-medium tracking-wide text-kumo-subtle uppercase">Queue</span>
-        <Hint label="New task" shortcut="ab-new-task">
-          <button
-            type="button"
-            onClick={onNewTask}
-            aria-label="New task"
-            className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
-          >
-            <PlusIcon className="size-3.5" />
-          </button>
-        </Hint>
-      </div>
+      <QueueRepoChips repos={repos} activeKey={newTaskRepoKey} onPick={onPickRepo} />
       {newTaskForm}
       {!live ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
       ) : queue.items.length === 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
-          No tasks with a checkout — start one with +.
+          No tasks with a checkout — start one from a repo above.
         </p>
       ) : (
         <>

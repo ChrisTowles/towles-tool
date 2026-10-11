@@ -61,7 +61,7 @@ describe("Agent Board queue rail", () => {
 
   it("renders the queue rail and none of the tree", async () => {
     await gotoRail("Queue");
-    await waitForAnyDisplayed('[aria-label="New task"]', "the queue's new-task +");
+    await waitForAnyDisplayed('[aria-label="New task"]', "the queue's new-task chips");
     expect(await (await browser.$('[aria-label="Filter repos"]')).isDisplayed()).toBe(false);
   });
 
@@ -111,15 +111,15 @@ describe("Agent Board queue rail", () => {
     });
   });
 
-  it("opens and closes the new-task form from the rail's +", async () => {
+  it("opens a repo's new-task form from its chip, and closes it on a second click", async () => {
     await gotoRail("Queue");
-    const plus = await browser.$("button[aria-label='New task']");
-    await plus.waitForDisplayed({ timeout: 10000 });
-    await plus.click();
+    const chip = await browser.$("[data-testid='queue-repo-chip']");
+    await chip.waitForDisplayed({ timeout: 10000 });
+    await chip.click();
     const form = await browser.$("[data-testid='rail-new-task']");
     await form.waitForDisplayed({ timeout: 10000 });
-    await (await browser.$("[aria-label='Repo for the new task']")).waitForDisplayed();
-    await plus.click();
+    expect(await chip.getAttribute("aria-pressed")).toBe("true");
+    await chip.click();
     await form.waitForDisplayed({ reverse: true, timeout: 10000 });
   });
 });

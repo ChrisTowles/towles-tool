@@ -939,8 +939,8 @@ export function AgentBoardScreen() {
   // so it would read 0:00 throughout. Bounded by the install itself.
   useNowInterval(taskCreation.settingUpDirs.size > 0 ? 1000 : undefined);
 
-  // The rail's `+` form: one repo picker over the existing inline form, so it
-  // works whatever row is selected. Opening again closes it.
+  // The rail's new-task form, for one repo: a queue chip or a tree `+` picks it,
+  // the shortcut takes the default. Opening again closes it.
   const [railTaskRepoKey, setRailTaskRepoKey] = useState<string | null>(null);
 
   function openRailNewTask(repoKey?: string) {
@@ -1372,14 +1372,10 @@ export function AgentBoardScreen() {
 
   // Both rails open the new-task form under their header; the header and the
   // tree are Agent Board's alone.
-  const newTaskForm = railTaskRepoKey !== null && (
+  const railTaskRepo = repos.find((r) => r.key === railTaskRepoKey);
+  const newTaskForm = railTaskRepo && (
     <RailNewTask
-      repos={repos}
-      repoKey={railTaskRepoKey}
-      onRepoChange={(key) => {
-        uiAction("agentboard.new_task_repo", "agentboard");
-        setRailTaskRepoKey(key);
-      }}
+      repo={railTaskRepo}
       onCancel={() => setRailTaskRepoKey(null)}
       onSubmit={(repo, input) => {
         localStorage.setItem(LAST_TASK_REPO_KEY, repo.key);
@@ -1606,9 +1602,16 @@ export function AgentBoardScreen() {
                             mouseAction("queue-next", "agentboard");
                             openNextUp();
                           }}
-                          onNewTask={() => {
-                            mouseAction("ab-new-task", "agentboard");
-                            openRailNewTask();
+                          repos={repos}
+                          newTaskRepoKey={railTaskRepoKey}
+                          onPickRepo={(repo) => {
+                            const closing = railTaskRepoKey === repo.key;
+                            uiAction(
+                              "agentboard.new_task_chip",
+                              "agentboard",
+                              closing ? "close" : "open",
+                            );
+                            setRailTaskRepoKey(closing ? null : repo.key);
                           }}
                           newTaskForm={newTaskForm}
                         />
