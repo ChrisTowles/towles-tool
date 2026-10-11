@@ -794,14 +794,14 @@ function RepoIdentityRow({
             </Button>
           }
         />
-        <Popover.Content className="w-56 p-2" align="end">
+        <Popover.Content className="w-auto p-3" align="end">
           <ToggleGroup
             aria-label="Icon"
             value={meta?.icon ? [meta.icon] : []}
             onValueChange={(v) => {
               if (v[0]) setIcon(v[0]);
             }}
-            className="grid grid-cols-8 gap-1"
+            className="grid grid-cols-6 gap-2"
           >
             {Object.entries(REPO_ICONS).map(([name, Choice]) => (
               <Toggle
@@ -809,9 +809,9 @@ function RepoIdentityRow({
                 value={name}
                 title={name}
                 aria-label={name}
-                className="flex size-6 items-center justify-center rounded-md text-kumo-subtle outline-none hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-focus data-[pressed]:bg-kumo-tint data-[pressed]:text-kumo-default"
+                className="flex size-8 items-center justify-center rounded-md text-kumo-subtle outline-none hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-focus data-[pressed]:bg-kumo-tint data-[pressed]:text-kumo-default"
               >
-                <Choice className="size-3.5" style={accent.iconStyle} />
+                <Choice className="size-4" style={accent.iconStyle} />
               </Toggle>
             ))}
           </ToggleGroup>
@@ -835,7 +835,7 @@ function RepoIdentityRow({
             </Button>
           }
         />
-        <Popover.Content className="w-56 p-2" align="end">
+        <Popover.Content className="w-60 p-3" align="end">
           <div className="mb-2 flex items-center justify-between gap-2 text-xs text-kumo-subtle">
             {meta?.color ? "Pinned — kept as is" : "Auto — dealt one no other repo holds"}
             {meta?.color && (
@@ -850,7 +850,7 @@ function RepoIdentityRow({
             onValueChange={(v) => {
               if (v[0]) setColor(v[0], "palette");
             }}
-            className="grid grid-cols-5 gap-1.5"
+            className="grid grid-cols-5 gap-2"
           >
             {REPO_PALETTE.map((swatch) => (
               <Toggle
@@ -859,7 +859,7 @@ function RepoIdentityRow({
                 title={swatch}
                 aria-label={swatch}
                 style={{ backgroundColor: swatch }}
-                className="size-6 rounded-md border border-kumo-hairline outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus data-[pressed]:ring-2 data-[pressed]:ring-kumo-focus data-[pressed]:ring-offset-1 data-[pressed]:ring-offset-kumo-base"
+                className="size-7 rounded-md border border-kumo-hairline outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus data-[pressed]:ring-2 data-[pressed]:ring-kumo-focus data-[pressed]:ring-offset-1 data-[pressed]:ring-offset-kumo-base"
               />
             ))}
           </ToggleGroup>
