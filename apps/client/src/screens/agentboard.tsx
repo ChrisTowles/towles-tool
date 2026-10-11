@@ -17,6 +17,7 @@ import type { FilesOpenRequest } from "@/components/files-pane";
 import { Button } from "@cloudflare/kumo";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ScrollEdgeShades, useScrollEdges } from "@/components/scroll-edge-shades";
 import { cleanupMissing, closeOnFalse } from "./agentboard/helpers";
 import { useCollapseState } from "./agentboard/use-collapse-state";
 import { useColumnDrag } from "./agentboard/use-column-drag";
@@ -79,6 +80,7 @@ import {
   type AgentboardNav,
   type FocusLevel,
   type FolderData,
+  isFolderUnmanaged,
   type ClaudeLaunchOptions,
   type PendingOpenSession,
   type RemoveTarget,
@@ -199,15 +201,12 @@ export function AgentBoardScreen() {
   // Never persisted, like the tree's search: a queue that opens narrowed to
   // yesterday's repos is a queue with work missing and no memory of why.
   const [repoFilter, setRepoFilter] = useState<ReadonlySet<string>>(() => new Set());
-  const shownQueue = useMemo(
-    () => filterQueue(queue, repoFilter, (dir) => repoByFolder.get(dir)?.key),
-    [queue, repoFilter, repoByFolder],
-  );
+  const railEdges = useScrollEdges();
   const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(() => new Set(FOLDED_BY_DEFAULT));
-  // Next up changed while you were busy: the key it was announced for.
-  const [announced, setAnnounced] = useState<number | null>(null);
-  // The task whose snooze menu is open — `z` opens it from the keyboard.
-  const [snoozeId, setSnoozeId] = useState<number | null>(null);
+  // Next up changed while you were busy: the checkout it was announced for.
+  const [announced, setAnnounced] = useState<string | null>(null);
+  // The checkout whose snooze menu is open — `z` opens it from the keyboard.
+  const [snoozeId, setSnoozeId] = useState<string | null>(null);
   // The nonce lets a re-request of the *same* session still fire.
   const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
     id: string;
@@ -295,6 +294,34 @@ export function AgentBoardScreen() {
     now,
   });
 
+  // The queue is the tree's checkouts in another order: what the tree leaves out
+  // — quiet ones, and unmanaged worktrees nothing is running in — it does too.
+  const railQueue = useMemo(() => {
+    const onRail = new Set(
+      railRepos.flatMap((r) =>
+        r.folders
+          .filter((f) => !isFolderUnmanaged(f) || f.dir === activeFolderDir)
+          .map((f) => f.dir),
+      ),
+    );
+    return filterQueue(
+      queue,
+      (dir) => onRail.has(dir),
+      new Set(),
+      () => undefined,
+    );
+  }, [queue, railRepos, activeFolderDir]);
+  const shownQueue = useMemo(
+    () =>
+      filterQueue(
+        railQueue,
+        () => true,
+        repoFilter,
+        (dir) => repoByFolder.get(dir)?.key,
+      ),
+    [railQueue, repoFilter, repoByFolder],
+  );
+
   const { wins, updateWins, addPaneToActive, removePane, replacePaneInPlace, removeSessionPane } =
     useWindowLayout({
       state,
@@ -324,12 +351,12 @@ export function AgentBoardScreen() {
   const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
   const cursorKey = cursorNode?.key ?? null;
   const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
-  // Every row owns a checkout, so the ring follows the one on screen, however it got there.
+  // Every row is a checkout, so the ring follows the one on screen, however it got there.
   const ringItem = rowForFolder(shownQueue, activeFolderDir);
-  const ringId = ringItem?.taskId ?? null;
+  const ringId = ringItem?.folderDir ?? null;
   const head = nextItem(shownQueue);
   // The collapsed strip has no rows to badge, so it offers no numbers. Keyed by
-  // session on the tree, by task on the queue.
+  // session on the tree, by checkout on the queue.
   const showHotkeys = hotkeysHeld && !railCollapsed;
   const treeHotkeys = useMemo(
     () =>
@@ -338,7 +365,9 @@ export function AgentBoardScreen() {
   );
   const queueHotkeys = useMemo(
     () =>
-      showHotkeys && !tree ? new Map(rows.slice(0, 9).map((r, i) => [r.taskId, i + 1])) : undefined,
+      showHotkeys && !tree
+        ? new Map(rows.slice(0, 9).map((r, i) => [r.folderDir, i + 1]))
+        : undefined,
     [showHotkeys, tree, rows],
   );
 
@@ -354,9 +383,9 @@ export function AgentBoardScreen() {
   });
   // Same, for the rail: the mount-only nav-request handler's closure would only
   // ever see the empty first-render snapshot.
-  const railRef = useRef({ repos, folderNameByDir, queue, shownQueue, railTree });
+  const railRef = useRef({ repos, folderNameByDir, railQueue, shownQueue, railTree });
   useEffect(() => {
-    railRef.current = { repos, folderNameByDir, queue, shownQueue, railTree };
+    railRef.current = { repos, folderNameByDir, railQueue, shownQueue, railTree };
   });
 
   // One-shot "prompt cache about to expire" toast per session per cache generation.
@@ -699,7 +728,7 @@ export function AgentBoardScreen() {
   // Walks the task queue's sessions: answer one, press next, and the most
   // urgent remaining agent is where you land.
   function jumpToNeedsYou(direction: "next" | "prev") {
-    const id = cycleQueue(queue, selected?.sessionId ?? null, direction);
+    const id = cycleQueue(railQueue, selected?.sessionId ?? null, direction);
     jumpTo(id ? (sessionById.get(id) ?? null) : null, "Queue's empty — nothing needs you.");
   }
 
@@ -755,9 +784,9 @@ export function AgentBoardScreen() {
 
   // The head of On you changed: open it where nothing would be interrupted,
   // else say so above the panes. Never moves DOM focus.
-  const onYou = onYouHead(queue);
-  const onYouId = onYou?.taskId ?? null;
-  const lastOnYouId = useRef<number | null | undefined>(undefined);
+  const onYou = onYouHead(railQueue);
+  const onYouId = onYou?.folderDir ?? null;
+  const lastOnYouId = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!queueLive) return;
     const verdict = nextUpArrival(lastOnYouId.current, onYou, {
@@ -782,7 +811,7 @@ export function AgentBoardScreen() {
         if (t.kind === "repo") return setRailView("tree");
         if (t.kind !== "pr") return;
         setRailView("queue");
-        const row = railRef.current.queue.items.find(
+        const row = railRef.current.railQueue.items.find(
           (i) => i.pr && `${i.pr.repo}#${i.pr.number}` === t.id,
         );
         // A filter that hides the row gives way to it.
@@ -1323,7 +1352,7 @@ export function AgentBoardScreen() {
               "queue-up": () => moveQueueCursor(-1),
               "queue-snooze": () => {
                 if (!ringItem?.reason || ringItem.snoozed) return false;
-                setSnoozeId(ringItem.taskId);
+                setSnoozeId(ringItem.folderDir);
               },
               // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the
               // first matching handler wins.
@@ -1587,50 +1616,58 @@ export function AgentBoardScreen() {
                   {/* min-h-0 is load-bearing: without it this flex child grows past the
                       rail's height and rows below the fold become unreachable. */}
                   {tree && railHeader}
-                  <ScrollArea className="min-h-0 flex-1">
-                    <div ref={focusRef}>
-                      {tree ? (
-                        <>
-                          {newTaskForm}
-                          {checkoutTree}
-                        </>
-                      ) : (
-                        <QueueRail
-                          queue={shownQueue}
-                          allItems={queue.items}
-                          repoFilter={repoFilter}
-                          onRepoFilterChange={setRepoFilter}
-                          repoByFolder={repoByFolder}
-                          live={queueLive}
-                          now={now}
-                          head={head}
-                          selectedId={ringId}
-                          folded={foldedLanes}
-                          hotkeys={queueHotkeys}
-                          snoozeId={snoozeId}
-                          onSnoozeIdChange={setSnoozeId}
-                          onToggleLane={toggleLane}
-                          onSelect={pickQueueItem}
-                          onOpenHead={() => {
-                            mouseAction("queue-next", "agentboard");
-                            openNextUp();
-                          }}
-                          repos={repos}
-                          newTaskRepoKey={railTaskRepoKey}
-                          onPickRepo={(repo) => {
-                            const closing = railTaskRepoKey === repo.key;
-                            uiAction(
-                              "agentboard.new_task_chip",
-                              "agentboard",
-                              closing ? "close" : "open",
-                            );
-                            setRailTaskRepoKey(closing ? null : repo.key);
-                          }}
-                          newTaskForm={newTaskForm}
-                        />
-                      )}
-                    </div>
-                  </ScrollArea>
+                  {/* The shades say there is more above/below the fold. */}
+                  <div className="relative flex min-h-0 flex-1 flex-col">
+                    <ScrollArea className="min-h-0 flex-1" viewportRef={railEdges.ref}>
+                      <div ref={focusRef}>
+                        {tree ? (
+                          <>
+                            {newTaskForm}
+                            {checkoutTree}
+                          </>
+                        ) : (
+                          <QueueRail
+                            queue={shownQueue}
+                            allItems={railQueue.items}
+                            repoFilter={repoFilter}
+                            onRepoFilterChange={setRepoFilter}
+                            repoByFolder={repoByFolder}
+                            folderByDir={folderByDir}
+                            prs={snapshot.prs}
+                            tasks={snapshot.tasks}
+                            onOpenFiles={openFiles}
+                            live={queueLive}
+                            now={now}
+                            head={head}
+                            selectedId={ringId}
+                            folded={foldedLanes}
+                            hotkeys={queueHotkeys}
+                            snoozeId={snoozeId}
+                            onSnoozeIdChange={setSnoozeId}
+                            onToggleLane={toggleLane}
+                            onSelect={pickQueueItem}
+                            onOpenHead={() => {
+                              mouseAction("queue-next", "agentboard");
+                              openNextUp();
+                            }}
+                            repos={repos}
+                            newTaskRepoKey={railTaskRepoKey}
+                            onPickRepo={(repo) => {
+                              const closing = railTaskRepoKey === repo.key;
+                              uiAction(
+                                "agentboard.new_task_chip",
+                                "agentboard",
+                                closing ? "close" : "open",
+                              );
+                              setRailTaskRepoKey(closing ? null : repo.key);
+                            }}
+                            newTaskForm={newTaskForm}
+                          />
+                        )}
+                      </div>
+                    </ScrollArea>
+                    <ScrollEdgeShades above={railEdges.above} below={railEdges.below} />
+                  </div>
 
                   {/* Jarvis: the lower quarter of the rail is a native Bevy
                       surface, not DOM (see `components/native-pane.tsx`).

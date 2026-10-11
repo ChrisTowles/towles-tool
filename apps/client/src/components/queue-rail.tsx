@@ -8,11 +8,25 @@ import {
   ClockIcon,
   PlayIcon,
 } from "@phosphor-icons/react";
-import { HotkeyBadge } from "@/components/agentboard-bits";
+import {
+  BaseMovedChip,
+  CommittedChip,
+  FolderLandedBadge,
+  HotkeyBadge,
+  IssueChip,
+  PrChip,
+  UncommittedChip,
+} from "@/components/agentboard-bits";
 import { QueueRepoChips } from "@/components/queue-repo-chips";
 import { QueueRepoFilter } from "@/components/queue-repo-filter";
-import { requestAgentboardNav, type RepoData } from "@/lib/agentboard";
-import { fmtAge } from "@/lib/data";
+import {
+  prForFolder,
+  requestAgentboardNav,
+  taskForFolder,
+  type FolderData,
+  type RepoData,
+} from "@/lib/agentboard";
+import { fmtAge, type PrItem, type TaskItem } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
 import { repoAccentStyles, repoRowStyle } from "@/lib/repo-identity";
@@ -58,7 +72,7 @@ export async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Pr
   uiAction("queue.snooze", "agentboard", preset);
   await report(
     await invoke<void>("queue_snooze", {
-      id: item.taskId,
+      folderDir: item.folderDir,
       reason: item.reason,
       untilMs: snoozeUntil(preset, Date.now()),
     }),
@@ -71,14 +85,14 @@ export async function rerankQueueItem(
   direction: "up" | "down" | "top",
 ): Promise<void> {
   const to = rankMove(items, items.indexOf(item), direction);
-  if (!to) return;
+  if (!to || item.taskId == null) return;
   uiAction("queue.reorder", "agentboard", direction);
   await report(await invoke<void>("queue_move", { id: item.taskId, to }));
 }
 
 async function unsnoozeItem(item: QueueItem) {
   uiAction("queue.unsnooze", "agentboard");
-  await report(await invoke<void>("queue_unsnooze", { id: item.taskId }));
+  await report(await invoke<void>("queue_unsnooze", { folderDir: item.folderDir }));
 }
 
 /** `queue-next` from any screen, terminals included: Agent Board opens the head in place. */
@@ -99,8 +113,8 @@ export function QueueNextShortcut() {
   return null;
 }
 
-/** The left rail: the tasks that own a checkout, as one queue — Next up, then
- * every lane. Rows only select — the checkout's terminals open beside it; nothing
+/** The left rail: the tree's checkouts, roots included, as one queue — Next
+ * up, then every lane. Rows only select — the checkout's terminals open beside it; nothing
  * here acts on an agent. */
 export function QueueRail({
   queue,
@@ -108,6 +122,10 @@ export function QueueRail({
   repoFilter,
   onRepoFilterChange,
   repoByFolder,
+  folderByDir,
+  prs,
+  tasks,
+  onOpenFiles,
   live,
   now,
   head,
@@ -132,16 +150,22 @@ export function QueueRail({
   onRepoFilterChange: (picked: ReadonlySet<string>) => void;
   /** Checkout dir → its repo, for the row's identity tag. */
   repoByFolder: ReadonlyMap<string, RepoData>;
+  /** Checkout dir → its rail data, for the tree's git and link chips. */
+  folderByDir: ReadonlyMap<string, FolderData>;
+  prs: PrItem[];
+  tasks: TaskItem[];
+  onOpenFiles: (folderDir: string) => void;
   live: boolean;
   now: number;
   head: QueueItem | undefined;
-  selectedId: number | null;
+  /** The ringed row's `folderDir`. */
+  selectedId: string | null;
   folded: ReadonlySet<Lane>;
-  /** Task id → jump digit, only while the chord is held. */
-  hotkeys: Map<number, number> | undefined;
-  /** The task whose snooze menu is open. */
-  snoozeId: number | null;
-  onSnoozeIdChange: (id: number | null) => void;
+  /** Checkout dir → jump digit, only while the chord is held. */
+  hotkeys: Map<string, number> | undefined;
+  /** The checkout whose snooze menu is open. */
+  snoozeId: string | null;
+  onSnoozeIdChange: (id: string | null) => void;
   onToggleLane: (lane: Lane) => void;
   onSelect: (item: QueueItem) => void;
   /** The hero's Open — the mouse twin of `queue-next`. */
@@ -154,6 +178,15 @@ export function QueueRail({
   /** The new-task form, open under the header. */
   newTaskForm?: ReactNode;
 }) {
+  const chipsFor = (item: QueueItem) => (
+    <CheckoutChips
+      folder={folderByDir.get(item.folderDir)}
+      repo={repoByFolder.get(item.folderDir)}
+      prs={prs}
+      tasks={tasks}
+      onOpenFiles={() => onOpenFiles(item.folderDir)}
+    />
+  );
   return (
     <div className="flex flex-col">
       <QueueRepoChips repos={repos} activeKey={newTaskRepoKey} onPick={onPickRepo} />
@@ -173,7 +206,7 @@ export function QueueRail({
         </p>
       ) : queue.items.length === 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
-          No tasks with a checkout — start one from a repo above.
+          No checkouts yet — start a task from a repo above.
         </p>
       ) : (
         <>
@@ -182,7 +215,8 @@ export function QueueRail({
               item={head}
               repo={repoByFolder.get(head.folderDir)}
               now={now}
-              selected={head.taskId === selectedId}
+              selected={head.folderDir === selectedId}
+              chips={chipsFor(head)}
               onOpen={onOpenHead}
               onLater={() => void rerankQueueItem(queue.items, head, "down")}
               onSnooze={(preset) => void snoozeQueueItem(head, preset)}
@@ -206,7 +240,7 @@ export function QueueRail({
                 </button>
                 {!isFolded &&
                   items.map((item) => {
-                    const id = item.taskId;
+                    const id = item.folderDir;
                     return (
                       <QueueRow
                         key={id}
@@ -214,6 +248,7 @@ export function QueueRail({
                         repo={repoByFolder.get(item.folderDir)}
                         now={now}
                         selected={id === selectedId}
+                        chips={chipsFor(item)}
                         hotkey={hotkeys?.get(id)}
                         snoozeOpen={snoozeId === id}
                         onSnoozeOpenChange={(o) => onSnoozeIdChange(o ? id : null)}
@@ -235,6 +270,7 @@ function Hero({
   repo,
   now,
   selected,
+  chips,
   onOpen,
   onLater,
   onSnooze,
@@ -243,6 +279,7 @@ function Hero({
   repo: RepoData | undefined;
   now: number;
   selected: boolean;
+  chips: ReactNode;
   onOpen: () => void;
   onLater: () => void;
   onSnooze: (preset: SnoozePreset) => void;
@@ -250,7 +287,7 @@ function Hero({
   const look = repoLook(repo, item.repo);
   return (
     <motion.div
-      key={item.taskId}
+      key={item.folderDir}
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       style={look.rowStyle}
@@ -269,6 +306,7 @@ function Hero({
           .filter(Boolean)
           .join(" · ")}
       </div>
+      <div className="mt-1">{chips}</div>
       {item.said && item.said !== item.title && (
         <div className="mt-2 line-clamp-2 rounded-md border-l-2 border-kumo-warning bg-kumo-tint px-2 py-1 text-xs">
           {item.said}
@@ -281,9 +319,11 @@ function Hero({
           </Button>
         )}
         {item.reason && <SnoozeButtons onSnooze={onSnooze} />}
-        <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
-          Later
-        </Button>
+        {item.taskId != null && (
+          <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
+            Later
+          </Button>
+        )}
       </div>
     </motion.div>
   );
@@ -354,10 +394,41 @@ function RepoName({ look, className }: { look: RepoLook; className?: string }) {
   );
 }
 
+/** The tree's git and link chips for a checkout — the same components, resolved
+ * the same way, so a row reads alike on either rail. Nothing when all is clean. */
+function CheckoutChips({
+  folder,
+  repo,
+  prs,
+  tasks,
+  onOpenFiles,
+}: {
+  folder: FolderData | undefined;
+  repo: RepoData | undefined;
+  prs: PrItem[];
+  tasks: TaskItem[];
+  onOpenFiles: () => void;
+}) {
+  if (!folder || folder.dirMissing) return null;
+  const pr = prForFolder(prs, repo?.originUrl, folder.branch);
+  const task = folder.isWorktree ? taskForFolder(tasks, folder.dir) : undefined;
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 empty:hidden">
+      {pr && <PrChip pr={pr} stats={folder} />}
+      {task?.issues.map((issue) => (
+        <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
+      ))}
+      <FolderLandedBadge folder={folder} pr={pr} />
+      <BaseMovedChip stats={folder} />
+      <UncommittedChip stats={folder} onOpen={onOpenFiles} />
+      <CommittedChip stats={folder} onOpen={onOpenFiles} />
+    </div>
+  );
+}
+
 function rowMeta(item: QueueItem, now: number): string {
   return [
     item.branch,
-    item.pr ? `PR #${item.pr.number}` : null,
     item.ci.length > 0 ? item.ci.map((c) => c.workflow).join(", ") : null,
     item.runningAgents > 0
       ? `${item.runningAgents} agent${item.runningAgents === 1 ? "" : "s"} working`
@@ -377,6 +448,7 @@ function QueueRow({
   repo,
   now,
   selected,
+  chips,
   hotkey,
   snoozeOpen,
   onSnoozeOpenChange,
@@ -386,6 +458,8 @@ function QueueRow({
   repo: RepoData | undefined;
   now: number;
   selected: boolean;
+  /** Clickable, so a sibling of the row's button, never inside it. */
+  chips: ReactNode;
   hotkey: number | undefined;
   snoozeOpen: boolean;
   onSnoozeOpenChange: (open: boolean) => void;
@@ -399,66 +473,72 @@ function QueueRow({
       data-focus-id={item.pr ? `${item.pr.repo}#${item.pr.number}` : undefined}
       style={look.rowStyle}
       className={cn(
-        "group flex items-center gap-2 border-t border-l-4 border-kumo-line px-3 py-2 text-sm",
+        "group border-t border-l-4 border-kumo-line px-3 py-1.5 text-sm",
         selected && "ring-2 ring-kumo-brand ring-inset",
         item.lane !== "on_you" && "text-kumo-subtle",
       )}
     >
-      <button
-        type="button"
-        onClick={onSelect}
-        aria-current={selected ? "true" : undefined}
-        data-testid="queue-row"
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-      >
-        {/* A reserved column, so revealing the digits never reflows a row. */}
-        {hotkey !== undefined ? <HotkeyBadge n={hotkey} /> : <span className="w-4 shrink-0" />}
-        {face ? (
-          <Badge variant={face.variant} className="w-20 shrink-0 justify-center">
-            {face.label}
-            {item.also.length > 0 && ` +${item.also.length}`}
-          </Badge>
-        ) : item.lane === "on_you" ? (
-          <span className="w-20 shrink-0" />
-        ) : null}
-        <span className="min-w-0 flex-1">
-          <RepoName look={look} className="text-base" />
-          <span className="block truncate text-base font-medium text-kumo-default">
-            {item.title}
-          </span>
-          <span className="block truncate font-mono text-xs text-kumo-subtle">
-            {rowMeta(item, now)}
-          </span>
-        </span>
-        {item.sinceMs != null && (
-          <span className="shrink-0 font-mono text-xs text-kumo-subtle tabular-nums">
-            {fmtAge(item.sinceMs, now)}
-          </span>
-        )}
-      </button>
-      {item.snoozed && (
-        <Button size="xs" variant="ghost" onClick={() => void unsnoozeItem(item)}>
-          Wake
-        </Button>
-      )}
-      {/* Only on the row you're on or over, so the queue still reads as titles. */}
-      {item.reason && !item.snoozed && (
-        <div
-          className={cn(
-            "shrink-0",
-            selected || snoozeOpen ? "flex" : "hidden group-focus-within:flex group-hover:flex",
-          )}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-current={selected ? "true" : undefined}
+          data-testid="queue-row"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <SnoozeButtons
-            autoFocus={snoozeOpen}
-            onDismiss={() => onSnoozeOpenChange(false)}
-            onSnooze={(preset) => {
-              onSnoozeOpenChange(false);
-              void snoozeQueueItem(item, preset);
-            }}
-          />
-        </div>
-      )}
+          {/* A reserved column, so revealing the digits never reflows a row. */}
+          {hotkey !== undefined ? <HotkeyBadge n={hotkey} /> : <span className="w-4 shrink-0" />}
+          {face ? (
+            <Badge variant={face.variant} className="w-20 shrink-0 justify-center">
+              {face.label}
+              {item.also.length > 0 && ` +${item.also.length}`}
+            </Badge>
+          ) : item.lane === "on_you" ? (
+            <span className="w-20 shrink-0" />
+          ) : null}
+          {/* Repo and title share one line: two lines a row, so twenty fit a screen. */}
+          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+            <span style={look.textStyle} className="max-w-[45%] shrink-0 truncate font-bold">
+              {look.name}
+            </span>
+            <span className="truncate font-medium text-kumo-default">{item.title}</span>
+          </span>
+          {item.sinceMs != null && (
+            <span className="shrink-0 font-mono text-xs text-kumo-subtle tabular-nums">
+              {fmtAge(item.sinceMs, now)}
+            </span>
+          )}
+        </button>
+        {item.snoozed && (
+          <Button size="xs" variant="ghost" onClick={() => void unsnoozeItem(item)}>
+            Wake
+          </Button>
+        )}
+        {/* Only on the row you're on or over, so the queue still reads as titles. */}
+        {item.reason && !item.snoozed && (
+          <div
+            className={cn(
+              "shrink-0",
+              selected || snoozeOpen ? "flex" : "hidden group-focus-within:flex group-hover:flex",
+            )}
+          >
+            <SnoozeButtons
+              autoFocus={snoozeOpen}
+              onDismiss={() => onSnoozeOpenChange(false)}
+              onSnooze={(preset) => {
+                onSnoozeOpenChange(false);
+                void snoozeQueueItem(item, preset);
+              }}
+            />
+          </div>
+        )}
+      </div>
+      <div className="flex min-w-0 items-center gap-2 pl-6">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-kumo-subtle">
+          {rowMeta(item, now)}
+        </span>
+        {chips}
+      </div>
     </div>
   );
 }

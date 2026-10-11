@@ -84,10 +84,11 @@ handler map only while that rail is up (Alt+Shift+↑ is rank-top on one,
 collapse-all on the other). A deep link picks the rail it needs: a PR lands on
 the queue, a repo on the tree.
 
-The queue rail (`components/queue-rail.tsx`) is **the board tasks that own one
-of Agent Board's checkouts, ordered to work one at a time** —
-so a backlog task with no checkout, a PR or a CI run is not a row, and neither
-is a checkout no task owns. `railRows` (`lib/queue.tsx`) is the one walk the
+The queue rail (`components/queue-rail.tsx`) is **the tree's checkouts, roots
+included, ordered to work one at a time** — keyed by `folderDir`, with a task
+lending a row its title and rank; a backlog task with no checkout, a PR or a CI
+run is not a row, and what the tree leaves out (quiet checkouts, idle unmanaged
+worktrees) the queue does too (`railQueue`). `railRows` (`lib/queue.tsx`) is the one walk the
 cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9 jump digits read — folded lanes
 skipped, so the keyboard sees what you see —
 and the ring follows the checkout on screen however it got there

@@ -736,7 +736,7 @@ fn delete_tasks_where(
 ) -> Result<usize> {
     tx.execute(
         &format!(
-            "DELETE FROM queue_snoozes WHERE key IN (SELECT 'task:' || id FROM tasks WHERE {pred})"
+            "DELETE FROM queue_snoozes WHERE key IN (SELECT 'folder:' || worktree_dir FROM tasks WHERE {pred} AND worktree_dir IS NOT NULL)"
         ),
         args,
     )?;

@@ -37,7 +37,8 @@ function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
   };
 }
 
-const queue = (items: QueueItem[]): TaskQueue => ({ next: items[0]?.taskId ?? null, items });
+const queue = (items: QueueItem[]): TaskQueue => ({ next: items[0]?.folderDir ?? null, items });
+const dir = (id: number) => `/w${id}`;
 
 describe("cycleQueue", () => {
   const q = queue([item(1), item(2), item(3, { lane: "running" })]);
@@ -66,6 +67,12 @@ describe("rankMove", () => {
     expect(rankMove(items, 0, "up")).toBeNull();
     expect(rankMove(items, 2, "down")).toBeNull();
   });
+  it("steps over checkouts no task owns, and never moves one", () => {
+    const mixed = [item(1), item(2, { taskId: null, rank: null }), item(3)];
+    expect(rankMove(mixed, 2, "up")).toEqual({ before: 1 });
+    expect(rankMove(mixed, 0, "down")).toEqual({ after: 3 });
+    expect(rankMove(mixed, 1, "top")).toBeNull();
+  });
 });
 
 describe("snooze presets", () => {
@@ -80,7 +87,7 @@ describe("snooze presets", () => {
 
 describe("schema + nextItem", () => {
   it("parses the Rust shape and finds the head", () => {
-    const raw = { next: 2, items: [item(1), item(2)] };
+    const raw = { next: dir(2), items: [item(1), item(2), item(3, { taskId: null, rank: null })] };
     const parsed = TaskQueueSchema.parse(raw);
     expect(nextItem(parsed)?.title).toBe("t2");
   });
@@ -97,28 +104,34 @@ describe("rail rows", () => {
   it("step within bounds, from nothing to the first", () => {
     const rows = railRows(q, new Set());
     expect(stepRow(rows, null, 1)?.title).toBe("t1");
-    expect(stepRow(rows, 1, 1)?.title).toBe("t2");
-    expect(stepRow(rows, 3, 1)?.title).toBe("t3");
-    expect(stepRow(rows, 1, -1)?.title).toBe("t1");
+    expect(stepRow(rows, dir(1), 1)?.title).toBe("t2");
+    expect(stepRow(rows, dir(3), 1)?.title).toBe("t3");
+    expect(stepRow(rows, dir(1), -1)?.title).toBe("t1");
     expect(stepRow([], null, 1)).toBeUndefined();
   });
 });
 
 const REPO_OF: Record<string, string> = { "/w1": "a", "/w2": "b", "/w3": "b" };
-const repoOf = (dir: string): string | undefined => REPO_OF[dir];
+const repoOf = (folderDir: string): string | undefined => REPO_OF[folderDir];
+const all = () => true;
 
 describe("filterQueue", () => {
   const q = queue([item(1), item(2, { lane: "running" }), item(3)]);
   it("shows every repo while none is picked", () => {
-    expect(filterQueue(q, new Set(), repoOf)).toBe(q);
+    expect(filterQueue(q, all, new Set(), repoOf)).toBe(q);
   });
   it("keeps the picked repos' rows and re-picks Next up among them", () => {
-    const b = filterQueue(q, new Set(["b"]), repoOf);
-    expect(b.items.map((i) => i.taskId)).toEqual([2, 3]);
-    expect(b.next).toBe(3);
+    const b = filterQueue(q, all, new Set(["b"]), repoOf);
+    expect(b.items.map((i) => i.folderDir)).toEqual([dir(2), dir(3)]);
+    expect(b.next).toBe(dir(3));
   });
   it("has no Next up when nothing picked waits on you", () => {
-    expect(filterQueue(q, new Set(["c"]), repoOf)).toEqual({ items: [], next: null });
+    expect(filterQueue(q, all, new Set(["c"]), repoOf)).toEqual({ items: [], next: null });
+  });
+  it("drops checkouts the tree doesn't show", () => {
+    const shown = filterQueue(q, (d) => d !== dir(1), new Set(), repoOf);
+    expect(shown.items.map((i) => i.folderDir)).toEqual([dir(2), dir(3)]);
+    expect(shown.next).toBe(dir(3));
   });
 });
 
@@ -128,21 +141,21 @@ describe("nextUpArrival", () => {
   it("opens on first sight only when nothing is selected or typed in", () => {
     expect(nextUpArrival(undefined, head, idle)).toBe("open");
     expect(nextUpArrival(undefined, head, { ...idle, terminalFocused: true })).toBeNull();
-    expect(nextUpArrival(undefined, head, { ...idle, selectedId: 9 })).toBeNull();
+    expect(nextUpArrival(undefined, head, { ...idle, selectedId: dir(9) })).toBeNull();
   });
   it("ignores an unchanged head or one already on screen", () => {
-    expect(nextUpArrival(2, head, idle)).toBeNull();
-    expect(nextUpArrival(1, head, { ...idle, selectedId: 2 })).toBeNull();
-    expect(nextUpArrival(1, undefined, idle)).toBeNull();
+    expect(nextUpArrival(dir(2), head, idle)).toBeNull();
+    expect(nextUpArrival(dir(1), head, { ...idle, selectedId: dir(2) })).toBeNull();
+    expect(nextUpArrival(dir(1), undefined, idle)).toBeNull();
   });
   it("never takes a focused terminal or a row that still needs you", () => {
-    expect(nextUpArrival(1, head, { ...idle, terminalFocused: true })).toBe("announce");
-    const busy = { ...idle, selectedId: 1, selectedOnYou: true };
-    expect(nextUpArrival(1, head, busy)).toBe("announce");
+    expect(nextUpArrival(dir(1), head, { ...idle, terminalFocused: true })).toBe("announce");
+    const busy = { ...idle, selectedId: dir(1), selectedOnYou: true };
+    expect(nextUpArrival(dir(1), head, busy)).toBe("announce");
   });
   it("opens once you're done with what you had open", () => {
-    const answered = { ...idle, selectedId: 1, selectedOnYou: false };
-    expect(nextUpArrival(1, head, answered)).toBe("open");
-    expect(nextUpArrival(1, head, idle)).toBe("open");
+    const answered = { ...idle, selectedId: dir(1), selectedOnYou: false };
+    expect(nextUpArrival(dir(1), head, answered)).toBe("open");
+    expect(nextUpArrival(dir(1), head, idle)).toBe("open");
   });
 });

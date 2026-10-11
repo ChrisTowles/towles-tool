@@ -1537,9 +1537,10 @@ mod tests {
     fn snoozes_replace_and_clear_and_go_with_their_task() {
         let s = Store::open_in_memory().unwrap();
         let a = s.add_task("a", "backlog", None, None, 1).unwrap();
-        let key = format!("task:{}", a.id);
-        s.snooze_queue_item(&key, "answer", Some(100), 5).unwrap();
-        s.snooze_queue_item(&key, "land", None, 6).unwrap();
+        s.set_task_worktree(a.id, "/r", Some("o/r"), Some("feat/a"), Some("/w")).unwrap();
+        let key = "folder:/w";
+        s.snooze_queue_item(key, "answer", Some(100), 5).unwrap();
+        s.snooze_queue_item(key, "land", None, 6).unwrap();
         s.snooze_queue_item("ci:o/r@main", "fix_ci", None, 6).unwrap();
         let snoozes = s.queue_snoozes().unwrap();
         assert_eq!(snoozes.len(), 2);
@@ -1548,9 +1549,9 @@ mod tests {
             ("ci:o/r@main", "fix_ci")
         );
         assert_eq!((snoozes[1].reason.as_str(), snoozes[1].until_ms), ("land", None));
-        s.unsnooze_queue_item(&key).unwrap();
+        s.unsnooze_queue_item(key).unwrap();
         assert_eq!(s.queue_snoozes().unwrap().len(), 1);
-        s.snooze_queue_item(&key, "land", None, 7).unwrap();
+        s.snooze_queue_item(key, "land", None, 7).unwrap();
         s.delete_task(a.id).unwrap();
         let left = s.queue_snoozes().unwrap();
         assert_eq!(left.len(), 1, "only the task's own snooze goes with it");
