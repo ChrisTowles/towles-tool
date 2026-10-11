@@ -138,7 +138,7 @@ pub enum TaskCommands {
         #[arg(long)]
         force: bool,
 
-        /// Outcome recorded on the closed board row (default: done if a linked PR merged)
+        /// Outcome recorded on the closed board row (default: done if the branch landed or a linked PR merged)
         #[arg(long, value_parser = ["done", "abandoned"])]
         outcome: Option<String>,
 

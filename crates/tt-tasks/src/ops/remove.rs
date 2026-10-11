@@ -69,6 +69,9 @@ pub struct RemovedTask {
     pub checkout: PathBuf,
     /// Progress notes for the user. Callers surface these — nothing here prints.
     pub messages: Vec<String>,
+    /// Git proved the branch's work reached the base (a squash merge included) —
+    /// the evidence an inferred close needs, read before the worktree went.
+    pub landed: bool,
 }
 
 /// How a removal ended.
@@ -169,6 +172,7 @@ pub fn remove_task(
             dir,
             checkout: sr.checkout.clone(),
             messages,
+            landed: false,
         }));
     };
 
@@ -203,12 +207,14 @@ pub fn remove_task(
         .ok()
         .and_then(|repo| repo.head_branch())
         .filter(|b| !b.is_empty());
+    let mut landed = false;
     if let Some(branch) = &branch {
         let refs = base_refs(&sr.checkout);
         if *branch != refs.base {
             let work = work_state(&refs, &dir, &format!("refs/heads/{branch}"), dirty, unreachable);
             match (work.unlanded, work.landed) {
                 (0, Some(via)) => {
+                    landed = true;
                     messages.push(format!(
                         "{branch} is {} into {} — nothing outstanding",
                         via.label(),
@@ -262,7 +268,13 @@ pub fn remove_task(
         release_task_ports(&sr.checkout, &path, &name);
     }
     state_cleanup(state_scope.as_deref(), &mut messages);
-    Ok(RemoveOutcome::Removed(RemovedTask { name, dir, checkout: sr.checkout.clone(), messages }))
+    Ok(RemoveOutcome::Removed(RemovedTask {
+        name,
+        dir,
+        checkout: sr.checkout.clone(),
+        messages,
+        landed,
+    }))
 }
 
 /// The ports a checkout claims, from its rendered `.env`.

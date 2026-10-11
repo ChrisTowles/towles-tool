@@ -148,7 +148,9 @@ Rules when working in a task:
   for exactly this. Closing (2026-07-22) replaced deleting: the row survives
   with a `TaskOutcome` (`done`/`abandoned`) and its `worktree_dir` cleared —
   the app's delete dialog asks which, headless callers (`tt task rm`, MCP)
-  infer it via `TaskItem::inferred_outcome` (merged linked PR ⇒ done). Closed
+  infer it via `TaskItem::inferred_outcome` (merged linked PR ⇒ done), which
+  `task_removal::CloseAs::Inferred` overrules to done when `work_state` proves
+  the branch landed — a squash merge the board never linked a PR for. Closed
   rows age into the archive (`archived_at`, `Store::archive_closed_tasks`,
   swept from `tt-collect`'s `sync_task_links` and the Board's "Archive done"
   button); `Store::delete_task` remains only behind the Board's explicit
