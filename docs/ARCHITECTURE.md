@@ -104,11 +104,12 @@ the CLI and the app can consume it.
   free. Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
-  And **the task queue** (`queue::build`): every board task that owns a checkout
-  on Agent Board, one row each, with a lane and wait reason derived
-  per emit from `needs_reason`, the PR and CI caches and the rail's landed state
-  (`ops::work_state`), ordered by the user's global `rank`. A PR, CI run,
-  backlog task with no checkout, or checkout no task owns is not a row.
+  And **the queue** (`queue::build`): every checkout on Agent Board, task
+  worktrees and repo roots alike, one row each, with a lane and wait reason
+  derived per emit from `needs_reason`, the PR and CI caches and the rail's
+  landed state (`ops::work_state`). A task owning the checkout lends the row its
+  title and the user's global `rank`; unranked checkouts follow ranked ones in a
+  tier. A PR, CI run or backlog task with no checkout is not a row.
 - `tt-claude-code` — transcript/session parsing models.
 - `tt-doctor` — doctor checks logic (the app screen consumes it).
 - `tt-update` — checks GitHub Releases for a newer version. Uses `native-tls`,
@@ -144,7 +145,7 @@ as the only nav, ⌘K palette, screens stay mounted across switches) with three
 Focus screens: **Agent Board**, **Board**, **Messages**. Agent Board, the
 cold-start screen, is one workspace — the same terminals, panes and selection —
 with two rails over the same checkouts, switched by the Queue/Tree tabs atop the
-rail. Queue lays them out to work one at a time: the rail *is* the task queue
+rail. Queue lays them out to work one at a time: the rail *is* the queue
 (Next up, then On you / Running / Parked / Idle). When the head of On you
 changes it opens in place, unless a
 terminal has focus or the row on screen still needs you — then it is announced

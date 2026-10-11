@@ -1,4 +1,4 @@
-//! The task queue's app half: rebuilt on every agentboard emit tick from the
+//! The queue's app half: rebuilt on every agentboard emit tick from the
 //! stamped payload plus the store, broadcast only when it changed.
 
 use std::sync::Mutex;
@@ -56,7 +56,7 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
         return;
     }
     if last.as_ref().map(|q| &q.next) != Some(&queue.next) {
-        let head = queue.items.iter().find(|i| Some(i.task_id) == queue.next);
+        let head = queue.items.iter().find(|i| Some(&i.folder_dir) == queue.next.as_ref());
         tracing::info!(
             reason = head.and_then(|i| i.reason).map(|r| r.as_str()),
             waited_ms = head.and_then(|i| i.since_ms).map(|s| now_ms() - s),
@@ -99,23 +99,29 @@ pub fn queue_move(
 pub fn queue_snooze(
     app: AppHandle,
     store: State<StoreState>,
-    id: i64,
+    folder_dir: String,
     reason: String,
     until_ms: Option<i64>,
 ) -> Result<(), String> {
+    let key = snooze_key(&folder_dir);
     let result = store.with(|s| {
-        s.snooze_queue_item(&snooze_key(id), &reason, until_ms, now_ms()).map_err(|e| e.to_string())
+        s.snooze_queue_item(&key, &reason, until_ms, now_ms()).map_err(|e| e.to_string())
     });
-    tracing::info!(task_id = id, reason, until_ms, ok = result.is_ok(), "queue.snoozed");
+    tracing::info!(reason, until_ms, ok = result.is_ok(), "queue.snoozed");
     result?;
     after_write(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn queue_unsnooze(app: AppHandle, store: State<StoreState>, id: i64) -> Result<(), String> {
-    let result = store.with(|s| s.unsnooze_queue_item(&snooze_key(id)).map_err(|e| e.to_string()));
-    tracing::info!(task_id = id, ok = result.is_ok(), "queue.unsnoozed");
+pub fn queue_unsnooze(
+    app: AppHandle,
+    store: State<StoreState>,
+    folder_dir: String,
+) -> Result<(), String> {
+    let key = snooze_key(&folder_dir);
+    let result = store.with(|s| s.unsnooze_queue_item(&key).map_err(|e| e.to_string()));
+    tracing::info!(ok = result.is_ok(), "queue.unsnoozed");
     result?;
     after_write(&app);
     Ok(())

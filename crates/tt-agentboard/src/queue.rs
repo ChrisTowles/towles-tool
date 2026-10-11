@@ -1,7 +1,7 @@
-//! The task queue: the board tasks that own a checkout on Agent Board, in the
-//! order to work them — what waits on you, then what runs, what's parked,
-//! what's idle. A checkout no task owns is not a row: watching one means
-//! adopting it as a task. Pure — agent waits come from the
+//! The queue: every checkout on Agent Board — task worktrees and repo roots
+//! alike, the tree's own rows — in the order to work them: what waits on you,
+//! then what runs, what's parked, what's idle. A task owning the checkout lends
+//! it a title and a rank; nothing else needs one. Pure — agent waits come from the
 //! PTY-first `needs_reason`, landed state from the rail's `ops::work_state`, PR
 //! and CI facts from the collector cache; only rank and snoozes are the user's.
 
@@ -54,9 +54,9 @@ pub enum Lane {
     Idle,
 }
 
-/// The stable string a task's snooze is stored under; the store never parses it.
-pub fn snooze_key(task_id: i64) -> String {
-    format!("task:{task_id}")
+/// The stable string a checkout's snooze is stored under; the store never parses it.
+pub fn snooze_key(folder_dir: &str) -> String {
+    format!("folder:{folder_dir}")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,7 +83,8 @@ pub struct QueueCi {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueItem {
-    pub task_id: i64,
+    /// The board task owning the checkout, if any; the row's identity is `folder_dir`.
+    pub task_id: Option<i64>,
     pub lane: Lane,
     pub reason: Option<WaitReason>,
     pub also: Vec<WaitReason>,
@@ -97,7 +98,8 @@ pub struct QueueItem {
     pub running_agents: u32,
     pub pr: Option<QueuePr>,
     pub ci: Vec<QueueCi>,
-    pub rank: i64,
+    /// The owning task's board rank; a checkout no task owns has none.
+    pub rank: Option<i64>,
     pub since_ms: Option<i64>,
     pub snoozed_until_ms: Option<i64>,
     pub snoozed: bool,
@@ -106,7 +108,8 @@ pub struct QueueItem {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskQueue {
-    pub next: Option<i64>,
+    /// The `folder_dir` of the first row on you.
+    pub next: Option<String>,
     pub items: Vec<QueueItem>,
 }
 
@@ -135,29 +138,36 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
         .repos
         .iter()
         .flat_map(|r| r.folders.iter().map(move |f| (r, f)))
-        .filter_map(|(repo, folder)| {
-            let task = owners.get(folder.dir.as_str())?;
-            Some(task_item(repo, folder, task, inputs.prs, &failing))
+        .map(|(repo, folder)| {
+            let task = owners.get(folder.dir.as_str()).copied();
+            checkout_item(repo, folder, task, inputs.prs, &failing)
         })
         .collect();
     for item in &mut items {
         apply_snooze(item, &snoozes, inputs.now_ms);
     }
-    items.sort_by(|a, b| order_key(a).cmp(&order_key(b)).then_with(|| a.task_id.cmp(&b.task_id)));
-    let next = items.iter().find(|i| i.lane == Lane::OnYou).map(|i| i.task_id);
+    items.sort_by(|a, b| {
+        order_key(a).cmp(&order_key(b)).then_with(|| a.folder_dir.cmp(&b.folder_dir))
+    });
+    let next = items.iter().find(|i| i.lane == Lane::OnYou).map(|i| i.folder_dir.clone());
     TaskQueue { next, items }
 }
 
-/// A task's row, read off the checkout it owns.
-fn task_item(
+/// A checkout's row, titled and ranked by the task owning it when one does.
+fn checkout_item(
     repo: &RepoData,
     folder: &FolderData,
-    task: &TaskItem,
+    task: Option<&TaskItem>,
     prs: &[PrItem],
     failing: &[&CiRun],
 ) -> QueueItem {
-    let mut item = base_item(task.id, task.rank, repo, folder);
-    item.pr = task_pr(task, &item, prs);
+    let mut item = base_item(task.map(|t| t.id), task.map(|t| t.rank), repo, folder);
+    item.pr = match task {
+        Some(task) => task_pr(task, &item, prs),
+        // A main checkout's branch is the base, which no PR heads.
+        None if folder.is_worktree => branch_pr(&item, prs),
+        None => None,
+    };
     // A main checkout owns no branch's CI.
     if folder.is_worktree {
         item.ci = branch_ci(&item, failing);
@@ -173,20 +183,33 @@ fn task_item(
         item.lane = Lane::Parked;
     }
     item.said = said_for(folder, item.session_id.as_deref());
-    item.title = task.text.clone();
+    item.title = match task {
+        Some(task) => task.text.clone(),
+        // The tree's own label for a main checkout, which the repo tag already names.
+        None => item.said.clone().unwrap_or_else(|| {
+            if folder.is_worktree { folder.name.clone() } else { "Root".to_string() }
+        }),
+    };
     item
 }
 
-/// Lane, then — in On you — agent-blocking reasons first, then rank, severity, age.
+/// Lane, then — in On you — agent-blocking reasons first, then rank (ranked
+/// tasks ahead of unranked checkouts), severity, age.
 pub fn order_key(item: &QueueItem) -> (Lane, u8, i64, Option<WaitReason>, i64) {
     let tier = match (item.lane, item.reason) {
         (Lane::OnYou, Some(r)) if r.blocks_agent() => 0,
         _ => 1,
     };
-    (item.lane, tier, item.rank, item.reason, item.since_ms.unwrap_or(i64::MAX))
+    let rank = item.rank.unwrap_or(i64::MAX);
+    (item.lane, tier, rank, item.reason, item.since_ms.unwrap_or(i64::MAX))
 }
 
-fn base_item(task_id: i64, rank: i64, repo: &RepoData, folder: &FolderData) -> QueueItem {
+fn base_item(
+    task_id: Option<i64>,
+    rank: Option<i64>,
+    repo: &RepoData,
+    folder: &FolderData,
+) -> QueueItem {
     QueueItem {
         task_id,
         lane: Lane::Idle,
@@ -367,7 +390,7 @@ fn apply_snooze(item: &mut QueueItem, snoozes: &HashMap<&str, &QueueSnooze>, now
     let Some(reason) = item.reason else {
         return;
     };
-    if let Some(s) = snoozes.get(snooze_key(item.task_id).as_str())
+    if let Some(s) = snoozes.get(snooze_key(&item.folder_dir).as_str())
         && s.reason == reason.as_str()
         && s.until_ms.is_none_or(|u| u > now_ms)
     {
@@ -522,12 +545,16 @@ mod tests {
         })
     }
 
-    fn snooze(s: &Store, id: i64, reason: &str, until_ms: Option<i64>) {
-        s.snooze_queue_item(&snooze_key(id), reason, until_ms, 0).unwrap();
+    fn snooze(s: &Store, dir: &str, reason: &str, until_ms: Option<i64>) {
+        s.snooze_queue_item(&snooze_key(dir), reason, until_ms, 0).unwrap();
     }
 
-    fn item(q: &TaskQueue, id: i64) -> &QueueItem {
-        q.items.iter().find(|i| i.task_id == id).unwrap()
+    fn item<'a>(q: &'a TaskQueue, dir: &str) -> &'a QueueItem {
+        q.items.iter().find(|i| i.folder_dir == dir).unwrap()
+    }
+
+    fn next(dir: &str) -> Option<String> {
+        Some(dir.to_string())
     }
 
     fn summary(q: &TaskQueue) -> Vec<(String, Lane, Option<WaitReason>)> {
@@ -566,7 +593,7 @@ mod tests {
             ]
         );
         let head = &q.items[0];
-        assert_eq!(q.next, Some(head.task_id));
+        assert_eq!(q.next.as_deref(), Some(head.folder_dir.as_str()));
         assert_eq!((head.session_id.as_deref(), head.since_ms), (Some("sc"), Some(9)));
         assert_eq!(head.said.as_deref(), Some("sc says"));
         assert_eq!(head.repo, "o/repo");
@@ -655,42 +682,42 @@ mod tests {
 
     #[test]
     fn snooze_parks_only_while_the_reason_and_time_hold() {
-        let (s, ids) = store(&["a", "b"]);
+        let (s, _) = store(&["a", "b"]);
         let st = state(vec![folder("/a", vec![waiting("s", 1)]), folder("/b", vec![])]);
-        let a = ids[0];
+        let a = "/a";
         snooze(&s, a, "answer", Some(100));
         let q = run(&s, &st, &[], 50);
         assert_eq!(item(&q, a).lane, Lane::Parked);
         assert!(item(&q, a).snoozed);
         assert_eq!(q.next, None);
-        assert_eq!(run(&s, &st, &[], 150).next, Some(a), "expired");
+        assert_eq!(run(&s, &st, &[], 150).next, next(a), "expired");
         snooze(&s, a, "review", None);
-        assert_eq!(run(&s, &st, &[], 50).next, Some(a), "a new reason resurfaces it");
+        assert_eq!(run(&s, &st, &[], 50).next, next(a), "a new reason resurfaces it");
     }
 
     #[test]
     fn a_snooze_holds_one_row_only() {
-        let (s, ids) = store(&["one", "other"]);
+        let (s, _) = store(&["one", "other"]);
         let st = state(vec![
             folder("/one", vec![waiting("s1", 1)]),
             folder("/other", vec![waiting("so", 1)]),
         ]);
-        let (one, other) = (ids[0], ids[1]);
+        let (one, other) = ("/one", "/other");
         snooze(&s, one, "answer", Some(100));
         let q = run(&s, &st, &[], 50);
         assert_eq!(item(&q, one).lane, Lane::Parked);
         assert_eq!(item(&q, one).snoozed_until_ms, Some(100));
         assert_eq!(item(&q, other).lane, Lane::OnYou, "a sibling row is untouched");
-        assert_eq!(q.next, Some(other));
+        assert_eq!(q.next, next(other));
         assert_eq!(item(&run(&s, &st, &[], 150), one).lane, Lane::OnYou, "timed out");
     }
 
     #[test]
     fn a_snooze_on_red_ci_ends_when_its_reason_changes() {
-        let (s, ids) = store(&["x"]);
+        let (s, _) = store(&["x"]);
         let st = state(vec![folder("/x", vec![])]);
         let runs = [ci("CI", "feat/x", "failure")];
-        let x = ids[0];
+        let x = "/x";
         snooze(&s, x, "answer", None);
         assert_eq!(item(&run_ci(&s, &st, &[], &runs, 0), x).lane, Lane::OnYou);
         snooze(&s, x, "fix_ci", None);
@@ -700,17 +727,39 @@ mod tests {
     }
 
     #[test]
-    fn a_checkout_no_task_owns_is_not_a_row_even_when_it_needs_you() {
-        let (s, _) = store(&["a"]);
+    fn every_checkout_is_a_row_and_ranked_tasks_lead_their_tier() {
+        let (s, ids) = store(&["a"]);
         let mut main = folder("/main", vec![waiting("sm", 1)]);
         main.is_worktree = false;
+        main.branch = "main".to_string();
+        let mut root = folder("/root", vec![]);
+        root.is_worktree = false;
         let st = state(vec![
             folder("/a", vec![waiting("sa", 9)]),
-            folder("/loose", vec![waiting("sl", 1)]),
+            folder("/loose", vec![]),
             main,
+            folder("/quiet", vec![]),
+            root,
         ]);
-        let q = run(&s, &st, &[pr("feat/loose", "open", "passing", "approved")], 0);
-        assert_eq!(summary(&q), [row("a", Lane::OnYou, Some(WaitReason::Answer))]);
+        let prs = [
+            pr("feat/loose", "open", "passing", "approved"),
+            pr("main", "open", "failing", ""),
+        ];
+        let q = run(&s, &st, &prs, 0);
+        use Lane::*;
+        use WaitReason::*;
+        assert_eq!(
+            summary(&q),
+            [
+                row("a", OnYou, Some(Answer)),
+                row("sm says", OnYou, Some(Answer)),
+                row("/loose", OnYou, Some(Land)),
+                row("/quiet", Idle, None),
+                row("Root", Idle, None),
+            ]
+        );
+        assert_eq!((item(&q, "/a").task_id, item(&q, "/main").task_id), (Some(ids[0]), None));
+        assert_eq!(item(&q, "/main").pr, None, "a root's branch is no PR's head");
     }
 
     #[test]
@@ -763,9 +812,9 @@ mod tests {
             folder("/a", vec![waiting("sa", 1)]),
             folder("/b", vec![waiting("sb", 1)]),
         ]);
-        assert_eq!(run(&s, &st, &[], 0).next, Some(ids[0]));
+        assert_eq!(run(&s, &st, &[], 0).next, next("/a"));
         s.move_task(ids[1], RankMove::Top).unwrap();
-        assert_eq!(run(&s, &st, &[], 0).next, Some(ids[1]));
+        assert_eq!(run(&s, &st, &[], 0).next, next("/b"));
     }
 
     #[test]

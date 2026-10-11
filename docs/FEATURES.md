@@ -41,7 +41,7 @@ of what this repo does, Desktop now does as well.
   ![The Board kanban across three repos, filtering across them, then a merged PR attaching to a task and rolling it to done](docs/images/demos/board.gif)
 
 - **A task queue that says what's next.** Agent Board's Queue rail lays its
-  checkouts' tasks out as a queue, by your priority, with the work blocked on you up
+  checkouts — the tree's rows, roots included — out as a queue, by your priority, with the work blocked on you up
   top: an agent asking or erroring jumps the line, then CI to fix and PRs to
   land. `⌘.` opens Next up from anywhere, straight into its real terminal.
 

@@ -31,8 +31,9 @@ export const QueueCiSchema = z.object({
   updatedMs: z.number(),
 });
 
+/** One checkout — a task's worktree or a repo root; `folderDir` is its identity. */
 export const QueueItemSchema = z.object({
-  taskId: z.number(),
+  taskId: z.number().nullable(),
   lane: LaneSchema,
   reason: WaitReasonSchema.nullable(),
   also: z.array(WaitReasonSchema),
@@ -45,7 +46,7 @@ export const QueueItemSchema = z.object({
   runningAgents: z.number(),
   pr: QueuePrSchema.nullable(),
   ci: z.array(QueueCiSchema),
-  rank: z.number(),
+  rank: z.number().nullable(),
   sinceMs: z.number().nullable(),
   snoozedUntilMs: z.number().nullable(),
   snoozed: z.boolean(),
@@ -53,7 +54,8 @@ export const QueueItemSchema = z.object({
 export type QueueItem = z.infer<typeof QueueItemSchema>;
 
 export const TaskQueueSchema = z.object({
-  next: z.number().nullable(),
+  /** The `folderDir` of the first row on you. */
+  next: z.string().nullable(),
   items: z.array(QueueItemSchema),
 });
 export type TaskQueue = z.infer<typeof TaskQueueSchema>;

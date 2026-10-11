@@ -8,7 +8,7 @@ import {
   type WaitReason,
 } from "./schemas/queue";
 
-/** The task queue, one app-wide subscription to `queue://changed`. Status is
+/** The queue — every checkout, ordered by what needs you — one app-wide subscription to `queue://changed`. Status is
  * only *reported*: acting on an item navigates to its real terminal. */
 
 const EMPTY: TaskQueue = { next: null, items: [] };
@@ -68,7 +68,7 @@ export function useTaskQueue(): { queue: TaskQueue; live: boolean } {
 }
 
 export function nextItem(queue: TaskQueue): QueueItem | undefined {
-  return queue.items.find((i) => i.taskId === queue.next);
+  return queue.items.find((i) => i.folderDir === queue.next);
 }
 
 /** The next/previous stop for `ab-jump-next`: queue items that have a session,
@@ -121,17 +121,21 @@ export function snoozeUntil(preset: SnoozePreset, now: number): number | null {
   }
 }
 
-/** The neighbour to move before/after for a one-step reorder within the visible list. */
+/** The task to move before/after for a one-step reorder within the visible
+ * list. Only task rows carry a rank, so checkouts no task owns are stepped over. */
 export function rankMove(
   items: readonly QueueItem[],
   index: number,
   direction: "up" | "down" | "top",
 ): "top" | { before: number } | { after: number } | null {
-  if (!items[index]) return null;
+  if (items[index]?.taskId == null) return null;
   if (direction === "top") return "top";
-  const neighbour = items[direction === "up" ? index - 1 : index + 1];
-  if (!neighbour) return null;
-  return direction === "up" ? { before: neighbour.taskId } : { after: neighbour.taskId };
+  const step = direction === "up" ? -1 : 1;
+  for (let i = index + step; i >= 0 && i < items.length; i += step) {
+    const id = items[i].taskId;
+    if (id != null) return direction === "up" ? { before: id } : { after: id };
+  }
+  return null;
 }
 
 export const LANES = ["on_you", "running", "parked", "idle"] as const satisfies readonly Lane[];
@@ -142,20 +146,23 @@ export function railRows(queue: TaskQueue, folded: ReadonlySet<Lane>): QueueItem
   return queue.items.filter((i) => !folded.has(i.lane));
 }
 
-/** The queue narrowed to the repos in `repoKeys` (none picked shows every
- * repo), with Next up re-picked from what's left the way the backend picks it:
- * the first task on you. */
+/** The queue narrowed to the checkouts the tree has (`onRail`) and then to the
+ * repos in `repoKeys` (none picked shows every repo), with Next up re-picked
+ * from what's left the way the backend picks it: the first row on you. */
 export function filterQueue(
   queue: TaskQueue,
+  onRail: (folderDir: string) => boolean,
   repoKeys: ReadonlySet<string>,
   repoKeyOf: (folderDir: string) => string | undefined,
 ): TaskQueue {
-  if (repoKeys.size === 0) return queue;
   const items = queue.items.filter((i) => {
+    if (!onRail(i.folderDir)) return false;
+    if (repoKeys.size === 0) return true;
     const key = repoKeyOf(i.folderDir);
     return key !== undefined && repoKeys.has(key);
   });
-  return { items, next: items.find((i) => i.lane === "on_you")?.taskId ?? null };
+  if (items.length === queue.items.length) return queue;
+  return { items, next: items.find((i) => i.lane === "on_you")?.folderDir ?? null };
 }
 
 /** The row standing for a checkout, so picking it any other way still rings it. */
@@ -163,14 +170,14 @@ export function rowForFolder(queue: TaskQueue, folderDir: string | null): QueueI
   return folderDir === null ? undefined : queue.items.find((i) => i.folderDir === folderDir);
 }
 
-/** One step through `rows` from task `fromId`; off the list lands on the first row. */
+/** One step through `rows` from checkout `fromDir`; off the list lands on the first row. */
 export function stepRow(
   rows: readonly QueueItem[],
-  fromId: number | null,
+  fromDir: string | null,
   step: 1 | -1,
 ): QueueItem | undefined {
   if (rows.length === 0) return undefined;
-  const at = fromId === null ? -1 : rows.findIndex((r) => r.taskId === fromId);
+  const at = fromDir === null ? -1 : rows.findIndex((r) => r.folderDir === fromDir);
   if (at === -1) return rows[0];
   return rows[Math.min(rows.length - 1, Math.max(0, at + step))];
 }
@@ -184,12 +191,12 @@ export function onYouHead(queue: TaskQueue): QueueItem | undefined {
  * doing would be interrupted, else announce it. A focused terminal is never
  * taken from you, and neither is a row that still needs you. */
 export function nextUpArrival(
-  prevHeadId: number | null | undefined,
+  prevHeadId: string | null | undefined,
   head: QueueItem | undefined,
-  ctx: { terminalFocused: boolean; selectedId: number | null; selectedOnYou: boolean },
+  ctx: { terminalFocused: boolean; selectedId: string | null; selectedOnYou: boolean },
 ): "open" | "announce" | null {
   if (!head) return null;
-  if (head.taskId === prevHeadId || head.taskId === ctx.selectedId) return null;
+  if (head.folderDir === prevHeadId || head.folderDir === ctx.selectedId) return null;
   if (prevHeadId === undefined) {
     return ctx.selectedId === null && !ctx.terminalFocused ? "open" : null;
   }
