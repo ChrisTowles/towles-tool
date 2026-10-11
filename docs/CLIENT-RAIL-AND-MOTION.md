@@ -9,9 +9,9 @@ pays for, and which keeps the conventions that apply everywhere.
 `screens/cockpit.tsx` is mounted once and shown as either screen
 (`ScreenMeta.host`); only the rail's contents swap, so the panes never remount.
 On Cockpit, `components/cockpit-rail.tsx` is the rail: Next up, then the
-queue's lanes. Every row is one of Agent Board's checkouts — a task's, or an
-unfiled one (`QueueKey`) — so the two rails list the same things, in a
-different order. On Agent Board the checkout tree below *is* the rail, and
+queue's lanes. Every row is a board task that owns one of Agent Board's
+checkouts; a checkout no task owns is on Agent Board only, until its "adopt"
+chip makes it a task. On Agent Board the checkout tree below *is* the rail, and
 `lib/rail-nodes.ts` is the one walk its cursor, jump digits and fold chords read.
 
 ## The checkout tree is six files, split by what a row *is*

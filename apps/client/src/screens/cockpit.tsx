@@ -99,7 +99,6 @@ import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
 import { useStoreSnapshot } from "@/lib/data";
 import {
   cycleQueue,
-  keyId,
   nextItem,
   nextUpArrival,
   onYouHead,
@@ -186,6 +185,10 @@ export function CockpitScreen() {
   const focusRef = useFocusTarget<HTMLDivElement>(mode);
   const now = useNow();
   const repos = state.repos;
+  const repoByFolder = useMemo(
+    () => new Map(repos.flatMap((r) => r.folders.map((f) => [f.dir, r] as const))),
+    [repos],
+  );
 
   const [selected, setSelected] = useState<Selected>(null);
   const [jumpRecall, setJumpRecall] = useState<JumpRecall | null>(null);
@@ -200,9 +203,9 @@ export function CockpitScreen() {
   const { queue, live: queueLive } = useTaskQueue();
   const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(() => new Set(FOLDED_BY_DEFAULT));
   // Next up changed while you were busy: the key it was announced for.
-  const [announced, setAnnounced] = useState<string | null>(null);
-  // The row whose snooze menu is open — `z` opens it from the keyboard.
-  const [snoozeKey, setSnoozeKey] = useState<string | null>(null);
+  const [announced, setAnnounced] = useState<number | null>(null);
+  // The task whose snooze menu is open — `z` opens it from the keyboard.
+  const [snoozeId, setSnoozeId] = useState<number | null>(null);
   // The nonce lets a re-request of the *same* session still fire.
   const [focusTerminalRequest, setFocusTerminalRequest] = useState<{
     id: string;
@@ -319,18 +322,23 @@ export function CockpitScreen() {
   const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
   const cursorKey = cursorNode?.key ?? null;
   const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
-  // Every row is a checkout, so the ring follows the one on screen, however it got there.
+  // Every row owns a checkout, so the ring follows the one on screen, however it got there.
   const ringItem = rowForFolder(queue, activeFolderDir);
-  const ringKey = ringItem ? keyId(ringItem.key) : null;
+  const ringId = ringItem?.taskId ?? null;
   const head = nextItem(queue);
   // The collapsed strip has no rows to badge, so it offers no numbers. Keyed by
-  // queue row on Cockpit, by session on Agent Board.
-  const railHotkeys = useMemo(() => {
-    if (!hotkeysHeld || railCollapsed) return undefined;
-    return tree
-      ? new Map(hotkeyTargets.map((t, i) => [t.sessionId, i + 1]))
-      : new Map(rows.slice(0, 9).map((r, i) => [keyId(r.key), i + 1]));
-  }, [hotkeysHeld, railCollapsed, tree, hotkeyTargets, rows]);
+  // session on Agent Board, by task on Cockpit.
+  const showHotkeys = hotkeysHeld && !railCollapsed;
+  const treeHotkeys = useMemo(
+    () =>
+      showHotkeys && tree ? new Map(hotkeyTargets.map((t, i) => [t.sessionId, i + 1])) : undefined,
+    [showHotkeys, tree, hotkeyTargets],
+  );
+  const queueHotkeys = useMemo(
+    () =>
+      showHotkeys && !tree ? new Map(rows.slice(0, 9).map((r, i) => [r.taskId, i + 1])) : undefined,
+    [showHotkeys, tree, rows],
+  );
 
   // Read live by the terminal://notify listener, which must not re-subscribe.
   const selectedRef = useRef<string | null>(null);
@@ -728,7 +736,7 @@ export function CockpitScreen() {
   }
 
   function moveQueueCursor(step: 1 | -1): boolean {
-    const target = stepRow(rows, ringKey, step);
+    const target = stepRow(rows, ringId, step);
     if (!target) return false;
     selectQueueItem(target);
     return true;
@@ -746,22 +754,22 @@ export function CockpitScreen() {
   // The head of On you changed: open it where nothing would be interrupted,
   // else say so above the panes. Never moves DOM focus.
   const onYou = onYouHead(queue);
-  const onYouKey = onYou ? keyId(onYou.key) : null;
-  const lastOnYouKey = useRef<string | null | undefined>(undefined);
+  const onYouId = onYou?.taskId ?? null;
+  const lastOnYouId = useRef<number | null | undefined>(undefined);
   useEffect(() => {
     if (!queueLive) return;
-    const verdict = nextUpArrival(lastOnYouKey.current, onYou, {
+    const verdict = nextUpArrival(lastOnYouId.current, onYou, {
       terminalFocused: terminalFocused(),
-      selectedKey: ringKey,
+      selectedId: ringId,
       selectedOnYou: ringItem?.lane === "on_you",
     });
-    lastOnYouKey.current = onYouKey;
+    lastOnYouId.current = onYouId;
     // Agent Board is walked by place: the queue's pull is Cockpit's business.
     if (!onYou || tree) return;
     if (verdict === "open") selectQueueItem(onYou);
-    else if (verdict === "announce") setAnnounced(onYouKey);
+    else if (verdict === "announce") setAnnounced(onYouId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on a new head only; the rest is read at that moment
-  }, [onYouKey, queueLive]);
+  }, [onYouId, queueLive]);
   // A deep link to a PR lands on its checkout's row, which a folded lane would hide.
   useEffect(
     () =>
@@ -782,7 +790,7 @@ export function CockpitScreen() {
     [],
   );
   const announcedItem =
-    !tree && announced !== null && announced === onYouKey && announced !== ringKey
+    !tree && announced !== null && announced === onYouId && announced !== ringId
       ? onYou
       : undefined;
 
@@ -1306,7 +1314,7 @@ export function CockpitScreen() {
               "queue-up": () => moveQueueCursor(-1),
               "queue-snooze": () => {
                 if (!ringItem?.reason || ringItem.snoozed) return false;
-                setSnoozeKey(keyId(ringItem.key));
+                setSnoozeId(ringItem.taskId);
               },
               // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the
               // first matching handler wins.
@@ -1337,7 +1345,7 @@ export function CockpitScreen() {
         cursorKey,
         cursorNode,
         hotkeyTargets,
-        ringKey,
+        ringId,
         ringItem,
         selected,
         focusedPaneId,
@@ -1476,7 +1484,7 @@ export function CockpitScreen() {
               activePaneId={focusedPaneId}
               activeFolderDir={activeFolderDir}
               cursorKey={tree ? cursorKey : null}
-              hotkeys={tree ? railHotkeys : undefined}
+              hotkeys={treeHotkeys}
               collapsed={collapsed}
               renaming={renaming}
               titles={titles}
@@ -1583,14 +1591,15 @@ export function CockpitScreen() {
                       ) : (
                         <CockpitRail
                           queue={queue}
+                          repoByFolder={repoByFolder}
                           live={queueLive}
                           now={now}
                           head={head}
-                          selectedKey={ringKey}
+                          selectedId={ringId}
                           folded={foldedLanes}
-                          hotkeys={railHotkeys}
-                          snoozeKey={snoozeKey}
-                          onSnoozeKeyChange={setSnoozeKey}
+                          hotkeys={queueHotkeys}
+                          snoozeId={snoozeId}
+                          onSnoozeIdChange={setSnoozeId}
                           onToggleLane={toggleLane}
                           onSelect={pickQueueItem}
                           onOpenHead={() => {

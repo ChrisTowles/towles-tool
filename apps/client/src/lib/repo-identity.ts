@@ -156,6 +156,20 @@ export function hasRepoColor(meta: RepoMeta | null | undefined): boolean {
   return meta?.color ? normalizeHex(meta.color) !== null : false;
 }
 
+/** A list row that belongs to one repo: tinted through, with a solid left edge
+ * the width of the row's `border-l`. */
+export function repoRowStyle(
+  meta: RepoMeta | null | undefined,
+  base = "transparent",
+): CSSProperties | undefined {
+  const hex = meta?.color ? normalizeHex(meta.color) : null;
+  if (!hex) return undefined;
+  return {
+    backgroundColor: `color-mix(in srgb, ${hex} 12%, ${base})`,
+    borderLeftColor: hex,
+  };
+}
+
 /** A surface that *is* one repo wears the color whole, at the hashed wash's
  * alphas. `accent` can't withhold the fill here the way it does on a row. */
 export function repoBandStyle(

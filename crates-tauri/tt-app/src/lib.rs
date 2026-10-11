@@ -712,7 +712,6 @@ pub fn run() {
             queue::queue_move,
             queue::queue_snooze,
             queue::queue_unsnooze,
-            queue::queue_file_unfiled,
             agentboard::ab_mark_seen,
             agentboard::ab_add_repo,
             agentboard::ab_create_repo,

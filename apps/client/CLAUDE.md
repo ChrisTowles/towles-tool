@@ -84,11 +84,12 @@ only in the handler map while it's up (Alt+Shift+↑ is rank-top on one,
 collapse-all on the other). A jump to a terminal from elsewhere goes through
 `openWorkspace()`, so it lands on whichever was used last.
 
-Cockpit's rail is the task queue (`components/cockpit-rail.tsx`): **Agent
-Board's checkouts, one row each, ordered to work one at a time** — so a thing
-with no checkout (a backlog task, a PR, a CI run) is on neither. `railRows`
-(`lib/queue.tsx`) is the one walk the cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9
-jump digits read — folded lanes skipped, so the keyboard sees what you see —
+Cockpit's rail is the task queue (`components/cockpit-rail.tsx`): **the board
+tasks that own one of Agent Board's checkouts, ordered to work one at a time** —
+so a backlog task with no checkout, a PR or a CI run is not a row, and neither
+is a checkout no task owns. `railRows` (`lib/queue.tsx`) is the one walk the
+cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9 jump digits read — folded lanes
+skipped, so the keyboard sees what you see —
 and the ring follows the checkout on screen however it got there
 (`rowForFolder`). When the head of On you changes, `nextUpArrival` decides to
 open or announce it; a focused terminal is never taken. Agent Board's rail is
