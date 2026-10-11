@@ -138,7 +138,13 @@ export function rankMove(
   return null;
 }
 
-export const LANES = ["on_you", "running", "parked", "idle"] as const satisfies readonly Lane[];
+export const LANES = [
+  "on_you",
+  "running",
+  "parked",
+  "idle",
+  "no_shell",
+] as const satisfies readonly Lane[];
 
 /** The rail's rows top-down, folded lanes skipped — what the cursor and the
  * 1–9 jump digits walk. The backend already sorts by lane. */

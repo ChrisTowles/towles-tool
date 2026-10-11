@@ -53,9 +53,10 @@ const LANE_TITLE: Record<Lane, string> = {
   running: "Running",
   parked: "Parked",
   idle: "Idle",
+  no_shell: "No shell",
 };
 
-export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "idle"];
+export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "idle", "no_shell"];
 
 const SNOOZES: { preset: SnoozePreset; short: string; label: string }[] = [
   { preset: "1h", short: "1h", label: "for an hour" },

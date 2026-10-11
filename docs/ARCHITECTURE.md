@@ -146,7 +146,7 @@ Focus screens: **Agent Board**, **Board**, **Messages**. Agent Board, the
 cold-start screen, is one workspace — the same terminals, panes and selection —
 with two rails over the same checkouts, switched by the Queue/Tree tabs atop the
 rail. Queue lays them out to work one at a time: the rail *is* the queue
-(Next up, then On you / Running / Parked / Idle). When the head of On you
+(Next up, then On you / Running / Parked / Idle / No shell). When the head of On you
 changes it opens in place, unless a
 terminal has focus or the row on screen still needs you — then it is announced
 above the panes, never by taking focus. Tree is processed by place: its

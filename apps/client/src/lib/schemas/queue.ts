@@ -12,7 +12,7 @@ export const WaitReasonSchema = z.enum([
 ]);
 export type WaitReason = z.infer<typeof WaitReasonSchema>;
 
-export const LaneSchema = z.enum(["on_you", "running", "parked", "idle"]);
+export const LaneSchema = z.enum(["on_you", "running", "parked", "idle", "no_shell"]);
 export type Lane = z.infer<typeof LaneSchema>;
 
 export const QueuePrSchema = z.object({
