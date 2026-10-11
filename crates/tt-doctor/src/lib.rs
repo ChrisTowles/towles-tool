@@ -242,6 +242,18 @@ fn check_tool(name: &str, version_arg: &str, optional: bool) -> CheckResult {
     }
 }
 
+/// `failure` is why the app's store would not open (or stopped being usable), or
+/// `None` when it is healthy. A tt.db migrated by a newer build lands here, so the
+/// user sees one plain sentence instead of a log full of `no such column`.
+pub fn check_store(failure: Option<&str>) -> CheckResult {
+    CheckResult {
+        name: "store".to_string(),
+        version: None,
+        ok: failure.is_none(),
+        warning: failure.map(str::to_string),
+    }
+}
+
 /// A Debug-mode Zig parser is ~3 orders of magnitude slower and saturates a
 /// core at ~130 KB/s of PTY output, so the whole app reads as laggy. This check
 /// exists so losing the `[profile.dev.package.libghostty-vt-sys]` override

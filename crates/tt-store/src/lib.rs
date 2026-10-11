@@ -52,6 +52,12 @@ pub enum Error {
     )]
     SchemaTooOld { found: i64, min: i64 },
 
+    #[error(
+        "database is schema v{found} but this build only knows v{supported}: a newer build \
+         migrated it. Rebuild and restart this build from main."
+    )]
+    SchemaTooNew { found: i64, supported: i64 },
+
     #[error("no task with id {0}")]
     TaskNotFound(i64),
 
@@ -371,6 +377,54 @@ mod tests {
             panic!("a v11 db must not open")
         };
         assert!(matches!(err, Error::SchemaTooOld { found: 11, min: MIN_SUPPORTED_VERSION }));
+    }
+
+    fn db_at_version(version: i64) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("tt.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO meta (key, value) VALUES ('schema_version', '{version}');"
+        ))
+        .unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn open_refuses_a_db_newer_than_this_build_and_leaves_it_alone() {
+        let (_dir, path) = db_at_version(SCHEMA_VERSION + 1);
+        let Err(err) = Store::open(&path) else {
+            panic!("a newer db must not open")
+        };
+        assert!(matches!(err, Error::SchemaTooNew { found, supported }
+            if found == SCHEMA_VERSION + 1 && supported == SCHEMA_VERSION));
+        assert!(err.to_string().contains("Rebuild and restart"));
+        let conn = Connection::open(&path).unwrap();
+        let v: String = conn
+            .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            v,
+            (SCHEMA_VERSION + 1).to_string(),
+            "an old build must not stamp the version down"
+        );
+    }
+
+    #[test]
+    fn ensure_schema_current_catches_a_migration_after_open() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("tt.db");
+        let s = Store::open(&path).unwrap();
+        s.ensure_schema_current().unwrap();
+        Connection::open(&path)
+            .unwrap()
+            .execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+                [(SCHEMA_VERSION + 1).to_string()],
+            )
+            .unwrap();
+        assert!(matches!(s.ensure_schema_current(), Err(Error::SchemaTooNew { .. })));
     }
 
     fn task_columns(s: &Store) -> Vec<String> {

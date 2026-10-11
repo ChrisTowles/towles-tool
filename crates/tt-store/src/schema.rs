@@ -12,7 +12,7 @@ use crate::{Error, Result, Store};
 /// Current on-disk schema version, stored in the `meta` table.
 pub(crate) const SCHEMA_VERSION: i64 = 24;
 
-/// Oldest version [`Store::open`] accepts; see [`Store::check_version_floor`].
+/// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
 
 /// Schema v1. Every statement is `IF NOT EXISTS` so `migrate` is idempotent.
@@ -274,7 +274,7 @@ impl Store {
 
     /// Create tables and record the schema version. Idempotent.
     fn migrate(&self) -> Result<()> {
-        self.check_version_floor()?;
+        self.ensure_schema_current()?;
         self.conn.execute_batch(SCHEMA_V1)?;
         self.conn.execute_batch(SCHEMA_TASK_LINKS_V7)?;
         // Additive `ADD COLUMN` migrations, oldest first; a new one goes at the end.
@@ -305,7 +305,12 @@ impl Store {
     /// a pre-v16 db forward are gone, so an older file fails here — with the path and
     /// what to do about it — rather than at its first query with `no such column`.
     /// A db with no `meta` table is brand new, not ancient.
-    fn check_version_floor(&self) -> Result<()> {
+    ///
+    /// Also errors when the db's recorded version is outside what this build can use:
+    /// older than the floor, or newer (a later build migrated it; this one would hit
+    /// `no such column` on every query, and stamping its own version would
+    /// mask that). Cheap enough to re-run after a failed query.
+    pub fn ensure_schema_current(&self) -> Result<()> {
         // Two statements, not one: SQLite resolves table names when it prepares, so a
         // `meta`-less db would fail to prepare a query mentioning `meta` at all.
         let has_meta: Option<i64> = self
@@ -328,6 +333,9 @@ impl Store {
         };
         if version < MIN_SUPPORTED_VERSION {
             return Err(Error::SchemaTooOld { found: version, min: MIN_SUPPORTED_VERSION });
+        }
+        if version > SCHEMA_VERSION {
+            return Err(Error::SchemaTooNew { found: version, supported: SCHEMA_VERSION });
         }
         Ok(())
     }
