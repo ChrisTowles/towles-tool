@@ -137,7 +137,7 @@ describe("board shortcuts", () => {
 describe("rail session jumps", () => {
   it("registers a jump binding for each digit 1–9, collapsed to one help entry", () => {
     for (let n = 1; n <= 9; n++) {
-      expect(SHORTCUTS[`ab-jump-session-${n}`].scope).toBe("cockpit");
+      expect(SHORTCUTS[`ab-jump-session-${n}`].scope).toBe("workspace");
       expect(SHORTCUTS[`ab-jump-session-${n}`].hideInHelp).toBe(n > 1);
     }
   });

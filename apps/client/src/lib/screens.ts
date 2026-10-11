@@ -8,11 +8,13 @@ import {
   LightningIcon,
   PulseIcon,
   StethoscopeIcon,
+  TerminalWindowIcon,
   type Icon,
 } from "@phosphor-icons/react";
 
 export type ScreenId =
   | "cockpit"
+  | "agentboard"
   | "board"
   | "slack"
   | "doctor"
@@ -30,6 +32,9 @@ export type ScreenMeta = {
   keywords: string[];
   /** Render without the centered/scrolling content wrapper (e.g. terminals). */
   fullBleed?: boolean;
+  /** Shown by `host`'s one mounted instance rather than one of its own, so the
+   * two share every terminal, pane and selection — only the rail differs. */
+  host?: ScreenId;
 };
 
 export const SCREENS: Record<ScreenId, ScreenMeta> = {
@@ -54,9 +59,16 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
       "folder",
       "repos",
       "rail",
-      "agentboard",
     ],
     fullBleed: true,
+  },
+  agentboard: {
+    id: "agentboard",
+    title: "Agent Board",
+    icon: TerminalWindowIcon,
+    keywords: ["agentboard", "agents", "repos", "checkouts", "worktrees", "tree", "sessions"],
+    fullBleed: true,
+    host: "cockpit",
   },
   board: {
     id: "board",
@@ -128,10 +140,22 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
 export const NAV_SECTIONS: { label: string; screens: ScreenId[] }[] = [
   // Cockpit leads: it's where the work actually happens, and it's the
   // cold-start screen (`COLD_START_TAB`) — the sidebar order has to agree.
-  { label: "Focus", screens: ["cockpit", "board", "slack"] },
+  { label: "Focus", screens: ["cockpit", "agentboard", "board", "slack"] },
   {
     label: "Tools",
     screens: ["doctor", "claude-sessions", "mcp", "telemetry", "task-explorer"],
   },
   { label: "App", screens: ["settings"] },
 ];
+
+/** The screen whose mounted instance shows `id`. */
+export function screenHost(id: ScreenId): ScreenId {
+  return SCREENS[id].host ?? id;
+}
+
+/** Cockpit and Agent Board: one workspace, two rails over the same work. */
+export type WorkspaceScreen = "cockpit" | "agentboard";
+
+export function isWorkspaceScreen(id: ScreenId): id is WorkspaceScreen {
+  return screenHost(id) === "cockpit";
+}

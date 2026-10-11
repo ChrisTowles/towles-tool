@@ -47,6 +47,7 @@ export function CommandPalette() {
     recent,
     activeTab,
     openTab,
+    openWorkspace,
     openTabWithFocus,
     openSettingsTab,
     toggleSidebar,
@@ -76,12 +77,12 @@ export function CommandPalette() {
   // yet — the request is stashed for its mount effect).
   const jumpToFolder = (entry: PaletteRepoEntry) =>
     run("palette.repo", paletteNeedsDetail(entry.needs > 0), () => {
-      openTab("cockpit");
+      openWorkspace();
       requestAgentboardNav({ kind: "folder", folderDir: entry.folderDir });
     });
   const jumpToSession = (entry: PaletteSessionEntry) =>
     run("palette.session", paletteNeedsDetail(entry.needs), () => {
-      openTab("cockpit");
+      openWorkspace();
       requestAgentboardNav({
         kind: "session",
         folderDir: entry.folderDir,
@@ -91,7 +92,7 @@ export function CommandPalette() {
   const jumpToTask = (target: PaletteTaskTarget) =>
     run("palette.board_task", target.kind, () => {
       if (target.kind === "worktree") {
-        openTab("cockpit");
+        openWorkspace();
         requestAgentboardNav({ kind: "folder", folderDir: target.folderDir });
       } else {
         openTabWithFocus({ screen: "board", kind: "todo", id: String(target.taskId) });

@@ -11,7 +11,8 @@ import { useLiveSettingRef } from "./settings";
 // overlay. Bindings never fire from editable targets (inputs, `[data-term-host]`) unless
 // they set `allowInEditable`, gated by agentboard.shortcutsWorkInTerminal.
 
-export type ShortcutScope = "global" | ScreenId;
+/** `workspace` is what Cockpit and Agent Board share: one set of panes, two rails. */
+export type ShortcutScope = "global" | ScreenId | "workspace";
 
 /** `mod` = ⌘ on mac, Ctrl elsewhere ({@link macKeymap}). */
 type KeySpec = {
@@ -143,7 +144,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-new-session",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+d",
     description: "New session in the focused folder",
     when: FOLDER_FOCUSED,
@@ -171,7 +172,7 @@ export const SHORTCUTS = defineShortcuts([
     // One id, both dialogs in the delete flow: a second binding on the same chord would
     // never fire. Same mod+shift as the delete — one chord held, Delete then Enter.
     id: "ab-confirm-close-worktree",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+enter",
     description: "Confirm the delete-worktree dialog — again to delete anyway if it's blocked",
     when: "a delete-worktree dialog is open",
@@ -181,7 +182,7 @@ export const SHORTCUTS = defineShortcuts([
     // One chord for "kill this tile", so the answer never depends on what kind of pane
     // you happen to be looking at.
     id: "ab-close-pane",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+w",
     description: "Close the focused pane (a session pane kills its shell)",
     when: "a pane is focused",
@@ -190,7 +191,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-toggle-files",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+e",
     description: "Open the focused folder's files pane",
     when: FOLDER_FOCUSED,
@@ -198,14 +199,14 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-toggle-rail",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+b",
-    description: "Collapse the queue rail to icons (and back)",
+    description: "Collapse the rail to icons (and back)",
     allowInEditable: true,
   },
   {
     id: "ab-jump-next",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+n",
     description: "Jump to the next item in the work queue",
     answersNeedsYou: true,
@@ -213,7 +214,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-jump-prev",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+p",
     description: "Jump to the previous item in the work queue",
     answersNeedsYou: true,
@@ -222,83 +223,96 @@ export const SHORTCUTS = defineShortcuts([
   {
     // The wider net beside jump-next — idle agents too, not only flagged ones.
     id: "ab-jump-idle",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+a",
     description: "Jump to next agent that isn't busy — idle or needing you",
     answersNeedsYou: true,
     allowInEditable: true,
   },
-  // One binding per digit, addressing the queue rail's visible rows top-down; the
-  // numbers paint on the rows while held. Shift because mod+digit is the tab jump.
+  // One binding per digit, addressing the rail's visible rows top-down — queue rows
+  // on Cockpit, sessions on Agent Board; the numbers paint on the rows while held.
+  // Shift because mod+digit is the tab jump.
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `ab-jump-session-${i + 1}`,
-    scope: "cockpit" as const,
+    scope: "workspace" as const,
     keys: `mod+shift+${i + 1}`,
     description:
       i === 0
-        ? "Jump to a numbered queue row 1–9 — hold to see the numbers"
-        : `Jump to queue row ${i + 1}`,
+        ? "Jump to a numbered rail row 1–9 — hold to see the numbers"
+        : `Jump to rail row ${i + 1}`,
     answersNeedsYou: true,
     allowInEditable: true,
     hideInHelp: i > 0,
   })),
   {
     id: "ab-focus-up",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+arrowup",
-    description: "Previous queue row",
+    description: "Previous rail row",
     allowInEditable: true,
   },
   {
     id: "ab-focus-down",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+arrowdown",
-    description: "Next queue row",
+    description: "Next rail row",
     allowInEditable: true,
   },
   {
     // Same action as ab-focus-up, for bracket muscle memory.
     id: "ab-focus-up-bracket",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+[",
-    description: "Previous queue row",
+    description: "Previous rail row",
     allowInEditable: true,
     hideInHelp: true,
   },
   {
     id: "ab-focus-down-bracket",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+]",
-    description: "Next queue row",
+    description: "Next rail row",
     allowInEditable: true,
     hideInHelp: true,
   },
   {
     id: "ab-focus-left",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+arrowleft",
-    description: "From the panes, step back toward the rail",
+    description: "Collapse the row under the cursor, else step back toward the rail",
     allowInEditable: true,
   },
   {
     id: "ab-focus-right",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+arrowright",
-    description: "Step from the rail into the selected row's panes",
+    description: "Expand the row under the cursor, else step into its panes",
     allowInEditable: true,
+  },
+  {
+    id: "ab-collapse-all",
+    scope: "agentboard",
+    keys: "alt+shift+arrowup",
+    description: "Collapse every repo on the rail",
+  },
+  {
+    id: "ab-expand-all",
+    scope: "agentboard",
+    keys: "alt+shift+arrowdown",
+    description: "Expand every repo on the rail",
   },
   {
     // Bare Enter is safe because the handler declines (returns `false`) when a
     // button/link/dialog has DOM focus, so the browser's native Enter still runs.
     id: "ab-focus-terminal",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "enter",
     description: "Type into the selected row's terminal — or start it, or open it on GitHub",
     when: FOLDER_FOCUSED,
   },
   {
     id: "ab-split-session",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+s",
     description: "Add another session as a pane in this window",
     when: FOLDER_FOCUSED,
@@ -306,7 +320,7 @@ export const SHORTCUTS = defineShortcuts([
   },
   {
     id: "ab-new-terminal-right",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+o",
     description: "Open a new terminal to the right",
     when: FOLDER_FOCUSED,
@@ -323,7 +337,7 @@ export const SHORTCUTS = defineShortcuts([
   {
     // Matched by the new-task form itself (`matchesShortcut`), like term-search below.
     id: "ab-start-task",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+enter",
     description: "Start the task being written",
     when: "the new-task form is focused",
@@ -333,7 +347,7 @@ export const SHORTCUTS = defineShortcuts([
     // Matched by the focused TerminalView itself (`matchesShortcut`), not window-level:
     // only the terminal owning the keystroke may open its overlay. Ctrl+F stays with the shell.
     id: "term-search",
-    scope: "cockpit",
+    scope: "workspace",
     keys: "mod+shift+f",
     description: "Search terminal scrollback",
     when: "a terminal is focused",
@@ -534,7 +548,9 @@ export function useShortcuts(
 }
 
 export function scopeTitle(scope: ShortcutScope): string {
-  return scope === "global" ? "Everywhere" : SCREENS[scope].title;
+  if (scope === "global") return "Everywhere";
+  if (scope === "workspace") return "Cockpit & Agent Board";
+  return SCREENS[scope].title;
 }
 
 /** Seeded from the status bar's last poll so counts are there on first paint. */
