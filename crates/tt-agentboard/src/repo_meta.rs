@@ -1,6 +1,7 @@
 //! Persisted per-repo *identity*: the icon and color the user chose for a
 //! tracked repo, so the same repo is recognizable at a glance in the rail, on
-//! the Board's task cards, and anywhere else its work shows up.
+//! the Board's task cards, and anywhere else its work shows up. A color here is
+//! a *pin*; every repo still has one, dealt by [`resolve_colors`].
 //!
 //! Stored in `<agentboard_shared_dir>/repo_meta.json`, keyed by the repo's
 //! absolute dir — the same key `repos.json` lists. **Shared, not task-scoped**:
@@ -16,18 +17,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-
-/// How strongly a repo's color shows up in the UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RepoAccentStyle {
-    /// Tint the icon and draw a thin edge. The restrained default — applied by
-    /// the client when `RepoMeta::style` is absent, so there's no Rust-side
-    /// `Default` to drift from it.
-    Accent,
-    /// Also wash the row/card surface with a low-alpha fill.
-    Tint,
-}
 
 /// A `#rrggbb` color, lowercased. Parsed at the edge so nothing downstream
 /// has to re-check that the string is safe to interpolate into a style.
@@ -56,8 +45,74 @@ impl HexColor {
     }
 }
 
+/// The palette's first color — what a row holds until [`resolve_colors`] deals it one.
+impl Default for HexColor {
+    fn default() -> Self {
+        Self(AUTO_PALETTE[0].to_string())
+    }
+}
+
+/// The colors a repo can be dealt or pinned from — the client picker's
+/// `REPO_PALETTE`. Each clears the lightness, chroma and contrast gates on both
+/// the light and dark surface, and none is a reserved status hue (amber,
+/// violet, sky). The order breaks ties: earlier is preferred.
+pub const AUTO_PALETTE: [&str; 15] = [
+    "#3b82f6", "#e11d48", "#059669", "#d946ef", "#0891b2", "#65a30d", "#ec4899", "#0d9488",
+    "#ef4444", "#2563eb", "#16a34a", "#c026d3", "#f43f5e", "#db2777", "#dc2626",
+];
+
+/// Every repo's color, in order, the way a chart colors its series: a pinned
+/// repo keeps its pin, and each other repo is dealt the palette color that
+/// stands furthest (OKLab) from every color already held — a pin, or one dealt
+/// before it — so a dealt color never lands beside a near-twin of a pin.
+pub fn resolve_colors(pins: &[Option<&HexColor>]) -> Vec<HexColor> {
+    let mut held: Vec<[f64; 3]> = pins.iter().flatten().map(|c| oklab(c.as_str())).collect();
+    pins.iter()
+        .map(|pin| match pin {
+            Some(color) => (*color).clone(),
+            None => {
+                let nearest_held = |c: &&str| {
+                    let lab = oklab(c);
+                    held.iter().map(|h| distance(&lab, h)).fold(f64::INFINITY, f64::min)
+                };
+                // `max_by` keeps the *last* maximum, so walk the palette backwards
+                // to let the earlier color win a tie.
+                let dealt = AUTO_PALETTE
+                    .iter()
+                    .rev()
+                    .max_by(|a, b| nearest_held(a).total_cmp(&nearest_held(b)))
+                    .expect("the palette is not empty");
+                held.push(oklab(dealt));
+                HexColor(dealt.to_string())
+            }
+        })
+        .collect()
+}
+
+fn distance(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>().sqrt()
+}
+
+/// A canonical `#rrggbb` in OKLab, the space a perceived color difference is
+/// a straight-line distance in.
+fn oklab(hex: &str) -> [f64; 3] {
+    let channel = |i: usize| {
+        let c = f64::from(u8::from_str_radix(&hex[1 + 2 * i..3 + 2 * i], 16).unwrap_or(0)) / 255.0;
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    };
+    let (r, g, b) = (channel(0), channel(1), channel(2));
+    let l = (0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b).cbrt();
+    let m = (0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b).cbrt();
+    let s = (0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b).cbrt();
+    [
+        0.210_454_255_3 * l + 0.793_617_785 * m - 0.004_072_046_8 * s,
+        1.977_998_495_1 * l - 2.428_592_205 * m + 0.450_593_709_9 * s,
+        0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766 * s,
+    ]
+}
+
 /// Identity for one repo. Every field optional: an untouched repo has no entry
-/// at all, and the UI falls back to its generic icon and neutral color.
+/// at all, gets the generic icon, and is dealt its color.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoMeta {
@@ -66,11 +121,9 @@ pub struct RepoMeta {
     /// round-trips it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// The pinned color; absent ⇒ dealt one by [`resolve_colors`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<HexColor>,
-    /// Absent ⇒ [`RepoAccentStyle::Accent`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub style: Option<RepoAccentStyle>,
 }
 
 impl RepoMeta {
@@ -199,11 +252,7 @@ mod tests {
     use super::*;
 
     fn meta(icon: &str, color: &str) -> RepoMeta {
-        RepoMeta {
-            icon: Some(icon.to_string()),
-            color: HexColor::parse(color),
-            style: Some(RepoAccentStyle::Accent),
-        }
+        RepoMeta { icon: Some(icon.to_string()), color: HexColor::parse(color) }
     }
 
     #[test]
@@ -211,6 +260,38 @@ mod tests {
         assert_eq!(HexColor::parse("#AbC").unwrap().as_str(), "#aabbcc");
         assert_eq!(HexColor::parse("7C3AED").unwrap().as_str(), "#7c3aed");
         assert_eq!(HexColor::parse("  #7c3aed  ").unwrap().as_str(), "#7c3aed");
+    }
+
+    #[test]
+    fn with_nothing_held_the_palette_leads() {
+        let got = resolve_colors(&[None]);
+        assert_eq!(got[0].as_str(), AUTO_PALETTE[0]);
+    }
+
+    #[test]
+    fn a_dealt_color_keeps_clear_of_every_pin() {
+        let rose = HexColor::parse("#e11d48").unwrap();
+        let got = resolve_colors(&[Some(&rose), None, None]);
+        assert_eq!(got[0], rose, "a pin is kept as is");
+        for dealt in &got[1..] {
+            let gap = distance(&oklab(dealt.as_str()), &oklab(rose.as_str()));
+            assert!(gap > 0.15, "{} sits too close to the pinned rose", dealt.as_str());
+        }
+        assert_ne!(got[1], got[2], "two dealt repos never share a color");
+    }
+
+    #[test]
+    fn dealing_is_stable_for_the_same_repos() {
+        let lime = HexColor::parse("#65a30d").unwrap();
+        let pins = [None, Some(&lime), None, None];
+        assert_eq!(resolve_colors(&pins), resolve_colors(&pins));
+    }
+
+    #[test]
+    fn the_palette_is_canonical_hex() {
+        for c in AUTO_PALETTE {
+            assert_eq!(HexColor::parse(c).unwrap().as_str(), c);
+        }
     }
 
     #[test]
@@ -311,23 +392,18 @@ mod tests {
 
     #[test]
     fn serializes_to_the_shape_the_client_reads() {
-        // The client types this as `{ icon?, color?, style?: "accent" | "tint" }`
-        // and an unset field must be *absent*, not null — pin both.
-        let full = RepoMeta {
-            icon: Some("Rocket".into()),
-            color: HexColor::parse("#7c3aed"),
-            style: Some(RepoAccentStyle::Tint),
-        };
+        // The client types this as `{ icon?, color? }` and an unset field must
+        // be *absent*, not null — pin both.
+        let full = RepoMeta { icon: Some("Rocket".into()), color: HexColor::parse("#7c3aed") };
         assert_eq!(
             serde_json::to_string(&full).unwrap(),
-            r##"{"icon":"Rocket","color":"#7c3aed","style":"tint"}"##
+            r##"{"icon":"Rocket","color":"#7c3aed"}"##
         );
         assert_eq!(serde_json::to_string(&RepoMeta::default()).unwrap(), "{}");
 
-        // And it round-trips back, including an absent style.
-        let partial: RepoMeta = serde_json::from_str(r#"{"icon":"Bug"}"#).unwrap();
-        assert_eq!(partial.icon.as_deref(), Some("Bug"));
-        assert!(partial.style.is_none(), "absent style ⇒ the client's Accent default");
+        // A file written while repos had a tint switch still loads.
+        let old: RepoMeta = serde_json::from_str(r#"{"icon":"Bug","style":"tint"}"#).unwrap();
+        assert_eq!(old.icon.as_deref(), Some("Bug"));
     }
 
     #[test]

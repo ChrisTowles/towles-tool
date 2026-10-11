@@ -185,4 +185,9 @@
   #root {
     isolation: isolate;
   }
+  /* Kumo lays a menu item's icon flush against its label; every menu wants a gap. */
+  [data-kumo-component="DropdownMenu"][data-kumo-part$="item"],
+  [data-kumo-component="DropdownMenu"][data-kumo-part="submenu-trigger"] {
+    gap: 0.5rem;
+  }
 }

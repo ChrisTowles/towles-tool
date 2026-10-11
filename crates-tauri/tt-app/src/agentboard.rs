@@ -510,12 +510,10 @@ pub fn ab_set_repo_meta(
     dir: String,
     icon: Option<String>,
     color: Option<String>,
-    style: Option<tt_agentboard::RepoAccentStyle>,
 ) {
     let meta = tt_agentboard::RepoMeta {
         icon: icon.map(|i| i.trim().to_string()).filter(|i| !i.is_empty()),
         color: color.as_deref().and_then(tt_agentboard::HexColor::parse),
-        style,
     };
     // Field values have to be read before `meta` moves into the engine.
     let (icon, color) = (

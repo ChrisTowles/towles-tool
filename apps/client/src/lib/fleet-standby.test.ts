@@ -55,7 +55,7 @@ function folder(overrides: Partial<FolderData>): FolderData {
 }
 
 function repo(name: string, folders: FolderData[]): RepoData {
-  return { key: name, dir: `/code/${name}`, name, folders, needs: 0 };
+  return { key: name, dir: `/code/${name}`, name, folders, needs: 0, color: "#3b82f6" };
 }
 
 /** A checkout whose agent is blocked, waiting since `since`. */

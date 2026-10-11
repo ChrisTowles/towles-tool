@@ -122,6 +122,7 @@ mod tests {
         StatePayload {
             repos: vec![RepoData {
                 meta: None,
+                color: Default::default(),
                 key: format!("path:/{repo}"),
                 dir: format!("/{repo}"),
                 name: repo.to_string(),

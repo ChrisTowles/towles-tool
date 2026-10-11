@@ -34,8 +34,7 @@ import {
   type SessionActions,
 } from "@/lib/agentboard";
 import type { PrItem, TaskItem } from "@/lib/data";
-import { identityColor } from "@/lib/identity-color";
-import { hasRepoColor, repoBandStyle } from "@/lib/repo-identity";
+import { repoBandStyle } from "@/lib/repo-identity";
 import { openExternalUrl } from "@/lib/open-url";
 import { cn } from "@/lib/utils";
 
@@ -87,15 +86,11 @@ export function WorkingContext({
   const titled = displayTitle !== repo.name;
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   return (
-    // The repo's own color when it has one, else the hashed identity wash
-    // (visual-design skill). The wash is where the hue lives on this surface —
+    // The repo's color, as a wash — where the hue lives on this surface;
     // nothing on top of it is tinted.
     <div
-      style={repoBandStyle(repo.meta, "var(--card)")}
-      className={cn(
-        "flex flex-col gap-1.5 border-b bg-card px-4 py-2",
-        !hasRepoColor(repo.meta) && identityColor(repo.name).wash,
-      )}
+      style={repoBandStyle(repo, "var(--card)")}
+      className="flex flex-col gap-1.5 border-b bg-card px-4 py-2"
     >
       <div className="flex items-stretch gap-3">
         <RepoPlate name={repo.name} scope={scope} />

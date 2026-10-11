@@ -55,7 +55,9 @@ function folder(overrides: Partial<FolderData>): FolderData {
 }
 
 function repos(f: FolderData): RepoData[] {
-  return [{ key: "proj", dir: "/code/proj", name: "proj", folders: [f], needs: 0 }];
+  return [
+    { key: "proj", dir: "/code/proj", name: "proj", folders: [f], needs: 0, color: "#3b82f6" },
+  ];
 }
 
 describe("buildJumpRecall", () => {

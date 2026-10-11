@@ -89,6 +89,7 @@ mod tests {
                 name: "repo".into(),
                 origin_url: None,
                 meta: None,
+                color: Default::default(),
                 needs: 0,
                 folders: folders
                     .into_iter()

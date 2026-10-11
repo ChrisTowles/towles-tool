@@ -305,6 +305,10 @@ pub struct RepoData {
     pub needs: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<crate::repo_meta::RepoMeta>,
+    /// The repo's color: its pin, else dealt by `repo_meta::resolve_colors`
+    /// over every repo when the engine builds state.
+    #[serde(default)]
+    pub color: crate::repo_meta::HexColor,
 }
 
 #[cfg(test)]

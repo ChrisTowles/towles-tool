@@ -43,6 +43,7 @@ function repo(over: Partial<RepoData>): RepoData {
     name: "widgets",
     folders: [],
     needs: 0,
+    color: "#3b82f6",
     ...over,
   };
 }
