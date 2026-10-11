@@ -1,6 +1,6 @@
 //! The queue: every checkout on Agent Board — task worktrees and repo roots
 //! alike, the tree's own rows — in the order to work them: what waits on you,
-//! then what runs, what's parked, what's idle. A task owning the checkout lends
+//! then what runs, what's parked, what's idle, and what has no shell open. A task owning the checkout lends
 //! it a title and a rank; nothing else needs one. Pure — agent waits come from the
 //! PTY-first `needs_reason`, landed state from the rail's `ops::work_state`, PR
 //! and CI facts from the collector cache; only rank and snoozes are the user's.
@@ -51,7 +51,10 @@ pub enum Lane {
     OnYou,
     Running,
     Parked,
+    /// A live session, nothing doing.
     Idle,
+    /// No live session — nothing to answer for until a shell is opened.
+    NoShell,
 }
 
 /// The stable string a checkout's snooze is stored under; the store never parses it.
@@ -179,7 +182,7 @@ fn checkout_item(
         reasons.push((WaitReason::Cleanup, None));
     }
     settle(&mut item, reasons);
-    if item.lane == Lane::Idle && holds_unlanded_work(folder) {
+    if matches!(item.lane, Lane::Idle | Lane::NoShell) && holds_unlanded_work(folder) {
         item.lane = Lane::Parked;
     }
     item.said = said_for(folder, item.session_id.as_deref());
@@ -365,8 +368,10 @@ fn settle(item: &mut QueueItem, mut reasons: Vec<(WaitReason, Option<(i64, Strin
             Lane::Running
         } else if item.pr.as_ref().is_some_and(|p| p.state == "open") {
             Lane::Parked
-        } else {
+        } else if item.session_id.is_some() {
             Lane::Idle
+        } else {
+            Lane::NoShell
         };
         return;
     };
@@ -601,12 +606,13 @@ mod tests {
     }
 
     #[test]
-    fn running_parked_and_idle_with_nothing_on_you() {
-        let (s, _) = store(&["run", "park", "idle"]);
+    fn running_parked_idle_and_shell_less_with_nothing_on_you() {
+        let (s, _) = store(&["run", "park", "idle", "cold"]);
         let st = state(vec![
             folder("/run", vec![session("s", AgentStatus::Busy, None, 0)]),
             folder("/park", vec![]),
-            folder("/idle", vec![]),
+            folder("/idle", vec![session("i", AgentStatus::Idle, None, 0)]),
+            folder("/cold", vec![]),
         ]);
         let q = run(&s, &st, &[pr("feat/park", "open", "pending", "")], 0);
         use Lane::*;
@@ -615,7 +621,8 @@ mod tests {
             [
                 row("run", Running, None),
                 row("park", Parked, None),
-                row("idle", Idle, None)
+                row("idle", Idle, None),
+                row("cold", NoShell, None),
             ]
         );
         assert_eq!(q.items[0].running_agents, 1);
@@ -677,7 +684,7 @@ mod tests {
         dirty.dirty = true;
         let q = run(&s, &state(vec![clean, dirty]), &[], 0);
         assert_eq!(q.items[0].reason, Some(WaitReason::Cleanup));
-        assert_eq!(q.items[1].lane, Lane::Idle, "dirty is left alone");
+        assert_eq!(q.items[1].lane, Lane::NoShell, "dirty is left alone");
     }
 
     #[test]
@@ -754,8 +761,8 @@ mod tests {
                 row("a", OnYou, Some(Answer)),
                 row("sm says", OnYou, Some(Answer)),
                 row("/loose", OnYou, Some(Land)),
-                row("/quiet", Idle, None),
-                row("Root", Idle, None),
+                row("/quiet", NoShell, None),
+                row("Root", NoShell, None),
             ]
         );
         assert_eq!((item(&q, "/a").task_id, item(&q, "/main").task_id), (Some(ids[0]), None));
@@ -769,7 +776,7 @@ mod tests {
         let mut red = pr("other", "open", "failing", "");
         red.number = 2;
         let q = run_ci(&s, &st, &[red], &[ci("Nightly", "main", "failure")], 0);
-        assert_eq!(summary(&q), [row("x", Lane::Idle, None)]);
+        assert_eq!(summary(&q), [row("x", Lane::NoShell, None)]);
     }
 
     #[test]
@@ -800,7 +807,7 @@ mod tests {
             [
                 row("ahead", Parked, None),
                 row("dirty", Parked, None),
-                row("landed", Idle, None),
+                row("landed", NoShell, None),
             ]
         );
     }
@@ -821,5 +828,6 @@ mod tests {
     fn enums_serialize_snake_case() {
         assert_eq!(serde_json::to_value(WaitReason::FixCi).unwrap(), serde_json::json!("fix_ci"));
         assert_eq!(serde_json::to_value(Lane::Idle).unwrap(), serde_json::json!("idle"));
+        assert_eq!(serde_json::to_value(Lane::NoShell).unwrap(), serde_json::json!("no_shell"));
     }
 }
