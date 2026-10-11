@@ -6,26 +6,15 @@ import {
   CaretDownIcon,
   CaretRightIcon,
   ClockIcon,
-  EyeSlashIcon,
   PlayIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
 import { HotkeyBadge } from "@/components/agentboard-bits";
 import { Hint } from "@/components/hint";
 import { requestAgentboardNav } from "@/lib/agentboard";
-import { fmtAge, storeItemDismiss } from "@/lib/data";
+import { fmtAge } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { openExternalUrl } from "@/lib/open-url";
-import {
-  itemUrl,
-  keyId,
-  LANES,
-  primaryAction,
-  rankMove,
-  REASON_FACE,
-  snoozeUntil,
-  type SnoozePreset,
-} from "@/lib/queue";
+import { keyId, LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
 import type { Lane, QueueItem, TaskQueue, WaitReason } from "@/lib/schemas/queue";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
@@ -40,20 +29,18 @@ export const HERO_KICKER: Record<WaitReason, string> = {
   review: "an agent finished — review it",
   fix_ci: "CI is failing",
   address_review: "changes requested",
-  review_pr: "your review is requested",
   land: "ready to land",
   cleanup: "landed — clean it up",
-  start: "nothing waiting on you — start next",
 };
 
 const LANE_TITLE: Record<Lane, string> = {
   on_you: "On you",
   running: "Running",
   parked: "Parked",
-  backlog: "Backlog",
+  idle: "Idle",
 };
 
-export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "backlog"];
+export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "idle"];
 
 const SNOOZES: { preset: SnoozePreset; label: string }[] = [
   { preset: "1h", label: "For an hour" },
@@ -63,20 +50,6 @@ const SNOOZES: { preset: SnoozePreset; label: string }[] = [
 
 async function report(r: Awaited<ReturnType<typeof invoke>>) {
   if (r.isErr() && !NotInTauri.is(r.error)) toast.error(errorMessage(r.error));
-}
-
-/** The `+` flow for a task with no checkout yet. */
-export async function startQueueItem(item: QueueItem): Promise<void> {
-  if (item.key.kind !== "task") return;
-  uiAction("queue.start", "cockpit");
-  await report(await invoke<void>("queue_start", { id: item.key.id }));
-}
-
-export function openQueueLink(item: QueueItem): void {
-  const url = itemUrl(item);
-  if (!url) return;
-  uiAction("queue.open_link", "cockpit", item.key.kind);
-  void openExternalUrl(url);
 }
 
 export async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<void> {
@@ -113,16 +86,6 @@ async function fileItem(item: QueueItem) {
   await report(await invoke<number>("queue_file_unfiled", { folderDir: item.key.folderDir }));
 }
 
-/** A PR row's way off the queue; the snapshot re-emits and the row goes. */
-export async function dismissQueuePr(item: QueueItem): Promise<void> {
-  const pr = item.pr;
-  if (item.key.kind !== "pr" || !pr) return;
-  uiAction("cockpit.item_dismiss", "cockpit", "pr");
-  // The row's age is the PR's `updatedTs`, which a dismissal must cover.
-  const r = await storeItemDismiss("pr", pr.repo, pr.number, item.sinceMs ?? Date.now());
-  if (r.isErr() && !NotInTauri.is(r.error)) toast.error(r.error.message);
-}
-
 /** `queue-next` from any screen, terminals included: Cockpit opens the head in place. */
 export function QueueNextShortcut() {
   const { openTab, activeTab } = useWorkspace();
@@ -141,8 +104,9 @@ export function QueueNextShortcut() {
   return null;
 }
 
-/** The left rail: Next up, then every lane. Rows only select — the item's
- * terminals open beside it; nothing here acts on an agent. */
+/** The left rail: Agent Board's checkouts as one queue — Next up, then every
+ * lane. Rows only select — the checkout's terminals open beside it; nothing
+ * here acts on an agent. */
 export function CockpitRail({
   queue,
   live,
@@ -158,7 +122,6 @@ export function CockpitRail({
   onOpenHead,
   onNewTask,
   newTaskForm,
-  children,
 }: {
   queue: TaskQueue;
   live: boolean;
@@ -179,8 +142,6 @@ export function CockpitRail({
   onNewTask: () => void;
   /** The new-task form, open under the header. */
   newTaskForm?: ReactNode;
-  /** Drawers below the lanes (issues, checkouts). */
-  children?: ReactNode;
 }) {
   return (
     <div className="flex flex-col">
@@ -202,7 +163,7 @@ export function CockpitRail({
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
       ) : queue.items.length === 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
-          Nothing needs you — add a task on the Board.
+          No checkouts yet — add a repo or start a task.
         </p>
       ) : (
         <>
@@ -214,7 +175,6 @@ export function CockpitRail({
               onOpen={onOpenHead}
               onLater={() => void rerankQueueItem(queue.items, head, "down")}
               onSnooze={(preset) => void snoozeQueueItem(head, preset)}
-              onDismiss={() => void dismissQueuePr(head)}
             />
           )}
           {LANES.map((lane) => {
@@ -226,6 +186,8 @@ export function CockpitRail({
                 <button
                   type="button"
                   onClick={() => onToggleLane(lane)}
+                  aria-expanded={!isFolded}
+                  data-testid="queue-lane"
                   className="flex w-full items-center gap-1 px-3 pt-3 pb-1 text-left text-xs font-medium tracking-wide text-kumo-subtle uppercase hover:text-kumo-default"
                 >
                   {isFolded ? <CaretRightIcon size={12} /> : <CaretDownIcon size={12} />}
@@ -252,38 +214,6 @@ export function CockpitRail({
           })}
         </>
       )}
-      {children}
-    </div>
-  );
-}
-
-/** A rail drawer: a folded section under the lanes. */
-export function RailDrawer({
-  title,
-  count,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string;
-  count?: number;
-  open: boolean;
-  onToggle: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="mt-2 border-t">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-1 px-3 pt-3 pb-1 text-left text-xs font-medium tracking-wide text-kumo-subtle uppercase hover:text-kumo-default"
-      >
-        {open ? <CaretDownIcon size={12} /> : <CaretRightIcon size={12} />}
-        {title}
-        {count !== undefined && ` · ${count}`}
-      </button>
-      {open && children}
     </div>
   );
 }
@@ -295,7 +225,6 @@ function Hero({
   onOpen,
   onLater,
   onSnooze,
-  onDismiss,
 }: {
   item: QueueItem;
   now: number;
@@ -303,24 +232,19 @@ function Hero({
   onOpen: () => void;
   onLater: () => void;
   onSnooze: (preset: SnoozePreset) => void;
-  onDismiss: () => void;
 }) {
-  const reason = item.reason ?? "start";
   return (
     <motion.div
       key={keyId(item.key)}
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "m-2 rounded-lg border p-3",
-        reason === "start"
-          ? "border-kumo-success/40 bg-kumo-success/5"
-          : "border-kumo-brand/40 bg-kumo-brand/5",
+        "m-2 rounded-lg border border-kumo-brand/40 bg-kumo-brand/5 p-3",
         selected && "ring-1 ring-kumo-brand",
       )}
     >
       <div className="text-[11px] font-semibold tracking-wide text-kumo-brand uppercase">
-        Next up · {HERO_KICKER[reason]}
+        Next up{item.reason && ` · ${HERO_KICKER[item.reason]}`}
       </div>
       <div className="mt-0.5 truncate font-semibold">{item.title}</div>
       <div className="truncate font-mono text-xs text-kumo-subtle">
@@ -343,12 +267,7 @@ function Hero({
             Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>
           </Button>
         )}
-        {item.reason && item.reason !== "start" && <SnoozeMenu onSnooze={onSnooze} />}
-        {item.key.kind === "pr" && (
-          <Button size="xs" variant="ghost" icon={<EyeSlashIcon />} onClick={onDismiss}>
-            Dismiss
-          </Button>
-        )}
+        {item.reason && <SnoozeMenu onSnooze={onSnooze} />}
         {item.key.kind === "task" && (
           <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
             Later
@@ -391,7 +310,6 @@ export function SnoozeMenu({
 function rowMeta(item: QueueItem, now: number): string {
   return [
     item.key.kind === "unfiled" ? "not a task" : null,
-    item.key.kind === "pr" || item.key.kind === "ci" ? item.repo : null,
     item.branch,
     item.pr ? `PR #${item.pr.number}` : null,
     item.ci.length > 0 ? item.ci.map((c) => c.workflow).join(", ") : null,
@@ -440,6 +358,7 @@ function QueueRow({
         type="button"
         onClick={onSelect}
         aria-current={selected ? "true" : undefined}
+        data-testid="queue-row"
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
         {/* A reserved column, so revealing the digits never reflows a row. */}
@@ -464,7 +383,8 @@ function QueueRow({
           </span>
         )}
       </button>
-      {item.key.kind === "unfiled" && (
+      {/* An idle checkout has nothing in flight to file. */}
+      {item.key.kind === "unfiled" && item.lane !== "idle" && (
         <Button size="xs" variant="outline" onClick={() => void fileItem(item)}>
           File
         </Button>
@@ -474,17 +394,6 @@ function QueueRow({
           Wake
         </Button>
       )}
-      {item.key.kind === "pr" && (
-        <Button
-          size="xs"
-          variant="ghost"
-          shape="square"
-          aria-label="Dismiss PR"
-          className="opacity-0 group-hover:opacity-100"
-          icon={<EyeSlashIcon />}
-          onClick={() => void dismissQueuePr(item)}
-        />
-      )}
       {item.reason && !item.snoozed && (
         <SnoozeMenu
           onSnooze={(preset) => void snoozeQueueItem(item, preset)}
@@ -492,76 +401,6 @@ function QueueRow({
           onOpenChange={onSnoozeOpenChange}
         />
       )}
-    </div>
-  );
-}
-
-/** What a selected row with no checkout shows where its panes would be. */
-export function QueueDetail({ item, now }: { item: QueueItem; now: number }) {
-  const action = primaryAction(item);
-  const reason = item.reason ?? "start";
-  return (
-    <div className="flex h-full items-start justify-center overflow-auto p-8">
-      <div className="w-full max-w-xl rounded-lg border p-5">
-        <div className="text-xs font-semibold tracking-wide text-kumo-brand uppercase">
-          {item.reason ? HERO_KICKER[reason] : LANE_TITLE[item.lane]}
-        </div>
-        <div className="mt-1 text-lg font-semibold">{item.title}</div>
-        <div className="font-mono text-xs text-kumo-subtle">{rowMeta(item, now)}</div>
-        {item.goal && item.goal !== item.title && (
-          <p className="mt-3 text-sm whitespace-pre-wrap">{item.goal}</p>
-        )}
-        {item.ci.length > 0 && (
-          <ul className="mt-3 flex flex-col gap-1 text-sm">
-            {item.ci.map((c) => (
-              <li key={c.workflow}>
-                <button
-                  type="button"
-                  className="text-left hover:underline"
-                  onClick={() => {
-                    uiAction("cockpit.open_ci_run", "cockpit", c.conclusion);
-                    void openExternalUrl(c.url);
-                  }}
-                >
-                  <Badge variant="red">{c.workflow}</Badge>{" "}
-                  <span className="text-xs text-kumo-subtle">
-                    {c.conclusion} · {fmtAge(c.updatedMs, now)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {action === "start" && item.key.kind === "task" && (
-            <Button
-              size="sm"
-              variant="primary"
-              icon={<PlayIcon weight="fill" />}
-              onClick={() => void startQueueItem(item)}
-            >
-              Start agent{" "}
-              <span className="ml-1 text-xs opacity-70">{shortcutHint("queue-start")}</span>
-            </Button>
-          )}
-          {action === "open-link" && (
-            <Button size="sm" variant="primary" onClick={() => openQueueLink(item)}>
-              Open on GitHub{" "}
-              <span className="ml-1 text-xs opacity-70">{shortcutHint("ab-focus-terminal")}</span>
-            </Button>
-          )}
-          {item.key.kind === "pr" && (
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<EyeSlashIcon />}
-              onClick={() => void dismissQueuePr(item)}
-            >
-              Dismiss
-            </Button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -576,7 +415,6 @@ export function NextUpBanner({
   onOpen: () => void;
   onDismiss: () => void;
 }) {
-  const reason = item.reason ?? "start";
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
@@ -586,7 +424,9 @@ export function NextUpBanner({
     >
       <span className="text-xs font-semibold tracking-wide text-kumo-brand uppercase">Next up</span>
       <span className="min-w-0 truncate font-medium">{item.title}</span>
-      <span className="shrink-0 text-xs text-kumo-subtle">{HERO_KICKER[reason]}</span>
+      {item.reason && (
+        <span className="shrink-0 text-xs text-kumo-subtle">{HERO_KICKER[item.reason]}</span>
+      )}
       <div className="ml-auto flex shrink-0 gap-1">
         <Button size="xs" variant="primary" onClick={onOpen}>
           Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>

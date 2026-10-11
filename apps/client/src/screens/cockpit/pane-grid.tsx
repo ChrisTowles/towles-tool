@@ -317,7 +317,7 @@ export function PaneGrid(props: {
         (activeFolderDir ? (
           <Centered>
             <p className="text-sm text-muted-foreground">
-              No panes open here — open a session from Checkouts, or{" "}
+              No panes open here — open a session from Agent Board, or{" "}
               <span className="font-mono">+ session</span> above.
             </p>
           </Centered>

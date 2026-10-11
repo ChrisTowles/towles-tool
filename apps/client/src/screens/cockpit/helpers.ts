@@ -5,6 +5,7 @@ import { storeAddTask, storeAttachTaskIssue, storeItemDismiss } from "@/lib/data
 import { uiAction } from "@/lib/ui-action";
 import type { PaneRect } from "@/lib/agentboard";
 import type { NewTaskSubmit } from "@/components/inline-new-task";
+import { workspaceScreen } from "@/lib/workspace-mode";
 
 /** Sentinel key in the persisted collapse map for "the whole rail is collapsed
  * to icons" — rides the same `ab_save_collapsed` store as the per-row keys
@@ -35,7 +36,7 @@ export async function cleanupMissing() {
  * changes again (see isItemDismissed). The snapshot re-emits from Rust on
  * success, so no optimistic update here. */
 export async function dismissAttentionPr(repo: string, number: number, updatedTs: number) {
-  uiAction("agentboard.attention_pr_dismiss", "cockpit");
+  uiAction("agentboard.attention_pr_dismiss", workspaceScreen());
   const result = await storeItemDismiss("pr", repo, number, updatedTs);
   if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
 }

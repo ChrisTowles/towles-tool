@@ -45,12 +45,13 @@ instance is serving this checkout — there is no `preferredEditor` fallback.
 tt task init               # Onboard a repo: template, gitignore .env, primary .env
 tt task new "Do the thing" --repo myrepo -b feat/thing  # board task + branch-named worktree + rendered .env
 tt task new "Do the thing" --repo myrepo --goal "..."   # goal shown on the Board card under the title
+tt task new "Do the thing" --repo myrepo --status doing # Board column: backlog (default), doing or done — anything else is refused before a worktree is made
 tt task new --pr 123 --repo myrepo                     # review task: checks out PR #123's existing head branch (fork PRs as <owner>/<branch>)
 tt task new --issue 42 --repo myrepo                   # task for open issue #42 on feat/42-<slug>, titled after it, issue attached to the Board row (TITLE/-b override)
 tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>         # (Re)render a checkout's .env (or `primary`) — idempotent, keeps claims
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)
-tt task sync [<name>]      # Record the branch a task's worktree is on now (default: cwd's task)
+tt task sync [<name>]      # Record the branch a task's worktree is on now (default: cwd's task); a worktree with no Board row gets one
 tt task rm <name>          # Guarded removal
 tt task clean              # Remove every merged/gone task
 tt task nudge <prs|issues|slack:dm>  # Refresh that collector now instead of on the app's next poll

@@ -45,11 +45,8 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
     keywords: [
       "home",
       "day",
-      "next meeting",
       "queue",
-      "prs",
-      "ci",
-      "issues",
+      "next up",
       "focus",
       "zone",
       "agents",

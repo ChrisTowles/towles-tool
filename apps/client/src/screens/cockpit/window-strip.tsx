@@ -5,6 +5,7 @@ import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
+import { workspaceScreen } from "@/lib/workspace-mode";
 
 /** Shared chrome for the three add-actions, so they can't drift apart: no
  * resting box (they are controls, but repeated ones, and the tabs beside them
@@ -141,7 +142,7 @@ export function WindowStrip(props: {
         <button
           type="button"
           onClick={() => {
-            mouseAction("ab-new-session", "cockpit");
+            mouseAction("ab-new-session", workspaceScreen());
             onNewSession();
           }}
           className={ADD_CLASS}
@@ -157,7 +158,7 @@ export function WindowStrip(props: {
           <button
             type="button"
             onClick={() => {
-              mouseAction("ab-close-pane", "cockpit");
+              mouseAction("ab-close-pane", workspaceScreen());
               onClosePane();
             }}
             className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"

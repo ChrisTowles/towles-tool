@@ -23,6 +23,7 @@ import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
 import { NewRepoDialog, type NewRepoMode } from "./new-repo-dialog";
 import type { AttentionItem } from "./use-attention";
+import { workspaceScreen } from "@/lib/workspace-mode";
 
 const FILTER_SUMMARY: Record<RailFilter, string> = {
   all: "all checkouts",
@@ -163,7 +164,7 @@ function ViewMenu(props: {
           <DropdownMenu.RadioGroup
             value={filter}
             onValueChange={(next) => {
-              uiAction("agentboard.rail_filter", "cockpit", next);
+              uiAction("agentboard.rail_filter", workspaceScreen(), next);
               props.onSetFilter(next as RailFilter);
             }}
           >
@@ -189,7 +190,7 @@ function ViewMenu(props: {
                 type="button"
                 aria-pressed={hours === recentHours}
                 onClick={() => {
-                  uiAction("agentboard.rail_recent_hours", "cockpit", String(hours));
+                  uiAction("agentboard.rail_recent_hours", workspaceScreen(), String(hours));
                   props.onSetRecentHours(hours);
                 }}
                 className={cn(
@@ -212,7 +213,7 @@ function ViewMenu(props: {
               checked={props.showQuiet}
               closeOnClick={false}
               onCheckedChange={(on) => {
-                uiAction("agentboard.show_quiet", "cockpit", on ? "on" : "off");
+                uiAction("agentboard.show_quiet", workspaceScreen(), on ? "on" : "off");
                 props.onSetShowQuiet(on);
               }}
             >
@@ -224,7 +225,7 @@ function ViewMenu(props: {
             checked={props.showUnmanagedWorktrees}
             closeOnClick={false}
             onCheckedChange={(on) => {
-              uiAction("agentboard.show_unmanaged_worktrees", "cockpit", on ? "on" : "off");
+              uiAction("agentboard.show_unmanaged_worktrees", workspaceScreen(), on ? "on" : "off");
               props.onSetShowUnmanagedWorktrees(on);
             }}
           >
@@ -234,7 +235,7 @@ function ViewMenu(props: {
             checked={props.jarvisPane}
             closeOnClick={false}
             onCheckedChange={(on) => {
-              uiAction("agentboard.jarvis_pane", "cockpit", on ? "on" : "off");
+              uiAction("agentboard.jarvis_pane", workspaceScreen(), on ? "on" : "off");
               props.onSetJarvisPane(on);
             }}
           >
@@ -328,7 +329,7 @@ export function RailHeader(props: {
           <AddRepoMenu
             onOpenRepoManager={props.onOpenRepoManager}
             onNewRepo={(mode) => {
-              uiAction(`repo.${mode}_opened`, "cockpit");
+              uiAction(`repo.${mode}_opened`, workspaceScreen());
               setNewRepo(mode);
             }}
           />
@@ -352,7 +353,7 @@ export function RailHeader(props: {
             <button
               type="button"
               onClick={() => {
-                mouseAction("ab-toggle-rail", "cockpit");
+                mouseAction("ab-toggle-rail", workspaceScreen());
                 props.onCollapseRail();
               }}
               aria-label="Collapse the rail to icons"

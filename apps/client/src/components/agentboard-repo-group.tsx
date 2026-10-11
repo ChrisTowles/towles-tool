@@ -47,6 +47,7 @@ import { uiAction } from "@/lib/ui-action";
 import { railRowMotion } from "@/lib/rail-motion";
 import { sessionNodeKey } from "@/lib/rail-nodes";
 import { AnimatePresence, motion } from "motion/react";
+import { workspaceScreen } from "@/lib/workspace-mode";
 
 const IDLE_HINT = "Checkouts with nothing going on right now";
 const UNMANAGED_HINT =
@@ -57,7 +58,7 @@ function adoptWorktree(folder: FolderData) {
   const task = folderTask(folder);
   if (!folderIsUnclaimed(folder) || !task) return undefined;
   return () => {
-    uiAction("agentboard.adopt_worktree", "cockpit");
+    uiAction("agentboard.adopt_worktree", workspaceScreen());
     void taskAdoptWorktree(task.id).then((result) => {
       if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
     });
@@ -69,7 +70,7 @@ function syncBranch(folder: FolderData) {
   const task = folderTask(folder);
   if (!task) return undefined;
   return () => {
-    uiAction("agentboard.sync_branch", "cockpit");
+    uiAction("agentboard.sync_branch", workspaceScreen());
     void taskSyncBranch(task.id).then((result) => {
       if (result.isOk()) {
         const { previous, current } = result.value;

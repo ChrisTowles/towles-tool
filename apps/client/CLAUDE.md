@@ -84,15 +84,15 @@ only in the handler map while it's up (Alt+Shift+↑ is rank-top on one,
 collapse-all on the other). A jump to a terminal from elsewhere goes through
 `openWorkspace()`, so it lands on whichever was used last.
 
-Cockpit's rail is the task queue (`components/cockpit-rail.tsx`), and
-`railRows` (`lib/queue.tsx`) is the one walk the cursor (j/k, Ctrl+Shift+↑/↓)
-and the 1–9 jump digits read — folded lanes skipped, so the keyboard sees what
-you see. The ring follows the checkout on screen however it got there
-(`rowForFolder`). A row with no checkout (a backlog task, a PR, a CI failure)
-shows its detail where the panes go — the pane grid stays mounted, only
-`hidden`. When the head of On you changes, `nextUpArrival` decides to open or
-announce it; a focused terminal is never taken. Agent Board's rail is the
-repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
+Cockpit's rail is the task queue (`components/cockpit-rail.tsx`): **Agent
+Board's checkouts, one row each, ordered to work one at a time** — so a thing
+with no checkout (a backlog task, a PR, a CI run) is on neither. `railRows`
+(`lib/queue.tsx`) is the one walk the cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9
+jump digits read — folded lanes skipped, so the keyboard sees what you see —
+and the ring follows the checkout on screen however it got there
+(`rowForFolder`). When the head of On you changes, `nextUpArrival` decides to
+open or announce it; a focused terminal is never taken. Agent Board's rail is
+the repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
 cursor, the digits, the fold chords); the queue never moves it. Exactly one row
 wears `ring-violet-500`; the violet *edge* answers which checkout you're in.
 

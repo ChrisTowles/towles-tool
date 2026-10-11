@@ -9,6 +9,7 @@ import {
 import { taskDelete, type TaskItem, type TaskOutcome } from "@/lib/data";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
+import { workspaceScreen } from "@/lib/workspace-mode";
 
 export type WorktreeDelete = {
   requestDeleteWorktree: (dir: string, label: string) => void;
@@ -178,7 +179,7 @@ export function useWorktreeDelete(args: {
     // shortcut ignoring it could start a second removal of the same worktree.
     if (!blockedDelete || deleteBusy) return;
     const { target, outcome } = blockedDelete;
-    uiAction("agentboard.force_delete_worktree", "cockpit", outcome ?? "no-task");
+    uiAction("agentboard.force_delete_worktree", workspaceScreen(), outcome ?? "no-task");
     endDeleteFlow(blockedDeleteDir);
     void performDeleteWorktree(target, { force: true, outcome });
   }

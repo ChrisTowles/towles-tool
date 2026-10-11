@@ -104,12 +104,11 @@ the CLI and the app can consume it.
   free. Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
-  And **the task queue** (`queue::build`), the one list of what needs you:
-  every open task's lane and wait reason, derived per emit from `needs_reason`,
-  the PR and CI caches and the rail's landed state (`ops::work_state`), ordered
-  by the user's global `rank`. PRs that want you, failing CI runs and worktrees
-  holding unlanded work join it as rows of their own, each deduped against the
-  task that owns its branch.
+  And **the task queue** (`queue::build`): every checkout on Agent Board as one
+  row — its task's, when a task owns it — with a lane and wait reason derived
+  per emit from `needs_reason`, the PR and CI caches and the rail's landed state
+  (`ops::work_state`), ordered by the user's global `rank`. A PR, CI run or
+  backlog task with no checkout is not a row.
 - `tt-claude-code` — transcript/session parsing models.
 - `tt-doctor` — doctor checks logic (the app screen consumes it).
 - `tt-update` — checks GitHub Releases for a newer version. Uses `native-tls`,
@@ -144,10 +143,10 @@ React 19 + Vite + Tailwind v4 + Kumo, a Yaak-style shell (resizable sidebar
 as the only nav, ⌘K palette, screens stay mounted across switches) with three
 Focus screens: **Cockpit**, **Agent Board**, **Board**, **Messages**. Cockpit
 and Agent Board are one workspace — the same terminals, panes and selection,
-mounted once — with two rails for working through it. Cockpit, the cold-start
-screen, is processed by what's waiting: its rail *is* the task queue (Next up,
-then On you / Running / Parked / Backlog, with Issues and every tracked checkout
-in drawers below). When the head of On you changes it opens in place, unless a
+mounted once — with two views of the same checkouts. Cockpit, the cold-start
+screen, lays them out as a queue to work one at a time: its rail *is* the task
+queue (Next up, then On you / Running / Parked / Idle). When the head of On you
+changes it opens in place, unless a
 terminal has focus or the row on screen still needs you — then it is announced
 above the panes, never by taking focus. Agent Board is processed by place: its
 rail is the repo → checkout → session tree with a keyboard cursor, and the queue

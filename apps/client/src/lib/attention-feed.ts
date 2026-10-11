@@ -1,5 +1,5 @@
 import { dmsNeedingAttention, isItemDismissed, type StoreSnapshot } from "./data";
-import type { StatePayload } from "./agentboard";
+import { prForFolder, type StatePayload } from "./agentboard";
 import type { FocusTarget } from "./focus-target";
 import { prChecksFailing } from "./pr-tone";
 
@@ -19,7 +19,7 @@ export type AttentionItem = {
   subtitle: string;
   /** In-app deep link — navigate via `openTabWithFocus`. */
   target?: FocusTarget;
-  /** External URL (a Slack DM) — opened instead of navigating in-app. */
+  /** External URL (a Slack DM, a PR no checkout owns) — opened instead of navigating in-app. */
   url?: string;
   /** Secondary sort key within a tier (newer first). */
   sortTs: number;
@@ -51,9 +51,21 @@ export function buildAttentionFeed(
   // chip can turn purple), but neither needs attention — the same `open` scope
   // `prNeedsYou` applies. A dismissed PR stays out of the feed until it changes
   // again.
+  // A PR on one of the board's worktrees is that checkout's queue row; any
+  // other has no row anywhere, so it opens on GitHub.
+  const ownedPrs = new Set(
+    agentState.repos.flatMap((r) =>
+      r.folders.flatMap((f) => {
+        const owned = f.isWorktree && prForFolder(snapshot.prs, r.originUrl, f.branch);
+        return owned ? [owned] : [];
+      }),
+    ),
+  );
   for (const pr of snapshot.prs.filter((p) => p.state === "open" && !isItemDismissed(p))) {
     const prId = `${pr.repo}#${pr.number}`;
-    const target: FocusTarget = { screen: "cockpit", kind: "pr", id: prId };
+    const link: Pick<AttentionItem, "target" | "url"> = ownedPrs.has(pr)
+      ? { target: { screen: "cockpit", kind: "pr", id: prId } }
+      : { url: pr.url };
     // Failing CI outranks review-requested; a PR that is both surfaces once, in
     // the more-urgent bucket.
     if (prChecksFailing(pr)) {
@@ -63,7 +75,7 @@ export function buildAttentionFeed(
         tier: TIER_URGENT,
         title: pr.title,
         subtitle: `${prId} · CI failing`,
-        target,
+        ...link,
         sortTs: pr.updatedTs,
       });
     } else if (pr.reviewState === "review_requested") {
@@ -73,7 +85,7 @@ export function buildAttentionFeed(
         tier: TIER_REVIEW,
         title: pr.title,
         subtitle: `${prId} · review requested`,
-        target,
+        ...link,
         sortTs: pr.updatedTs,
       });
     }
@@ -87,7 +99,7 @@ export function buildAttentionFeed(
       tier: TIER_AGENT,
       title: repo.name,
       subtitle: `${repo.needs} session${repo.needs === 1 ? "" : "s"} waiting`,
-      target: { screen: "cockpit", kind: "repo", id: repo.key },
+      target: { screen: "agentboard", kind: "repo", id: repo.key },
       sortTs: 0,
     });
   }

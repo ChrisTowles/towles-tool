@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   cycleQueue,
-  itemUrl,
   keyId,
   nextItem,
   nextUpArrival,
   onYouHead,
-  primaryAction,
   railRows,
   rowForFolder,
   stepRow,
@@ -23,9 +21,8 @@ function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
     reason: "answer",
     also: [],
     title: `t${id}`,
-    goal: null,
     repo: "o/r",
-    branch: null,
+    branch: `feat/${id}`,
     folderDir: `/w${id}`,
     sessionId: `s${id}`,
     said: null,
@@ -58,38 +55,10 @@ describe("cycleQueue", () => {
   });
 });
 
-describe("primaryAction", () => {
-  it("opens a session, else the folder, else starts", () => {
-    expect(primaryAction(item(1))).toBe("open-session");
-    expect(primaryAction(item(1, { sessionId: null }))).toBe("open-folder");
-    expect(primaryAction(item(1, { sessionId: null, folderDir: null, reason: "start" }))).toBe(
-      "start",
-    );
-  });
-});
-
-describe("PR and CI rows", () => {
-  const pr = item(9, {
-    key: { kind: "pr", repo: "o/r", number: 7 },
-    folderDir: null,
-    sessionId: null,
-    reason: "review_pr",
-    pr: { repo: "o/r", number: 7, url: "pr-url", state: "open", checks: "", reviewState: "" },
-  });
-  const ci = item(10, {
-    key: { kind: "ci", repo: "o/r", branch: "main" },
-    folderDir: null,
-    sessionId: null,
-    reason: "fix_ci",
-    ci: [{ workflow: "Nightly", url: "run-url", conclusion: "failure", updatedMs: 1 }],
-  });
-  it("open on GitHub and key distinctly", () => {
-    expect(primaryAction(pr)).toBe("open-link");
-    expect(itemUrl(pr)).toBe("pr-url");
-    expect(itemUrl(ci)).toBe("run-url");
-    expect(keyId(pr.key)).toBe("pr:o/r#7");
-    expect(keyId(ci.key)).toBe("ci:o/r@main");
-    expect(TaskQueueSchema.parse(queue([pr, ci])).items).toHaveLength(2);
+describe("keyId", () => {
+  it("keys a task by id and a loose checkout by its dir", () => {
+    expect(keyId({ kind: "task", id: 3 })).toBe("task:3");
+    expect(keyId({ kind: "unfiled", folderDir: "/x" })).toBe("unfiled:/x");
   });
 });
 
@@ -130,7 +99,7 @@ describe("schema + nextItem", () => {
 });
 
 describe("rail rows", () => {
-  const q = queue([item(1), item(2, { lane: "running" }), item(3, { lane: "backlog" })]);
+  const q = queue([item(1), item(2, { lane: "running" }), item(3, { lane: "idle" })]);
   it("skip folded lanes and find a checkout's row", () => {
     expect(railRows(q, new Set(["running"])).map((i) => i.title)).toEqual(["t1", "t3"]);
     expect(rowForFolder(q, "/w2")?.title).toBe("t2");

@@ -1,16 +1,16 @@
-//! The task queue: everything waiting on the user, in one order — every open
-//! board task, worktrees holding unlanded work, and the PRs and CI failures no
-//! task owns. Pure — agent waits come from the PTY-first `needs_reason`, landed
-//! state from the rail's `ops::work_state`, PR and CI facts from the collector
-//! cache; only rank and snoozes are the user's.
+//! The task queue: every checkout on Agent Board, in the order to work them —
+//! what waits on you, then what runs, what's parked, what's idle. A checkout a
+//! board task owns is that task's row. Pure — agent waits come from the
+//! PTY-first `needs_reason`, landed state from the rail's `ops::work_state`, PR
+//! and CI facts from the collector cache; only rank and snoozes are the user's.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use tt_store::{CiRun, PrItem, QueueSnooze, TaskItem};
 
 use crate::bridge::StatePayload;
-use crate::types::{FolderData, NeedsYouReason, SessionData};
+use crate::types::{FolderData, NeedsYouReason, RepoData, SessionData};
 
 /// Most urgent first; the declaration order is the severity tiebreak.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -21,11 +21,8 @@ pub enum WaitReason {
     Review,
     FixCi,
     AddressReview,
-    /// Someone asked for your review on a PR no task of yours owns.
-    ReviewPr,
     Land,
     Cleanup,
-    Start,
 }
 
 impl WaitReason {
@@ -41,10 +38,8 @@ impl WaitReason {
             Self::Review => "review",
             Self::FixCi => "fix_ci",
             Self::AddressReview => "address_review",
-            Self::ReviewPr => "review_pr",
             Self::Land => "land",
             Self::Cleanup => "cleanup",
-            Self::Start => "start",
         }
     }
 }
@@ -55,7 +50,7 @@ pub enum Lane {
     OnYou,
     Running,
     Parked,
-    Backlog,
+    Idle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -67,8 +62,6 @@ pub enum Lane {
 pub enum QueueKey {
     Task { id: i64 },
     Unfiled { folder_dir: String },
-    Pr { repo: String, number: i64 },
-    Ci { repo: String, branch: String },
 }
 
 impl QueueKey {
@@ -77,8 +70,6 @@ impl QueueKey {
         match self {
             Self::Task { id } => format!("task:{id}"),
             Self::Unfiled { folder_dir } => format!("unfiled:{folder_dir}"),
-            Self::Pr { repo, number } => format!("pr:{repo}#{number}"),
-            Self::Ci { repo, branch } => format!("ci:{repo}@{branch}"),
         }
     }
 }
@@ -112,10 +103,9 @@ pub struct QueueItem {
     pub reason: Option<WaitReason>,
     pub also: Vec<WaitReason>,
     pub title: String,
-    pub goal: Option<String>,
     pub repo: String,
-    pub branch: Option<String>,
-    pub folder_dir: Option<String>,
+    pub branch: String,
+    pub folder_dir: String,
     pub session_id: Option<String>,
     /// The session's own reported line — never terminal output.
     pub said: Option<String>,
@@ -145,117 +135,74 @@ pub struct QueueInputs<'a> {
 }
 
 pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
-    let folders: HashMap<&str, (&str, Option<&str>, &FolderData)> = inputs
+    let mut owners: HashMap<&str, &TaskItem> = HashMap::new();
+    for task in inputs.tasks.iter().filter(|t| !t.closed && t.archived_at.is_none()) {
+        if let Some(dir) = task.worktree.as_ref().and_then(|w| w.dir.as_deref()) {
+            owners.entry(dir).or_insert(task);
+        }
+    }
+    let snoozes: HashMap<&str, &QueueSnooze> =
+        inputs.snoozes.iter().map(|s| (s.key.as_str(), s)).collect();
+    let failing = failing_ci(inputs.ci_runs);
+
+    let mut items: Vec<QueueItem> = inputs
         .state
         .repos
         .iter()
-        .flat_map(|r| {
-            r.folders
-                .iter()
-                .map(move |f| (f.dir.as_str(), (r.name.as_str(), r.origin_url.as_deref(), f)))
+        .flat_map(|r| r.folders.iter().map(move |f| (r, f)))
+        .map(|(repo, folder)| {
+            let task = owners.get(folder.dir.as_str()).copied();
+            checkout_item(repo, folder, task, inputs.prs, &failing)
         })
         .collect();
-    let snoozes: HashMap<&str, &QueueSnooze> =
-        inputs.snoozes.iter().map(|s| (s.key.as_str(), s)).collect();
-
-    let mut items = Vec::new();
-    let mut task_dirs = HashSet::new();
-    let failing = failing_ci(inputs.ci_runs);
-    for task in inputs.tasks.iter().filter(|t| !t.closed && t.archived_at.is_none()) {
-        let dir = task.worktree.as_ref().and_then(|w| w.dir.as_deref());
-        if let Some(dir) = dir {
-            task_dirs.insert(dir);
-        }
-        let folder = dir.and_then(|d| folders.get(d));
-        let mut item = base_item(QueueKey::Task { id: task.id }, task.rank, folder.copied());
-        item.title = task.text.clone();
-        item.goal = task.goal.clone();
-        if item.repo.is_empty() {
-            item.repo = task.worktree.as_ref().and_then(|w| w.repo.clone()).unwrap_or_default();
-        }
-        if item.branch.is_none() {
-            item.branch = task.worktree.as_ref().and_then(|w| w.branch.clone());
-        }
-        item.pr = task_pr(task, &item, inputs.prs);
-        item.ci = branch_ci(&item, &failing);
-        let mut reasons = agent_reasons(folder.map(|f| f.2), &mut item);
-        reasons.extend(pr_reasons(item.pr.as_ref()));
-        reasons.extend(ci_reasons(&item.ci));
-        if folder.is_some_and(|f| holds_landed_work(f.2, item.pr.as_ref())) {
-            reasons.push((WaitReason::Cleanup, None));
-        }
-        settle(&mut item, reasons);
-        item.said = folder.and_then(|f| said_for(f.2, item.session_id.as_deref()));
-        items.push(item);
-    }
-
-    for (dir, folder) in &folders {
-        let has_agent = folder.2.sessions.iter().any(|s| s.live && s.agent_state.is_some());
-        let unlanded = holds_unlanded_work(folder.2);
-        if task_dirs.contains(dir) || !(has_agent || unlanded) {
-            continue;
-        }
-        let mut item =
-            base_item(QueueKey::Unfiled { folder_dir: dir.to_string() }, i64::MAX, Some(*folder));
-        // A main checkout owns no branch's PR or CI; those stay rows of their own.
-        if folder.2.is_worktree {
-            item.pr = branch_pr(&item, inputs.prs);
-            item.ci = branch_ci(&item, &failing);
-        }
-        let mut reasons = agent_reasons(Some(folder.2), &mut item);
-        reasons.extend(pr_reasons(item.pr.as_ref()));
-        reasons.extend(ci_reasons(&item.ci));
-        settle(&mut item, reasons);
-        if item.lane == Lane::Backlog && unlanded {
-            item.lane = Lane::Parked;
-        }
-        if item.lane == Lane::Backlog {
-            continue;
-        }
-        item.said = said_for(folder.2, item.session_id.as_deref());
-        item.title = item.said.clone().unwrap_or_else(|| folder.2.name.clone());
-        items.push(item);
-    }
-
-    let owned_prs: HashSet<(String, i64)> = items
-        .iter()
-        .filter_map(|i| i.pr.as_ref())
-        .map(|p| (p.repo.to_ascii_lowercase(), p.number))
-        .collect();
-    items.extend(inputs.prs.iter().filter_map(|pr| {
-        let owned = owned_prs.contains(&(pr.repo.to_ascii_lowercase(), pr.number));
-        (!owned).then(|| pr_item(pr)).flatten()
-    }));
-
-    let owned_ci: HashSet<(String, String)> = items
-        .iter()
-        .filter(|i| !i.ci.is_empty())
-        .filter_map(|i| Some((i.repo.to_ascii_lowercase(), i.branch.clone()?)))
-        .collect();
-    let mut unowned: Vec<(&str, &str)> = failing
-        .iter()
-        .map(|r| (r.repo.as_str(), r.branch.as_str()))
-        .filter(|(repo, branch)| {
-            !owned_ci.contains(&(repo.to_ascii_lowercase(), branch.to_string()))
-        })
-        .collect();
-    unowned.sort_unstable();
-    unowned.dedup();
-    items.extend(unowned.into_iter().map(|(repo, branch)| ci_item(repo, branch, &failing)));
-
     for item in &mut items {
         apply_snooze(item, &snoozes, inputs.now_ms);
     }
-    promote_start(&mut items, &snoozes, inputs.now_ms);
     items.sort_by(|a, b| {
         order_key(a).cmp(&order_key(b)).then_with(|| key_str(&a.key).cmp(&key_str(&b.key)))
     });
-    let next = items
-        .iter()
-        .find(|i| i.lane == Lane::OnYou)
-        .or_else(|| items.iter().find(|i| i.lane == Lane::Backlog))
-        .map(|i| i.key.clone());
+    let next = items.iter().find(|i| i.lane == Lane::OnYou).map(|i| i.key.clone());
     TaskQueue { next, items }
+}
+
+/// One checkout's row — its task's, when a task owns it.
+fn checkout_item(
+    repo: &RepoData,
+    folder: &FolderData,
+    task: Option<&TaskItem>,
+    prs: &[PrItem],
+    failing: &[&CiRun],
+) -> QueueItem {
+    let key = match task {
+        Some(t) => QueueKey::Task { id: t.id },
+        None => QueueKey::Unfiled { folder_dir: folder.dir.clone() },
+    };
+    let mut item = base_item(key, task.map_or(i64::MAX, |t| t.rank), repo, folder);
+    // A main checkout owns no branch's PR or CI.
+    item.pr = match task {
+        Some(t) => task_pr(t, &item, prs),
+        None if folder.is_worktree => branch_pr(&item, prs),
+        None => None,
+    };
+    if folder.is_worktree {
+        item.ci = branch_ci(&item, failing);
+    }
+    let mut reasons = agent_reasons(folder, &mut item);
+    reasons.extend(pr_reasons(item.pr.as_ref()));
+    reasons.extend(ci_reasons(&item.ci));
+    if task.is_some() && holds_landed_work(folder, item.pr.as_ref()) {
+        reasons.push((WaitReason::Cleanup, None));
+    }
+    settle(&mut item, reasons);
+    if item.lane == Lane::Idle && holds_unlanded_work(folder) {
+        item.lane = Lane::Parked;
+    }
+    item.said = said_for(folder, item.session_id.as_deref());
+    item.title = match task {
+        Some(t) => t.text.clone(),
+        None => item.said.clone().unwrap_or_else(|| folder.name.clone()),
+    };
+    item
 }
 
 /// Lane, then — in On you — agent-blocking reasons first, then rank, severity, age.
@@ -271,33 +218,23 @@ fn key_str(key: &QueueKey) -> String {
     match key {
         QueueKey::Task { id } => format!("task:{id:020}"),
         QueueKey::Unfiled { folder_dir } => format!("unfiled:{folder_dir}"),
-        QueueKey::Pr { repo, number } => format!("pr:{repo}#{number:020}"),
-        QueueKey::Ci { repo, branch } => format!("ci:{repo}@{branch}"),
     }
 }
 
-fn base_item(
-    key: QueueKey,
-    rank: i64,
-    folder: Option<(&str, Option<&str>, &FolderData)>,
-) -> QueueItem {
-    let repo = folder
-        .map(|(name, origin, _)| {
-            origin
-                .and_then(tt_git::task_assign::repo_slug_from_remote_preserving_case)
-                .unwrap_or_else(|| name.to_string())
-        })
-        .unwrap_or_default();
+fn base_item(key: QueueKey, rank: i64, repo: &RepoData, folder: &FolderData) -> QueueItem {
     QueueItem {
         key,
-        lane: Lane::Backlog,
+        lane: Lane::Idle,
         reason: None,
         also: Vec::new(),
         title: String::new(),
-        goal: None,
-        repo,
-        branch: folder.map(|f| f.2.branch.clone()),
-        folder_dir: folder.map(|f| f.2.dir.clone()),
+        repo: repo
+            .origin_url
+            .as_deref()
+            .and_then(tt_git::task_assign::repo_slug_from_remote_preserving_case)
+            .unwrap_or_else(|| repo.name.clone()),
+        branch: folder.branch.clone(),
+        folder_dir: folder.dir.clone(),
         session_id: None,
         said: None,
         running_agents: 0,
@@ -312,12 +249,9 @@ fn base_item(
 
 /// Agent waits per session, plus the running count and the session to open.
 fn agent_reasons(
-    folder: Option<&FolderData>,
+    folder: &FolderData,
     item: &mut QueueItem,
 ) -> Vec<(WaitReason, Option<(i64, String)>)> {
-    let Some(folder) = folder else {
-        return Vec::new();
-    };
     let live: Vec<&SessionData> = folder.sessions.iter().filter(|s| s.live).collect();
     item.running_agents =
         live.iter().filter(|s| s.agent_state.as_ref().is_some_and(|a| a.is_working())).count()
@@ -352,10 +286,9 @@ fn task_pr(task: &TaskItem, item: &QueueItem, prs: &[PrItem]) -> Option<QueuePr>
 }
 
 fn branch_pr(item: &QueueItem, prs: &[PrItem]) -> Option<QueuePr> {
-    let branch = item.branch.as_deref()?;
     prs.iter()
         .find(|p| {
-            p.state == "open" && p.branch == branch && p.repo.eq_ignore_ascii_case(&item.repo)
+            p.state == "open" && p.branch == item.branch && p.repo.eq_ignore_ascii_case(&item.repo)
         })
         .map(queue_pr)
 }
@@ -371,34 +304,6 @@ fn queue_pr(p: &PrItem) -> QueuePr {
     }
 }
 
-/// An open, undismissed PR no task owns, if it wants you: red checks or a
-/// review asked of you — the client's `prNeedsYou`.
-fn pr_item(pr: &PrItem) -> Option<QueueItem> {
-    let dismissed = pr.dismissed_ts > 0 && pr.dismissed_ts >= pr.updated_ts;
-    if pr.state != "open" || dismissed {
-        return None;
-    }
-    let mut reasons = Vec::new();
-    if pr.checks == "failing" {
-        reasons.push((WaitReason::FixCi, None));
-    }
-    if pr.review_state == "review_requested" {
-        reasons.push((WaitReason::ReviewPr, None));
-    }
-    if reasons.is_empty() {
-        return None;
-    }
-    let mut item =
-        base_item(QueueKey::Pr { repo: pr.repo.clone(), number: pr.number }, i64::MAX, None);
-    item.title = pr.title.clone();
-    item.repo = pr.repo.clone();
-    item.branch = Some(pr.branch.clone()).filter(|b| !b.is_empty());
-    item.pr = Some(queue_pr(pr));
-    item.since_ms = Some(pr.updated_ts).filter(|t| *t > 0);
-    settle(&mut item, reasons);
-    Some(item)
-}
-
 /// A finished run that broke: the client's `ciTone` "failed".
 fn failing_ci(runs: &[CiRun]) -> Vec<&CiRun> {
     runs.iter()
@@ -411,47 +316,23 @@ fn failing_ci(runs: &[CiRun]) -> Vec<&CiRun> {
 
 /// The failing runs on the item's own branch of its repo.
 fn branch_ci(item: &QueueItem, failing: &[&CiRun]) -> Vec<QueueCi> {
-    let Some(branch) = item.branch.as_deref().filter(|b| !b.is_empty()) else {
+    if item.branch.is_empty() {
         return Vec::new();
-    };
+    }
     failing
         .iter()
-        .filter(|r| r.branch == branch && r.repo.eq_ignore_ascii_case(&item.repo))
-        .map(|r| queue_ci(r))
+        .filter(|r| r.branch == item.branch && r.repo.eq_ignore_ascii_case(&item.repo))
+        .map(|r| QueueCi {
+            workflow: r.workflow.clone(),
+            url: r.url.clone(),
+            conclusion: r.conclusion.clone(),
+            updated_ms: r.updated_ms,
+        })
         .collect()
-}
-
-fn queue_ci(r: &CiRun) -> QueueCi {
-    QueueCi {
-        workflow: r.workflow.clone(),
-        url: r.url.clone(),
-        conclusion: r.conclusion.clone(),
-        updated_ms: r.updated_ms,
-    }
 }
 
 fn ci_reasons(ci: &[QueueCi]) -> Vec<(WaitReason, Option<(i64, String)>)> {
     if ci.is_empty() { Vec::new() } else { vec![(WaitReason::FixCi, None)] }
-}
-
-/// One row per red branch no task owns, its failing workflows folded in.
-fn ci_item(repo: &str, branch: &str, failing: &[&CiRun]) -> QueueItem {
-    let key = QueueKey::Ci { repo: repo.to_string(), branch: branch.to_string() };
-    let mut item = base_item(key, i64::MAX, None);
-    item.repo = repo.to_string();
-    item.branch = Some(branch.to_string()).filter(|b| !b.is_empty());
-    item.ci = failing
-        .iter()
-        .filter(|r| r.repo == repo && r.branch == branch)
-        .map(|r| queue_ci(r))
-        .collect();
-    item.ci.sort_by(|a, b| a.workflow.cmp(&b.workflow));
-    let workflows: Vec<&str> = item.ci.iter().map(|c| c.workflow.as_str()).collect();
-    let on = if branch.is_empty() { "the default branch" } else { branch };
-    item.title = format!("CI failing on {on} — {}", workflows.join(", "));
-    item.since_ms = item.ci.iter().map(|c| c.updated_ms).filter(|t| *t > 0).min();
-    settle(&mut item, vec![(WaitReason::FixCi, None)]);
-    item
 }
 
 fn pr_reasons(pr: Option<&QueuePr>) -> Vec<(WaitReason, Option<(i64, String)>)> {
@@ -489,7 +370,7 @@ fn holds_landed_work(folder: &FolderData, pr: Option<&QueuePr>) -> bool {
 /// Most severe reason wins; on a tie, the oldest wait — and its session is the one to open.
 fn settle(item: &mut QueueItem, mut reasons: Vec<(WaitReason, Option<(i64, String)>)>) {
     reasons.sort_by_key(|(r, s)| (*r, s.as_ref().map_or(i64::MAX, |s| s.0)));
-    let mut seen = HashSet::new();
+    let mut seen = std::collections::HashSet::new();
     reasons.retain(|(r, _)| seen.insert(*r));
     let Some((primary, session)) = reasons.first().cloned() else {
         item.lane = if item.running_agents > 0 {
@@ -497,7 +378,7 @@ fn settle(item: &mut QueueItem, mut reasons: Vec<(WaitReason, Option<(i64, Strin
         } else if item.pr.as_ref().is_some_and(|p| p.state == "open") {
             Lane::Parked
         } else {
-            Lane::Backlog
+            Lane::Idle
         };
         return;
     };
@@ -531,32 +412,18 @@ fn apply_snooze(item: &mut QueueItem, snoozes: &HashMap<&str, &QueueSnooze>, now
     }
 }
 
-/// The top-ranked backlog task becomes `start`; one snoozed from starting is parked.
-fn promote_start(items: &mut [QueueItem], snoozes: &HashMap<&str, &QueueSnooze>, now_ms: i64) {
-    for item in items.iter_mut().filter(|i| i.lane == Lane::Backlog) {
-        item.reason = Some(WaitReason::Start);
-        apply_snooze(item, snoozes, now_ms);
-        if !item.snoozed {
-            item.reason = None;
-        }
-    }
-    if let Some(item) = items.iter_mut().filter(|i| i.lane == Lane::Backlog).min_by_key(|i| i.rank)
-    {
-        item.lane = Lane::OnYou;
-        item.reason = Some(WaitReason::Start);
-    }
-}
-
 fn said_for(folder: &FolderData, session_id: Option<&str>) -> Option<String> {
     folder.sessions.iter().find(|s| Some(s.id.as_str()) == session_id).and_then(session_said)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use tt_store::{RankMove, Store};
 
     use super::*;
-    use crate::types::{AgentEvent, AgentStatus, RepoData};
+    use crate::types::{AgentEvent, AgentStatus};
 
     fn session(
         id: &str,
@@ -582,6 +449,10 @@ mod tests {
             }),
             ..Default::default()
         }
+    }
+
+    fn waiting(id: &str, since: i64) -> SessionData {
+        session(id, AgentStatus::Waiting, Some(NeedsYouReason::WaitingForInput), since)
     }
 
     fn folder(dir: &str, sessions: Vec<SessionData>) -> FolderData {
@@ -626,6 +497,21 @@ mod tests {
             url: "u".to_string(),
             updated_ts: 0,
             dismissed_ts: 0,
+        }
+    }
+
+    fn ci(workflow: &str, branch: &str, conclusion: &str) -> CiRun {
+        CiRun {
+            repo: "o/repo".to_string(),
+            workflow: workflow.to_string(),
+            status: "completed".to_string(),
+            conclusion: conclusion.to_string(),
+            created_ms: 1,
+            updated_ms: 10,
+            url: format!("u/{workflow}"),
+            head_sha: "abc".to_string(),
+            event: "push".to_string(),
+            branch: branch.to_string(),
         }
     }
 
@@ -676,8 +562,8 @@ mod tests {
         s.snooze_queue_item(&key.snooze_key(), reason, until_ms, 0).unwrap();
     }
 
-    fn lane_of(q: &TaskQueue, key: &QueueKey) -> Lane {
-        q.items.iter().find(|i| &i.key == key).unwrap().lane
+    fn item<'q>(q: &'q TaskQueue, key: &QueueKey) -> &'q QueueItem {
+        q.items.iter().find(|i| &i.key == key).unwrap()
     }
 
     fn summary(q: &TaskQueue) -> Vec<(String, Lane, Option<WaitReason>)> {
@@ -686,6 +572,10 @@ mod tests {
 
     fn row(t: &str, lane: Lane, r: Option<WaitReason>) -> (String, Lane, Option<WaitReason>) {
         (t.to_string(), lane, r)
+    }
+
+    fn unfiled(dir: &str) -> QueueKey {
+        QueueKey::Unfiled { folder_dir: dir.to_string() }
     }
 
     #[test]
@@ -701,15 +591,8 @@ mod tests {
                     5,
                 )],
             ),
-            folder(
-                "/c",
-                vec![session(
-                    "sc",
-                    AgentStatus::Waiting,
-                    Some(NeedsYouReason::WaitingForInput),
-                    9,
-                )],
-            ),
+            folder("/b", vec![]),
+            folder("/c", vec![waiting("sc", 9)]),
         ]);
         let q = run(&s, &st, &[pr("feat/b", "open", "failing", "")], 0);
         use Lane::*;
@@ -727,36 +610,39 @@ mod tests {
         assert_eq!((head.session_id.as_deref(), head.since_ms), (Some("sc"), Some(9)));
         assert_eq!(head.said.as_deref(), Some("sc says"));
         assert_eq!(head.repo, "o/repo");
+        assert_eq!(head.folder_dir, "/c");
     }
 
     #[test]
-    fn running_parked_backlog_and_one_start() {
-        let (s, _) = store(&["run", "park", "b1", "b2"]);
-        let st = state(vec![folder(
-            "/run",
-            vec![session("s", AgentStatus::Busy, None, 0)],
-        )]);
+    fn running_parked_and_idle_with_nothing_on_you() {
+        let (s, _) = store(&["run", "park", "idle"]);
+        let st = state(vec![
+            folder("/run", vec![session("s", AgentStatus::Busy, None, 0)]),
+            folder("/park", vec![]),
+            folder("/idle", vec![]),
+        ]);
         let q = run(&s, &st, &[pr("feat/park", "open", "pending", "")], 0);
         use Lane::*;
         assert_eq!(
             summary(&q),
             [
-                row("b1", OnYou, Some(WaitReason::Start)),
                 row("run", Running, None),
                 row("park", Parked, None),
-                row("b2", Backlog, None),
+                row("idle", Idle, None)
             ]
         );
-        assert_eq!(q.items[1].running_agents, 1);
+        assert_eq!(q.items[0].running_agents, 1);
+        assert_eq!(q.next, None, "nothing waits on you, so there is no next up");
     }
 
     #[test]
     fn pr_reasons_land_and_review_and_a_working_agent_hides_them() {
         let (s, _) = store(&["land", "rev", "busy"]);
-        let st = state(vec![folder(
-            "/busy",
-            vec![session("s", AgentStatus::Busy, None, 0)],
-        )]);
+        let st = state(vec![
+            folder("/land", vec![]),
+            folder("/rev", vec![]),
+            folder("/busy", vec![session("s", AgentStatus::Busy, None, 0)]),
+        ]);
         let mut busy = pr("feat/busy", "open", "failing", "");
         busy.number = 9;
         let prs = [
@@ -804,260 +690,120 @@ mod tests {
         dirty.dirty = true;
         let q = run(&s, &state(vec![clean, dirty]), &[], 0);
         assert_eq!(q.items[0].reason, Some(WaitReason::Cleanup));
-        assert_eq!(q.items[1].reason, Some(WaitReason::Start), "dirty is just backlog");
+        assert_eq!(q.items[1].lane, Lane::Idle, "dirty is left alone");
     }
 
     #[test]
     fn snooze_parks_only_while_the_reason_and_time_hold() {
         let (s, ids) = store(&["a", "b"]);
-        let st = state(vec![folder(
-            "/a",
-            vec![session(
-                "s",
-                AgentStatus::Waiting,
-                Some(NeedsYouReason::WaitingForInput),
-                1,
-            )],
-        )]);
-        snooze(&s, &QueueKey::Task { id: ids[0] }, "answer", Some(100));
+        let st = state(vec![folder("/a", vec![waiting("s", 1)]), folder("/b", vec![])]);
+        let a = QueueKey::Task { id: ids[0] };
+        snooze(&s, &a, "answer", Some(100));
         let q = run(&s, &st, &[], 50);
-        assert_eq!(q.items.iter().find(|i| i.title == "a").unwrap().lane, Lane::Parked);
-        assert!(q.items.iter().find(|i| i.title == "a").unwrap().snoozed);
-        assert_eq!(q.items[0].title, "b", "b is promoted to start in its place");
-        assert_eq!(run(&s, &st, &[], 150).items[0].title, "a", "expired");
-        snooze(&s, &QueueKey::Task { id: ids[0] }, "review", None);
-        assert_eq!(run(&s, &st, &[], 50).items[0].title, "a", "a new reason resurfaces it");
-        snooze(&s, &QueueKey::Task { id: ids[1] }, "start", None);
-        snooze(&s, &QueueKey::Task { id: ids[0] }, "answer", None);
-        assert_eq!(run(&s, &st, &[], 50).next, None);
+        assert_eq!(item(&q, &a).lane, Lane::Parked);
+        assert!(item(&q, &a).snoozed);
+        assert_eq!(q.next, None);
+        assert_eq!(run(&s, &st, &[], 150).next, Some(a.clone()), "expired");
+        snooze(&s, &a, "review", None);
+        assert_eq!(run(&s, &st, &[], 50).next, Some(a), "a new reason resurfaces it");
     }
 
-    /// Each row kind parks on a snooze, resurfaces when the snooze runs out or
-    /// the row's reason changes, and a snooze on one row never touches another.
     #[test]
-    fn every_row_kind_snoozes_by_its_own_key() {
+    fn a_snooze_holds_one_row_only() {
         let (s, _) = store(&[]);
         let st = state(vec![
-            folder(
-                "/loose",
-                vec![session(
-                    "sl",
-                    AgentStatus::Waiting,
-                    Some(NeedsYouReason::WaitingForInput),
-                    1,
-                )],
-            ),
-            folder(
-                "/other",
-                vec![session(
-                    "so",
-                    AgentStatus::Waiting,
-                    Some(NeedsYouReason::WaitingForInput),
-                    1,
-                )],
-            ),
+            folder("/loose", vec![waiting("sl", 1)]),
+            folder("/other", vec![waiting("so", 1)]),
         ]);
-        let mut red = pr("red", "open", "failing", "");
-        red.number = 2;
-        let prs = [red.clone()];
-        let runs = [ci("Nightly", "main", "failure")];
-        let unfiled = QueueKey::Unfiled { folder_dir: "/loose".to_string() };
-        let other = QueueKey::Unfiled { folder_dir: "/other".to_string() };
-        let pr_key = QueueKey::Pr { repo: "o/repo".to_string(), number: 2 };
-        let ci_key = QueueKey::Ci { repo: "o/repo".to_string(), branch: "main".to_string() };
-        let at = |now| run_ci(&s, &st, &prs, &runs, now);
-
-        let q = at(50);
-        for key in [&unfiled, &other, &pr_key, &ci_key] {
-            assert_eq!(lane_of(&q, key), Lane::OnYou);
-        }
-
-        snooze(&s, &unfiled, "answer", Some(100));
-        snooze(&s, &pr_key, "fix_ci", None);
-        snooze(&s, &ci_key, "fix_ci", Some(100));
-        let q = at(50);
-        for key in [&unfiled, &pr_key, &ci_key] {
-            assert_eq!(lane_of(&q, key), Lane::Parked, "{key:?}");
-            assert!(q.items.iter().find(|i| &i.key == key).unwrap().snoozed);
-        }
-        assert_eq!(lane_of(&q, &other), Lane::OnYou, "a sibling row is untouched");
-        assert_eq!(q.next, Some(other.clone()));
-        let ci_row = q.items.iter().find(|i| i.key == ci_key).unwrap();
-        assert_eq!(ci_row.snoozed_until_ms, Some(100));
-
-        let q = at(150);
-        assert_eq!(lane_of(&q, &unfiled), Lane::OnYou, "timed snoozes expire");
-        assert_eq!(lane_of(&q, &ci_key), Lane::OnYou);
-        assert_eq!(lane_of(&q, &pr_key), Lane::Parked, "until-it-changes does not expire");
+        let (loose, other) = (unfiled("/loose"), unfiled("/other"));
+        snooze(&s, &loose, "answer", Some(100));
+        let q = run(&s, &st, &[], 50);
+        assert_eq!(item(&q, &loose).lane, Lane::Parked);
+        assert_eq!(item(&q, &loose).snoozed_until_ms, Some(100));
+        assert_eq!(item(&q, &other).lane, Lane::OnYou, "a sibling row is untouched");
+        assert_eq!(q.next, Some(other));
+        assert_eq!(item(&run(&s, &st, &[], 150), &loose).lane, Lane::OnYou, "timed out");
     }
 
     #[test]
-    fn a_snooze_on_a_ci_row_ends_when_its_reason_changes() {
+    fn a_snooze_on_red_ci_ends_when_its_reason_changes() {
         let (s, _) = store(&[]);
-        let ci_key = QueueKey::Ci { repo: "o/repo".to_string(), branch: "main".to_string() };
-        snooze(&s, &ci_key, "answer", None);
-        let q = run_ci(&s, &state(vec![]), &[], &[ci("Nightly", "main", "failure")], 0);
-        assert_eq!(lane_of(&q, &ci_key), Lane::OnYou, "set on another reason: not held");
-        snooze(&s, &ci_key, "fix_ci", None);
-        let q = run_ci(&s, &state(vec![]), &[], &[ci("Nightly", "main", "failure")], 0);
-        assert_eq!(lane_of(&q, &ci_key), Lane::Parked);
-        assert_eq!(q.next, None, "a snoozed red nightly is no longer the head");
+        let st = state(vec![folder("/x", vec![])]);
+        let runs = [ci("CI", "feat/x", "failure")];
+        let x = unfiled("/x");
+        snooze(&s, &x, "answer", None);
+        assert_eq!(item(&run_ci(&s, &st, &[], &runs, 0), &x).lane, Lane::OnYou);
+        snooze(&s, &x, "fix_ci", None);
+        let q = run_ci(&s, &st, &[], &runs, 0);
+        assert_eq!(item(&q, &x).lane, Lane::Parked);
+        assert_eq!(q.next, None);
     }
 
     #[test]
     fn snooze_keys_are_distinct_per_kind() {
-        let keys = [
-            QueueKey::Task { id: 1 },
-            QueueKey::Unfiled { folder_dir: "1".to_string() },
-            QueueKey::Pr { repo: "o/r".to_string(), number: 1 },
-            QueueKey::Ci { repo: "o/r".to_string(), branch: "1".to_string() },
-        ];
+        let keys = [QueueKey::Task { id: 1 }, unfiled("1")];
         let strs: HashSet<String> = keys.iter().map(QueueKey::snooze_key).collect();
-        assert_eq!(strs.len(), 4);
-        assert_eq!(keys[2].snooze_key(), "pr:o/r#1");
+        assert_eq!(strs.len(), 2);
+        assert_eq!(keys[1].snooze_key(), "unfiled:1");
     }
 
     #[test]
-    fn unfiled_agents_are_listed_after_tasks_and_idle_ones_dropped() {
+    fn every_checkout_is_a_row_and_tasks_outrank_loose_ones() {
         let (s, _) = store(&["a"]);
         let st = state(vec![
-            folder(
-                "/a",
-                vec![session(
-                    "sa",
-                    AgentStatus::Waiting,
-                    Some(NeedsYouReason::WaitingForInput),
-                    9,
-                )],
-            ),
-            folder(
-                "/loose",
-                vec![session(
-                    "sl",
-                    AgentStatus::Waiting,
-                    Some(NeedsYouReason::WaitingForInput),
-                    1,
-                )],
-            ),
+            folder("/a", vec![waiting("sa", 9)]),
+            folder("/loose", vec![waiting("sl", 1)]),
             folder("/idle", vec![session("si", AgentStatus::Idle, None, 0)]),
+            folder("/empty", vec![]),
         ]);
         let q = run(&s, &st, &[], 0);
-        assert_eq!(q.items.len(), 2);
-        assert_eq!(q.items[1].key, QueueKey::Unfiled { folder_dir: "/loose".to_string() });
-        assert_eq!(q.items[1].title, "sl says");
-    }
-
-    #[test]
-    fn reranking_changes_next_up() {
-        let (s, ids) = store(&["a", "b"]);
-        let st = state(vec![
-            folder(
-                "/a",
-                vec![session(
-                    "sa",
-                    AgentStatus::Waiting,
-                    Some(NeedsYouReason::WaitingForInput),
-                    1,
-                )],
-            ),
-            folder(
-                "/b",
-                vec![session(
-                    "sb",
-                    AgentStatus::Waiting,
-                    Some(NeedsYouReason::WaitingForInput),
-                    1,
-                )],
-            ),
-        ]);
-        assert_eq!(run(&s, &st, &[], 0).next, Some(QueueKey::Task { id: ids[0] }));
-        s.move_task(ids[1], RankMove::Top).unwrap();
-        assert_eq!(run(&s, &st, &[], 0).next, Some(QueueKey::Task { id: ids[1] }));
-    }
-
-    fn ci(workflow: &str, branch: &str, conclusion: &str) -> CiRun {
-        CiRun {
-            repo: "o/repo".to_string(),
-            workflow: workflow.to_string(),
-            status: "completed".to_string(),
-            conclusion: conclusion.to_string(),
-            created_ms: 1,
-            updated_ms: 10,
-            url: format!("u/{workflow}"),
-            head_sha: "abc".to_string(),
-            event: "push".to_string(),
-            branch: branch.to_string(),
-        }
-    }
-
-    #[test]
-    fn prs_needing_you_are_rows_unless_a_task_owns_them() {
-        let (s, _) = store(&["a"]);
-        let mut owned = pr("feat/a", "open", "failing", "");
-        owned.number = 1;
-        let mut red = pr("other", "open", "failing", "");
-        red.number = 2;
-        red.title = "red pr".to_string();
-        let mut asked = pr("theirs", "open", "passing", "review_requested");
-        asked.number = 3;
-        asked.title = "asked".to_string();
-        let mut dismissed = pr("gone", "open", "failing", "");
-        dismissed.number = 4;
-        dismissed.dismissed_ts = 5;
-        let mut quiet = pr("quiet", "open", "passing", "");
-        quiet.number = 5;
-        let mut merged = pr("done", "merged", "failing", "");
-        merged.number = 6;
-        let q = run(&s, &state(vec![]), &[owned, red, asked, dismissed, quiet, merged], 0);
         use Lane::*;
-        use WaitReason::*;
+        let answer = Some(WaitReason::Answer);
         assert_eq!(
             summary(&q),
             [
-                row("a", OnYou, Some(FixCi)),
-                row("red pr", OnYou, Some(FixCi)),
-                row("asked", OnYou, Some(ReviewPr))
+                row("a", OnYou, answer),
+                row("sl says", OnYou, answer),
+                row("/empty", Idle, None),
+                row("si says", Idle, None),
             ]
         );
-        assert_eq!(q.items[1].key, QueueKey::Pr { repo: "o/repo".to_string(), number: 2 });
-        assert_eq!(q.items[1].branch.as_deref(), Some("other"));
+        assert_eq!(q.items[1].key, unfiled("/loose"));
     }
 
     #[test]
-    fn failing_ci_folds_into_the_task_on_its_branch_else_one_row_per_branch() {
+    fn a_task_or_pr_or_run_with_no_checkout_is_not_a_row() {
+        let (s, _) = store(&["gone"]);
+        let st = state(vec![folder("/x", vec![])]);
+        let mut red = pr("other", "open", "failing", "");
+        red.number = 2;
+        let q = run_ci(&s, &st, &[red], &[ci("Nightly", "main", "failure")], 0);
+        assert_eq!(summary(&q), [row("/x", Lane::Idle, None)]);
+    }
+
+    #[test]
+    fn red_ci_folds_into_its_worktree_but_a_main_checkout_owns_none() {
         let (s, _) = store(&["a"]);
+        let mut main = folder("/main", vec![]);
+        main.is_worktree = false;
+        main.branch = "main".to_string();
         let runs = [
             ci("CI", "feat/a", "failure"),
             ci("Nightly", "main", "failure"),
-            ci("Lint", "main", "timed_out"),
-            ci("Deploy", "main", "success"),
-            ci("Docs", "main", "cancelled"),
         ];
-        let q = run_ci(&s, &state(vec![]), &[], &runs, 0);
-        use Lane::*;
-        use WaitReason::*;
+        let q = run_ci(&s, &state(vec![folder("/a", vec![]), main]), &[], &runs, 0);
         assert_eq!(
             summary(&q),
             [
-                row("a", OnYou, Some(FixCi)),
-                row("CI failing on main — Lint, Nightly", OnYou, Some(FixCi))
+                row("a", Lane::OnYou, Some(WaitReason::FixCi)),
+                row("/main", Lane::Idle, None)
             ]
         );
         assert_eq!(q.items[0].ci.len(), 1, "the task carries its own branch's run");
-        let main = &q.items[1];
-        assert_eq!(
-            main.key,
-            QueueKey::Ci { repo: "o/repo".to_string(), branch: "main".to_string() }
-        );
-        assert_eq!(
-            main.ci.iter().map(|c| c.url.as_str()).collect::<Vec<_>>(),
-            ["u/Lint", "u/Nightly"]
-        );
-        assert_eq!(main.since_ms, Some(10));
     }
 
     #[test]
-    fn unfiled_worktrees_holding_unlanded_work_are_parked() {
+    fn worktrees_holding_unlanded_work_are_parked() {
         let (s, _) = store(&[]);
         let mut ahead = folder("/ahead", vec![]);
         ahead.commits_unlanded = 2;
@@ -1069,12 +815,8 @@ mod tests {
         let mut main = folder("/main", vec![]);
         main.is_worktree = false;
         main.dirty = true;
-        let clean = folder("/clean", vec![]);
-        let mut red = folder("/red", vec![]);
-        red.commits_unlanded = 1;
-        let runs = [ci("CI", "feat/red", "failure")];
-        let q = run_ci(&s, &state(vec![ahead, dirty, landed, main, clean, red]), &[], &runs, 0);
-        let mut got: Vec<(String, Lane, Option<WaitReason>)> = summary(&q);
+        let q = run(&s, &state(vec![ahead, dirty, landed, main]), &[], 0);
+        let mut got = summary(&q);
         got.sort();
         use Lane::*;
         assert_eq!(
@@ -1082,26 +824,31 @@ mod tests {
             [
                 row("/ahead", Parked, None),
                 row("/dirty", Parked, None),
-                row("/red", OnYou, Some(WaitReason::FixCi))
+                row("/landed", Idle, None),
+                row("/main", Idle, None),
             ]
         );
     }
 
     #[test]
+    fn reranking_changes_next_up() {
+        let (s, ids) = store(&["a", "b"]);
+        let st = state(vec![
+            folder("/a", vec![waiting("sa", 1)]),
+            folder("/b", vec![waiting("sb", 1)]),
+        ]);
+        assert_eq!(run(&s, &st, &[], 0).next, Some(QueueKey::Task { id: ids[0] }));
+        s.move_task(ids[1], RankMove::Top).unwrap();
+        assert_eq!(run(&s, &st, &[], 0).next, Some(QueueKey::Task { id: ids[1] }));
+    }
+
+    #[test]
     fn keys_serialize_tagged_camel_case() {
-        let key = QueueKey::Unfiled { folder_dir: "/x".to_string() };
         assert_eq!(
-            serde_json::to_value(&key).unwrap(),
+            serde_json::to_value(unfiled("/x")).unwrap(),
             serde_json::json!({"kind": "unfiled", "folderDir": "/x"})
         );
         assert_eq!(serde_json::to_value(WaitReason::FixCi).unwrap(), serde_json::json!("fix_ci"));
-        assert_eq!(
-            serde_json::to_value(QueueKey::Ci {
-                repo: "o/r".to_string(),
-                branch: "main".to_string()
-            })
-            .unwrap(),
-            serde_json::json!({"kind": "ci", "repo": "o/r", "branch": "main"})
-        );
+        assert_eq!(serde_json::to_value(Lane::Idle).unwrap(), serde_json::json!("idle"));
     }
 }

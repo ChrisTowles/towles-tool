@@ -127,17 +127,28 @@ describe("buildAttentionFeed", () => {
     expect(feed).toEqual([]);
   });
 
-  it("carries a cockpit focus target for PRs and an external url for DMs", () => {
+  it("sends a worktree's PR to its queue row, a loose PR and a DM to their urls", () => {
+    const worktree = {
+      dir: "/repos/widgets/wt",
+      branch: "feat/x",
+      isWorktree: true,
+    } as unknown as RepoData["folders"][number];
     const feed = buildAttentionFeed(
       snapshot({
-        prs: [pr({ number: 42, checks: "failing" })],
+        prs: [
+          pr({ number: 42, checks: "failing" }),
+          pr({ number: 43, branch: "theirs", checks: "failing", url: "https://gh/43" }),
+        ],
         dms: [dm({ url: "https://slack.example/dm" })],
       }),
-      NO_AGENTS,
+      agents([repo({ originUrl: "git@github.com:octo/widgets.git", folders: [worktree] })]),
     );
-    const prItem = feed.find((i) => i.kind === "pr-ci");
+    const owned = feed.find((i) => i.id === "pr-ci:octo/widgets#42");
+    const loose = feed.find((i) => i.id === "pr-ci:octo/widgets#43");
     const dmItem = feed.find((i) => i.kind === "dm");
-    expect(prItem?.target).toEqual({ screen: "cockpit", kind: "pr", id: "octo/widgets#42" });
+    expect(owned?.target).toEqual({ screen: "cockpit", kind: "pr", id: "octo/widgets#42" });
+    expect(loose?.url).toBe("https://gh/43");
+    expect(loose?.target).toBeUndefined();
     expect(dmItem?.url).toBe("https://slack.example/dm");
     expect(dmItem?.target).toBeUndefined();
   });
@@ -147,7 +158,7 @@ describe("buildAttentionFeed", () => {
       EMPTY_SNAPSHOT,
       agents([repo({ key: "octo/gizmos", needs: 1 })]),
     );
-    expect(feed[0].target).toEqual({ screen: "cockpit", kind: "repo", id: "octo/gizmos" });
+    expect(feed[0].target).toEqual({ screen: "agentboard", kind: "repo", id: "octo/gizmos" });
     expect(feed[0].subtitle).toBe("1 session waiting");
   });
 });
