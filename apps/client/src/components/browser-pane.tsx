@@ -181,14 +181,14 @@ export function BrowserPane({
   };
 
   const dismissHint = () => {
-    uiAction("browser.hint_dismiss", "cockpit");
+    uiAction("browser.hint_dismiss", "agentboard");
     localStorage.setItem(HINT_KEY, "1");
     setShowHint(false);
   };
 
   const navigate = (raw: string) => {
     const url = normalizeUrl(raw);
-    uiAction("browser.navigate", "cockpit");
+    uiAction("browser.navigate", "agentboard");
     setInput(url);
     void browserNavigate(paneId, { url });
   };
@@ -250,7 +250,7 @@ export function BrowserPane({
               title="back"
               disabled={!state?.canGoBack}
               onClick={() => {
-                uiAction("browser.history", "cockpit", "back");
+                uiAction("browser.history", "agentboard", "back");
                 void browserNavigate(paneId, { action: "back" });
               }}
             >
@@ -260,7 +260,7 @@ export function BrowserPane({
               title="forward"
               disabled={!state?.canGoForward}
               onClick={() => {
-                uiAction("browser.history", "cockpit", "forward");
+                uiAction("browser.history", "agentboard", "forward");
                 void browserNavigate(paneId, { action: "forward" });
               }}
             >
@@ -271,7 +271,7 @@ export function BrowserPane({
               disabled={phase !== "live"}
               className="hover:text-sky-500"
               onClick={() => {
-                uiAction("browser.reload", "cockpit");
+                uiAction("browser.reload", "agentboard");
                 void browserNavigate(paneId, { action: "reload" });
               }}
             >
@@ -282,7 +282,7 @@ export function BrowserPane({
               disabled={phase !== "live"}
               className="hover:text-sky-500"
               onClick={() => {
-                uiAction("browser.popout", "cockpit");
+                uiAction("browser.popout", "agentboard");
                 void browserPopout(paneId);
               }}
             >
@@ -293,7 +293,7 @@ export function BrowserPane({
               shortcut={focused ? "ab-close-pane" : undefined}
               className="hover:text-sky-500"
               onClick={() => {
-                if (!focused) uiAction("browser.close", "cockpit");
+                if (!focused) uiAction("browser.close", "agentboard");
                 onClose();
               }}
             >
@@ -335,7 +335,7 @@ export function BrowserPane({
                 variant="outline"
                 className="mt-2"
                 onClick={() => {
-                  uiAction("browser.open", "cockpit", "relaunch");
+                  uiAction("browser.open", "agentboard", "relaunch");
                   setOpenNonce((n) => n + 1);
                 }}
               >
@@ -350,7 +350,7 @@ export function BrowserPane({
                 variant="outline"
                 className="mt-2"
                 onClick={() => {
-                  uiAction("browser.open", "cockpit", "reattach");
+                  uiAction("browser.open", "agentboard", "reattach");
                   setOpenNonce((n) => n + 1);
                 }}
               >

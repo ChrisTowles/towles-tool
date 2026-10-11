@@ -64,13 +64,12 @@ bevy` ([docs/COMMANDS.md](docs/COMMANDS.md#the-bevy-feature)).
 **The desktop app** is the primary product — a day-focus shell for staying in the
 zone while agents work:
 
-- **Agentboard** — the fleet in one rail: every watched repo, its worktree tasks,
-  and a live terminal per session, rendered on canvas from a real PTY (the
+- **Agent Board** — the fleet in one rail, as a queue of tasks to work one at a
+  time or as the tree of every watched repo, its worktree tasks, and a live
+  terminal per session, rendered on canvas from a real PTY (the
   `tt-vt` engine, built on libghostty-vt). Agent status is *reported, never
   re-rendered*: the app tells you a session needs attention, and you interact in
   the actual terminal, not a reconstruction of it.
-- **Cockpit** — the day home: time until the next meeting (that is the entire
-  calendar feature, by design), your PRs with CI status, and the issue queue.
 - **Board** — cross-repo kanban: tasks link issues/PRs and usually a worktree.
 - **Claude Sessions** — where the tokens went: accounting, waste insights, drill-down.
 

@@ -211,7 +211,7 @@ export function goalToTitle(goal: string): string {
   return lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
 }
 
-/** `feat/`, not tt-git's `feature/` (Cockpit's convention), so a picked issue
+/** `feat/`, not tt-git's `feature/` (this app's convention), so a picked issue
  * and a typed goal produce the same shape. */
 export function branchFromIssue(number: number, title: string): string {
   const slug = slugify(title.slice(0, BRANCH_SLUG_SOURCE_CHARS));
@@ -367,7 +367,7 @@ export function InlineNewTask({
     setMoreOpen(false);
     setSuggesting(improver.id);
     setNotice(null);
-    uiAction("task.improve_prompt", "cockpit", improver.id);
+    uiAction("task.improve_prompt", "agentboard", improver.id);
     const suggestion = await invoke<TaskSuggestion>("task_suggest", {
       dir: repo.dir,
       goal,
@@ -531,7 +531,7 @@ export function InlineNewTask({
 
   function switchMode(next: "new" | "review") {
     if (next === mode) return;
-    uiAction("task.form_mode", "cockpit", next);
+    uiAction("task.form_mode", "agentboard", next);
     setMode(next);
     setNotice(null);
   }
@@ -543,7 +543,7 @@ export function InlineNewTask({
     }
     // Already shown under the picker.
     if (prCheck.error) return;
-    uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "cockpit");
+    uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "agentboard");
     onSubmit({
       goal: goal.trim(),
       title: goalToTitle(goal || reviewGoal(prCheck.pr)).replace(/[\s:—–-]+$/, ""),
@@ -587,7 +587,7 @@ export function InlineNewTask({
       : launchClaude
         ? "task.start"
         : "task.start_no_claude";
-    uiAction(action, "cockpit");
+    uiAction(action, "agentboard");
     onSubmit({
       goal: goal.trim(),
       title: title.trim() || branch,
@@ -672,7 +672,7 @@ export function InlineNewTask({
         onKeyDown={(e) => {
           if (matchesShortcut("ab-start-task", e.nativeEvent)) {
             e.preventDefault();
-            uiAction("shortcut.ab-start-task", "cockpit");
+            uiAction("shortcut.ab-start-task", "agentboard");
             submit();
           }
           if (e.key === "Escape") cancel();
@@ -718,7 +718,7 @@ export function InlineNewTask({
                 title={`${img.name} — attached to the new task's first prompt. Click to zoom.`}
                 onClick={() => {
                   setZoomedImageId(img.id);
-                  uiAction("task.image_zoom", "cockpit");
+                  uiAction("task.image_zoom", "agentboard");
                 }}
                 className="block cursor-zoom-in rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >

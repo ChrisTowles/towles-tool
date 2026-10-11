@@ -12,8 +12,8 @@ describe("formatLogLine", () => {
   });
 
   it("zero-pads single-digit hours and minutes", () => {
-    expect(formatLogLine("early note", { now: at(9, 5), context: "cockpit" })).toBe(
-      "- 09:05 [cockpit] early note",
+    expect(formatLogLine("early note", { now: at(9, 5), context: "agentboard" })).toBe(
+      "- 09:05 [agentboard] early note",
     );
   });
 

@@ -114,8 +114,8 @@ function ClockCluster() {
               eventSoon && "text-amber-600 dark:text-amber-500",
             )}
             onClick={() => {
-              uiAction("header.open_cockpit", activeTab, "meeting");
-              openTab("cockpit");
+              uiAction("header.open_agentboard", activeTab, "meeting");
+              openTab("agentboard");
             }}
           >
             {nextEvent.title} in {fmtCountdown(nextEvent.startTs - now)}

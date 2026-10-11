@@ -11,7 +11,6 @@ import {
   type StoreSnapshot,
 } from "@/lib/data";
 import { dismissAttentionPr } from "./helpers";
-import { workspaceScreen } from "@/lib/workspace-mode";
 
 export type AttentionItem = {
   key: string;
@@ -35,7 +34,7 @@ export type Attention = {
 export function useAttention(args: {
   snapshot: StoreSnapshot;
   now: number;
-  openTab: (id: "cockpit") => void;
+  openTab: (id: "agentboard") => void;
 }): Attention {
   const { snapshot, now, openTab } = args;
   const [clearingDismissals, setClearingDismissals] = useState(false);
@@ -53,7 +52,7 @@ export function useAttention(args: {
           sub: checksFailing ? "Checks failing" : "Review requested",
           border: checksFailing ? PR_TONE.failed.border : PR_TONE.review.border,
           onClick: () => {
-            uiAction("agentboard.attention_open", workspaceScreen(), "pr");
+            uiAction("agentboard.attention_open", "agentboard", "pr");
             void openExternalUrl(p.url);
           },
           onDismiss: () => void dismissAttentionPr(p.repo, p.number, p.updatedTs),
@@ -71,8 +70,8 @@ export function useAttention(args: {
         sub: `Starts in ${fmtCountdown(soon.startTs - now)}`,
         border: "border-l-blue-500",
         onClick: () => {
-          uiAction("agentboard.attention_open", workspaceScreen(), "event");
-          openTab("cockpit");
+          uiAction("agentboard.attention_open", "agentboard", "event");
+          openTab("agentboard");
         },
       });
     }
@@ -80,7 +79,7 @@ export function useAttention(args: {
   }, [snapshot.prs, snapshot.events, now, openTab]);
 
   async function clearDismissals() {
-    uiAction("agentboard.dismissals_clear", workspaceScreen());
+    uiAction("agentboard.dismissals_clear", "agentboard");
     setClearingDismissals(true);
     const cleared = await storeDismissalsClear();
     if (cleared.isOk()) {

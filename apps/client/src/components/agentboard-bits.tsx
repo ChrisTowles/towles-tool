@@ -72,7 +72,6 @@ import { errorMessage } from "@/lib/errors";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
-import { workspaceScreen } from "@/lib/workspace-mode";
 
 /** Shared atoms for the Agentboard rail rows, folder headers, pane chrome and
  * working-context band, so each surface composes the same pieces. */
@@ -116,7 +115,7 @@ export function IconBtn({
           onClick={(e) => {
             e.stopPropagation();
             // Every `IconBtn` is an agentboard atom, so that is the scoring screen.
-            if (shortcut) mouseAction(shortcut, workspaceScreen());
+            if (shortcut) mouseAction(shortcut, "agentboard");
             onClick();
           }}
           className={cn("font-mono text-xs text-kumo-subtle", className)}
@@ -578,7 +577,7 @@ export function ComparedBaseBadge({
     setEditing(false);
     const trimmed = value.trim();
     if (trimmed === (folder.baseBranch ?? "")) return;
-    uiAction("folder.base_branch_set", workspaceScreen());
+    uiAction("folder.base_branch_set", "agentboard");
     const stored = await invoke<void>("ab_set_folder_base_branch", {
       dir: folder.dir,
       branch: trimmed || null,
@@ -820,7 +819,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            mouseAction("ab-toggle-files", workspaceScreen());
+            mouseAction("ab-toggle-files", "agentboard");
             onOpen();
             if (!clean) void invoke("code_server_show_changes", { dir: stats.dir });
           }}
@@ -881,7 +880,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              mouseAction("ab-toggle-files", workspaceScreen());
+              mouseAction("ab-toggle-files", "agentboard");
               onOpen();
             }}
             className={`${CHIP_CLASS} ${tone}`}
@@ -967,7 +966,7 @@ function PaneOpenButton({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          if (shortcutTwin) mouseAction(shortcutTwin, workspaceScreen());
+          if (shortcutTwin) mouseAction(shortcutTwin, "agentboard");
           onOpen();
         }}
         className={`${CHIP_CLASS} text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default`}
@@ -1494,7 +1493,7 @@ export function RepoMenu({
   // case it hasn't gone anywhere and saying so would be a lie.
   async function toggleQuiet() {
     const next = !quiet;
-    uiAction("agentboard.quiet_mark", workspaceScreen(), next ? "mark" : "unmark");
+    uiAction("agentboard.quiet_mark", "agentboard", next ? "mark" : "unmark");
     const result = await invoke<void>("ab_set_folder_quiet", {
       dirs: quietDirs ?? [dir],
       quiet: next,
@@ -1547,7 +1546,7 @@ export function RepoMenu({
           {onNewTask && (
             <DropdownMenu.Item
               onClick={() => {
-                mouseAction("ab-new-task", workspaceScreen());
+                mouseAction("ab-new-task", "agentboard");
                 onNewTask();
               }}
               className="whitespace-nowrap"
@@ -1563,7 +1562,7 @@ export function RepoMenu({
             <DropdownMenu.Item
               variant="danger"
               onClick={() => {
-                mouseAction("ab-remove-task", workspaceScreen());
+                mouseAction("ab-remove-task", "agentboard");
                 onDeleteWorktree();
               }}
               className="whitespace-nowrap"
@@ -1643,7 +1642,7 @@ export function PanePlaceholder({
   label: string;
   detail?: string;
   tone?: "muted" | "alert";
-  /** See the focus-ring rule at `screens/cockpit.tsx`'s `focusedPaneId`. */
+  /** See the focus-ring rule at `screens/agentboard.tsx`'s `focusedPaneId`. */
   focused?: boolean;
   onRemove: () => void;
 }) {
@@ -1661,7 +1660,7 @@ export function PanePlaceholder({
         type="button"
         onClick={() => {
           // Only the focused tile is the chord's twin — see `PaneHeader`'s `focused`.
-          if (focused) mouseAction("ab-close-pane", workspaceScreen());
+          if (focused) mouseAction("ab-close-pane", "agentboard");
           onRemove();
         }}
         className="flex items-center gap-1 font-mono text-xs hover:text-sky-500"

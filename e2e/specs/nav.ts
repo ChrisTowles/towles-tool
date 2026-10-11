@@ -115,3 +115,15 @@ export async function expectTabPanelShown(label: string): Promise<void> {
     timeoutMsg: `no displayed panel for selected tab "${label}"`,
   });
 }
+
+/** Agent Board with its rail switched to `view` — the Queue/Tree tabs atop the rail. */
+export async function gotoRail(view: "Queue" | "Tree"): Promise<void> {
+  await gotoScreen("Agent Board");
+  const tab = await browser.$(`//*[@role="tab" and normalize-space()="${view}"]`);
+  await tab.waitForDisplayed({ timeout: 10000 });
+  await tab.click();
+  await browser.waitUntil(async () => (await tab.getAttribute("aria-selected")) === "true", {
+    timeout: 10000,
+    timeoutMsg: `the ${view} rail never came up`,
+  });
+}

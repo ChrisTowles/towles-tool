@@ -137,7 +137,7 @@ describe("board shortcuts", () => {
 describe("rail session jumps", () => {
   it("registers a jump binding for each digit 1–9, collapsed to one help entry", () => {
     for (let n = 1; n <= 9; n++) {
-      expect(SHORTCUTS[`ab-jump-session-${n}`].scope).toBe("workspace");
+      expect(SHORTCUTS[`ab-jump-session-${n}`].scope).toBe("agentboard");
       expect(SHORTCUTS[`ab-jump-session-${n}`].hideInHelp).toBe(n > 1);
     }
   });
@@ -230,17 +230,17 @@ describe("editable-target override", () => {
 
 describe("tabShortcutId", () => {
   it("maps an open tab to its digit, in tab order", () => {
-    expect(tabShortcutId(["cockpit", "slack", "board"], "cockpit")).toBe("tab-1");
-    expect(tabShortcutId(["cockpit", "slack", "board"], "board")).toBe("tab-3");
+    expect(tabShortcutId(["agentboard", "slack", "board"], "agentboard")).toBe("tab-1");
+    expect(tabShortcutId(["agentboard", "slack", "board"], "board")).toBe("tab-3");
   });
 
   it("has no key for a screen that is not open — the digits address tabs", () => {
-    expect(tabShortcutId(["cockpit"], "telemetry")).toBeNull();
+    expect(tabShortcutId(["agentboard"], "telemetry")).toBeNull();
   });
 
   it("stops at nine, because the bindings do", () => {
     const nine = [
-      "cockpit",
+      "agentboard",
       "board",
       "slack",
       "doctor",
@@ -255,7 +255,7 @@ describe("tabShortcutId", () => {
   });
 
   it("every id it returns is a real binding", () => {
-    const tabs = ["cockpit", "slack", "board"] as const;
+    const tabs = ["agentboard", "slack", "board"] as const;
     for (const id of tabs) {
       const shortcut = tabShortcutId([...tabs], id);
       expect(shortcut && SHORTCUTS[shortcut]).toBeDefined();

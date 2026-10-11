@@ -2,7 +2,6 @@ import {
   BroadcastIcon,
   ChartBarIcon,
   ChatCircleIcon,
-  GaugeIcon,
   GearIcon,
   KanbanIcon,
   LightningIcon,
@@ -13,7 +12,6 @@ import {
 } from "@phosphor-icons/react";
 
 export type ScreenId =
-  | "cockpit"
   | "agentboard"
   | "board"
   | "slack"
@@ -32,19 +30,16 @@ export type ScreenMeta = {
   keywords: string[];
   /** Render without the centered/scrolling content wrapper (e.g. terminals). */
   fullBleed?: boolean;
-  /** Shown by `host`'s one mounted instance rather than one of its own, so the
-   * two share every terminal, pane and selection — only the rail differs. */
-  host?: ScreenId;
 };
 
 export const SCREENS: Record<ScreenId, ScreenMeta> = {
-  cockpit: {
-    id: "cockpit",
-    title: "Cockpit",
-    icon: GaugeIcon,
+  agentboard: {
+    id: "agentboard",
+    title: "Agent Board",
+    icon: TerminalWindowIcon,
     keywords: [
+      "agentboard",
       "home",
-      "day",
       "queue",
       "next up",
       "focus",
@@ -53,19 +48,13 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
       "terminal",
       "sessions",
       "shell",
-      "folder",
       "repos",
+      "checkouts",
+      "worktrees",
+      "tree",
       "rail",
     ],
     fullBleed: true,
-  },
-  agentboard: {
-    id: "agentboard",
-    title: "Agent Board",
-    icon: TerminalWindowIcon,
-    keywords: ["agentboard", "agents", "repos", "checkouts", "worktrees", "tree", "sessions"],
-    fullBleed: true,
-    host: "cockpit",
   },
   board: {
     id: "board",
@@ -135,9 +124,9 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
 };
 
 export const NAV_SECTIONS: { label: string; screens: ScreenId[] }[] = [
-  // Cockpit leads: it's where the work actually happens, and it's the
+  // Agent Board leads: it's where the work actually happens, and it's the
   // cold-start screen (`COLD_START_TAB`) — the sidebar order has to agree.
-  { label: "Focus", screens: ["cockpit", "agentboard", "board", "slack"] },
+  { label: "Focus", screens: ["agentboard", "board", "slack"] },
   {
     label: "Tools",
     screens: ["doctor", "claude-sessions", "mcp", "telemetry", "task-explorer"],
@@ -145,14 +134,6 @@ export const NAV_SECTIONS: { label: string; screens: ScreenId[] }[] = [
   { label: "App", screens: ["settings"] },
 ];
 
-/** The screen whose mounted instance shows `id`. */
-export function screenHost(id: ScreenId): ScreenId {
-  return SCREENS[id].host ?? id;
-}
-
-/** Cockpit and Agent Board: one workspace, two rails over the same work. */
-export type WorkspaceScreen = "cockpit" | "agentboard";
-
-export function isWorkspaceScreen(id: ScreenId): id is WorkspaceScreen {
-  return screenHost(id) === "cockpit";
-}
+/** Agent Board's two rails over the same panes: tasks worked one at a time, or
+ * every repo → checkout → session by place. */
+export type RailView = "queue" | "tree";

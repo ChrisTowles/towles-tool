@@ -1,14 +1,15 @@
 /**
  * The queue rail's hold-to-reveal jump numbers in the real WebKitGTK shell, where
  * the modifier mask arrives one event stale — a naive `e.ctrlKey` read never sees
- * a held chord. Seeds its own checkout, since `TT_STATE_SCOPE` starts the queue empty.
+ * a held chord. Seeds its own task-owned checkout, since `TT_STATE_SCOPE` starts the queue empty.
  */
 
 /// <reference types="@wdio/globals/types" />
 /// <reference types="@wdio/mocha-framework" />
 
 import { expectObject } from "../ipc.js";
-import { bootReady, gotoScreen } from "./nav.js";
+import { bootReady, gotoRail } from "./nav.js";
+import { dropQueueRow, seedQueueRow, type SeededRow } from "./seed.js";
 
 const BADGE = '[aria-label^="jump key"]';
 
@@ -18,13 +19,6 @@ const CONTROL = "\uE009";
 const SHIFT = "\uE008";
 
 type TaskQueue = { items: { folderDir: string }[] };
-
-/** A queue row is a checkout; adding this repo puts this checkout on the board. */
-async function seedQueueRow(): Promise<string> {
-  const dir = process.cwd();
-  await browser.tauri.execute(({ core }, d) => core.invoke("ab_add_repo", { path: d }), dir);
-  return dir;
-}
 
 async function queueHas(dir: string): Promise<boolean> {
   const queue = expectObject<TaskQueue>(
@@ -57,12 +51,19 @@ async function withModifiersHeld<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-describe("Cockpit queue rail jump keys", () => {
-  before(bootReady);
+describe("Agent Board queue rail jump keys", () => {
+  let row: SeededRow | undefined;
+  before(async () => {
+    await bootReady();
+    row = await seedQueueRow("e2e jump keys");
+  });
+  after(async () => {
+    if (row) await dropQueueRow(row);
+  });
 
   it("numbers the visible rows while the chord is held, and unnumbers on release", async () => {
-    const dir = await seedQueueRow();
-    await gotoScreen("Cockpit");
+    const dir = row!.dir;
+    await gotoRail("Queue");
 
     await browser.waitUntil(async () => queueHas(dir), {
       timeout: 20000,

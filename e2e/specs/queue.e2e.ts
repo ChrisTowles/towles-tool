@@ -1,37 +1,21 @@
 /**
- * Cockpit — Agent Board's checkouts as a queue — against the real Tauri shell.
- * Asserts the queue holds exactly the board's checkouts, that picking a row
- * opens it in place, and that the keyboard walks it; never which checkouts a
- * machine happens to have. Seeds its own two checkouts — this one and a
- * throwaway repo — since `TT_STATE_SCOPE` starts the rail empty.
+ * Agent Board's Queue rail — its checkouts' tasks as a queue — against the real Tauri shell.
+ * Asserts the queue holds the checkouts a task owns and none it doesn't, that
+ * picking a row opens it in place, and that the keyboard walks it; never which
+ * checkouts a machine happens to have. Seeds two task-owned throwaway repos and
+ * tracks this checkout with no task, since `TT_STATE_SCOPE` starts the rail empty.
  */
 
 /// <reference types="@wdio/globals/types" />
 /// <reference types="@wdio/mocha-framework" />
 
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { expectObject } from "../ipc.js";
-import { bootReady, gotoScreen, waitForAnyDisplayed } from "./nav.js";
+import { bootReady, gotoRail, waitForAnyDisplayed } from "./nav.js";
+import { dropQueueRow, seedQueueRow, trackRepo, type SeededRow } from "./seed.js";
 
 // Mirrors TaskQueue in apps/client/src/lib/schemas/queue.ts, narrowed to what's read.
 type TaskQueue = { items: { folderDir: string; lane: string }[] };
 type AgentboardState = { repos: { folders: { dir: string }[] }[] };
-
-async function trackRepo(dir: string): Promise<void> {
-  await browser.tauri.execute(({ core }, d) => core.invoke("ab_add_repo", { path: d }), dir);
-}
-
-/** A second checkout, so the cursor always has somewhere to go. */
-function makeScratchRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), "tt-e2e-queue-"));
-  const git = (...args: string[]) => execFileSync("git", ["-C", dir, ...args], { stdio: "ignore" });
-  git("init", "-q");
-  git("-c", "user.name=e2e", "-c", "user.email=e2e@local", "commit", "-q", "--allow-empty", "-m", "init");
-  return dir;
-}
 
 async function queueDirs(): Promise<string[]> {
   const queue = expectObject<TaskQueue>(
@@ -64,38 +48,43 @@ async function unfoldLanes(): Promise<void> {
   }
 }
 
-describe("Cockpit screen", () => {
-  let scratch: string | undefined;
+describe("Agent Board queue rail", () => {
+  const rows: SeededRow[] = [];
   before(async () => {
     await bootReady();
-    scratch = makeScratchRepo();
     await trackRepo(process.cwd());
-    await trackRepo(scratch);
+    rows.push(await seedQueueRow("e2e queue one"), await seedQueueRow("e2e queue two"));
   });
   after(async () => {
-    if (!scratch) return;
-    await browser.tauri.execute(({ core }, d) => core.invoke("ab_remove_repo", { dir: d }), scratch);
-    rmSync(scratch, { recursive: true, force: true });
+    for (const row of rows) await dropQueueRow(row);
   });
 
-  it("renders the queue rail and none of Agent Board's tree", async () => {
-    await gotoScreen("Cockpit");
+  it("renders the queue rail and none of the tree", async () => {
+    await gotoRail("Queue");
     await waitForAnyDisplayed('[aria-label="New task"]', "the queue's new-task +");
     expect(await (await browser.$('[aria-label="Filter repos"]')).isDisplayed()).toBe(false);
   });
 
-  it("holds exactly the board's checkouts", async () => {
+  it("holds the checkouts a task owns, and none it doesn't", async () => {
     await browser.waitUntil(
       async () => {
-        const board = await boardDirs();
-        return board.length > 1 && JSON.stringify(board) === JSON.stringify(await queueDirs());
+        const [board, queue] = [await boardDirs(), await queueDirs()];
+        return (
+          rows.every((r) => queue.includes(r.dir)) &&
+          !queue.includes(process.cwd()) &&
+          queue.every((d) => board.includes(d))
+        );
       },
-      { timeout: 20000, interval: 1000, timeoutMsg: "the queue never matched the board" },
+      {
+        timeout: 20000,
+        interval: 1000,
+        timeoutMsg: "the queue never held just the tasked checkouts",
+      },
     );
   });
 
   it("opens a picked row in place, and j/k walk the rail", async () => {
-    await gotoScreen("Cockpit");
+    await gotoRail("Queue");
     await unfoldLanes();
     const first = await browser.$("[data-testid='queue-row']");
     await first.waitForDisplayed({ timeout: 10000 });
@@ -123,7 +112,7 @@ describe("Cockpit screen", () => {
   });
 
   it("opens and closes the new-task form from the rail's +", async () => {
-    await gotoScreen("Cockpit");
+    await gotoRail("Queue");
     const plus = await browser.$("button[aria-label='New task']");
     await plus.waitForDisplayed({ timeout: 10000 });
     await plus.click();

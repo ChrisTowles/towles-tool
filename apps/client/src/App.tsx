@@ -20,9 +20,9 @@ import { subscribeSummon } from "@/lib/summon";
 import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
 import { TaskQueueProvider } from "@/lib/queue";
-import { QueueNextShortcut } from "@/components/cockpit-rail";
+import { QueueNextShortcut } from "@/components/queue-rail";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
-import { SCREENS, isWorkspaceScreen, screenHost } from "@/lib/screens";
+import { SCREENS } from "@/lib/screens";
 import { useShortcutCoachSetting } from "@/lib/shortcut-coach";
 import { ShortcutHelpHost, useShortcuts, type ShortcutScope } from "@/lib/shortcuts";
 import { WorkspaceProvider, useWorkspace } from "@/lib/workspace";
@@ -44,6 +44,7 @@ function Shortcuts() {
     openTab,
     openSettingsTab,
     closeTab,
+    railView,
   } = useWorkspace();
 
   useShortcuts(
@@ -88,7 +89,7 @@ function Shortcuts() {
   const activeScopes: ShortcutScope[] = [
     "global",
     activeTab,
-    ...(isWorkspaceScreen(activeTab) ? (["workspace"] as const) : []),
+    ...(activeTab === "agentboard" ? [railView] : []),
   ];
   return <ShortcutHelpHost activeScopes={activeScopes} screen={activeTab} />;
 }
@@ -97,17 +98,17 @@ function Shortcuts() {
  * mounts on first visit, so a listener there would miss every start on a fresh
  * launch. Opens Agentboard so the new pane is on screen. */
 function TaskStartBridge() {
-  const { openWorkspace } = useWorkspace();
+  const { openTab } = useWorkspace();
   const state = useAgentboardState();
   // Read repos at delivery time, not capture time — a start can land before the
   // first agentboard snapshot has arrived.
   const reposRef = useRef(state.repos);
   reposRef.current = state.repos;
 
-  // `openWorkspace` via a ref for the same reason as `repos`: resubscribing the
+  // `openTab` via a ref for the same reason as `repos`: resubscribing the
   // backend listener on every tab change would risk dropping an event.
-  const openWorkspaceRef = useRef(openWorkspace);
-  openWorkspaceRef.current = openWorkspace;
+  const openTabRef = useRef(openTab);
+  openTabRef.current = openTab;
 
   useEffect(
     () =>
@@ -117,7 +118,7 @@ function TaskStartBridge() {
           toast.error(
             `Couldn't start task ${payload.taskId} — ${payload.repoRoot} isn't tracked on Agentboard`,
           ),
-        () => openWorkspaceRef.current(),
+        () => openTabRef.current("agentboard"),
       ),
     [],
   );
@@ -126,7 +127,7 @@ function TaskStartBridge() {
     () =>
       subscribePreviewShow(
         () => reposRef.current,
-        () => openWorkspaceRef.current(),
+        () => openTabRef.current("agentboard"),
       ),
     [],
   );
@@ -134,7 +135,7 @@ function TaskStartBridge() {
     () =>
       subscribeSummon(
         () => reposRef.current,
-        () => openWorkspaceRef.current(),
+        () => openTabRef.current("agentboard"),
       ),
     [],
   );
@@ -142,7 +143,7 @@ function TaskStartBridge() {
     () =>
       subscribeEditorOpenFile(
         () => reposRef.current,
-        () => openWorkspaceRef.current(),
+        () => openTabRef.current("agentboard"),
       ),
     [],
   );
@@ -197,10 +198,9 @@ function Workspace() {
           <ResizablePanel key="main">
             <div className="flex h-full flex-col">
               <div className="min-h-0 flex-1">
-                {/* A hosted screen (`ScreenMeta.host`) shows through its host's instance. */}
-                {[...new Set(openTabs.map(screenHost))].map((id) => {
+                {openTabs.map((id) => {
                   const Screen = SCREEN_COMPONENTS[id];
-                  const hidden = id !== screenHost(activeTab);
+                  const hidden = id !== activeTab;
                   // Keep visited screens mounted so their local state survives switching.
                   // Full-bleed screens (e.g. terminals) skip the centered, scrolling
                   // content wrapper and own the whole content area.

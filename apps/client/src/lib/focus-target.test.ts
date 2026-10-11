@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { FocusTargetStore, type FocusTarget } from "./focus-target";
 
-const prTarget: FocusTarget = { screen: "cockpit", kind: "pr", id: "octo/widgets#43" };
+const prTarget: FocusTarget = { screen: "agentboard", kind: "pr", id: "octo/widgets#43" };
 const todoTarget: FocusTarget = { screen: "board", kind: "todo", id: "7" };
 
 describe("FocusTargetStore", () => {
@@ -18,16 +18,16 @@ describe("FocusTargetStore", () => {
   it("consume returns and clears the target when the screen matches", () => {
     const store = new FocusTargetStore();
     store.set(prTarget);
-    expect(store.consume("cockpit")).toEqual(prTarget);
+    expect(store.consume("agentboard")).toEqual(prTarget);
     // One-shot: a second consume finds nothing.
-    expect(store.consume("cockpit")).toBeNull();
+    expect(store.consume("agentboard")).toBeNull();
     expect(store.get()).toBeNull();
   });
 
   it("consume leaves a target for another screen untouched", () => {
     const store = new FocusTargetStore();
     store.set(todoTarget);
-    expect(store.consume("cockpit")).toBeNull();
+    expect(store.consume("agentboard")).toBeNull();
     expect(store.get()).toEqual(todoTarget);
     // The real destination still gets it.
     expect(store.consume("board")).toEqual(todoTarget);
@@ -46,10 +46,10 @@ describe("FocusTargetStore", () => {
     const unsub = store.subscribe(fn);
 
     store.set(prTarget); // 1
-    store.consume("cockpit"); // 2 (matches → clears)
+    store.consume("agentboard"); // 2 (matches → clears)
     store.clear(); // no-op: already empty
     store.set(todoTarget); // 3
-    store.consume("cockpit"); // no-op: screen mismatch
+    store.consume("agentboard"); // no-op: screen mismatch
     expect(fn).toHaveBeenCalledTimes(3);
 
     unsub();

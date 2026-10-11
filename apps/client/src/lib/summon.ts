@@ -44,7 +44,7 @@ export function subscribeSummon(reposNow: () => RepoData[], onRouted: () => void
             ? {
                 label: "Go",
                 onClick: () => {
-                  uiAction("summon.go", "cockpit");
+                  uiAction("summon.go", "agentboard");
                   requestAgentboardNav({
                     kind: "session",
                     folderDir: folder.dir,

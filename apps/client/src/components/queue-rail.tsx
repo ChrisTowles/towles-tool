@@ -55,7 +55,7 @@ async function report(r: Awaited<ReturnType<typeof invoke>>) {
 
 export async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<void> {
   if (!item.reason) return;
-  uiAction("queue.snooze", "cockpit", preset);
+  uiAction("queue.snooze", "agentboard", preset);
   await report(
     await invoke<void>("queue_snooze", {
       id: item.taskId,
@@ -72,23 +72,23 @@ export async function rerankQueueItem(
 ): Promise<void> {
   const to = rankMove(items, items.indexOf(item), direction);
   if (!to) return;
-  uiAction("queue.reorder", "cockpit", direction);
+  uiAction("queue.reorder", "agentboard", direction);
   await report(await invoke<void>("queue_move", { id: item.taskId, to }));
 }
 
 async function unsnoozeItem(item: QueueItem) {
-  uiAction("queue.unsnooze", "cockpit");
+  uiAction("queue.unsnooze", "agentboard");
   await report(await invoke<void>("queue_unsnooze", { id: item.taskId }));
 }
 
-/** `queue-next` from any screen, terminals included: Cockpit opens the head in place. */
+/** `queue-next` from any screen, terminals included: Agent Board opens the head in place. */
 export function QueueNextShortcut() {
   const { openTab, activeTab } = useWorkspace();
   useShortcuts(
     useMemo(
       () => ({
         "queue-next": () => {
-          openTab("cockpit");
+          openTab("agentboard");
           requestAgentboardNav({ kind: "queue-next" });
         },
       }),
@@ -102,7 +102,7 @@ export function QueueNextShortcut() {
 /** The left rail: the tasks that own a checkout, as one queue — Next up, then
  * every lane. Rows only select — the checkout's terminals open beside it; nothing
  * here acts on an agent. */
-export function CockpitRail({
+export function QueueRail({
   queue,
   repoByFolder,
   live,

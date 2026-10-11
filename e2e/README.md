@@ -29,7 +29,7 @@ node scripts/drive.mjs status                     # is the automation server up?
 node scripts/drive.mjs invoke settings_get        # call a real Rust IPC command
 node scripts/drive.mjs invoke journal_log '{"text":"hi"}'
 node scripts/drive.mjs eval "document.title"      # run JS in the live window
-node scripts/drive.mjs shot cockpit               # → e2e/screenshots/cockpit.png
+node scripts/drive.mjs shot agentboard            # → e2e/screenshots/agentboard.png
 node scripts/drive.mjs click "nav button"         # click an element (CSS selector)
 node scripts/drive.mjs clicktext "Board"          # click a button/link by visible text
 node scripts/drive.mjs type "input" "board"       # type into an element

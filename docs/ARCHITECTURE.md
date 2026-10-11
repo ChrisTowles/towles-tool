@@ -141,14 +141,14 @@ no git repository, checked in the CLI because the pane browses a checkout.
 
 React 19 + Vite + Tailwind v4 + Kumo, a Yaak-style shell (resizable sidebar
 as the only nav, ⌘K palette, screens stay mounted across switches) with three
-Focus screens: **Cockpit**, **Agent Board**, **Board**, **Messages**. Cockpit
-and Agent Board are one workspace — the same terminals, panes and selection,
-mounted once — with two views of the same checkouts. Cockpit, the cold-start
-screen, lays them out as a queue to work one at a time: its rail *is* the task
-queue (Next up, then On you / Running / Parked / Idle). When the head of On you
+Focus screens: **Agent Board**, **Board**, **Messages**. Agent Board, the
+cold-start screen, is one workspace — the same terminals, panes and selection —
+with two rails over the same checkouts, switched by the Queue/Tree tabs atop the
+rail. Queue lays them out to work one at a time: the rail *is* the task queue
+(Next up, then On you / Running / Parked / Idle). When the head of On you
 changes it opens in place, unless a
 terminal has focus or the row on screen still needs you — then it is announced
-above the panes, never by taking focus. Agent Board is processed by place: its
+above the panes, never by taking focus. Tree is processed by place: its
 rail is the repo → checkout → session tree with a keyboard cursor, and the queue
 never moves it. Picking a row on either opens its terminals and panes beside it. Terminals are a canvas renderer over `tt-vt` state with the PTY
 host in Rust — no cross-restart persistence.

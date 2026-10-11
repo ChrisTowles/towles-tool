@@ -108,10 +108,10 @@ describe("Command palette navigation", () => {
     await expectActiveTab("Board");
   });
 
-  it("navigates to Cockpit via the palette", async () => {
+  it("navigates to Agent Board via the palette", async () => {
     await openPalette();
-    await navigateTo("Cockpit");
-    await expectActiveTab("Cockpit");
+    await navigateTo("Agent Board");
+    await expectActiveTab("Agent Board");
   });
 
   it("narrows the list to items matching a typed query", async () => {
@@ -120,13 +120,13 @@ describe("Command palette navigation", () => {
     expect(unfiltered).toBeGreaterThan(1);
 
     const input = await browser.$('input[role="combobox"]');
-    await input.setValue("Cockpit");
+    await input.setValue("Telemetry");
     await browser.waitUntil(
       async () => {
         const titles = await itemTitles();
-        return titles.includes("Cockpit") && !titles.includes("Board");
+        return titles.includes("Telemetry") && !titles.includes("Board");
       },
-      { timeout: 10000, timeoutMsg: "typing Cockpit never dropped the non-matching rows" },
+      { timeout: 10000, timeoutMsg: "typing Telemetry never dropped the non-matching rows" },
     );
     expect(await browser.$$('[role="option"]').length).toBeLessThan(unfiltered);
     await browser.keys([Key.Escape]);
