@@ -34,6 +34,7 @@ import { useWindowLayout } from "./cockpit/use-window-layout";
 import { useWorktreeDelete } from "./cockpit/use-worktree-delete";
 import { PaneGrid } from "./cockpit/pane-grid";
 import { RailHeader } from "./cockpit/rail-header";
+import { defaultTaskRepo, RailNewTask, repoOfFolder } from "./cockpit/rail-new-task";
 import { WindowStrip } from "./cockpit/window-strip";
 import {
   DeleteWorktreeDialog,
@@ -165,6 +166,7 @@ function terminalFocused(): boolean {
 }
 
 const CHECKOUTS_OPEN_KEY = "tt-cockpit-checkouts-open";
+const LAST_TASK_REPO_KEY = "tt-cockpit-last-task-repo";
 
 /** Cockpit — the agent board, driven by the queue. The rail is everything
  * waiting on you (Next up, then the lanes); picking a row puts that item's
@@ -867,16 +869,25 @@ export function CockpitScreen() {
   // so it would read 0:00 throughout. Bounded by the install itself.
   useNowInterval(taskCreation.settingUpDirs.size > 0 ? 1000 : undefined);
 
-  // The form renders in the Checkouts drawer, so the rail and drawer open first.
-  function newTaskForActiveRepo() {
-    if (!activeRepo) return;
+  // The rail's `+` form: one repo picker over the existing inline form, so it
+  // works whatever row is selected. Opening again closes it.
+  const [railTaskRepoKey, setRailTaskRepoKey] = useState<string | null>(null);
+
+  function openRailNewTask(repoKey?: string) {
     if (railCollapsed) toggleRail();
-    if (!checkoutsOpen) toggleCheckouts(true);
-    taskCreation.toggleTaskForm({
-      name: activeRepo.name,
-      dir: activeRepo.folders[0].dir,
-      key: activeRepo.key,
-    });
+    if (railTaskRepoKey !== null && repoKey === undefined) {
+      setRailTaskRepoKey(null);
+      return;
+    }
+    const picked = repoKey
+      ? repos.find((r) => r.key === repoKey)
+      : defaultTaskRepo(
+          repos,
+          (repoOfFolder(repos, selItem?.folderDir) ?? activeRepo)?.key,
+          localStorage.getItem(LAST_TASK_REPO_KEY),
+        );
+    if (!picked) return;
+    setRailTaskRepoKey(picked.key);
   }
 
   // A `no worktree` row's way back: the ordinary create path with the existing
@@ -1186,7 +1197,7 @@ export function CockpitScreen() {
         "ab-new-session": () => {
           if (activeFolderDir) void newSession(activeFolderDir);
         },
-        "ab-new-task": newTaskForActiveRepo,
+        "ab-new-task": () => openRailNewTask(),
         "ab-remove-task": () => {
           // `requestDeleteWorktree` always confirms before touching anything.
           if (!activeFolder || !folderRemovableTask(activeFolder)) return;
@@ -1347,6 +1358,36 @@ export function CockpitScreen() {
                           mouseAction("queue-next", "cockpit");
                           openNextUp();
                         }}
+                        onNewTask={() => {
+                          mouseAction("ab-new-task", "cockpit");
+                          openRailNewTask();
+                        }}
+                        newTaskForm={
+                          railTaskRepoKey !== null && (
+                            <RailNewTask
+                              repos={repos}
+                              repoKey={railTaskRepoKey}
+                              onRepoChange={(key) => {
+                                uiAction("cockpit.new_task_repo", "cockpit");
+                                setRailTaskRepoKey(key);
+                              }}
+                              onCancel={() => setRailTaskRepoKey(null)}
+                              onSubmit={(repo, input) => {
+                                localStorage.setItem(LAST_TASK_REPO_KEY, repo.key);
+                                setRailTaskRepoKey(null);
+                                void taskCreation.createTask(
+                                  {
+                                    name: repo.name,
+                                    dir: repo.folders[0].dir,
+                                    key: repo.key,
+                                    originUrl: repo.originUrl,
+                                  },
+                                  input,
+                                );
+                              }}
+                            />
+                          )
+                        }
                       >
                         <RailDrawer
                           title="Issues"
@@ -1467,7 +1508,7 @@ export function CockpitScreen() {
                                     onSelectFolder={selectFolder}
                                     onSelect={selectSession}
                                     onNewSession={newSession}
-                                    onNewTask={taskCreation.toggleTaskForm}
+                                    onNewTask={(repo) => openRailNewTask(repo.key)}
                                     onRemoveRepo={requestRemoveRepo}
                                     onDeleteWorktree={requestDeleteWorktree}
                                     onRecreateWorktree={(folder) => recreateWorktree(repo, folder)}
@@ -1580,7 +1621,7 @@ export function CockpitScreen() {
                   onOpenBrowser={browserPane ? openBrowser : undefined}
                   onOpenJarvis={jarvisPane ? openJarvis : undefined}
                   onNewSession={newSession}
-                  onNewTask={newTaskForActiveRepo}
+                  onNewTask={() => openRailNewTask(activeRepo.key)}
                   onRemoveRepo={requestRemoveRepo}
                   onDeleteWorktree={requestDeleteWorktree}
                 />

@@ -8,8 +8,10 @@ import {
   ClockIcon,
   EyeSlashIcon,
   PlayIcon,
+  PlusIcon,
 } from "@phosphor-icons/react";
 import { HotkeyBadge } from "@/components/agentboard-bits";
+import { Hint } from "@/components/hint";
 import { requestAgentboardNav } from "@/lib/agentboard";
 import { fmtAge, storeItemDismiss } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -155,6 +157,8 @@ export function CockpitRail({
   onToggleLane,
   onSelect,
   onOpenHead,
+  onNewTask,
+  newTaskForm,
   children,
 }: {
   queue: TaskQueue;
@@ -172,11 +176,29 @@ export function CockpitRail({
   onSelect: (item: QueueItem) => void;
   /** The hero's Open — the mouse twin of `queue-next`. */
   onOpenHead: () => void;
+  /** The header `+` — the mouse twin of `ab-new-task`. */
+  onNewTask: () => void;
+  /** The new-task form, open under the header. */
+  newTaskForm?: ReactNode;
   /** Drawers below the lanes (issues, checkouts). */
   children?: ReactNode;
 }) {
   return (
     <div className="flex flex-col">
+      <div className="flex items-center justify-between px-3 pt-2">
+        <span className="text-xs font-medium tracking-wide text-kumo-subtle uppercase">Queue</span>
+        <Hint label="New task" shortcut="ab-new-task">
+          <button
+            type="button"
+            onClick={onNewTask}
+            aria-label="New task"
+            className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+          >
+            <PlusIcon className="size-3.5" />
+          </button>
+        </Hint>
+      </div>
+      {newTaskForm}
       {!live ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
       ) : queue.items.length === 0 ? (

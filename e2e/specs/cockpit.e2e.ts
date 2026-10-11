@@ -131,4 +131,31 @@ describe("Cockpit screen", () => {
       await deleteTasks([a, b]);
     }
   });
+
+  it("opens the new-task form from the rail's + whatever row is selected", async () => {
+    const id = await addTask("e2e new-task row");
+    try {
+      const row = await browser.$("button*=e2e new-task row");
+      await row.waitForDisplayed({ timeout: 10000 });
+      await row.click();
+      await waitForAnyDisplayed("button*=Start agent", "a checkout-less row's detail");
+      const plus = await browser.$("button[aria-label='New task']");
+      await plus.waitForDisplayed({ timeout: 10000 });
+      // Only tracked repos are offered; with none the + has nothing to open.
+      const drawer = await browser.$("button*=Checkouts");
+      const tracked = !(await drawer.getText()).includes("· 0");
+      await plus.click();
+      const form = await browser.$("[data-testid='rail-new-task']");
+      if (tracked) {
+        await form.waitForDisplayed({ timeout: 10000 });
+        await (await browser.$("[aria-label='Repo for the new task']")).waitForDisplayed();
+        await plus.click();
+        await form.waitForDisplayed({ reverse: true, timeout: 10000 });
+      } else {
+        expect(await form.isExisting()).toBe(false);
+      }
+    } finally {
+      await deleteTasks([id]);
+    }
+  });
 });
