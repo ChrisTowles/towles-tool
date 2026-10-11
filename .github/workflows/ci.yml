@@ -25,12 +25,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # rust-vt and rust-app provision zig + a ghostty checkout on top of the
-  # base toolchain, so they're the most expensive jobs here. Most PRs touch
-  # neither tt-vt nor tt-app — gate those two jobs on paths-filter output
-  # instead of running them unconditionally on every push/PR. Workspace-wide
-  # files (Cargo.lock/.toml, the toolchain pin, this workflow) always count
-  # as "changed" since a dependency or toolchain bump can affect either crate
+  # rust-app provisions GTK, zig and a ghostty checkout on top of the base
+  # toolchain, so it's the most expensive job here. Most PRs touch neither
+  # tt-vt nor tt-app — gate it on paths-filter output. Workspace-wide files
+  # (Cargo.lock/.toml, the toolchain pin, this workflow) always count as
+  # "changed" since a dependency or toolchain bump can affect either crate
   # without touching its directory.
   changes:
     name: Detect changed paths
@@ -99,12 +98,17 @@ jobs:
             [ "$tc" = "$active" ] || rustup toolchain uninstall "$tc"
           done
 
+      # Only main saves: a PR's cache is scoped to its own ref, so no other run
+      # can restore it, yet it still counts against the repo's 10GB budget —
+      # which, once full, evicts main's caches and every job compiles cold.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # crates/tt-vt builds `libghostty-vt`, whose build script compiles
       # libghostty from a ghostty source checkout and needs zig 0.15.x on PATH
       # (GHOSTTY_SOURCE_DIR). That toolchain is provisioned only in the separate
-      # `rust-vt` job below, so tt-vt is excluded here — along with
+      # `rust-app` job below, so tt-vt is excluded here — along with
       # crates-tauri/tt-app, the only crate that depends on it (and which also
       # needs webkit2gtk/GTK system libs for the Tauri shell, still uncovered by
       # CI). Everything else — every other Tauri-free crate under crates/ plus
@@ -121,17 +125,17 @@ jobs:
         run: cargo fmt --check
 
       - name: clippy
-        run: cargo clippy --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
+        run: cargo clippy --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
 
       # tt-jarvis as it is actually built everywhere else: `bevy` off, which
       # leaves the frame-time maths and no fork to compile. Only the library, so
       # none of the GTK dev-deps that keep it out of the step above are needed —
       # seconds, and it is the one place this default configuration is linted.
       - name: clippy (tt-jarvis, no renderer)
-        run: cargo clippy -p tt-jarvis -- -D warnings
+        run: cargo clippy --profile ci -p tt-jarvis -- -D warnings
 
       - name: test
-        run: cargo test --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
+        run: cargo test --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
         env:
           # comment-budget's npm wrapper tests need node to prove anything, and
           # skip themselves when it is missing. This turns that silence into a
@@ -143,7 +147,7 @@ jobs:
     # The only per-PR compile of every `#[cfg(target_os = "macos")]` block —
     # tt-app's NSEvent monitor, the mac terminal path, tt-browser's Chrome
     # lookup. Deliberately ungated: a Linux-only API can be introduced by any
-    # crate, so the paths filter that spares rust-vt/rust-app would miss it.
+    # crate, so the paths filter that spares rust-app would miss it.
     # macos-14 rather than macos-latest is what dodges the zig 0.15/Xcode 26.4
     # linker bug release.yml has to work around (ziglang/zig#31658).
     runs-on: macos-14
@@ -165,11 +169,12 @@ jobs:
           done
 
       # tt-app depends on tt-vt, whose build script shells out to `zig build`
-      # against a ghostty checkout — same provisioning as the rust-vt job.
+      # against a ghostty checkout — same provisioning as the rust-app job.
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
+          use-cache: false
 
       - name: Cache ghostty source
         id: ghostty-cache
@@ -188,6 +193,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: macos-14
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # No exclude list at all, unlike the Linux jobs: they split around
       # webkit2gtk/GTK, which mac doesn't need (the shell links AppKit and
@@ -203,91 +209,14 @@ jobs:
       - name: test
         run: cargo test --profile ci --workspace --no-fail-fast
 
-  rust-vt:
-    name: Rust tt-vt (zig + ghostty)
-    needs: changes
-    if: needs.changes.outputs.vt_or_app == 'true'
-    runs-on: ubuntu-latest
-    # Pinned ghostty commit that libghostty-vt-sys 0.2.0 builds against (see the
-    # GHOSTTY_COMMIT constant in that crate's build.rs). Keep this in sync when
-    # bumping libghostty-vt.
-    env:
-      GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
-    steps:
-      - uses: actions/checkout@v7
-
-      # Same repo-root rust-toolchain.toml pin as the `rust` job.
-      - name: Provision pinned Rust toolchain
-        # ubuntu-latest ships a preinstalled default toolchain that can be a
-        # different version than our rust-toolchain.toml pin. Left in place
-        # alongside the pinned one, it makes Swatinem/rust-cache's cache key
-        # (which hashes every installed toolchain) unstable across otherwise
-        # identical runs — confirmed via CI audit: the same commit produced
-        # two different cache-key hashes depending on which stray toolchain
-        # happened to be present, so tt-vt/tt-app never got a stable hit.
-        # Explicitly uninstalling anything but the pin keeps the cache key
-        # deterministic.
-        run: |
-          rustup toolchain install
-          active=$(rustup show active-toolchain | awk '{print $1}')
-          for tc in $(rustup toolchain list | awk '{print $1}'); do
-            [ "$tc" = "$active" ] || rustup toolchain uninstall "$tc"
-          done
-
-      # libghostty-vt's build script shells out to `zig build`; the crate tracks
-      # ghostty's Zig version (0.15.x). setup-zig also caches the zig compiler
-      # and its global package cache (~/.cache/zig), where ghostty's Zig
-      # dependencies land.
-      - name: Provision Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-
-      # Cache the ghostty checkout so we only clone on a commit bump. The clone
-      # mirrors what build.rs would do itself when GHOSTTY_SOURCE_DIR is unset.
-      - name: Cache ghostty source
-        id: ghostty-cache
-        uses: actions/cache@v6
-        with:
-          path: ghostty-src
-          key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
-
-      - name: Clone ghostty source
-        if: steps.ghostty-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --filter=blob:none --no-checkout \
-            https://github.com/ghostty-org/ghostty.git ghostty-src
-          git -C ghostty-src checkout "$GHOSTTY_COMMIT"
-
-      - name: CPU signature for the zig artifact cache
-        id: cpu
-        uses: ./.github/actions/cpu-signature
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Keep this job's cargo/zig build artifacts separate from the `rust`
-          # job's cache — and from those built for a different CPU; see the
-          # cpu-signature action for why that is a correctness issue here.
-          key: tt-vt-${{ steps.cpu.outputs.sig }}
-
-      - name: clippy (tt-vt)
-        env:
-          GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo clippy --profile ci -p tt-vt -- -D warnings
-
-      - name: test (tt-vt)
-        env:
-          GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo test --profile ci -p tt-vt
-
   rust-app:
-    name: Rust tt-app (webkit2gtk + zig)
+    name: Rust tt-vt + tt-app (webkit2gtk + zig)
     needs: changes
     if: needs.changes.outputs.vt_or_app == 'true'
     runs-on: ubuntu-latest
     # tt-app is the Tauri shell: it needs webkit2gtk/GTK system libs (below) and,
     # via its tt-vt dependency, zig + a ghostty checkout — so it can't ride the
-    # plain `rust` job. This job covers clippy for it; the wdio feature stays off
+    # plain `rust` job. It lints and tests both; the wdio feature stays off
     # (`--no-default-features`) so the E2E-only plugins aren't compiled in CI.
     #
     # Pinned ghostty commit that libghostty-vt-sys 0.2.0 builds against (see the
@@ -327,17 +256,8 @@ jobs:
             file \
             libxdo-dev
 
-      # Same repo-root rust-toolchain.toml pin as the `rust` job.
+      # Same pin, and the same strip of stray toolchains, as the `rust` job.
       - name: Provision pinned Rust toolchain
-        # ubuntu-latest ships a preinstalled default toolchain that can be a
-        # different version than our rust-toolchain.toml pin. Left in place
-        # alongside the pinned one, it makes Swatinem/rust-cache's cache key
-        # (which hashes every installed toolchain) unstable across otherwise
-        # identical runs — confirmed via CI audit: the same commit produced
-        # two different cache-key hashes depending on which stray toolchain
-        # happened to be present, so tt-vt/tt-app never got a stable hit.
-        # Explicitly uninstalling anything but the pin keeps the cache key
-        # deterministic.
         run: |
           rustup toolchain install
           active=$(rustup show active-toolchain | awk '{print $1}')
@@ -345,12 +265,13 @@ jobs:
             [ "$tc" = "$active" ] || rustup toolchain uninstall "$tc"
           done
 
-      # tt-app depends on tt-vt, whose build script shells out to `zig build`
-      # against a ghostty checkout — same provisioning as the `rust-vt` job.
+      # tt-vt's build script shells out to `zig build` against a ghostty
+      # checkout, and tt-app depends on it.
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
+          use-cache: false
 
       # Cache the ghostty checkout so we only clone on a commit bump. The clone
       # mirrors what build.rs would do itself when GHOSTTY_SOURCE_DIR is unset.
@@ -368,31 +289,27 @@ jobs:
             https://github.com/ghostty-org/ghostty.git ghostty-src
           git -C ghostty-src checkout "$GHOSTTY_COMMIT"
 
-      - name: CPU signature for the zig artifact cache
-        id: cpu
-        uses: ./.github/actions/cpu-signature
+      - uses: ./.github/actions/zig-baseline
 
       - uses: Swatinem/rust-cache@v2
         with:
-          # Keep this job's cargo/zig build artifacts separate from the other
-          # rust jobs' caches — and from those built for a different CPU; see
-          # the cpu-signature action for why that is a correctness issue here.
-          key: tt-app-${{ steps.cpu.outputs.sig }}
+          key: tt-app
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: clippy (tt-app)
+      - name: clippy (tt-vt, tt-app)
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo clippy --profile ci -p tt-app --no-default-features -- -D warnings
+        run: cargo clippy --profile ci -p tt-vt -p tt-app --no-default-features -- -D warnings
 
       # Run tt-app's unit tests with the same feature set clippy checks
       # (`--no-default-features`). The `wdio` feature stays off deliberately: it
       # pulls in the E2E-only tauri-plugin-wdio{,-webdriver} plugins, and those
       # paths are exercised by the nightly e2e job (which builds `--features
       # wdio`) rather than on every PR.
-      - name: test (tt-app)
+      - name: test (tt-vt, tt-app)
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo test --profile ci -p tt-app --no-default-features
+        run: cargo test --profile ci -p tt-vt -p tt-app --no-default-features
 
       # The native Bevy pane, with the renderer switched on — the only place in
       # CI that compiles Bevy. tt-app above no longer does: its `bevy` feature is

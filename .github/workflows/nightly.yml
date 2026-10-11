@@ -72,6 +72,10 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
+          use-cache: false
+
+      # Same SIGILL guard as ci.yml's rust-app job: see the action.
+      - uses: ./.github/actions/zig-baseline
 
       - name: Cache ghostty source
         id: ghostty-cache
@@ -155,6 +159,10 @@ jobs:
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.2
+          use-cache: false
+
+      # Same SIGILL guard as ci.yml's rust-app job: see the action.
+      - uses: ./.github/actions/zig-baseline
 
       - name: Cache ghostty source
         id: ghostty-cache
