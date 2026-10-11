@@ -1508,7 +1508,7 @@ export function CockpitScreen() {
                                     onSelectFolder={selectFolder}
                                     onSelect={selectSession}
                                     onNewSession={newSession}
-                                    onNewTask={(repo) => openRailNewTask(repo.key)}
+                                    onNewTask={(target) => openRailNewTask(target.key)}
                                     onRemoveRepo={requestRemoveRepo}
                                     onDeleteWorktree={requestDeleteWorktree}
                                     onRecreateWorktree={(folder) => recreateWorktree(repo, folder)}
