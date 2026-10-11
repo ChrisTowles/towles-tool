@@ -34,7 +34,7 @@ pub type QueueStoreInputs = (
     Vec<tt_store::TaskItem>,
     Vec<tt_store::PrItem>,
     Vec<tt_store::CiRun>,
-    Vec<tt_store::TaskSnooze>,
+    Vec<tt_store::QueueSnooze>,
 );
 
 impl StoreState {
@@ -127,7 +127,7 @@ impl StoreState {
         let guard = self.store.lock().unwrap();
         let store = guard.as_ref()?;
         let read = || -> tt_store::Result<_> {
-            Ok((store.open_tasks()?, store.prs()?, store.ci_runs()?, store.task_snoozes()?))
+            Ok((store.open_tasks()?, store.prs()?, store.ci_runs()?, store.queue_snoozes()?))
         };
         read().map_err(|e| tracing::warn!(error = %e, "store: queue inputs unreadable")).ok()
     }

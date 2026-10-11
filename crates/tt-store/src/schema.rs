@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 23;
+pub(crate) const SCHEMA_VERSION: i64 = 24;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::check_version_floor`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -177,11 +177,13 @@ CREATE TABLE IF NOT EXISTS ci_runs (
 
 /// v21: personal Slack agents — resumable sessions, thread ownership, an echo guard
 /// for what the agents posted as Chris, self-set reminders, and a per-turn audit log.
-/// v22: "not now" on a task, keyed to the queue reason it was set on, so a new
-/// reason resurfaces it. `until_ms` NULL means until that reason changes.
-const SCHEMA_TASK_SNOOZES_V22: &str = "\
-CREATE TABLE IF NOT EXISTS task_snoozes (
-    task_id INTEGER PRIMARY KEY,
+/// v24: "not now" on any queue row (task, unfiled checkout, PR, CI branch), keyed
+/// by the row's snooze key and to the queue reason it was set on, so a new reason
+/// resurfaces it. `until_ms` NULL means until that reason changes. Replaces v22's
+/// task-only `task_snoozes`, whose rows carry over as `task:<id>`.
+const SCHEMA_QUEUE_SNOOZES_V24: &str = "\
+CREATE TABLE IF NOT EXISTS queue_snoozes (
+    key TEXT PRIMARY KEY,
     reason TEXT NOT NULL,
     until_ms INTEGER,
     created_at INTEGER NOT NULL
@@ -289,8 +291,8 @@ impl Store {
         self.conn.execute_batch(SCHEMA_ITEM_DISMISSALS_V15)?;
         self.conn.execute_batch(SCHEMA_CI_RUNS_V20)?;
         self.conn.execute_batch(SCHEMA_AGENTS_V21)?;
-        self.conn.execute_batch(SCHEMA_TASK_SNOOZES_V22)?;
         self.migrate_ci_runs_branch_v23()?;
+        self.migrate_queue_snoozes_v24()?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -463,6 +465,25 @@ impl Store {
 
     /// v23: the branch a CI run ran on, so the queue can fold a run into the task
     /// that owns that branch. Rows from before read as `''` until the next sweep.
+    /// Carry v22's `task_snoozes` rows into `queue_snoozes` and drop the old table.
+    fn migrate_queue_snoozes_v24(&self) -> Result<()> {
+        self.conn.execute_batch(SCHEMA_QUEUE_SNOOZES_V24)?;
+        // The statement names `task_snoozes`, so it cannot even prepare without it.
+        let has_old: bool = self.conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'task_snoozes'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if has_old {
+            self.conn.execute_batch(
+                "INSERT OR IGNORE INTO queue_snoozes (key, reason, until_ms, created_at)
+                   SELECT 'task:' || task_id, reason, until_ms, created_at FROM task_snoozes;
+                 DROP TABLE task_snoozes;",
+            )?;
+        }
+        Ok(())
+    }
+
     fn migrate_ci_runs_branch_v23(&self) -> Result<()> {
         let has_branch: bool = self.conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('ci_runs') WHERE name = 'branch'",

@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tt_agentboard::StatePayload;
-use tt_agentboard::queue::{QueueInputs, TaskQueue};
+use tt_agentboard::queue::{QueueInputs, QueueKey, TaskQueue};
 use tt_store::RankMove;
 
 use crate::store::{StoreState, now_ms};
@@ -99,25 +99,41 @@ pub fn queue_move(
 pub fn queue_snooze(
     app: AppHandle,
     store: State<StoreState>,
-    id: i64,
+    key: QueueKey,
     reason: String,
     until_ms: Option<i64>,
 ) -> Result<(), String> {
-    let result =
-        store.with(|s| s.snooze_task(id, &reason, until_ms, now_ms()).map_err(|e| e.to_string()));
-    tracing::info!(task_id = id, reason, until_ms, ok = result.is_ok(), "task.snoozed");
+    let result = store.with(|s| {
+        s.snooze_queue_item(&key.snooze_key(), &reason, until_ms, now_ms())
+            .map_err(|e| e.to_string())
+    });
+    tracing::info!(kind = key_kind(&key), reason, until_ms, ok = result.is_ok(), "queue.snoozed");
     result?;
     after_write(&app);
     Ok(())
 }
 
 #[tauri::command]
-pub fn queue_unsnooze(app: AppHandle, store: State<StoreState>, id: i64) -> Result<(), String> {
-    let result = store.with(|s| s.unsnooze_task(id).map_err(|e| e.to_string()));
-    tracing::info!(task_id = id, ok = result.is_ok(), "task.unsnoozed");
+pub fn queue_unsnooze(
+    app: AppHandle,
+    store: State<StoreState>,
+    key: QueueKey,
+) -> Result<(), String> {
+    let result =
+        store.with(|s| s.unsnooze_queue_item(&key.snooze_key()).map_err(|e| e.to_string()));
+    tracing::info!(kind = key_kind(&key), ok = result.is_ok(), "queue.unsnoozed");
     result?;
     after_write(&app);
     Ok(())
+}
+
+fn key_kind(key: &QueueKey) -> &'static str {
+    match key {
+        QueueKey::Task { .. } => "task",
+        QueueKey::Unfiled { .. } => "unfiled",
+        QueueKey::Pr { .. } => "pr",
+        QueueKey::Ci { .. } => "ci",
+    }
 }
 
 /// Same guards and branch naming as MCP `task_start`, then the same `+` flow.

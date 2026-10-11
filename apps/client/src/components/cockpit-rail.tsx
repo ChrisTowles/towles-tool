@@ -80,11 +80,11 @@ export function openQueueLink(item: QueueItem): void {
 }
 
 export async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<void> {
-  if (item.key.kind !== "task" || !item.reason) return;
-  uiAction("queue.snooze", "cockpit", preset);
+  if (!item.reason) return;
+  uiAction("queue.snooze", "cockpit", `${item.key.kind}:${preset}`);
   await report(
     await invoke<void>("queue_snooze", {
-      id: item.key.id,
+      key: item.key,
       reason: item.reason,
       untilMs: snoozeUntil(preset, Date.now()),
     }),
@@ -103,9 +103,8 @@ export async function rerankQueueItem(
 }
 
 async function unsnoozeItem(item: QueueItem) {
-  if (item.key.kind !== "task") return;
-  uiAction("queue.unsnooze", "cockpit");
-  await report(await invoke<void>("queue_unsnooze", { id: item.key.id }));
+  uiAction("queue.unsnooze", "cockpit", item.key.kind);
+  await report(await invoke<void>("queue_unsnooze", { key: item.key }));
 }
 
 async function fileItem(item: QueueItem) {
@@ -215,6 +214,7 @@ export function CockpitRail({
               onOpen={onOpenHead}
               onLater={() => void rerankQueueItem(queue.items, head, "down")}
               onSnooze={(preset) => void snoozeQueueItem(head, preset)}
+              onDismiss={() => void dismissQueuePr(head)}
             />
           )}
           {LANES.map((lane) => {
@@ -295,6 +295,7 @@ function Hero({
   onOpen,
   onLater,
   onSnooze,
+  onDismiss,
 }: {
   item: QueueItem;
   now: number;
@@ -302,6 +303,7 @@ function Hero({
   onOpen: () => void;
   onLater: () => void;
   onSnooze: (preset: SnoozePreset) => void;
+  onDismiss: () => void;
 }) {
   const reason = item.reason ?? "start";
   return (
@@ -341,7 +343,12 @@ function Hero({
             Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>
           </Button>
         )}
-        {item.key.kind === "task" && item.reason && <SnoozeMenu onSnooze={onSnooze} />}
+        {item.reason && item.reason !== "start" && <SnoozeMenu onSnooze={onSnooze} />}
+        {item.key.kind === "pr" && (
+          <Button size="xs" variant="ghost" icon={<EyeSlashIcon />} onClick={onDismiss}>
+            Dismiss
+          </Button>
+        )}
         {item.key.kind === "task" && (
           <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
             Later
@@ -478,7 +485,7 @@ function QueueRow({
           onClick={() => void dismissQueuePr(item)}
         />
       )}
-      {item.key.kind === "task" && item.reason && !item.snoozed && (
+      {item.reason && !item.snoozed && (
         <SnoozeMenu
           onSnooze={(preset) => void snoozeQueueItem(item, preset)}
           open={snoozeOpen}

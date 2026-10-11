@@ -448,39 +448,43 @@ impl Store {
         Ok(rank)
     }
 
-    /// One snooze per task: a new one replaces the old.
-    pub fn snooze_task(
+    /// One snooze per queue row: a new one replaces the old. Spent timed snoozes
+    /// are swept on the way, since rows that vanished never come back to clear them.
+    pub fn snooze_queue_item(
         &self,
-        id: i64,
+        key: &str,
         reason: &str,
         until_ms: Option<i64>,
         now_ms: i64,
     ) -> Result<()> {
-        self.require_task(id)?;
         self.conn.execute(
-            "INSERT INTO task_snoozes (task_id, reason, until_ms, created_at)
+            "DELETE FROM queue_snoozes WHERE until_ms IS NOT NULL AND until_ms <= ?1",
+            params![now_ms],
+        )?;
+        self.conn.execute(
+            "INSERT INTO queue_snoozes (key, reason, until_ms, created_at)
              VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(task_id) DO UPDATE SET reason = excluded.reason,
+             ON CONFLICT(key) DO UPDATE SET reason = excluded.reason,
                until_ms = excluded.until_ms, created_at = excluded.created_at",
-            params![id, reason, until_ms, now_ms],
+            params![key, reason, until_ms, now_ms],
         )?;
         Ok(())
     }
 
-    pub fn unsnooze_task(&self, id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM task_snoozes WHERE task_id = ?1", params![id])?;
+    pub fn unsnooze_queue_item(&self, key: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM queue_snoozes WHERE key = ?1", params![key])?;
         Ok(())
     }
 
     /// Every snooze, expired ones included: whether one still holds is the
     /// queue's call, against its own `now_ms`.
-    pub fn task_snoozes(&self) -> Result<Vec<TaskSnooze>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT task_id, reason, until_ms, created_at FROM task_snoozes ORDER BY task_id",
-        )?;
+    pub fn queue_snoozes(&self) -> Result<Vec<QueueSnooze>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, reason, until_ms, created_at FROM queue_snoozes ORDER BY key")?;
         let rows = stmt.query_map([], |r| {
-            Ok(TaskSnooze {
-                task_id: r.get(0)?,
+            Ok(QueueSnooze {
+                key: r.get(0)?,
                 reason: r.get(1)?,
                 until_ms: r.get(2)?,
                 created_at: r.get(3)?,
@@ -730,7 +734,13 @@ fn delete_tasks_where(
     pred: &str,
     args: &[&dyn rusqlite::ToSql],
 ) -> Result<usize> {
-    for links in ["task_issues", "task_prs", "task_snoozes"] {
+    tx.execute(
+        &format!(
+            "DELETE FROM queue_snoozes WHERE key IN (SELECT 'task:' || id FROM tasks WHERE {pred})"
+        ),
+        args,
+    )?;
+    for links in ["task_issues", "task_prs"] {
         tx.execute(
             &format!("DELETE FROM {links} WHERE task_id IN (SELECT id FROM tasks WHERE {pred})"),
             args,
