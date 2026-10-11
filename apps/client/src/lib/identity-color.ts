@@ -6,8 +6,6 @@ export type IdentityAccent = {
   badge: string;
   text: string;
   wash: string;
-  /** A list row that *belongs to* the identity: tinted, with a solid left edge. */
-  row: string;
 };
 
 export const IDENTITY_ACCENTS: IdentityAccent[] = [
@@ -15,37 +13,31 @@ export const IDENTITY_ACCENTS: IdentityAccent[] = [
     badge: "border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300",
     text: "text-blue-700 dark:text-blue-300",
     wash: "bg-blue-500/10 border-b-blue-500/40",
-    row: "bg-blue-500/10 border-l-blue-500",
   },
   {
     badge: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
     text: "text-emerald-700 dark:text-emerald-300",
     wash: "bg-emerald-500/10 border-b-emerald-500/40",
-    row: "bg-emerald-500/10 border-l-emerald-500",
   },
   {
     badge: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
     text: "text-amber-700 dark:text-amber-300",
     wash: "bg-amber-500/10 border-b-amber-500/40",
-    row: "bg-amber-500/10 border-l-amber-500",
   },
   {
     badge: "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300",
     text: "text-violet-700 dark:text-violet-300",
     wash: "bg-violet-500/10 border-b-violet-500/40",
-    row: "bg-violet-500/10 border-l-violet-500",
   },
   {
     badge: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
     text: "text-rose-700 dark:text-rose-300",
     wash: "bg-rose-500/10 border-b-rose-500/40",
-    row: "bg-rose-500/10 border-l-rose-500",
   },
   {
     badge: "border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300",
     text: "text-cyan-700 dark:text-cyan-300",
     wash: "bg-cyan-500/10 border-b-cyan-500/40",
-    row: "bg-cyan-500/10 border-l-cyan-500",
   },
 ];
 

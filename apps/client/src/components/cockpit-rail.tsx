@@ -14,7 +14,6 @@ import { Hint } from "@/components/hint";
 import { requestAgentboardNav, type RepoData } from "@/lib/agentboard";
 import { fmtAge } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { identityColor } from "@/lib/identity-color";
 import { LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
 import { repoAccentStyles, repoRowStyle } from "@/lib/repo-identity";
 import type { Lane, QueueItem, TaskQueue, WaitReason } from "@/lib/schemas/queue";
@@ -245,7 +244,6 @@ function Hero({
       style={look.rowStyle}
       className={cn(
         "m-2 rounded-lg border border-l-4 border-kumo-brand/40 p-3",
-        look.rowClass,
         selected && "ring-1 ring-kumo-brand",
       )}
     >
@@ -253,7 +251,7 @@ function Hero({
         Next up{item.reason && ` · ${HERO_KICKER[item.reason]}`}
       </div>
       <RepoName look={look} className="mt-1 text-lg" />
-      <div className="truncate font-semibold">{item.title}</div>
+      <div className="truncate text-base font-semibold text-kumo-default">{item.title}</div>
       <div className="truncate font-mono text-xs text-kumo-subtle">
         {[item.branch, item.sinceMs != null ? `waiting ${fmtAge(item.sinceMs, now)}` : null]
           .filter(Boolean)
@@ -311,33 +309,23 @@ export function SnoozeMenu({
 type RepoLook = {
   name: string;
   textStyle: CSSProperties | undefined;
-  textClass: string | undefined;
   rowStyle: CSSProperties | undefined;
-  rowClass: string | undefined;
 };
 
-/** Which repo a row is — the headspace you'd be switching into — in its chosen
- * color, else the hashed identity hue, worn by the whole row. */
+/** Which repo a row is — the headspace you'd be switching into — worn by the
+ * whole row in the repo's chosen color. An unthemed repo stays neutral: a
+ * color is never synthesized from the name. */
 function repoLook(repo: RepoData | undefined, fallback: string): RepoLook {
-  const name = repo?.name ?? fallback;
-  const textStyle = repoAccentStyles(repo?.meta).iconStyle;
-  const rowStyle = repoRowStyle(repo?.meta);
-  const hashed = identityColor(name);
   return {
-    name,
-    textStyle,
-    textClass: textStyle ? undefined : hashed.text,
-    rowStyle,
-    rowClass: rowStyle ? undefined : hashed.row,
+    name: repo?.name ?? fallback,
+    textStyle: repoAccentStyles(repo?.meta).iconStyle,
+    rowStyle: repoRowStyle(repo?.meta),
   };
 }
 
 function RepoName({ look, className }: { look: RepoLook; className?: string }) {
   return (
-    <div
-      style={look.textStyle}
-      className={cn("truncate leading-tight font-bold", look.textClass, className)}
-    >
+    <div style={look.textStyle} className={cn("truncate leading-tight font-bold", className)}>
       {look.name}
     </div>
   );
@@ -388,8 +376,7 @@ function QueueRow({
       data-focus-id={item.pr ? `${item.pr.repo}#${item.pr.number}` : undefined}
       style={look.rowStyle}
       className={cn(
-        "group flex items-center gap-2 border-t border-l-4 border-t-kumo-line px-3 py-2 text-sm",
-        look.rowClass,
+        "group flex items-center gap-2 border-t border-l-4 border-kumo-line px-3 py-2 text-sm",
         selected && "ring-2 ring-kumo-brand ring-inset",
         item.lane !== "on_you" && "text-kumo-subtle",
       )}
@@ -413,7 +400,9 @@ function QueueRow({
         ) : null}
         <span className="min-w-0 flex-1">
           <RepoName look={look} className="text-base" />
-          <span className="block truncate">{item.title}</span>
+          <span className="block truncate text-base font-medium text-kumo-default">
+            {item.title}
+          </span>
           <span className="block truncate font-mono text-xs text-kumo-subtle">
             {rowMeta(item, now)}
           </span>
