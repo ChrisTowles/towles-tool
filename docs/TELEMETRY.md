@@ -49,7 +49,8 @@ continuous input: no per-keystroke or mouse-move events, no PTY input, no
 note text (the log is plaintext, and per-record flushing assumes
 human-rate volume). OS-level signals with no other record — window focus/blur
 (`WindowEvent::Focused` in `lib.rs`), a native notification actually
-firing (`agentboard::notify_needs_you`) — get the same treatment, since
+firing (`agentboard::notify_needs_you`, one record per notification: a burst inside
+`tt_agentboard::coalesce::WINDOW_MS` is one `fired` with `edges`/`coalesced`) — get the same treatment, since
 they're exactly the kind of thing that's impossible to reconstruct after
 the fact otherwise (a real incident: `task_delete`'s ~1-minute worktree
 removal appeared to "steal focus" on completion, and there was no way to

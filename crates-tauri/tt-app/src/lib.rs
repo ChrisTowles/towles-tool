@@ -279,6 +279,7 @@ pub fn run() {
                 scan: scan.clone(),
                 needs_since: Mutex::new(tt_agentboard::bridge::NeedsSince::new()),
                 ever_live: Mutex::new(std::collections::HashSet::new()),
+                coalescer: Mutex::new(tt_agentboard::Coalescer::new()),
             });
 
             // Compiler-diagnostics hub for the Claude Code IDE bridge, consumed
