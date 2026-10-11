@@ -90,18 +90,26 @@ export const REPO_ICONS: Record<string, Icon> = {
 
 export const DEFAULT_REPO_ICON: Icon = GitBranchIcon;
 
-/** Mid-chroma for either surface, and clear of the reserved status hues — amber,
- * violet, sky-500 — so identity can't read as a signal. */
+/** The swatches a repo can be pinned to — and dealt from: Rust's
+ * `repo_meta::AUTO_PALETTE`, in the same order. Each clears the lightness,
+ * chroma and contrast gates on both surfaces, and none is a reserved status
+ * hue (amber, violet, sky), so identity can't read as a signal. */
 export const REPO_PALETTE: readonly string[] = [
-  "#e11d48",
-  "#ec4899",
-  "#d946ef",
   "#3b82f6",
-  "#0891b2",
-  "#14b8a6",
+  "#e11d48",
   "#059669",
+  "#d946ef",
+  "#0891b2",
   "#65a30d",
-  "#78716c",
+  "#ec4899",
+  "#0d9488",
+  "#ef4444",
+  "#2563eb",
+  "#16a34a",
+  "#c026d3",
+  "#f43f5e",
+  "#db2777",
+  "#dc2626",
 ];
 
 export function repoIcon(meta: RepoMeta | null | undefined): Icon {

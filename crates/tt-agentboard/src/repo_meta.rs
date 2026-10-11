@@ -64,34 +64,63 @@ impl Default for HexColor {
     }
 }
 
-/// The colors an unpinned repo is dealt, in dealing order: the client picker's
-/// `REPO_PALETTE`, ordered so neighbours contrast.
-pub const AUTO_PALETTE: [&str; 9] = [
-    "#3b82f6", "#e11d48", "#059669", "#d946ef", "#0891b2", "#65a30d", "#ec4899", "#14b8a6",
-    "#78716c",
+/// The colors a repo can be dealt or pinned from — the client picker's
+/// `REPO_PALETTE`. Each clears the lightness, chroma and contrast gates on both
+/// the light and dark surface, and none is a reserved status hue (amber,
+/// violet, sky). The order breaks ties: earlier is preferred.
+pub const AUTO_PALETTE: [&str; 15] = [
+    "#3b82f6", "#e11d48", "#059669", "#d946ef", "#0891b2", "#65a30d", "#ec4899", "#0d9488",
+    "#ef4444", "#2563eb", "#16a34a", "#c026d3", "#f43f5e", "#db2777", "#dc2626",
 ];
 
 /// Every repo's color, in order, the way a chart colors its series: a pinned
-/// repo keeps its pin, and the rest are dealt the first palette color no pin or
-/// earlier repo holds — the least-held one once the palette runs out.
+/// repo keeps its pin, and each other repo is dealt the palette color that
+/// stands furthest (OKLab) from every color already held — a pin, or one dealt
+/// before it — so a dealt color never lands beside a near-twin of a pin.
 pub fn resolve_colors(pins: &[Option<&HexColor>]) -> Vec<HexColor> {
-    let mut held: HashMap<&str, usize> = HashMap::new();
-    for pin in pins.iter().flatten() {
-        *held.entry(pin.as_str()).or_default() += 1;
-    }
+    let mut held: Vec<[f64; 3]> = pins.iter().flatten().map(|c| oklab(c.as_str())).collect();
     pins.iter()
         .map(|pin| match pin {
             Some(color) => (*color).clone(),
             None => {
+                let nearest_held = |c: &&str| {
+                    let lab = oklab(c);
+                    held.iter().map(|h| distance(&lab, h)).fold(f64::INFINITY, f64::min)
+                };
+                // `max_by` keeps the *last* maximum, so walk the palette backwards
+                // to let the earlier color win a tie.
                 let dealt = AUTO_PALETTE
                     .iter()
-                    .min_by_key(|c| held.get(**c).copied().unwrap_or(0))
+                    .rev()
+                    .max_by(|a, b| nearest_held(a).total_cmp(&nearest_held(b)))
                     .expect("the palette is not empty");
-                *held.entry(dealt).or_default() += 1;
+                held.push(oklab(dealt));
                 HexColor(dealt.to_string())
             }
         })
         .collect()
+}
+
+fn distance(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>().sqrt()
+}
+
+/// A canonical `#rrggbb` in OKLab, the space a perceived color difference is
+/// a straight-line distance in.
+fn oklab(hex: &str) -> [f64; 3] {
+    let channel = |i: usize| {
+        let c = f64::from(u8::from_str_radix(&hex[1 + 2 * i..3 + 2 * i], 16).unwrap_or(0)) / 255.0;
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    };
+    let (r, g, b) = (channel(0), channel(1), channel(2));
+    let l = (0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b).cbrt();
+    let m = (0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b).cbrt();
+    let s = (0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b).cbrt();
+    [
+        0.210_454_255_3 * l + 0.793_617_785 * m - 0.004_072_046_8 * s,
+        1.977_998_495_1 * l - 2.428_592_205 * m + 0.450_593_709_9 * s,
+        0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766 * s,
+    ]
 }
 
 /// Identity for one repo. Every field optional: an untouched repo has no entry
@@ -253,20 +282,35 @@ mod tests {
     }
 
     #[test]
-    fn unpinned_repos_are_dealt_colors_no_pin_holds() {
-        let rose = HexColor::parse("#e11d48").unwrap();
-        let custom = HexColor::parse("#123456").unwrap();
-        let got = resolve_colors(&[None, Some(&rose), None, Some(&custom), None]);
-        let got: Vec<&str> = got.iter().map(HexColor::as_str).collect();
-        assert_eq!(got, ["#3b82f6", "#e11d48", "#059669", "#123456", "#d946ef"]);
+    fn with_nothing_held_the_palette_leads() {
+        let got = resolve_colors(&[None]);
+        assert_eq!(got[0].as_str(), AUTO_PALETTE[0]);
     }
 
     #[test]
-    fn past_the_palette_the_least_held_color_is_dealt() {
-        let pins = vec![None; AUTO_PALETTE.len() + 2];
-        let got = resolve_colors(&pins);
-        assert_eq!(got[AUTO_PALETTE.len()].as_str(), AUTO_PALETTE[0]);
-        assert_eq!(got[AUTO_PALETTE.len() + 1].as_str(), AUTO_PALETTE[1]);
+    fn a_dealt_color_keeps_clear_of_every_pin() {
+        let rose = HexColor::parse("#e11d48").unwrap();
+        let got = resolve_colors(&[Some(&rose), None, None]);
+        assert_eq!(got[0], rose, "a pin is kept as is");
+        for dealt in &got[1..] {
+            let gap = distance(&oklab(dealt.as_str()), &oklab(rose.as_str()));
+            assert!(gap > 0.15, "{} sits too close to the pinned rose", dealt.as_str());
+        }
+        assert_ne!(got[1], got[2], "two dealt repos never share a color");
+    }
+
+    #[test]
+    fn dealing_is_stable_for_the_same_repos() {
+        let lime = HexColor::parse("#65a30d").unwrap();
+        let pins = [None, Some(&lime), None, None];
+        assert_eq!(resolve_colors(&pins), resolve_colors(&pins));
+    }
+
+    #[test]
+    fn the_palette_is_canonical_hex() {
+        for c in AUTO_PALETTE {
+            assert_eq!(HexColor::parse(c).unwrap().as_str(), c);
+        }
     }
 
     #[test]
