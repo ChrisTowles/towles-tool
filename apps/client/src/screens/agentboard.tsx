@@ -3,11 +3,11 @@ import { FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
 import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-working-context";
 import {
-  CockpitRail,
+  QueueRail,
   FOLDED_BY_DEFAULT,
   NextUpBanner,
   rerankQueueItem,
-} from "@/components/cockpit-rail";
+} from "@/components/queue-rail";
 import { RailIconStrip, RollupChip } from "@/components/agentboard-rail";
 import { RepoGroup } from "@/components/agentboard-repo-group";
 import { NativePane } from "@/components/native-pane";
@@ -17,25 +17,26 @@ import type { FilesOpenRequest } from "@/components/files-pane";
 import { Button } from "@cloudflare/kumo";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cleanupMissing, closeOnFalse } from "./cockpit/helpers";
-import { useCollapseState } from "./cockpit/use-collapse-state";
-import { useColumnDrag } from "./cockpit/use-column-drag";
-import { useAttention } from "./cockpit/use-attention";
-import { useRailIndex } from "./cockpit/use-rail-index";
-import { useTaskCreation } from "./cockpit/use-task-creation";
-import { useTauriEvent } from "./cockpit/use-tauri-event";
-import { useWindowLayout } from "./cockpit/use-window-layout";
-import { useWorktreeDelete } from "./cockpit/use-worktree-delete";
-import { PaneGrid } from "./cockpit/pane-grid";
-import { RailHeader } from "./cockpit/rail-header";
-import { defaultTaskRepo, RailNewTask } from "./cockpit/rail-new-task";
-import { WindowStrip } from "./cockpit/window-strip";
+import { cleanupMissing, closeOnFalse } from "./agentboard/helpers";
+import { useCollapseState } from "./agentboard/use-collapse-state";
+import { useColumnDrag } from "./agentboard/use-column-drag";
+import { useAttention } from "./agentboard/use-attention";
+import { useRailIndex } from "./agentboard/use-rail-index";
+import { useTaskCreation } from "./agentboard/use-task-creation";
+import { useTauriEvent } from "./agentboard/use-tauri-event";
+import { useWindowLayout } from "./agentboard/use-window-layout";
+import { useWorktreeDelete } from "./agentboard/use-worktree-delete";
+import { RailViewToggle } from "./agentboard/rail-view-toggle";
+import { PaneGrid } from "./agentboard/pane-grid";
+import { RailHeader } from "./agentboard/rail-header";
+import { defaultTaskRepo, RailNewTask } from "./agentboard/rail-new-task";
+import { WindowStrip } from "./agentboard/window-strip";
 import {
   DeleteWorktreeDialog,
   RemoveRepoDialog,
   SplitSessionDialog,
   StartClaudeDialog,
-} from "./cockpit/dialogs";
+} from "./agentboard/dialogs";
 import {
   claudeCommand,
   claudeResumeCommand,
@@ -99,6 +100,7 @@ import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
 import { useStoreSnapshot } from "@/lib/data";
 import {
   cycleQueue,
+  filterQueue,
   nextItem,
   nextUpArrival,
   onYouHead,
@@ -113,7 +115,7 @@ import { focusTargetStore, useFocusTarget } from "@/lib/focus-target";
 import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { railMove, railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
-import { isWorkspaceScreen, type ScreenId, type WorkspaceScreen } from "@/lib/screens";
+import type { ScreenId } from "@/lib/screens";
 import { railRowMotion } from "@/lib/rail-motion";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -124,7 +126,6 @@ import {
   useShowUnmanagedWorktrees,
 } from "@/lib/rail-prefs";
 import { useWorkspace } from "@/lib/workspace";
-import { setWorkspaceScreen } from "@/lib/workspace-mode";
 import { repoParentDirs } from "@/lib/new-repo";
 import { untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
@@ -162,27 +163,21 @@ function terminalFocused(): boolean {
   );
 }
 
-const LAST_TASK_REPO_KEY = "tt-cockpit-last-task-repo";
+const LAST_TASK_REPO_KEY = "tt-agentboard-last-task-repo";
 
-/** Cockpit and Agent Board — one instance, two views of the same checkouts.
- * Cockpit's rail is them as a queue (Next up, then the lanes), worked one at a
- * time; Agent Board's is every repo → checkout → session, walked by place. Either way,
+/** Agent Board — one screen, two rails over the same checkouts. The queue rail
+ * is their tasks (Next up, then the lanes), worked one at a time; the tree rail
+ * is every repo → checkout → session, walked by place. Either way,
  * picking a row puts its terminals and panes beside it, and the panes, shells
  * and selection are the same ones. Agent status is reported, never re-rendered. */
-export function CockpitScreen() {
+export function AgentBoardScreen() {
   const state = useAgentboardState();
   const { snapshot } = useStoreSnapshot();
-  const { openTab, activeTab, openSettingsTab } = useWorkspace();
-  // Which rail is up: the last of the two screens this instance was shown as.
-  const [mode, setMode] = useState<WorkspaceScreen>(
-    isWorkspaceScreen(activeTab) ? activeTab : "cockpit",
-  );
-  if (isWorkspaceScreen(activeTab) && activeTab !== mode) setMode(activeTab);
-  useEffect(() => setWorkspaceScreen(mode), [mode]);
-  const tree = mode === "agentboard";
-  const onScreen = isWorkspaceScreen(activeTab);
+  const { openTab, activeTab, openSettingsTab, railView, setRailView } = useWorkspace();
+  const tree = railView === "tree";
+  const onScreen = activeTab === "agentboard";
   // Deep-link focus: a "needs you" popover row scrolls its PR or repo into view here.
-  const focusRef = useFocusTarget<HTMLDivElement>(mode);
+  const focusRef = useFocusTarget<HTMLDivElement>("agentboard");
   const now = useNow();
   const repos = state.repos;
   const repoByFolder = useMemo(
@@ -201,6 +196,13 @@ export function CockpitScreen() {
   // disappears can hand the cursor to whatever now stands for it.
   const [railCursor, setRailCursor] = useState<RailNode | null>(null);
   const { queue, live: queueLive } = useTaskQueue();
+  // Never persisted, like the tree's search: a queue that opens narrowed to
+  // yesterday's repos is a queue with work missing and no memory of why.
+  const [repoFilter, setRepoFilter] = useState<ReadonlySet<string>>(() => new Set());
+  const shownQueue = useMemo(
+    () => filterQueue(queue, repoFilter, (dir) => repoByFolder.get(dir)?.key),
+    [queue, repoFilter, repoByFolder],
+  );
   const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(() => new Set(FOLDED_BY_DEFAULT));
   // Next up changed while you were busy: the key it was announced for.
   const [announced, setAnnounced] = useState<number | null>(null);
@@ -226,7 +228,7 @@ export function CockpitScreen() {
   const expectedKills = useRef<Set<string>>(new Set());
   const { collapsed, toggleCollapsed, applyCollapse, railCollapsed, toggleRail } = useCollapseState(
     state,
-    mode,
+    "agentboard",
   );
   // Filtered-out folders demote to a per-repo "N idle" stub, never hidden.
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
@@ -248,13 +250,13 @@ export function CockpitScreen() {
     idleRevealed,
     setIdleRevealed,
     "agentboard.idle_peek",
-    mode,
+    "agentboard",
   );
   const toggleUnmanagedRevealed = togglePeek(
     unmanagedRevealed,
     setUnmanagedRevealed,
     "agentboard.unmanaged_peek",
-    mode,
+    "agentboard",
   );
   const [renaming, setRenaming] = useState<string | null>(null);
   // Live PTY titles (Claude emits `✳ <title>`), preferred over the backend label.
@@ -305,7 +307,7 @@ export function CockpitScreen() {
   // computed from, so what you press is what you read. The targets are kept
   // even while nothing is held — the handlers address them without a repaint.
   const hotkeysHeld = useModifierHeld("ab-jump-session-1");
-  const rows = useMemo(() => railRows(queue, foldedLanes), [queue, foldedLanes]);
+  const rows = useMemo(() => railRows(shownQueue, foldedLanes), [shownQueue, foldedLanes]);
   const railVis = useMemo(
     () => ({
       repos: shownRepos,
@@ -323,11 +325,11 @@ export function CockpitScreen() {
   const cursorKey = cursorNode?.key ?? null;
   const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
   // Every row owns a checkout, so the ring follows the one on screen, however it got there.
-  const ringItem = rowForFolder(queue, activeFolderDir);
+  const ringItem = rowForFolder(shownQueue, activeFolderDir);
   const ringId = ringItem?.taskId ?? null;
-  const head = nextItem(queue);
+  const head = nextItem(shownQueue);
   // The collapsed strip has no rows to badge, so it offers no numbers. Keyed by
-  // session on Agent Board, by task on Cockpit.
+  // session on the tree, by task on the queue.
   const showHotkeys = hotkeysHeld && !railCollapsed;
   const treeHotkeys = useMemo(
     () =>
@@ -352,9 +354,9 @@ export function CockpitScreen() {
   });
   // Same, for the rail: the mount-only nav-request handler's closure would only
   // ever see the empty first-render snapshot.
-  const railRef = useRef({ repos, folderNameByDir, queue, railTree });
+  const railRef = useRef({ repos, folderNameByDir, queue, shownQueue, railTree });
   useEffect(() => {
-    railRef.current = { repos, folderNameByDir, queue, railTree };
+    railRef.current = { repos, folderNameByDir, queue, shownQueue, railTree };
   });
 
   // One-shot "prompt cache about to expire" toast per session per cache generation.
@@ -378,7 +380,7 @@ export function CockpitScreen() {
   const parentDirs = useMemo(() => repoParentDirs(state.repos.map((r) => r.dir)), [state.repos]);
 
   const openRepoManager = () => {
-    uiAction("repo.manage_opened", mode);
+    uiAction("repo.manage_opened", "agentboard");
     openSettingsTab({ tab: "agentboard" });
   };
 
@@ -413,7 +415,7 @@ export function CockpitScreen() {
 
   // Same, for the folder's Chrome pane — a real browser whose sign-ins stick.
   function openBrowser(dir: string) {
-    uiAction("agentboard.open_browser_pane", mode);
+    uiAction("agentboard.open_browser_pane", "agentboard");
     setActiveFolderDir(dir);
     addPaneToActive(dir, browserPaneId(dir));
     setFocusedPaneId(browserPaneId(dir));
@@ -495,7 +497,7 @@ export function CockpitScreen() {
 
   // Same, for the native pane — a window rectangle rendered by Bevy, not DOM.
   function openJarvis(dir: string) {
-    uiAction("agentboard.open_jarvis_pane", mode);
+    uiAction("agentboard.open_jarvis_pane", "agentboard");
     placeViewPane(dir, jarvisPaneId(dir));
   }
 
@@ -519,7 +521,7 @@ export function CockpitScreen() {
   // because it is what expands a `~`. Only a link that resolves to nothing at
   // all falls through to the external editor.
   async function openTerminalPath(dir: string, termId: string, path: string, line: number | null) {
-    uiAction("terminal.link_open_file", mode);
+    uiAction("terminal.link_open_file", "agentboard");
     const resolved = (
       await invoke<string | null>("term_resolve_path", { path, cwd: dir, termId })
     ).unwrapOr(null);
@@ -710,12 +712,12 @@ export function CockpitScreen() {
   }
 
   function pickQueueItem(item: QueueItem) {
-    uiAction("queue.open", "cockpit", item.reason ?? item.lane);
+    uiAction("queue.open", "agentboard", item.reason ?? item.lane);
     selectQueueItem(item);
   }
 
   function openNextUp() {
-    const target = nextItem(railRef.current.queue);
+    const target = nextItem(railRef.current.shownQueue);
     if (target) selectQueueItem(target);
     else toast.info("Queue's empty — nothing needs you.");
   }
@@ -743,7 +745,7 @@ export function CockpitScreen() {
   }
 
   function toggleLane(lane: Lane) {
-    uiAction("queue.lane_toggle", "cockpit", lane);
+    uiAction("queue.lane_toggle", "agentboard", lane);
     setFoldedLanes((cur) => {
       const next = new Set(cur);
       if (!next.delete(lane)) next.add(lane);
@@ -764,7 +766,7 @@ export function CockpitScreen() {
       selectedOnYou: ringItem?.lane === "on_you",
     });
     lastOnYouId.current = onYouId;
-    // Agent Board is walked by place: the queue's pull is Cockpit's business.
+    // The tree is walked by place: the queue's pull is the queue's business.
     if (!onYou || tree) return;
     if (verdict === "open") selectQueueItem(onYou);
     else if (verdict === "announce") setAnnounced(onYouId);
@@ -775,10 +777,16 @@ export function CockpitScreen() {
     () =>
       focusTargetStore.subscribe(() => {
         const t = focusTargetStore.get();
-        if (t?.screen !== "cockpit" || t.kind !== "pr") return;
+        if (t?.screen !== "agentboard") return;
+        // A PR is a queue row; a repo is a tree row.
+        if (t.kind === "repo") return setRailView("tree");
+        if (t.kind !== "pr") return;
+        setRailView("queue");
         const row = railRef.current.queue.items.find(
           (i) => i.pr && `${i.pr.repo}#${i.pr.number}` === t.id,
         );
+        // A filter that hides the row gives way to it.
+        if (row && !railRef.current.shownQueue.items.includes(row)) setRepoFilter(new Set());
         if (row)
           setFoldedLanes((cur) => {
             if (!cur.has(row.lane)) return cur;
@@ -787,7 +795,7 @@ export function CockpitScreen() {
             return next;
           });
       }),
-    [],
+    [setRailView],
   );
   const announcedItem =
     !tree && announced !== null && announced === onYouId && announced !== ringId
@@ -941,8 +949,8 @@ export function CockpitScreen() {
   // so it would read 0:00 throughout. Bounded by the install itself.
   useNowInterval(taskCreation.settingUpDirs.size > 0 ? 1000 : undefined);
 
-  // The rail's `+` form: one repo picker over the existing inline form, so it
-  // works whatever row is selected. Opening again closes it.
+  // The rail's new-task form, for one repo: a queue chip or a tree `+` picks it,
+  // the shortcut takes the default. Opening again closes it.
   const [railTaskRepoKey, setRailTaskRepoKey] = useState<string | null>(null);
 
   function openRailNewTask(repoKey?: string) {
@@ -965,7 +973,7 @@ export function CockpitScreen() {
     const branch = folderRecreateBranch(folder);
     const task = folderTask(folder);
     if (!branch || !task) return;
-    uiAction("agentboard.recreate_worktree", mode);
+    uiAction("agentboard.recreate_worktree", "agentboard");
     void taskCreation.createTask(
       { name: repo.name, dir: folder.repoRoot, key: repo.key, originUrl: repo.originUrl },
       {
@@ -1154,7 +1162,7 @@ export function CockpitScreen() {
     // Closed here rather than in `untrackRepo` because `closeSession` also clears
     // this screen's local pane state; the seam is handed an empty id list.
     for (const id of target.sessionIds) await closeSession(id);
-    for (const dir of target.dirs) await untrackRepo(dir, target.label, [], mode);
+    for (const dir of target.dirs) await untrackRepo(dir, target.label, [], "agentboard");
   }
 
   function requestRemoveRepo(dirs: string[], label: string) {
@@ -1287,6 +1295,7 @@ export function CockpitScreen() {
           if (activeFolderDir) openFiles(activeFolderDir);
         },
         "ab-toggle-rail": toggleRail,
+        "ab-rail-view": () => setRailView(tree ? "queue" : "tree"),
         "ab-jump-next": () => jumpToNeedsYou("next"),
         "ab-jump-prev": () => jumpToNeedsYou("prev"),
         "ab-jump-idle": jumpToNotBusy,
@@ -1303,7 +1312,7 @@ export function CockpitScreen() {
         "ab-focus-left": () => focusByArrow("left"),
         "ab-focus-right": () => focusByArrow("right"),
         // Each rail's own chords, and only while it's up: Alt+Shift+↑ is the
-        // queue's rank-top on Cockpit and collapse-all on Agent Board.
+        // queue's rank-top and the tree's collapse-all.
         ...(tree
           ? {
               "ab-collapse-all": () => collapseWholeRail(true),
@@ -1319,13 +1328,13 @@ export function CockpitScreen() {
               // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the
               // first matching handler wins.
               "queue-rank-top": () => {
-                if (ringItem) void rerankQueueItem(queue.items, ringItem, "top");
+                if (ringItem) void rerankQueueItem(shownQueue.items, ringItem, "top");
               },
               "queue-rank-up": () => {
-                if (ringItem) void rerankQueueItem(queue.items, ringItem, "up");
+                if (ringItem) void rerankQueueItem(shownQueue.items, ringItem, "up");
               },
               "queue-rank-down": () => {
-                if (ringItem) void rerankQueueItem(queue.items, ringItem, "down");
+                if (ringItem) void rerankQueueItem(shownQueue.items, ringItem, "down");
               },
             }),
         "ab-focus-terminal": focusActiveTerminal,
@@ -1339,7 +1348,7 @@ export function CockpitScreen() {
         tree,
         activeFolderDir,
         collapsed,
-        queue,
+        shownQueue,
         rows,
         railTree,
         cursorKey,
@@ -1367,20 +1376,16 @@ export function CockpitScreen() {
         worktreeDelete.deleteBusy,
       ],
     ),
-    mode,
+    "agentboard",
     onScreen,
   );
 
   // Both rails open the new-task form under their header; the header and the
   // tree are Agent Board's alone.
-  const newTaskForm = railTaskRepoKey !== null && (
+  const railTaskRepo = repos.find((r) => r.key === railTaskRepoKey);
+  const newTaskForm = railTaskRepo && (
     <RailNewTask
-      repos={repos}
-      repoKey={railTaskRepoKey}
-      onRepoChange={(key) => {
-        uiAction("cockpit.new_task_repo", mode);
-        setRailTaskRepoKey(key);
-      }}
+      repo={railTaskRepo}
       onCancel={() => setRailTaskRepoKey(null)}
       onSubmit={(repo, input) => {
         localStorage.setItem(LAST_TASK_REPO_KEY, repo.key);
@@ -1552,8 +1557,8 @@ export function CockpitScreen() {
           />
         )}
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-          {/* Rail: rollup tally, then the queue (Cockpit) or the Repo → Folder →
-              Session tree (Agent Board). Only its contents swap: the panel
+          {/* Rail: the Queue/Tree switch, rollup tally, then the task queue or the
+              Repo → Folder → Session tree. Only its contents swap: the panel
               keeps its identity, so the panes beside it never remount. */}
           {!railCollapsed && (
             <>
@@ -1573,6 +1578,7 @@ export function CockpitScreen() {
                 groupResizeBehavior="preserve-pixel-size"
               >
                 <div className="flex h-full flex-col border-r">
+                  <RailViewToggle view={railView} onChange={setRailView} />
                   <RollupChip
                     repos={railRepos}
                     compactPct={state.compactRecommendPercent}
@@ -1589,8 +1595,11 @@ export function CockpitScreen() {
                           {checkoutTree}
                         </>
                       ) : (
-                        <CockpitRail
-                          queue={queue}
+                        <QueueRail
+                          queue={shownQueue}
+                          allItems={queue.items}
+                          repoFilter={repoFilter}
+                          onRepoFilterChange={setRepoFilter}
                           repoByFolder={repoByFolder}
                           live={queueLive}
                           now={now}
@@ -1603,12 +1612,19 @@ export function CockpitScreen() {
                           onToggleLane={toggleLane}
                           onSelect={pickQueueItem}
                           onOpenHead={() => {
-                            mouseAction("queue-next", "cockpit");
+                            mouseAction("queue-next", "agentboard");
                             openNextUp();
                           }}
-                          onNewTask={() => {
-                            mouseAction("ab-new-task", mode);
-                            openRailNewTask();
+                          repos={repos}
+                          newTaskRepoKey={railTaskRepoKey}
+                          onPickRepo={(repo) => {
+                            const closing = railTaskRepoKey === repo.key;
+                            uiAction(
+                              "agentboard.new_task_chip",
+                              "agentboard",
+                              closing ? "close" : "open",
+                            );
+                            setRailTaskRepoKey(closing ? null : repo.key);
                           }}
                           newTaskForm={newTaskForm}
                         />
@@ -1661,11 +1677,11 @@ export function CockpitScreen() {
                 <NextUpBanner
                   item={announcedItem}
                   onOpen={() => {
-                    mouseAction("queue-next", "cockpit");
+                    mouseAction("queue-next", "agentboard");
                     selectQueueItem(announcedItem);
                   }}
                   onDismiss={() => {
-                    uiAction("queue.announce_dismiss", "cockpit");
+                    uiAction("queue.announce_dismiss", "agentboard");
                     setAnnounced(null);
                   }}
                 />

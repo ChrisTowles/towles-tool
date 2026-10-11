@@ -1,4 +1,4 @@
-# The Cockpit and Agent Board rails, and how things animate
+# The Agent Board rails, and how things animate
 
 Two `apps/client` areas whose rules only matter once you are inside them — split
 out of [`apps/client/CLAUDE.md`](../apps/client/CLAUDE.md), which every session
@@ -6,13 +6,14 @@ pays for, and which keeps the conventions that apply everywhere.
 
 ## Two rails over one workspace
 
-`screens/cockpit.tsx` is mounted once and shown as either screen
-(`ScreenMeta.host`); only the rail's contents swap, so the panes never remount.
-On Cockpit, `components/cockpit-rail.tsx` is the rail: Next up, then the
-queue's lanes. Every row is a board task that owns one of Agent Board's
-checkouts; a checkout no task owns is on Agent Board only, until its "adopt"
-chip makes it a task. On Agent Board the checkout tree below *is* the rail, and
-`lib/rail-nodes.ts` is the one walk its cursor, jump digits and fold chords read.
+`screens/agentboard.tsx` is one screen with two rails, picked by the Queue/Tree
+tabs atop it (`railView` in `useWorkspace`, persisted; `Mod+Shift+T` flips it);
+only the rail's contents swap, so the panes never remount. On Queue,
+`components/queue-rail.tsx` is the rail: Next up, then the queue's lanes. Every
+row is a board task that owns one of the board's checkouts; a checkout no task
+owns is on the tree only, until its "adopt" chip makes it a task. On Tree the
+checkout tree below *is* the rail, and `lib/rail-nodes.ts` is the one walk its
+cursor, jump digits and fold chords read.
 
 ## The checkout tree is six files, split by what a row *is*
 

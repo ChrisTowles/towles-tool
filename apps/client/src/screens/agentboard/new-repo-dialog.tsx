@@ -5,7 +5,6 @@ import { NotInTauri } from "@/lib/errors";
 import { invoke } from "@/lib/tauri";
 import { cloneDirName } from "@/lib/new-repo";
 import { uiAction } from "@/lib/ui-action";
-import { workspaceScreen } from "@/lib/workspace-mode";
 
 export type NewRepoMode = "create" | "clone";
 
@@ -86,7 +85,7 @@ function NewRepoForm({
       }
       return;
     }
-    uiAction(clone ? "repo.cloned" : "repo.created", workspaceScreen());
+    uiAction(clone ? "repo.cloned" : "repo.created", "agentboard");
     toast.success(`${clone ? "Cloned" : "Created"} ${result.value} — it's on the rail`);
     onClose();
   };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COLD_START_TAB, loadWorkspaceTabs } from "@/lib/workspace-persistence";
+import { COLD_START_TAB, loadRailView, loadWorkspaceTabs } from "@/lib/workspace-persistence";
 
 describe("loadWorkspaceTabs", () => {
   it("cold start (nothing stored) falls back to the cold-start tab", () => {
@@ -10,12 +10,12 @@ describe("loadWorkspaceTabs", () => {
   });
 
   it("restores a valid stored active tab and open-tabs list", () => {
-    const result = loadWorkspaceTabs("board", JSON.stringify(["cockpit", "board"]));
-    expect(result).toEqual({ openTabs: ["cockpit", "board"], activeTab: "board" });
+    const result = loadWorkspaceTabs("board", JSON.stringify(["agentboard", "board"]));
+    expect(result).toEqual({ openTabs: ["agentboard", "board"], activeTab: "board" });
   });
 
   it("falls back to the cold-start tab for an unknown/removed active screen id", () => {
-    const result = loadWorkspaceTabs("some-deleted-screen", JSON.stringify(["cockpit"]));
+    const result = loadWorkspaceTabs("some-deleted-screen", JSON.stringify(["agentboard"]));
     expect(result.activeTab).toBe(COLD_START_TAB);
   });
 
@@ -25,16 +25,16 @@ describe("loadWorkspaceTabs", () => {
   });
 
   it("ensures the active tab is always present in open tabs", () => {
-    // A closed cockpit tab shouldn't be resurrected, but the active tab must
+    // A closed tab shouldn't be resurrected, but the active tab must
     // still be mounted.
     const result = loadWorkspaceTabs("telemetry", JSON.stringify(["board"]));
     expect(result.openTabs).toContain("telemetry");
-    expect(result.openTabs).not.toContain("cockpit");
+    expect(result.openTabs).not.toContain("agentboard");
   });
 
   it("does not resurrect a closed tab (only stored ids are restored)", () => {
     const result = loadWorkspaceTabs("board", JSON.stringify(["board", "telemetry"]));
-    expect(result.openTabs).not.toContain("cockpit");
+    expect(result.openTabs).not.toContain("agentboard");
   });
 
   it("degrades to the cold-start tab on malformed JSON", () => {
@@ -52,8 +52,11 @@ describe("loadWorkspaceTabs", () => {
   });
 
   it("de-duplicates repeated ids in stored order", () => {
-    const result = loadWorkspaceTabs("cockpit", JSON.stringify(["cockpit", "board", "cockpit"]));
-    expect(result.openTabs).toEqual(["cockpit", "board"]);
+    const result = loadWorkspaceTabs(
+      "agentboard",
+      JSON.stringify(["agentboard", "board", "agentboard"]),
+    );
+    expect(result.openTabs).toEqual(["agentboard", "board"]);
   });
 
   it("empty stored array falls back to the cold-start seed but keeps a valid active tab", () => {
@@ -61,5 +64,13 @@ describe("loadWorkspaceTabs", () => {
     // Empty → cold-start seed, then active tab appended.
     expect(result.openTabs).toEqual([COLD_START_TAB, "board"]);
     expect(result.activeTab).toBe("board");
+  });
+});
+
+describe("loadRailView", () => {
+  it("opens on the queue unless the tree was picked last", () => {
+    expect(loadRailView(null)).toBe("queue");
+    expect(loadRailView("tree")).toBe("tree");
+    expect(loadRailView("cockpit")).toBe("queue");
   });
 });

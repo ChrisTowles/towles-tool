@@ -4,7 +4,7 @@ import { fmtAge, type CollectRun, type IssueItem } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import { cn } from "@/lib/utils";
 
-/** Shared atoms for screens rendering store-snapshot data (Cockpit, Pull
+/** Shared atoms for screens rendering store-snapshot data (Agent Board, Pull
  * requests, Config) — one home so the row anatomy can't drift between them. */
 
 export function Panel({

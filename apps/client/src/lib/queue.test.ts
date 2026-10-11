@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cycleQueue,
+  filterQueue,
   nextItem,
   nextUpArrival,
   onYouHead,
@@ -100,6 +101,24 @@ describe("rail rows", () => {
     expect(stepRow(rows, 3, 1)?.title).toBe("t3");
     expect(stepRow(rows, 1, -1)?.title).toBe("t1");
     expect(stepRow([], null, 1)).toBeUndefined();
+  });
+});
+
+const REPO_OF: Record<string, string> = { "/w1": "a", "/w2": "b", "/w3": "b" };
+const repoOf = (dir: string): string | undefined => REPO_OF[dir];
+
+describe("filterQueue", () => {
+  const q = queue([item(1), item(2, { lane: "running" }), item(3)]);
+  it("shows every repo while none is picked", () => {
+    expect(filterQueue(q, new Set(), repoOf)).toBe(q);
+  });
+  it("keeps the picked repos' rows and re-picks Next up among them", () => {
+    const b = filterQueue(q, new Set(["b"]), repoOf);
+    expect(b.items.map((i) => i.taskId)).toEqual([2, 3]);
+    expect(b.next).toBe(3);
+  });
+  it("has no Next up when nothing picked waits on you", () => {
+    expect(filterQueue(q, new Set(["c"]), repoOf)).toEqual({ items: [], next: null });
   });
 });
 

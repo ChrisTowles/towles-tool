@@ -38,8 +38,8 @@ export function NextUpChip() {
     <button
       className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint"
       onClick={() => {
-        uiAction("header.open_cockpit", activeTab, "next_up");
-        openTab("cockpit");
+        uiAction("header.open_agentboard", activeTab, "next_up");
+        openTab("agentboard");
       }}
       title={head.title}
     >

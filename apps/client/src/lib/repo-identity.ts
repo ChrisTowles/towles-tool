@@ -173,6 +173,21 @@ export function repoRowStyle(
   };
 }
 
+/** A button that stands for one repo: its color as text and border, washed
+ * through; `active` fills it, for the one whose form is open. */
+export function repoChipStyle(
+  repo: RepoIdentity | undefined,
+  active: boolean,
+): CSSProperties | undefined {
+  const hex = repo ? normalizeHex(repo.color) : null;
+  if (!hex) return undefined;
+  return {
+    color: active ? "white" : hex,
+    backgroundColor: active ? hex : `color-mix(in srgb, ${hex} 14%, transparent)`,
+    borderColor: `color-mix(in srgb, ${hex} ${active ? 100 : 45}%, transparent)`,
+  };
+}
+
 /** A surface that *is* one repo wears the color whole, at the identity wash's
  * alphas. `accent` can't withhold the fill here the way it does on a row. */
 export function repoBandStyle(

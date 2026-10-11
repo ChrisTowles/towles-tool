@@ -473,7 +473,7 @@ export function collectorsSections(
           node: (
             <FieldRow
               label="Default-branch runs"
-              description="The latest Actions run per workflow on each repo's default branch, for the Cockpit's CI chips. Rides the pull-request cadence and toggle."
+              description="The latest Actions run per workflow on each repo's default branch, for the CI chips. Rides the pull-request cadence and toggle."
             >
               <CollectorFreshness run={run("ci")} now={now} />
             </FieldRow>

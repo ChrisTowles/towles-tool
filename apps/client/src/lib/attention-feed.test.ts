@@ -147,7 +147,7 @@ describe("buildAttentionFeed", () => {
     const owned = feed.find((i) => i.id === "pr-ci:octo/widgets#42");
     const loose = feed.find((i) => i.id === "pr-ci:octo/widgets#43");
     const dmItem = feed.find((i) => i.kind === "dm");
-    expect(owned?.target).toEqual({ screen: "cockpit", kind: "pr", id: "octo/widgets#42" });
+    expect(owned?.target).toEqual({ screen: "agentboard", kind: "pr", id: "octo/widgets#42" });
     expect(loose?.url).toBe("https://gh/43");
     expect(loose?.target).toBeUndefined();
     expect(dmItem?.url).toBe("https://slack.example/dm");

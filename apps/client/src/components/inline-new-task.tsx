@@ -39,6 +39,7 @@ import { ReviewPrPicker } from "@/components/review-pr-picker";
 import { invoke } from "@/lib/tauri";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
+import { baseChips, parseRecentBases, rememberBase } from "@/lib/recent-bases";
 import { cn } from "@/lib/utils";
 import { slugify } from "@/lib/slug";
 
@@ -138,6 +139,10 @@ function issueScopeKey(repoKey: string): string {
   return `tt-new-task-issue-mine:${repoKey}`;
 }
 
+function recentBasesKey(repoKey: string): string {
+  return `tt-new-task-recent-bases:${repoKey}`;
+}
+
 function loadIssueScopeMine(repoKey: string): boolean {
   return localStorage.getItem(issueScopeKey(repoKey)) === "true";
 }
@@ -211,7 +216,7 @@ export function goalToTitle(goal: string): string {
   return lastSpace > 0 ? cut.slice(0, lastSpace) : cut;
 }
 
-/** `feat/`, not tt-git's `feature/` (Cockpit's convention), so a picked issue
+/** `feat/`, not tt-git's `feature/` (this app's convention), so a picked issue
  * and a typed goal produce the same shape. */
 export function branchFromIssue(number: number, title: string): string {
   const slug = slugify(title.slice(0, BRANCH_SLUG_SOURCE_CHARS));
@@ -281,6 +286,10 @@ export function InlineNewTask({
   const reviewing = mode === "review";
 
   const sortedBranches = [...branches].toSorted((a, b) => a.name.localeCompare(b.name));
+  const [recentBases] = useState(() =>
+    parseRecentBases(localStorage.getItem(recentBasesKey(repo.key))),
+  );
+  const quickBases = baseChips(branches, recentBases);
 
   // The selected branch's honest label (`origin/main` when that's what creation
   // will branch from), falling back to the raw value until the list loads.
@@ -367,7 +376,7 @@ export function InlineNewTask({
     setMoreOpen(false);
     setSuggesting(improver.id);
     setNotice(null);
-    uiAction("task.improve_prompt", "cockpit", improver.id);
+    uiAction("task.improve_prompt", "agentboard", improver.id);
     const suggestion = await invoke<TaskSuggestion>("task_suggest", {
       dir: repo.dir,
       goal,
@@ -531,7 +540,7 @@ export function InlineNewTask({
 
   function switchMode(next: "new" | "review") {
     if (next === mode) return;
-    uiAction("task.form_mode", "cockpit", next);
+    uiAction("task.form_mode", "agentboard", next);
     setMode(next);
     setNotice(null);
   }
@@ -543,7 +552,7 @@ export function InlineNewTask({
     }
     // Already shown under the picker.
     if (prCheck.error) return;
-    uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "cockpit");
+    uiAction(launchClaude ? "task.review_pr" : "task.review_pr_no_claude", "agentboard");
     onSubmit({
       goal: goal.trim(),
       title: goalToTitle(goal || reviewGoal(prCheck.pr)).replace(/[\s:—–-]+$/, ""),
@@ -587,7 +596,12 @@ export function InlineNewTask({
       : launchClaude
         ? "task.start"
         : "task.start_no_claude";
-    uiAction(action, "cockpit");
+    uiAction(action, "agentboard");
+    if (worktree)
+      localStorage.setItem(
+        recentBasesKey(repo.key),
+        JSON.stringify(rememberBase(recentBases, base)),
+      );
     onSubmit({
       goal: goal.trim(),
       title: title.trim() || branch,
@@ -672,7 +686,7 @@ export function InlineNewTask({
         onKeyDown={(e) => {
           if (matchesShortcut("ab-start-task", e.nativeEvent)) {
             e.preventDefault();
-            uiAction("shortcut.ab-start-task", "cockpit");
+            uiAction("shortcut.ab-start-task", "agentboard");
             submit();
           }
           if (e.key === "Escape") cancel();
@@ -718,7 +732,7 @@ export function InlineNewTask({
                 title={`${img.name} — attached to the new task's first prompt. Click to zoom.`}
                 onClick={() => {
                   setZoomedImageId(img.id);
-                  uiAction("task.image_zoom", "cockpit");
+                  uiAction("task.image_zoom", "agentboard");
                 }}
                 className="block cursor-zoom-in rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
@@ -892,6 +906,29 @@ export function InlineNewTask({
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[10.5px] text-kumo-subtle">base</span>
+            {quickBases.length > 1 && (
+              <div role="group" aria-label="Recent bases" className="flex flex-wrap gap-1">
+                {quickBases.map((b) => (
+                  <button
+                    key={b.name}
+                    type="button"
+                    aria-pressed={b.name === base}
+                    onClick={() => {
+                      uiAction("task.base_quick_pick", "agentboard");
+                      setBase(b.name);
+                    }}
+                    className={cn(
+                      "rounded-md border px-2 py-0.5 font-mono text-xs",
+                      b.name === base
+                        ? "border-kumo-brand bg-kumo-brand/15 text-kumo-default"
+                        : "border-kumo-hairline text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default",
+                    )}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <Combobox
               items={sortedBranches}
               value={branches.find((b) => b.name === base) ?? null}

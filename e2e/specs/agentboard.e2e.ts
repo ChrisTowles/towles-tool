@@ -1,15 +1,16 @@
 /**
  * Agent Board in the real WebKitGTK shell: the repo → checkout → session tree
- * as the rail, its own jump digits, and — the reason it shares Cockpit's
- * instance — a terminal opened here is the very same pane on Cockpit. Seeds its
+ * as the rail, its own jump digits, and — the reason the two rails share one
+ * screen — a terminal opened here is the very same pane on the queue. Seeds its
  * own session, since `TT_STATE_SCOPE` starts the rail empty.
  */
 
 /// <reference types="@wdio/globals/types" />
 /// <reference types="@wdio/mocha-framework" />
 
+import { Key } from "webdriverio";
 import { expectObject } from "../ipc.js";
-import { bootReady, gotoScreen, waitForAnyDisplayed } from "./nav.js";
+import { bootReady, gotoRail, waitForAnyDisplayed } from "./nav.js";
 
 const BADGE = '[aria-label^="jump key"]';
 
@@ -21,8 +22,14 @@ type AgentboardState = { repos: { folders: { sessions: { id: string }[] }[] }[] 
 
 async function seedRailSession(): Promise<void> {
   const repoRoot = process.cwd();
-  await browser.tauri.execute(({ core }, dir) => core.invoke("ab_add_repo", { path: dir }), repoRoot);
-  await browser.tauri.execute(({ core }, dir) => core.invoke("ab_ensure_session", { dir }), repoRoot);
+  await browser.tauri.execute(
+    ({ core }, dir) => core.invoke("ab_add_repo", { path: dir }),
+    repoRoot,
+  );
+  await browser.tauri.execute(
+    ({ core }, dir) => core.invoke("ab_ensure_session", { dir }),
+    repoRoot,
+  );
 }
 
 async function railSessionIds(): Promise<string[]> {
@@ -95,16 +102,33 @@ async function tagVisibleTerminal(): Promise<boolean> {
 describe("Agent Board", () => {
   before(bootReady);
 
-  it("shows the checkout tree as its rail, and Cockpit shows the queue", async () => {
-    await gotoScreen("Agent Board");
-    await waitForAnyDisplayed('[aria-label="Filter repos"]', "Agent Board's rail header");
-    await gotoScreen("Cockpit");
-    await waitForAnyDisplayed('[aria-label="New task"]', "Cockpit's queue rail");
+  it("switches its rail between the checkout tree and the queue", async () => {
+    await gotoRail("Tree");
+    await waitForAnyDisplayed('[aria-label="Filter repos"]', "the tree's rail header");
+    await gotoRail("Queue");
+    await waitForAnyDisplayed('[aria-label="New task"]', "the queue rail");
   });
 
-  it("numbers sessions on a held chord, and a jump opens one Cockpit shares", async () => {
+  it("flips the rail from the keyboard", async () => {
+    await gotoRail("Queue");
+    const selected = () =>
+      browser.execute(
+        () =>
+          document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() ?? "",
+      );
+    // Retried: a chord lands nowhere when focus does (same flake as palette.e2e).
+    await browser.waitUntil(
+      async () => {
+        if ((await selected()) === "Queue") await browser.keys([Key.Ctrl, Key.Shift, "t"]);
+        return (await selected()) === "Tree";
+      },
+      { timeout: 20000, interval: 1000, timeoutMsg: "Ctrl+Shift+T never switched to the tree" },
+    );
+  });
+
+  it("numbers sessions on a held chord, and a jump opens one the queue shares", async () => {
     await seedRailSession();
-    await gotoScreen("Agent Board");
+    await gotoRail("Tree");
     await browser.waitUntil(async () => (await railSessionIds()).length > 0, {
       timeout: 20000,
       interval: 1000,
@@ -136,7 +160,7 @@ describe("Agent Board", () => {
       { timeout: 20000, interval: 1000, timeoutMsg: "Ctrl+Shift+1 opened no terminal" },
     );
 
-    await gotoScreen("Cockpit");
+    await gotoRail("Queue");
     const same = await browser.execute(() => {
       const host = document.querySelector<HTMLElement>('[data-e2e-tag="agentboard"]');
       return host !== null && host.isConnected && host.offsetParent !== null;

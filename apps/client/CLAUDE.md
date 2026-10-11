@@ -9,13 +9,13 @@ overview; this file has the frontend-internal conventions a read won't surface.
 (`lib/workspace.tsx`, persisted by `workspace-persistence.ts`). No visible tab
 strip (the sidebar is the only nav), but screens stay mounted when you switch
 away and `close-tab`/`next-tab`/`tab-1`…`9` act on this set headlessly; this is
-what "tab" usually means. **Settings' sub-tab panel** is Kumo's `Tabs`
-strip, not navigation. **Editor tabs** are the code-server workbench's,
+what "tab" usually means. **Settings' sub-tab panel** and Agent Board's Queue/Tree switch are Kumo's `Tabs`
+strips, not navigation. **Editor tabs** are the code-server workbench's,
 inside a cross-origin iframe — nothing here can see or drive them.
 
 ## Adding a screen is a 4-file ritual — there's no single source of truth
 
-1. `ScreenId` + `ScreenMeta` (icon/keywords/`fullBleed`/`host`) in `lib/screens.ts`.
+1. `ScreenId` + `ScreenMeta` (icon/keywords/`fullBleed`) in `lib/screens.ts`.
 2. The component into `SCREEN_COMPONENTS` in `screens/index.tsx`.
 3. A `NAV_SECTIONS` group in `lib/screens.ts` — miss this and the screen is
    reachable only via palette / tab restore, not the sidebar.
@@ -75,25 +75,25 @@ chords Cocoa takes before any DOM keydown are `tt-app`'s `macos_keys.rs`.
 
 ## Two rails, one workspace, one cursor each
 
-Cockpit and Agent Board are **one mounted `CockpitScreen`** (`agentboard` sets
-`host: "cockpit"`, and `App` renders a host once), so they share every PTY,
-pane and selection — two instances would double-mount each terminal, and one
-unmounting kills its shell. `mode` (the last of the two shown) picks the rail;
-their shared bindings are scope `workspace`, and each rail's own chords are
-only in the handler map while it's up (Alt+Shift+↑ is rank-top on one,
-collapse-all on the other). A jump to a terminal from elsewhere goes through
-`openWorkspace()`, so it lands on whichever was used last.
+Agent Board is **one mounted `AgentBoardScreen`** with two rails over the same
+PTYs, panes and selection, picked by the Queue/Tree tabs atop the rail.
+`railView` lives in `useWorkspace()` (persisted, `Mod+Shift+T` flips it) so
+`App` can activate its shortcut scope: bindings both rails share are scope
+`agentboard`, and each rail's own chords are scope `queue` or `tree`, in the
+handler map only while that rail is up (Alt+Shift+↑ is rank-top on one,
+collapse-all on the other). A deep link picks the rail it needs: a PR lands on
+the queue, a repo on the tree.
 
-Cockpit's rail is the task queue (`components/cockpit-rail.tsx`): **the board
-tasks that own one of Agent Board's checkouts, ordered to work one at a time** —
+The queue rail (`components/queue-rail.tsx`) is **the board tasks that own one
+of Agent Board's checkouts, ordered to work one at a time** —
 so a backlog task with no checkout, a PR or a CI run is not a row, and neither
 is a checkout no task owns. `railRows` (`lib/queue.tsx`) is the one walk the
 cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9 jump digits read — folded lanes
 skipped, so the keyboard sees what you see —
 and the ring follows the checkout on screen however it got there
 (`rowForFolder`). When the head of On you changes, `nextUpArrival` decides to
-open or announce it; a focused terminal is never taken. Agent Board's rail is
-the repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
+open or announce it; a focused terminal is never taken. The tree rail is the
+repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
 cursor, the digits, the fold chords); the queue never moves it. Exactly one row
 wears `ring-violet-500`; the violet *edge* answers which checkout you're in.
 

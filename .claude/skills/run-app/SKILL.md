@@ -36,7 +36,7 @@ time in a task — poll `status`, don't guess a sleep. Full protocol:
 ```bash
 node scripts/drive.mjs invoke settings_get        # real Rust IPC command
 node scripts/drive.mjs eval "document.title"      # JS in the live window
-node scripts/drive.mjs shot cockpit               # → e2e/screenshots/cockpit.png — Read it
+node scripts/drive.mjs shot agentboard            # → e2e/screenshots/agentboard.png — Read it
 node scripts/drive.mjs clicktext "Board"           # click by visible text
 node scripts/drive.mjs click "input[name=foo]"     # click by CSS selector
 node scripts/drive.mjs type "input[name=foo]" "x"  # type into an element

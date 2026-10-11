@@ -2,7 +2,7 @@ import type { ComponentType } from "react";
 import type { ScreenId } from "@/lib/screens";
 import { BoardScreen } from "@/screens/board";
 import { ClaudeSessionsScreen } from "@/screens/claude-sessions";
-import { CockpitScreen } from "@/screens/cockpit";
+import { AgentBoardScreen } from "@/screens/agentboard";
 import { DoctorScreen } from "@/screens/doctor";
 import { McpScreen } from "@/screens/mcp";
 import { SettingsScreen } from "@/screens/settings";
@@ -11,9 +11,7 @@ import { TaskExplorerScreen } from "@/screens/task-explorer";
 import { TelemetryScreen } from "@/screens/telemetry";
 
 export const SCREEN_COMPONENTS: Record<ScreenId, ComponentType> = {
-  cockpit: CockpitScreen,
-  // Never mounted on its own: `App` shows it through Cockpit's instance (`host`).
-  agentboard: CockpitScreen,
+  agentboard: AgentBoardScreen,
   board: BoardScreen,
   slack: SlackScreen,
   doctor: DoctorScreen,

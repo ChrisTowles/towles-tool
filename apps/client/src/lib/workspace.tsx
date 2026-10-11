@@ -1,8 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { isWorkspaceScreen, type ScreenId } from "@/lib/screens";
+import type { RailView, ScreenId } from "@/lib/screens";
 import { focusTargetStore, type FocusTarget } from "@/lib/focus-target";
 import { settingsTargetStore, type SettingsTarget } from "@/lib/settings-target";
-import { ACTIVE_TAB_KEY, loadWorkspaceTabs, OPEN_TABS_KEY } from "@/lib/workspace-persistence";
+import {
+  ACTIVE_TAB_KEY,
+  loadRailView,
+  loadWorkspaceTabs,
+  OPEN_TABS_KEY,
+  RAIL_VIEW_KEY,
+} from "@/lib/workspace-persistence";
 
 type WorkspaceState = {
   openTabs: ScreenId[];
@@ -15,9 +21,9 @@ type WorkspaceState = {
   zen: boolean;
   paletteOpen: boolean;
   openTab: (id: ScreenId) => void;
-  /** Cockpit or Agent Board, whichever was used last — for a jump that lands on
-   * a terminal or pane, which both show. */
-  openWorkspace: () => void;
+  /** Agent Board's rail: the task queue or the checkout tree, over the same panes. */
+  railView: RailView;
+  setRailView: (view: RailView) => void;
   openTabWithFocus: (target: FocusTarget) => void;
   openSettingsTab: (target?: SettingsTarget) => void;
   /** The last remaining tab can't be closed; closing the active one moves
@@ -51,6 +57,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "false",
   );
+  const [railView, setRailViewState] = useState<RailView>(() =>
+    loadRailView(localStorage.getItem(RAIL_VIEW_KEY)),
+  );
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [zen, setZen] = useState(false);
 
@@ -66,10 +75,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setActiveTab(id);
   }, []);
 
-  const openWorkspace = useCallback(
-    () => openTab(recent.find(isWorkspaceScreen) ?? "cockpit"),
-    [openTab, recent],
-  );
+  const setRailView = useCallback((view: RailView) => {
+    localStorage.setItem(RAIL_VIEW_KEY, view);
+    setRailViewState(view);
+  }, []);
 
   const openTabWithFocus = useCallback(
     (target: FocusTarget) => {
@@ -120,7 +129,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       zen,
       paletteOpen,
       openTab,
-      openWorkspace,
+      railView,
+      setRailView,
       openTabWithFocus,
       openSettingsTab,
       closeTab,
@@ -137,7 +147,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       zen,
       paletteOpen,
       openTab,
-      openWorkspace,
+      railView,
+      setRailView,
       openTabWithFocus,
       openSettingsTab,
       closeTab,

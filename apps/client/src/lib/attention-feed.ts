@@ -64,7 +64,7 @@ export function buildAttentionFeed(
   for (const pr of snapshot.prs.filter((p) => p.state === "open" && !isItemDismissed(p))) {
     const prId = `${pr.repo}#${pr.number}`;
     const link: Pick<AttentionItem, "target" | "url"> = ownedPrs.has(pr)
-      ? { target: { screen: "cockpit", kind: "pr", id: prId } }
+      ? { target: { screen: "agentboard", kind: "pr", id: prId } }
       : { url: pr.url };
     // Failing CI outranks review-requested; a PR that is both surfaces once, in
     // the more-urgent bucket.
