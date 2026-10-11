@@ -927,6 +927,56 @@ mod tests {
         assert_eq!((rows[0].number, rows[0].state.as_str()), (2, "open"));
     }
 
+    /// The refetch loop: a targeted fetch's merged row fell outside the merged
+    /// sweep's bounded list, was deleted, and `gh pr view` ran again every sweep.
+    #[test]
+    fn a_targeted_merged_fetch_survives_every_sweep() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("t", "doing", None, None, 1).unwrap();
+        s.attach_task_pr(t.id, "o/a", 5, "p5").unwrap();
+        let repos = ["o/a".to_string()];
+        s.upsert_prs(&[pr("o/a", 5, "merged")]).unwrap();
+
+        s.replace_merged_prs_for_repos(&repos, &[pr("o/a", 6, "merged")]).unwrap();
+        s.replace_open_prs_for_repos(&repos, &[]).unwrap();
+        s.replace_prs_for_repos(&repos, &[]).unwrap();
+        s.replace_merged_prs(&[]).unwrap();
+        s.replace_prs(&[]).unwrap();
+
+        assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+        assert_eq!(s.prs().unwrap().len(), 1);
+    }
+
+    /// An open PR that closes drops out of the open sweep, is reported missing
+    /// once, and its fetched terminal row then sticks.
+    #[test]
+    fn an_open_pr_that_closed_is_refreshed_once() {
+        let s = Store::open_in_memory().unwrap();
+        let t = s.add_task("t", "doing", None, None, 1).unwrap();
+        s.attach_task_pr(t.id, "o/a", 5, "p5").unwrap();
+        let repos = ["o/a".to_string()];
+        s.replace_open_prs_for_repos(&repos, &[pr("o/a", 5, "open")]).unwrap();
+        assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+
+        s.replace_open_prs_for_repos(&repos, &[]).unwrap();
+        assert_eq!(s.pr_refs_missing_from_cache().unwrap(), vec![("o/a".to_string(), 5)]);
+
+        s.upsert_prs(&[pr("o/a", 5, "merged")]).unwrap();
+        s.replace_open_prs_for_repos(&repos, &[]).unwrap();
+        s.replace_merged_prs_for_repos(&repos, &[]).unwrap();
+        assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+        assert_eq!(s.prs().unwrap()[0].state, "merged");
+    }
+
+    /// Unlinked terminal rows are still swept away; only linked ones are kept.
+    #[test]
+    fn unlinked_merged_rows_are_still_swept() {
+        let s = Store::open_in_memory().unwrap();
+        s.upsert_prs(&[pr("o/a", 7, "merged")]).unwrap();
+        s.replace_merged_prs_for_repos(&["o/a".to_string()], &[]).unwrap();
+        assert!(s.prs().unwrap().is_empty());
+    }
+
     #[test]
     fn auto_attach_worktree_prs_links_by_repo_and_branch() {
         let pr = |branch: &str, number: i64| PrInput {

@@ -9,6 +9,12 @@ use crate::{Error, Result, Store};
 /// Insert every PR row — identical across all four `replace_*_prs*` paths; only
 /// the preceding delete differs. `OR REPLACE` because those deletes don't
 /// partition the table: a PR that reopened between sweeps survives both.
+/// Delete guard: a merged/closed PR a task links to is terminal and outside every
+/// sweep's bounded list, so a sweep must not drop the row a targeted fetch added —
+/// `pr_refs_missing_from_cache` would re-run `gh pr view` for it forever.
+const KEEP_LINKED_TERMINAL: &str = "NOT (state <> 'open' AND EXISTS (SELECT 1 FROM task_prs tp \
+     WHERE tp.repo = pr_status.repo AND tp.number = pr_status.number))";
+
 fn insert_prs(tx: &rusqlite::Transaction<'_>, prs: &[PrInput]) -> Result<()> {
     let mut stmt = tx.prepare(
         "INSERT OR REPLACE INTO pr_status
@@ -225,7 +231,9 @@ impl Store {
         let tx = self.conn.unchecked_transaction()?;
         {
             let and = state_predicate.map(|p| format!(" AND {p}")).unwrap_or_default();
-            let mut del = tx.prepare(&format!("DELETE FROM pr_status WHERE repo = ?1{and}"))?;
+            let mut del = tx.prepare(&format!(
+                "DELETE FROM pr_status WHERE repo = ?1{and} AND {KEEP_LINKED_TERMINAL}"
+            ))?;
             for repo in repos {
                 del.execute(params![repo])?;
             }
@@ -238,8 +246,8 @@ impl Store {
     /// Full-snapshot variant of [`Store::replace_prs_for_repos_where`].
     fn replace_prs_where(&self, prs: &[PrInput], state_predicate: Option<&str>) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
-        let where_ = state_predicate.map(|p| format!(" WHERE {p}")).unwrap_or_default();
-        tx.execute(&format!("DELETE FROM pr_status{where_}"), [])?;
+        let and = state_predicate.map(|p| format!(" AND {p}")).unwrap_or_default();
+        tx.execute(&format!("DELETE FROM pr_status WHERE {KEEP_LINKED_TERMINAL}{and}"), [])?;
         insert_prs(&tx, prs)?;
         tx.commit()?;
         Ok(prs.len())
