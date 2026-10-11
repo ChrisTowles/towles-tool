@@ -1231,7 +1231,7 @@ export function CockpitScreen() {
           void startQueueItem(detailItem);
         },
         "queue-snooze": () => {
-          if (ringItem?.key.kind !== "task" || !ringItem.reason) return false;
+          if (!ringItem?.reason || ringItem.snoozed) return false;
           setSnoozeKey(keyId(ringItem.key));
         },
         // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the

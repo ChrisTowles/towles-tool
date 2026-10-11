@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
-use tt_store::{CiRun, PrItem, TaskItem, TaskSnooze};
+use tt_store::{CiRun, PrItem, QueueSnooze, TaskItem};
 
 use crate::bridge::StatePayload;
 use crate::types::{FolderData, NeedsYouReason, SessionData};
@@ -71,6 +71,18 @@ pub enum QueueKey {
     Ci { repo: String, branch: String },
 }
 
+impl QueueKey {
+    /// The stable string a snooze is stored under; the store never parses it.
+    pub fn snooze_key(&self) -> String {
+        match self {
+            Self::Task { id } => format!("task:{id}"),
+            Self::Unfiled { folder_dir } => format!("unfiled:{folder_dir}"),
+            Self::Pr { repo, number } => format!("pr:{repo}#{number}"),
+            Self::Ci { repo, branch } => format!("ci:{repo}@{branch}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueuePr {
@@ -128,7 +140,7 @@ pub struct QueueInputs<'a> {
     pub state: &'a StatePayload,
     pub prs: &'a [PrItem],
     pub ci_runs: &'a [CiRun],
-    pub snoozes: &'a [TaskSnooze],
+    pub snoozes: &'a [QueueSnooze],
     pub now_ms: i64,
 }
 
@@ -143,8 +155,8 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
                 .map(move |f| (f.dir.as_str(), (r.name.as_str(), r.origin_url.as_deref(), f)))
         })
         .collect();
-    let snoozes: HashMap<i64, &TaskSnooze> =
-        inputs.snoozes.iter().map(|s| (s.task_id, s)).collect();
+    let snoozes: HashMap<&str, &QueueSnooze> =
+        inputs.snoozes.iter().map(|s| (s.key.as_str(), s)).collect();
 
     let mut items = Vec::new();
     let mut task_dirs = HashSet::new();
@@ -174,15 +186,6 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
         }
         settle(&mut item, reasons);
         item.said = folder.and_then(|f| said_for(f.2, item.session_id.as_deref()));
-        if let Some(reason) = item.reason
-            && let Some(snooze) = snoozes.get(&task.id)
-            && snooze.reason == reason.as_str()
-            && snooze.until_ms.is_none_or(|until| until > inputs.now_ms)
-        {
-            item.lane = Lane::Parked;
-            item.snoozed = true;
-            item.snoozed_until_ms = snooze.until_ms;
-        }
         items.push(item);
     }
 
@@ -240,6 +243,9 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
     unowned.dedup();
     items.extend(unowned.into_iter().map(|(repo, branch)| ci_item(repo, branch, &failing)));
 
+    for item in &mut items {
+        apply_snooze(item, &snoozes, inputs.now_ms);
+    }
     promote_start(&mut items, &snoozes, inputs.now_ms);
     items.sort_by(|a, b| {
         order_key(a).cmp(&order_key(b)).then_with(|| key_str(&a.key).cmp(&key_str(&b.key)))
@@ -509,19 +515,29 @@ fn settle(item: &mut QueueItem, mut reasons: Vec<(WaitReason, Option<(i64, Strin
     }
 }
 
+/// Parks a row the user snoozed — while the reason it was set on is still the
+/// row's reason and the time has not run out, so a new reason resurfaces it.
+fn apply_snooze(item: &mut QueueItem, snoozes: &HashMap<&str, &QueueSnooze>, now_ms: i64) {
+    let Some(reason) = item.reason else {
+        return;
+    };
+    if let Some(s) = snoozes.get(item.key.snooze_key().as_str())
+        && s.reason == reason.as_str()
+        && s.until_ms.is_none_or(|u| u > now_ms)
+    {
+        item.lane = Lane::Parked;
+        item.snoozed = true;
+        item.snoozed_until_ms = s.until_ms;
+    }
+}
+
 /// The top-ranked backlog task becomes `start`; one snoozed from starting is parked.
-fn promote_start(items: &mut [QueueItem], snoozes: &HashMap<i64, &TaskSnooze>, now_ms: i64) {
+fn promote_start(items: &mut [QueueItem], snoozes: &HashMap<&str, &QueueSnooze>, now_ms: i64) {
     for item in items.iter_mut().filter(|i| i.lane == Lane::Backlog) {
-        let QueueKey::Task { id } = item.key else {
-            continue;
-        };
-        if let Some(s) = snoozes.get(&id)
-            && s.reason == WaitReason::Start.as_str()
-            && s.until_ms.is_none_or(|u| u > now_ms)
-        {
-            item.lane = Lane::Parked;
-            item.snoozed = true;
-            item.snoozed_until_ms = s.until_ms;
+        item.reason = Some(WaitReason::Start);
+        apply_snooze(item, snoozes, now_ms);
+        if !item.snoozed {
+            item.reason = None;
         }
     }
     if let Some(item) = items.iter_mut().filter(|i| i.lane == Lane::Backlog).min_by_key(|i| i.rank)
@@ -651,9 +667,17 @@ mod tests {
             state: st,
             prs,
             ci_runs,
-            snoozes: &s.task_snoozes().unwrap(),
+            snoozes: &s.queue_snoozes().unwrap(),
             now_ms,
         })
+    }
+
+    fn snooze(s: &Store, key: &QueueKey, reason: &str, until_ms: Option<i64>) {
+        s.snooze_queue_item(&key.snooze_key(), reason, until_ms, 0).unwrap();
+    }
+
+    fn lane_of(q: &TaskQueue, key: &QueueKey) -> Lane {
+        q.items.iter().find(|i| &i.key == key).unwrap().lane
     }
 
     fn summary(q: &TaskQueue) -> Vec<(String, Lane, Option<WaitReason>)> {
@@ -795,17 +819,102 @@ mod tests {
                 1,
             )],
         )]);
-        s.snooze_task(ids[0], "answer", Some(100), 0).unwrap();
+        snooze(&s, &QueueKey::Task { id: ids[0] }, "answer", Some(100));
         let q = run(&s, &st, &[], 50);
         assert_eq!(q.items.iter().find(|i| i.title == "a").unwrap().lane, Lane::Parked);
         assert!(q.items.iter().find(|i| i.title == "a").unwrap().snoozed);
         assert_eq!(q.items[0].title, "b", "b is promoted to start in its place");
         assert_eq!(run(&s, &st, &[], 150).items[0].title, "a", "expired");
-        s.snooze_task(ids[0], "review", None, 0).unwrap();
+        snooze(&s, &QueueKey::Task { id: ids[0] }, "review", None);
         assert_eq!(run(&s, &st, &[], 50).items[0].title, "a", "a new reason resurfaces it");
-        s.snooze_task(ids[1], "start", None, 0).unwrap();
-        s.snooze_task(ids[0], "answer", None, 0).unwrap();
+        snooze(&s, &QueueKey::Task { id: ids[1] }, "start", None);
+        snooze(&s, &QueueKey::Task { id: ids[0] }, "answer", None);
         assert_eq!(run(&s, &st, &[], 50).next, None);
+    }
+
+    /// Each row kind parks on a snooze, resurfaces when the snooze runs out or
+    /// the row's reason changes, and a snooze on one row never touches another.
+    #[test]
+    fn every_row_kind_snoozes_by_its_own_key() {
+        let (s, _) = store(&[]);
+        let st = state(vec![
+            folder(
+                "/loose",
+                vec![session(
+                    "sl",
+                    AgentStatus::Waiting,
+                    Some(NeedsYouReason::WaitingForInput),
+                    1,
+                )],
+            ),
+            folder(
+                "/other",
+                vec![session(
+                    "so",
+                    AgentStatus::Waiting,
+                    Some(NeedsYouReason::WaitingForInput),
+                    1,
+                )],
+            ),
+        ]);
+        let mut red = pr("red", "open", "failing", "");
+        red.number = 2;
+        let prs = [red.clone()];
+        let runs = [ci("Nightly", "main", "failure")];
+        let unfiled = QueueKey::Unfiled { folder_dir: "/loose".to_string() };
+        let other = QueueKey::Unfiled { folder_dir: "/other".to_string() };
+        let pr_key = QueueKey::Pr { repo: "o/repo".to_string(), number: 2 };
+        let ci_key = QueueKey::Ci { repo: "o/repo".to_string(), branch: "main".to_string() };
+        let at = |now| run_ci(&s, &st, &prs, &runs, now);
+
+        let q = at(50);
+        for key in [&unfiled, &other, &pr_key, &ci_key] {
+            assert_eq!(lane_of(&q, key), Lane::OnYou);
+        }
+
+        snooze(&s, &unfiled, "answer", Some(100));
+        snooze(&s, &pr_key, "fix_ci", None);
+        snooze(&s, &ci_key, "fix_ci", Some(100));
+        let q = at(50);
+        for key in [&unfiled, &pr_key, &ci_key] {
+            assert_eq!(lane_of(&q, key), Lane::Parked, "{key:?}");
+            assert!(q.items.iter().find(|i| &i.key == key).unwrap().snoozed);
+        }
+        assert_eq!(lane_of(&q, &other), Lane::OnYou, "a sibling row is untouched");
+        assert_eq!(q.next, Some(other.clone()));
+        let ci_row = q.items.iter().find(|i| i.key == ci_key).unwrap();
+        assert_eq!(ci_row.snoozed_until_ms, Some(100));
+
+        let q = at(150);
+        assert_eq!(lane_of(&q, &unfiled), Lane::OnYou, "timed snoozes expire");
+        assert_eq!(lane_of(&q, &ci_key), Lane::OnYou);
+        assert_eq!(lane_of(&q, &pr_key), Lane::Parked, "until-it-changes does not expire");
+    }
+
+    #[test]
+    fn a_snooze_on_a_ci_row_ends_when_its_reason_changes() {
+        let (s, _) = store(&[]);
+        let ci_key = QueueKey::Ci { repo: "o/repo".to_string(), branch: "main".to_string() };
+        snooze(&s, &ci_key, "answer", None);
+        let q = run_ci(&s, &state(vec![]), &[], &[ci("Nightly", "main", "failure")], 0);
+        assert_eq!(lane_of(&q, &ci_key), Lane::OnYou, "set on another reason: not held");
+        snooze(&s, &ci_key, "fix_ci", None);
+        let q = run_ci(&s, &state(vec![]), &[], &[ci("Nightly", "main", "failure")], 0);
+        assert_eq!(lane_of(&q, &ci_key), Lane::Parked);
+        assert_eq!(q.next, None, "a snoozed red nightly is no longer the head");
+    }
+
+    #[test]
+    fn snooze_keys_are_distinct_per_kind() {
+        let keys = [
+            QueueKey::Task { id: 1 },
+            QueueKey::Unfiled { folder_dir: "1".to_string() },
+            QueueKey::Pr { repo: "o/r".to_string(), number: 1 },
+            QueueKey::Ci { repo: "o/r".to_string(), branch: "1".to_string() },
+        ];
+        let strs: HashSet<String> = keys.iter().map(QueueKey::snooze_key).collect();
+        assert_eq!(strs.len(), 4);
+        assert_eq!(keys[2].snooze_key(), "pr:o/r#1");
     }
 
     #[test]

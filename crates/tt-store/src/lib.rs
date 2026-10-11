@@ -1433,17 +1433,65 @@ mod tests {
     fn snoozes_replace_and_clear_and_go_with_their_task() {
         let s = Store::open_in_memory().unwrap();
         let a = s.add_task("a", "backlog", None, None, 1).unwrap();
-        s.snooze_task(a.id, "answer", Some(100), 5).unwrap();
-        s.snooze_task(a.id, "land", None, 6).unwrap();
-        let snoozes = s.task_snoozes().unwrap();
-        assert_eq!(snoozes.len(), 1);
-        assert_eq!((snoozes[0].reason.as_str(), snoozes[0].until_ms), ("land", None));
-        s.unsnooze_task(a.id).unwrap();
-        assert!(s.task_snoozes().unwrap().is_empty());
-        s.snooze_task(a.id, "land", None, 7).unwrap();
+        let key = format!("task:{}", a.id);
+        s.snooze_queue_item(&key, "answer", Some(100), 5).unwrap();
+        s.snooze_queue_item(&key, "land", None, 6).unwrap();
+        s.snooze_queue_item("ci:o/r@main", "fix_ci", None, 6).unwrap();
+        let snoozes = s.queue_snoozes().unwrap();
+        assert_eq!(snoozes.len(), 2);
+        assert_eq!(
+            (snoozes[0].key.as_str(), snoozes[0].reason.as_str()),
+            ("ci:o/r@main", "fix_ci")
+        );
+        assert_eq!((snoozes[1].reason.as_str(), snoozes[1].until_ms), ("land", None));
+        s.unsnooze_queue_item(&key).unwrap();
+        assert_eq!(s.queue_snoozes().unwrap().len(), 1);
+        s.snooze_queue_item(&key, "land", None, 7).unwrap();
         s.delete_task(a.id).unwrap();
-        assert!(s.task_snoozes().unwrap().is_empty());
-        assert!(matches!(s.snooze_task(42, "land", None, 8), Err(Error::TaskNotFound(42))));
+        let left = s.queue_snoozes().unwrap();
+        assert_eq!(left.len(), 1, "only the task's own snooze goes with it");
+        assert_eq!(left[0].key, "ci:o/r@main");
+    }
+
+    #[test]
+    fn writing_a_snooze_sweeps_the_spent_timed_ones() {
+        let s = Store::open_in_memory().unwrap();
+        s.snooze_queue_item("pr:o/r#1", "fix_ci", Some(10), 0).unwrap();
+        s.snooze_queue_item("pr:o/r#2", "fix_ci", None, 0).unwrap();
+        s.snooze_queue_item("pr:o/r#3", "fix_ci", Some(500), 20).unwrap();
+        let keys: Vec<String> = s.queue_snoozes().unwrap().into_iter().map(|q| q.key).collect();
+        assert_eq!(keys, ["pr:o/r#2", "pr:o/r#3"]);
+    }
+
+    #[test]
+    fn v22_task_snoozes_carry_over_as_task_keys() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("tt.db");
+        {
+            let s = Store::open(&path).unwrap();
+            s.conn
+                .execute_batch(
+                    "DROP TABLE queue_snoozes;
+                     CREATE TABLE task_snoozes (task_id INTEGER PRIMARY KEY, reason TEXT NOT NULL,
+                       until_ms INTEGER, created_at INTEGER NOT NULL);
+                     INSERT INTO task_snoozes VALUES (7, 'answer', 100, 1);
+                     UPDATE meta SET value = '23' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        let got = s.queue_snoozes().unwrap();
+        assert_eq!(
+            (got[0].key.as_str(), got[0].reason.as_str(), got[0].until_ms),
+            ("task:7", "answer", Some(100))
+        );
+        let old: i64 = s
+            .conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE name = 'task_snoozes'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(old, 0);
     }
 
     #[test]

@@ -121,7 +121,7 @@ export const SHORTCUTS = defineShortcuts([
   { id: "queue-down", scope: "cockpit", keys: "j", description: "Next row in the task queue" },
   { id: "queue-up", scope: "cockpit", keys: "k", description: "Previous row in the task queue" },
   { id: "queue-start", scope: "cockpit", keys: "s", description: "Start an agent on the task" },
-  { id: "queue-snooze", scope: "cockpit", keys: "z", description: "Snooze the selected task" },
+  { id: "queue-snooze", scope: "cockpit", keys: "z", description: "Snooze the selected row" },
   { id: "queue-rank-up", scope: "cockpit", keys: "alt+arrowup", description: "Raise priority" },
   {
     id: "queue-rank-down",

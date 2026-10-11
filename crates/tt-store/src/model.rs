@@ -138,8 +138,9 @@ pub enum RankMove {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskSnooze {
-    pub task_id: i64,
+pub struct QueueSnooze {
+    /// The queue row's snooze key (`task:<id>`, `pr:<repo>#<n>`, …).
+    pub key: String,
     pub reason: String,
     pub until_ms: Option<i64>,
     pub created_at: i64,
