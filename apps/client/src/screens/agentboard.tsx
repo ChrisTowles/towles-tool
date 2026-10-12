@@ -733,11 +733,12 @@ export function AgentBoardScreen() {
   }
 
   /** Open a queue row in place: its session, else its checkout. */
-  function selectQueueItem(item: QueueItem) {
+  /** `hint` is for a row you opened; an automatic open says nothing. */
+  function selectQueueItem(item: QueueItem, hint = true) {
     setAnnounced(null);
     if (item.sessionId) selectSession(item.folderDir, item.sessionId);
     else selectFolder(item.folderDir);
-    if (item.reason === "land") toast.info("Run /done in the task's terminal to land it.");
+    if (hint && item.reason === "land") toast.info("Run /done in the task's terminal to land it.");
   }
 
   function pickQueueItem(item: QueueItem) {
@@ -791,13 +792,12 @@ export function AgentBoardScreen() {
     if (!queueLive) return;
     const verdict = nextUpArrival(lastOnYouId.current, onYou, {
       terminalFocused: terminalFocused(),
-      selectedId: ringId,
-      selectedOnYou: ringItem?.lane === "on_you",
+      selectedId: activeFolderDir,
     });
     lastOnYouId.current = onYouId;
     // The tree is walked by place: the queue's pull is the queue's business.
     if (!onYou || tree) return;
-    if (verdict === "open") selectQueueItem(onYou);
+    if (verdict === "open") selectQueueItem(onYou, false);
     else if (verdict === "announce") setAnnounced(onYouId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on a new head only; the rest is read at that moment
   }, [onYouId, queueLive]);
@@ -1713,6 +1713,7 @@ export function AgentBoardScreen() {
               {announcedItem && (
                 <NextUpBanner
                   item={announcedItem}
+                  repo={repoByFolder.get(announcedItem.folderDir)}
                   onOpen={() => {
                     mouseAction("queue-next", "agentboard");
                     selectQueueItem(announcedItem);

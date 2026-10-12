@@ -193,19 +193,18 @@ export function onYouHead(queue: TaskQueue): QueueItem | undefined {
   return queue.items.find((i) => i.lane === "on_you");
 }
 
-/** When the head of On you changes: open it in place when nothing you're
- * doing would be interrupted, else announce it. A focused terminal is never
- * taken from you, and neither is a row that still needs you. */
+/** When the head of On you changes: open it in place only when nothing is
+ * open, else announce it. What you have open is never swapped out — opening a
+ * finished agent marks it seen and drops its row from On you, so "the row left On
+ * you" can't mean "you're done with it". */
 export function nextUpArrival(
   prevHeadId: string | null | undefined,
   head: QueueItem | undefined,
-  ctx: { terminalFocused: boolean; selectedId: string | null; selectedOnYou: boolean },
+  ctx: { terminalFocused: boolean; selectedId: string | null },
 ): "open" | "announce" | null {
   if (!head) return null;
   if (head.folderDir === prevHeadId || head.folderDir === ctx.selectedId) return null;
-  if (prevHeadId === undefined) {
-    return ctx.selectedId === null && !ctx.terminalFocused ? "open" : null;
-  }
-  if (ctx.terminalFocused) return "announce";
-  return ctx.selectedId === null || !ctx.selectedOnYou ? "open" : "announce";
+  const free = ctx.selectedId === null && !ctx.terminalFocused;
+  if (prevHeadId === undefined) return free ? "open" : null;
+  return free ? "open" : "announce";
 }

@@ -92,8 +92,11 @@ worktrees) the queue does too (`railQueue`). `railRows` (`lib/queue.tsx`) is the
 cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9 jump digits read — folded lanes
 skipped, so the keyboard sees what you see —
 and the ring follows the checkout on screen however it got there
-(`rowForFolder`). When the head of On you changes, `nextUpArrival` decides to
-open or announce it; a focused terminal is never taken. The tree rail is the
+(`rowForFolder`). When the head of On you changes, `nextUpArrival` opens it only
+when nothing is open, else announces it — what you have open is never swapped
+out, since opening a finished agent drops its row from On you on its own. Rows
+and lane headers are one flat `AnimatePresence` list, so a row changing lane
+slides there; the head is that row expanded in place, never a second copy. The tree rail is the
 repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
 cursor, the digits, the fold chords); the queue never moves it. Exactly one row
 wears `ring-violet-500`; the violet *edge* answers which checkout you're in.

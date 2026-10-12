@@ -137,7 +137,7 @@ describe("filterQueue", () => {
 
 describe("nextUpArrival", () => {
   const head = item(2);
-  const idle = { terminalFocused: false, selectedId: null, selectedOnYou: false };
+  const idle = { terminalFocused: false, selectedId: null };
   it("opens on first sight only when nothing is selected or typed in", () => {
     expect(nextUpArrival(undefined, head, idle)).toBe("open");
     expect(nextUpArrival(undefined, head, { ...idle, terminalFocused: true })).toBeNull();
@@ -148,14 +148,11 @@ describe("nextUpArrival", () => {
     expect(nextUpArrival(dir(1), head, { ...idle, selectedId: dir(2) })).toBeNull();
     expect(nextUpArrival(dir(1), undefined, idle)).toBeNull();
   });
-  it("never takes a focused terminal or a row that still needs you", () => {
+  it("never swaps out what you have open, even once it left On you", () => {
     expect(nextUpArrival(dir(1), head, { ...idle, terminalFocused: true })).toBe("announce");
-    const busy = { ...idle, selectedId: dir(1), selectedOnYou: true };
-    expect(nextUpArrival(dir(1), head, busy)).toBe("announce");
+    expect(nextUpArrival(dir(1), head, { ...idle, selectedId: dir(1) })).toBe("announce");
   });
-  it("opens once you're done with what you had open", () => {
-    const answered = { ...idle, selectedId: dir(1), selectedOnYou: false };
-    expect(nextUpArrival(dir(1), head, answered)).toBe("open");
+  it("opens a new head when nothing is open", () => {
     expect(nextUpArrival(dir(1), head, idle)).toBe("open");
   });
 });
