@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
-import { motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { Badge, Button } from "@cloudflare/kumo";
 import {
   ArrowDownIcon,
@@ -29,6 +29,7 @@ import {
 import { fmtAge, type PrItem, type TaskItem } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
+import { railRowMotion } from "@/lib/rail-motion";
 import { repoAccentStyles, repoRowStyle } from "@/lib/repo-identity";
 import type { Lane, QueueItem, TaskQueue, WaitReason } from "@/lib/schemas/queue";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
@@ -57,6 +58,16 @@ const LANE_TITLE: Record<Lane, string> = {
 };
 
 export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "idle", "no_shell"];
+
+/** The rail's row motion, with a slower slide: a row crossing lanes travels far
+ * enough that the eye needs time to follow it. */
+const queueRowMotion = {
+  ...railRowMotion,
+  transition: { duration: 0.15, layout: { duration: 0.3, ease: "easeOut" } },
+} as const;
+
+/** How long a row that just changed lane stays lit, so you can find where it went. */
+const MOVED_FLASH_MS = 1500;
 
 const SNOOZES: { preset: SnoozePreset; short: string; label: string }[] = [
   { preset: "1h", short: "1h", label: "for an hour" },
@@ -210,123 +221,62 @@ export function QueueRail({
           No checkouts yet — start a task from a repo above.
         </p>
       ) : (
-        <>
-          {head && (
-            <Hero
-              item={head}
-              repo={repoByFolder.get(head.folderDir)}
-              now={now}
-              selected={head.folderDir === selectedId}
-              chips={chipsFor(head)}
-              onOpen={onOpenHead}
-              onLater={() => void rerankQueueItem(queue.items, head, "down")}
-              onSnooze={(preset) => void snoozeQueueItem(head, preset)}
-            />
-          )}
-          {LANES.map((lane) => {
+        // One flat list, headers and rows alike, so a row changing lane slides
+        // there — a row nested per lane would unmount and pop in elsewhere.
+        <AnimatePresence initial={false}>
+          {LANES.flatMap((lane) => {
             const items = queue.items.filter((i) => i.lane === lane);
-            if (items.length === 0) return null;
+            if (items.length === 0) return [];
             const isFolded = folded.has(lane);
-            return (
-              <div key={lane}>
-                <button
-                  type="button"
-                  onClick={() => onToggleLane(lane)}
-                  aria-expanded={!isFolded}
-                  data-testid="queue-lane"
-                  className="flex w-full items-center gap-1 px-3 pt-3 pb-1 text-left text-xs font-medium tracking-wide text-kumo-subtle uppercase hover:text-kumo-default"
-                >
-                  {isFolded ? <CaretRightIcon size={12} /> : <CaretDownIcon size={12} />}
-                  {LANE_TITLE[lane]} · {items.length}
-                </button>
-                {!isFolded &&
-                  items.map((item) => {
-                    const id = item.folderDir;
-                    return (
-                      <QueueRow
-                        key={id}
-                        item={item}
-                        repo={repoByFolder.get(item.folderDir)}
-                        now={now}
-                        selected={id === selectedId}
-                        chips={chipsFor(item)}
-                        hotkey={hotkeys?.get(id)}
-                        snoozeOpen={snoozeId === id}
-                        onSnoozeOpenChange={(o) => onSnoozeIdChange(o ? id : null)}
-                        onSelect={() => onSelect(item)}
-                      />
-                    );
-                  })}
-              </div>
+            const header = (
+              <motion.button
+                key={`lane:${lane}`}
+                {...queueRowMotion}
+                type="button"
+                onClick={() => onToggleLane(lane)}
+                aria-expanded={!isFolded}
+                data-testid="queue-lane"
+                className="flex w-full items-center gap-1 px-3 pt-3 pb-1 text-left text-xs font-medium tracking-wide text-kumo-subtle uppercase hover:text-kumo-default"
+              >
+                {isFolded ? <CaretRightIcon size={12} /> : <CaretDownIcon size={12} />}
+                {LANE_TITLE[lane]} · {items.length}
+              </motion.button>
             );
+            if (isFolded) return [header];
+            return [
+              header,
+              ...items.map((item) => {
+                const id = item.folderDir;
+                const isHead = id === head?.folderDir;
+                return (
+                  <motion.div key={id} {...queueRowMotion}>
+                    <QueueRow
+                      item={item}
+                      repo={repoByFolder.get(item.folderDir)}
+                      now={now}
+                      selected={id === selectedId}
+                      chips={chipsFor(item)}
+                      hotkey={hotkeys?.get(id)}
+                      snoozeOpen={snoozeId === id}
+                      onSnoozeOpenChange={(o) => onSnoozeIdChange(o ? id : null)}
+                      onSelect={() => onSelect(item)}
+                      head={
+                        isHead
+                          ? {
+                              onOpen: onOpenHead,
+                              onLater: () => void rerankQueueItem(queue.items, item, "down"),
+                            }
+                          : undefined
+                      }
+                    />
+                  </motion.div>
+                );
+              }),
+            ];
           })}
-        </>
+        </AnimatePresence>
       )}
     </div>
-  );
-}
-
-function Hero({
-  item,
-  repo,
-  now,
-  selected,
-  chips,
-  onOpen,
-  onLater,
-  onSnooze,
-}: {
-  item: QueueItem;
-  repo: RepoData | undefined;
-  now: number;
-  selected: boolean;
-  chips: ReactNode;
-  onOpen: () => void;
-  onLater: () => void;
-  onSnooze: (preset: SnoozePreset) => void;
-}) {
-  const look = repoLook(repo, item.repo);
-  return (
-    <motion.div
-      key={item.folderDir}
-      initial={{ opacity: 0, y: -4 }}
-      animate={{ opacity: 1, y: 0 }}
-      style={look.rowStyle}
-      className={cn(
-        "m-2 rounded-lg border border-l-4 border-kumo-brand/40 p-3",
-        selected && "ring-1 ring-kumo-brand",
-      )}
-    >
-      <div className="text-[11px] font-semibold tracking-wide text-kumo-brand uppercase">
-        Next up{item.reason && ` · ${HERO_KICKER[item.reason]}`}
-      </div>
-      <RepoName look={look} className="mt-1 text-lg" />
-      <div className="truncate text-base font-semibold text-kumo-default">{item.title}</div>
-      <div className="truncate font-mono text-xs text-kumo-subtle">
-        {[item.branch, item.sinceMs != null ? `waiting ${fmtAge(item.sinceMs, now)}` : null]
-          .filter(Boolean)
-          .join(" · ")}
-      </div>
-      <div className="mt-1">{chips}</div>
-      {item.said && item.said !== item.title && (
-        <div className="mt-2 line-clamp-2 rounded-md border-l-2 border-kumo-warning bg-kumo-tint px-2 py-1 text-xs">
-          {item.said}
-        </div>
-      )}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {!selected && (
-          <Button size="xs" variant="primary" icon={<PlayIcon weight="fill" />} onClick={onOpen}>
-            Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>
-          </Button>
-        )}
-        {item.reason && <SnoozeButtons onSnooze={onSnooze} />}
-        {item.taskId != null && (
-          <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={onLater}>
-            Later
-          </Button>
-        )}
-      </div>
-    </motion.div>
   );
 }
 
@@ -385,14 +335,6 @@ function repoLook(repo: RepoData | undefined, fallback: string): RepoLook {
     textStyle: repoAccentStyles(repo).iconStyle,
     rowStyle: repoRowStyle(repo),
   };
-}
-
-function RepoName({ look, className }: { look: RepoLook; className?: string }) {
-  return (
-    <div style={look.textStyle} className={cn("truncate leading-tight font-bold", className)}>
-      {look.name}
-    </div>
-  );
 }
 
 /** The tree's git and link chips for a checkout — the same components, resolved
@@ -454,6 +396,7 @@ function QueueRow({
   snoozeOpen,
   onSnoozeOpenChange,
   onSelect,
+  head,
 }: {
   item: QueueItem;
   repo: RepoData | undefined;
@@ -465,20 +408,29 @@ function QueueRow({
   snoozeOpen: boolean;
   onSnoozeOpenChange: (open: boolean) => void;
   onSelect: () => void;
+  /** Set on Next up: the row grows its kicker, quote and actions in place. */
+  head?: { onOpen: () => void; onLater: () => void };
 }) {
   const face = item.reason ? REASON_FACE[item.reason] : null;
   const look = repoLook(repo, item.repo);
+  const moved = useMovedFlash(item.lane);
   return (
     <div
       data-focus-kind={item.pr ? "pr" : undefined}
       data-focus-id={item.pr ? `${item.pr.repo}#${item.pr.number}` : undefined}
       style={look.rowStyle}
       className={cn(
-        "group border-t border-l-4 border-kumo-line px-3 py-1.5 text-sm",
+        "group border-t border-l-4 border-kumo-line px-3 py-1.5 text-sm transition-[background-color] duration-700",
         selected && "ring-2 ring-kumo-brand ring-inset",
         item.lane !== "on_you" && "text-kumo-subtle",
+        moved && "bg-kumo-brand/15",
       )}
     >
+      {head && (
+        <div className="pl-6 text-[11px] font-semibold tracking-wide text-kumo-brand uppercase">
+          Next up{item.reason && ` · ${HERO_KICKER[item.reason]}`}
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -540,20 +492,61 @@ function QueueRow({
         </span>
         {chips}
       </div>
+      {head && item.said && item.said !== item.title && (
+        <div className="mt-1 ml-6 line-clamp-2 rounded-md border-l-2 border-kumo-warning bg-kumo-tint px-2 py-1 text-xs">
+          {item.said}
+        </div>
+      )}
+      {head && (!selected || item.taskId != null) && (
+        <div className="mt-1 flex gap-1.5 pl-6">
+          {!selected && (
+            <Button
+              size="xs"
+              variant="primary"
+              icon={<PlayIcon weight="fill" />}
+              onClick={head.onOpen}
+            >
+              Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>
+            </Button>
+          )}
+          {item.taskId != null && (
+            <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={head.onLater}>
+              Later
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+/** True for a moment after `lane` changes — never on mount, so a fresh list stays calm. */
+function useMovedFlash(lane: Lane): boolean {
+  const prev = useRef(lane);
+  const [moved, setMoved] = useState(false);
+  useEffect(() => {
+    if (prev.current === lane) return;
+    prev.current = lane;
+    setMoved(true);
+    const t = setTimeout(() => setMoved(false), MOVED_FLASH_MS);
+    return () => clearTimeout(t);
+  }, [lane]);
+  return moved;
 }
 
 /** Next up changed while you were busy — said here, never by taking focus. */
 export function NextUpBanner({
   item,
+  repo,
   onOpen,
   onDismiss,
 }: {
   item: QueueItem;
+  repo: RepoData | undefined;
   onOpen: () => void;
   onDismiss: () => void;
 }) {
+  const look = repoLook(repo, item.repo);
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
@@ -562,6 +555,9 @@ export function NextUpBanner({
       className="flex shrink-0 items-center gap-2 border-b border-kumo-brand/40 bg-kumo-brand/10 px-3 py-1.5 text-sm"
     >
       <span className="text-xs font-semibold tracking-wide text-kumo-brand uppercase">Next up</span>
+      <span style={look.textStyle} className="shrink-0 font-bold">
+        {look.name}
+      </span>
       <span className="min-w-0 truncate font-medium">{item.title}</span>
       {item.reason && (
         <span className="shrink-0 text-xs text-kumo-subtle">{HERO_KICKER[item.reason]}</span>

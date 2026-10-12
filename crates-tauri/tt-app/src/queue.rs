@@ -51,6 +51,14 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
     let Some(queue) = build(app, payload) else {
         return;
     };
+    if let Some(at) = queue.settles_at_ms {
+        let app = app.clone();
+        let wait = u64::try_from(at - now_ms()).unwrap_or(0);
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+            refresh(&app);
+        });
+    }
     let mut last = state.last.lock().unwrap();
     if last.as_ref() == Some(&queue) {
         return;

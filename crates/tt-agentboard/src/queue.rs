@@ -57,6 +57,11 @@ pub enum Lane {
     NoShell,
 }
 
+/// How long a fresh `Answer` wait reads as still running. A permission prompt that
+/// clears itself (auto-approved, or answered from the terminal) would otherwise bounce the row
+/// Running → On you → Running and the head with it.
+pub const ANSWER_GRACE_MS: i64 = 3_000;
+
 /// The stable string a checkout's snooze is stored under; the store never parses it.
 pub fn snooze_key(folder_dir: &str) -> String {
     format!("folder:{folder_dir}")
@@ -114,6 +119,10 @@ pub struct TaskQueue {
     /// The `folder_dir` of the first row on you.
     pub next: Option<String>,
     pub items: Vec<QueueItem>,
+    /// When the earliest held `Answer` grace ends — the app rebuilds then, since
+    /// nothing else may tick. Never sent.
+    #[serde(skip)]
+    pub settles_at_ms: Option<i64>,
 }
 
 pub struct QueueInputs<'a> {
@@ -135,6 +144,7 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
     let snoozes: HashMap<&str, &QueueSnooze> =
         inputs.snoozes.iter().map(|s| (s.key.as_str(), s)).collect();
     let failing = failing_ci(inputs.ci_runs);
+    let mut settles_at_ms: Option<i64> = None;
 
     let mut items: Vec<QueueItem> = inputs
         .state
@@ -143,7 +153,15 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
         .flat_map(|r| r.folders.iter().map(move |f| (r, f)))
         .map(|(repo, folder)| {
             let task = owners.get(folder.dir.as_str()).copied();
-            checkout_item(repo, folder, task, inputs.prs, &failing)
+            checkout_item(
+                repo,
+                folder,
+                task,
+                inputs.prs,
+                &failing,
+                inputs.now_ms,
+                &mut settles_at_ms,
+            )
         })
         .collect();
     for item in &mut items {
@@ -153,7 +171,7 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
         order_key(a).cmp(&order_key(b)).then_with(|| a.folder_dir.cmp(&b.folder_dir))
     });
     let next = items.iter().find(|i| i.lane == Lane::OnYou).map(|i| i.folder_dir.clone());
-    TaskQueue { next, items }
+    TaskQueue { next, items, settles_at_ms }
 }
 
 /// A checkout's row, titled and ranked by the task owning it when one does.
@@ -163,6 +181,8 @@ fn checkout_item(
     task: Option<&TaskItem>,
     prs: &[PrItem],
     failing: &[&CiRun],
+    now_ms: i64,
+    settles_at_ms: &mut Option<i64>,
 ) -> QueueItem {
     let mut item = base_item(task.map(|t| t.id), task.map(|t| t.rank), repo, folder);
     item.pr = match task {
@@ -175,7 +195,7 @@ fn checkout_item(
     if folder.is_worktree {
         item.ci = branch_ci(&item, failing);
     }
-    let mut reasons = agent_reasons(folder, &mut item);
+    let mut reasons = agent_reasons(folder, &mut item, now_ms, settles_at_ms);
     reasons.extend(pr_reasons(item.pr.as_ref()));
     reasons.extend(ci_reasons(&item.ci));
     if holds_landed_work(folder, item.pr.as_ref()) {
@@ -238,10 +258,13 @@ fn base_item(
     }
 }
 
-/// Agent waits per session, plus the running count and the session to open.
+/// Agent waits per session, plus the running count and the session to open. A
+/// wait for an answer still inside [`ANSWER_GRACE_MS`] counts as running instead.
 fn agent_reasons(
     folder: &FolderData,
     item: &mut QueueItem,
+    now_ms: i64,
+    settles_at_ms: &mut Option<i64>,
 ) -> Vec<(WaitReason, Option<(i64, String)>)> {
     let live: Vec<&SessionData> = folder.sessions.iter().filter(|s| s.live).collect();
     item.running_agents =
@@ -255,6 +278,14 @@ fn agent_reasons(
                 NeedsYouReason::WaitingForInput => WaitReason::Answer,
                 NeedsYouReason::Finished => WaitReason::Review,
             };
+            if let (WaitReason::Answer, Some(since)) = (reason, s.needs_since_ms)
+                && (0..ANSWER_GRACE_MS).contains(&(now_ms - since))
+            {
+                item.running_agents += 1;
+                let settles = since + ANSWER_GRACE_MS;
+                *settles_at_ms = Some(settles_at_ms.map_or(settles, |t| t.min(settles)));
+                return None;
+            }
             Some((reason, Some((s.needs_since_ms.unwrap_or(i64::MAX), s.id.clone()))))
         })
         .collect()
@@ -630,6 +661,25 @@ mod tests {
     }
 
     #[test]
+    fn a_fresh_answer_wait_reads_as_running_until_its_grace_ends() {
+        let (s, _) = store(&["prompt", "errored"]);
+        let errored = session("e", AgentStatus::Error, Some(NeedsYouReason::Errored), 1_000);
+        let st = state(vec![
+            folder("/prompt", vec![waiting("p", 1_000)]),
+            folder("/errored", vec![errored]),
+        ]);
+        let q = run(&s, &st, &[], 1_000 + ANSWER_GRACE_MS - 1);
+        assert_eq!(item(&q, "/prompt").lane, Lane::Running);
+        assert_eq!(item(&q, "/prompt").running_agents, 1);
+        assert_eq!(item(&q, "/errored").lane, Lane::OnYou, "only answers wait out a grace");
+        assert_eq!(q.settles_at_ms, Some(1_000 + ANSWER_GRACE_MS));
+
+        let q = run(&s, &st, &[], 1_000 + ANSWER_GRACE_MS);
+        assert_eq!(item(&q, "/prompt").reason, Some(WaitReason::Answer));
+        assert_eq!(q.settles_at_ms, None);
+    }
+
+    #[test]
     fn pr_reasons_land_and_review_and_a_working_agent_hides_them() {
         let (s, _) = store(&["land", "rev", "busy"]);
         let st = state(vec![
@@ -690,7 +740,10 @@ mod tests {
     #[test]
     fn snooze_parks_only_while_the_reason_and_time_hold() {
         let (s, _) = store(&["a", "b"]);
-        let st = state(vec![folder("/a", vec![waiting("s", 1)]), folder("/b", vec![])]);
+        let st = state(vec![
+            folder("/a", vec![waiting("s", -ANSWER_GRACE_MS)]),
+            folder("/b", vec![]),
+        ]);
         let a = "/a";
         snooze(&s, a, "answer", Some(100));
         let q = run(&s, &st, &[], 50);
@@ -706,8 +759,8 @@ mod tests {
     fn a_snooze_holds_one_row_only() {
         let (s, _) = store(&["one", "other"]);
         let st = state(vec![
-            folder("/one", vec![waiting("s1", 1)]),
-            folder("/other", vec![waiting("so", 1)]),
+            folder("/one", vec![waiting("s1", -ANSWER_GRACE_MS)]),
+            folder("/other", vec![waiting("so", -ANSWER_GRACE_MS)]),
         ]);
         let (one, other) = ("/one", "/other");
         snooze(&s, one, "answer", Some(100));
