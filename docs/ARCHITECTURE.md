@@ -98,10 +98,11 @@ the CLI and the app can consume it.
   synthesis. **Agent status is PTY-first** (`pty_status` folds what the terminal
   observes over the session journal's reading; `claude agents` is liveness
   only — the thresholds are measured, not guessed). The status set is the CLI's
-  (`idle`/`busy`/`waiting`) plus the terminal states; **background agents still
-  out are a count beside it** (`details.background_agents`), which the shared
-  `working` and needs-you rules read — a prompt with agents out is working, not
-  free. Also **the one home of the task-removal sequence**
+  (`idle`/`busy`/`waiting`) plus the terminal states; **background agents and
+  tasks (shells, `Monitor`s) still out are counts beside it**
+  (`details.background_agents`/`background_tasks`), which the shared `working`
+  and needs-you rules read — a prompt with work out is working, not free, so a
+  monitor's events never flip a row in and out of needs-you. Also **the one home of the task-removal sequence**
   (`task_removal`): guards → host teardown → worktree off disk → untrack from
   `repos.json` → board row closed last. Change the order there, not in a shell.
   And **the queue** (`queue::build`): every checkout on Agent Board, task
@@ -146,7 +147,8 @@ Focus screens: **Agent Board**, **Board**, **Messages**. Agent Board, the
 cold-start screen, is one workspace — the same terminals, panes and selection —
 with two rails over the same checkouts, switched by the Queue/Tree tabs atop the
 rail. Queue lays them out to work one at a time: the rail *is* the queue
-(Next up, then On you / Running / Parked / Idle / No shell). When the head of On you
+(Next up, then On you / Idle / Running / Parked / No shell — idle waits on
+you, running needs nothing). When the head of On you
 changes it opens in place, unless a
 terminal has focus or the row on screen still needs you — then it is announced
 above the panes, never by taking focus. Tree is processed by place: its

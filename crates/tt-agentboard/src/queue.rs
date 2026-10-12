@@ -1,6 +1,7 @@
 //! The queue: every checkout on Agent Board — task worktrees and repo roots
 //! alike, the tree's own rows — in the order to work them: what waits on you,
-//! then what runs, what's parked, what's idle, and what has no shell open. A task owning the checkout lends
+//! then what's idle at its prompt for your next word, what runs and needs
+//! nothing, what's parked, and what has no shell open. A task owning the checkout lends
 //! it a title and a rank; nothing else needs one. Pure — agent waits come from the
 //! PTY-first `needs_reason`, landed state from the rail's `ops::work_state`, PR
 //! and CI facts from the collector cache; only rank and snoozes are the user's.
@@ -49,10 +50,10 @@ impl WaitReason {
 #[serde(rename_all = "snake_case")]
 pub enum Lane {
     OnYou,
+    /// A live session, nothing doing — it moves when you do, so it leads Running.
+    Idle,
     Running,
     Parked,
-    /// A live session, nothing doing.
-    Idle,
     /// No live session — nothing to answer for until a shell is opened.
     NoShell,
 }
@@ -619,13 +620,13 @@ mod tests {
         assert_eq!(
             summary(&q),
             [
+                row("idle", Idle, None),
                 row("run", Running, None),
                 row("park", Parked, None),
-                row("idle", Idle, None),
                 row("cold", NoShell, None),
             ]
         );
-        assert_eq!(q.items[0].running_agents, 1);
+        assert_eq!(item(&q, "/run").running_agents, 1);
         assert_eq!(q.next, None, "nothing waits on you, so there is no next up");
     }
 

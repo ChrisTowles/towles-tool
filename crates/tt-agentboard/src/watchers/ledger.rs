@@ -10,7 +10,7 @@
 //! teammate's `idle_notification`. A delivered `SendMessage` starts one again:
 //! its result names a `resumedAgentId`, or routes to `@<teammate>`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use tt_claude_code::TranscriptEntry;
@@ -36,6 +36,12 @@ pub struct SubagentLedger {
     /// When each `<task-id>` was last queued as a notification. Its dequeue and
     /// delivery re-log that report, which can land after a resume.
     queued_at: HashMap<String, i64>,
+    /// A `Bash` result's `backgroundTaskId`, or a `Monitor` call's `taskId`, by
+    /// start — out until a notification for it carries a `<status>`. A monitor's
+    /// events carry none: each wakes the agent, but the watch is still out.
+    tasks: HashMap<String, i64>,
+    /// `Monitor` calls whose result has yet to name their task.
+    monitor_calls: HashSet<String>,
 }
 
 impl SubagentLedger {
@@ -46,6 +52,9 @@ impl SubagentLedger {
         let content = entry.message.as_ref().and_then(|m| m.content.as_ref());
         if entry.entry_type == "assistant" {
             for tool in content.into_iter().flat_map(|c| c.tool_uses()) {
+                if let (Some("Monitor"), Some(id)) = (tool.name(), tool.id()) {
+                    self.monitor_calls.insert(id.to_string());
+                }
                 if let (Some("Agent" | "Task"), Some(id)) = (tool.name(), tool.id()) {
                     let input = |key| tool.input()?.get(key)?.as_str().map(str::to_string);
                     let launch = Launch {
@@ -61,10 +70,16 @@ impl SubagentLedger {
             return;
         }
         let mut answered = None;
+        let mut monitor = false;
         for id in content.into_iter().flat_map(|c| c.tool_result_ids()) {
             answered = answered.or(self.launches.remove(id));
+            monitor |= self.monitor_calls.remove(id);
         }
         if let Some(r) = &entry.tool_use_result {
+            let task = r.background_task_id.as_ref().or(r.task_id.as_ref().filter(|_| monitor));
+            if let Some(id) = task {
+                self.tasks.insert(id.clone(), at);
+            }
             let handed_off = match r.status.as_deref() {
                 Some("async_launched") => r.agent_id.clone(),
                 Some("teammate_spawned") => r.name.clone(),
@@ -96,6 +111,14 @@ impl SubagentLedger {
                     self.queued_at.insert(task_id.to_string(), t);
                 }
                 self.ended(task_id, self.queued_at.get(task_id).copied());
+            }
+            for block in tag_values(text, "<task-notification>", "</task-notification>") {
+                let Some(task_id) = tag_values(block, "<task-id>", "</task-id>").next() else {
+                    continue;
+                };
+                if block.contains("<status>") || block.contains("[Monitor timed out") {
+                    self.tasks.remove(task_id);
+                }
             }
             for (from, idle_at) in idle_notifications(text) {
                 self.ended(&from, idle_at);
@@ -140,6 +163,13 @@ impl SubagentLedger {
     /// How many of [`Self::running`] are in the background.
     pub fn background_running(&self, process_started_at: Option<i64>) -> usize {
         self.running(process_started_at).iter().filter(|l| l.background).count()
+    }
+
+    /// Background shells and monitors still out, under the same floor as
+    /// [`Self::running`].
+    pub fn tasks_running(&self, process_started_at: Option<i64>) -> usize {
+        let floor = process_started_at.unwrap_or(0);
+        self.tasks.values().filter(|at| **at >= floor).count()
     }
 }
 
@@ -357,6 +387,62 @@ mod tests {
         let running = bg.running(parse_timestamp_ms(T1));
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].tool_use_id.as_deref(), Some("toolu_new"));
+    }
+
+    fn monitor_call(id: &str, ts: &str) -> String {
+        line(json!({"type": "assistant", "timestamp": ts, "message": {"role": "assistant",
+            "content": [{"type": "tool_use", "id": id, "name": "Monitor",
+                "input": {"description": "CI", "command": "gh run watch"}}]}}))
+    }
+
+    fn notification(task: &str, ts: &str, body: &str) -> String {
+        line(json!({"type": "queue-operation", "operation": "enqueue", "timestamp": ts,
+            "content": format!("<task-notification>\n<task-id>{task}</task-id>\n{body}\n</task-notification>")}))
+    }
+
+    #[test]
+    fn a_monitor_runs_through_its_events_until_its_stream_ends() {
+        let started = json!({"taskId": "m1", "timeoutMs": 300000, "persistent": false});
+        let mut bg = feed(&[
+            monitor_call("toolu_m", T0),
+            agent_result("toolu_m", T0, started),
+        ]);
+        assert_eq!(bg.tasks_running(None), 1);
+        observe(&mut bg, &notification("m1", T1, "<event>tests passed</event>"));
+        assert_eq!(bg.tasks_running(None), 1, "an event wakes the agent; the watch is still out");
+        observe(&mut bg, &notification("m1", T2, "<status>completed</status>"));
+        assert_eq!(bg.tasks_running(None), 0);
+        assert_eq!(bg.background_running(None), 0, "a task is not an agent");
+    }
+
+    #[test]
+    fn a_monitor_ends_when_it_times_out() {
+        let started = json!({"taskId": "m1", "timeoutMs": 1000, "persistent": false});
+        let mut bg = feed(&[
+            monitor_call("toolu_m", T0),
+            agent_result("toolu_m", T0, started),
+        ]);
+        observe(
+            &mut bg,
+            &notification("m1", T1, "<event>[Monitor timed out — re-arm if needed.]</event>"),
+        );
+        assert_eq!(bg.tasks_running(None), 0);
+    }
+
+    #[test]
+    fn a_background_shell_runs_until_its_status() {
+        let started = json!({"stdout": "", "backgroundTaskId": "b1"});
+        let mut bg = feed(&[agent_result("toolu_b", T0, started)]);
+        assert_eq!(bg.tasks_running(None), 1);
+        assert_eq!(bg.tasks_running(parse_timestamp_ms(T1)), 0, "died with its process");
+        observe(&mut bg, &notification("b1", T1, "<status>killed</status>"));
+        assert_eq!(bg.tasks_running(None), 0);
+    }
+
+    #[test]
+    fn a_task_id_from_any_other_tool_starts_nothing() {
+        let todo = json!({"success": true, "taskId": "1", "updatedFields": ["status"]});
+        assert_eq!(feed(&[agent_result("toolu_t", T0, todo)]).tasks_running(None), 0);
     }
 
     #[test]

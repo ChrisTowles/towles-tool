@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 
 /// Read from the journal and the PTY; `claude agents` is liveness only. `busy` =
 /// working, `waiting` = blocked on the user, `idle` = at the prompt. Background
-/// agents still out are a count beside this ([`AgentEvent::background_agents`]),
-/// never a status of their own.
+/// agents and tasks still out are counts beside this
+/// ([`AgentEvent::background_out`]), never a status of their own.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentStatus {
@@ -91,6 +91,9 @@ pub struct AgentEventDetails {
     /// Background agents launched and not yet reported back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_agents: Option<i64>,
+    /// Background shells and `Monitor`s launched and not yet ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_tasks: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -111,18 +114,21 @@ pub struct AgentEvent {
 }
 
 impl AgentEvent {
-    /// Background agents this thread launched that have not reported back.
-    pub fn background_agents(&self) -> i64 {
-        self.details.as_ref().and_then(|d| d.background_agents).unwrap_or(0)
+    /// Background agents and tasks this thread launched that are still out.
+    pub fn background_out(&self) -> i64 {
+        self.details
+            .as_ref()
+            .map_or(0, |d| d.background_agents.unwrap_or(0) + d.background_tasks.unwrap_or(0))
     }
 
-    /// Mid-turn, or at the prompt with background agents still out — their
-    /// reports start the next turn, so neither is waiting on you. A question
+    /// Mid-turn, or at the prompt with background work still out — its
+    /// reports start the next turn, so neither is waiting on you. A monitor's
+    /// event wakes the agent for a turn and leaves it here again: still working. A question
     /// (`Waiting`) or a failure is, whatever is still running.
     pub fn is_working(&self) -> bool {
         match self.status {
             AgentStatus::Busy => true,
-            AgentStatus::Idle | AgentStatus::Complete => self.background_agents() > 0,
+            AgentStatus::Idle | AgentStatus::Complete => self.background_out() > 0,
             _ => false,
         }
     }
@@ -369,6 +375,13 @@ mod tests {
         ] {
             assert!(!with_background(status, 2).is_working(), "{status:?}");
         }
+    }
+
+    #[test]
+    fn a_background_task_out_is_working_like_an_agent() {
+        let mut ev = with_background(AgentStatus::Complete, 0);
+        ev.details.as_mut().unwrap().background_tasks = Some(1);
+        assert!(ev.is_working());
     }
 
     #[test]

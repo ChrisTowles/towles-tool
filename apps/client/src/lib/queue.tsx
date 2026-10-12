@@ -140,9 +140,9 @@ export function rankMove(
 
 export const LANES = [
   "on_you",
+  "idle",
   "running",
   "parked",
-  "idle",
   "no_shell",
 ] as const satisfies readonly Lane[];
 

@@ -69,7 +69,7 @@ pub fn stamp_pty_state(
                 {
                     state.status = tt_agentboard::pty_status::resolve_status(
                         state.status,
-                        state.background_agents() > 0,
+                        state.background_out() > 0,
                         &pty.signal,
                         now,
                     );
