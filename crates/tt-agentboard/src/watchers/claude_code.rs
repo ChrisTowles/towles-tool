@@ -337,6 +337,7 @@ impl Journal {
         process_started_at: Option<i64>,
     ) -> Option<AgentEventDetails> {
         let running = self.ledger.running(process_started_at);
+        let tasks = self.ledger.tasks_running(process_started_at);
         let count = threads.threads.len() as i64;
         if self.usage.is_none()
             && self.last_tool.is_none()
@@ -344,6 +345,7 @@ impl Journal {
             && self.loop_state.is_none()
             && self.model.is_none()
             && running.is_empty()
+            && tasks == 0
         {
             return None;
         }
@@ -374,6 +376,7 @@ impl Journal {
             subagent_count: (count > 0).then_some(count),
             r#loop: self.loop_state.clone(),
             background_agents: (background > 0).then_some(background as i64),
+            background_tasks: (tasks > 0).then_some(tasks as i64),
         })
     }
 
@@ -457,13 +460,14 @@ impl ClaudeCodeAgentWatcher {
         (status, thread_name, journal.details(&state.subagents, state.process_started_at))
     }
 
-    /// A process that exited took its background agents with it, whatever the
+    /// A process that exited took its background agents and tasks with it, whatever the
     /// ledger still holds — else the pane would read as working for good.
     fn exit_parts(state: &SessionState) -> Emitted {
         let (status, name, mut details) =
             Self::event_parts(state, exit_status(state.journal.status));
         if let Some(d) = details.as_mut() {
             d.background_agents = None;
+            d.background_tasks = None;
         }
         (status, name, details)
     }
@@ -936,6 +940,50 @@ mod tests {
         let ev = ctx.events.last().unwrap();
         assert_eq!(ev.status, AgentStatus::Complete);
         assert_eq!(ev.details.as_ref().and_then(|d| d.background_agents), None);
+        assert!(!ev.is_working());
+    }
+
+    /// A monitor's event wakes the agent for a turn that ends at the prompt
+    /// again; the watch is out the whole time, so the session never reads free.
+    #[test]
+    fn a_monitor_keeps_its_session_working_across_its_events() {
+        let mut f = fixture();
+        let call = r#"{"type":"assistant","timestamp":"2026-09-30T22:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_m","name":"Monitor","input":{"command":"gh run watch"}}]}}"#;
+        let armed = r#"{"type":"user","timestamp":"2026-09-30T22:00:01Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_m"}]},"toolUseResult":{"taskId":"m1","timeoutMs":300000,"persistent":false}}"#;
+        let path = write_journal(
+            &f.projects,
+            "/home/u/m",
+            "sid-mon",
+            &[USER_LINE, call, armed, DONE_LINE],
+        );
+        *f.agents.lock().unwrap() = vec![cli_agent(1, "/home/u/m", "sid-mon")];
+        let mut ctx = Ctx::new();
+        ctx.by_dir.push(("/home/u/m".into(), "m".into()));
+        let append = |line: &str| {
+            let mut text = std::fs::read_to_string(&path).unwrap();
+            text.push_str(line);
+            text.push('\n');
+            std::fs::write(&path, text).unwrap();
+        };
+        let notify = |ts: &str, body: &str| {
+            format!(
+                r#"{{"type":"queue-operation","operation":"enqueue","timestamp":"{ts}","content":"<task-notification>\n<task-id>m1</task-id>\n{body}\n</task-notification>"}}"#
+            )
+        };
+
+        f.scan(&mut ctx, 1_000);
+        assert_eq!(ctx.events.last().unwrap().details.as_ref().unwrap().background_tasks, Some(1));
+        assert!(ctx.events.last().unwrap().is_working());
+
+        append(&notify("2026-09-30T22:05:00Z", "<event>build passed</event>"));
+        append(END_TURN_LINE);
+        f.scan(&mut ctx, 2_000);
+        assert!(ctx.events.last().unwrap().is_working(), "an event is not the end of the watch");
+
+        append(&notify("2026-09-30T22:06:00Z", "<status>completed</status>"));
+        f.scan(&mut ctx, 3_000);
+        let ev = ctx.events.last().unwrap();
+        assert_eq!(ev.details.as_ref().and_then(|d| d.background_tasks), None);
         assert!(!ev.is_working());
     }
 

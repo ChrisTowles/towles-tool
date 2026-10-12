@@ -51,13 +51,13 @@ export const HERO_KICKER: Record<WaitReason, string> = {
 
 const LANE_TITLE: Record<Lane, string> = {
   on_you: "On you",
+  idle: "Idle",
   running: "Running",
   parked: "Parked",
-  idle: "Idle",
   no_shell: "No shell",
 };
 
-export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "idle", "no_shell"];
+export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "no_shell"];
 
 /** The rail's row motion, with a slower slide: a row crossing lanes travels far
  * enough that the eye needs time to follow it. */

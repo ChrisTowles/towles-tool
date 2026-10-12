@@ -58,7 +58,7 @@ pub struct TranscriptEntry {
     pub entrypoint: Option<String>,
     #[serde(rename = "sessionKind", default)]
     pub session_kind: Option<String>,
-    /// The fields of a tool result that name a background agent. Any other
+    /// The fields of a tool result that name a background agent or task. Any other
     /// shape (most tools log a string or a big object) reads as the default.
     #[serde(rename = "toolUseResult", default)]
     pub tool_use_result: Option<ToolUseResult>,
@@ -83,6 +83,10 @@ pub struct ToolUseResult {
     pub resumed_agent_id: Option<String>,
     /// `SendMessage` to a teammate: `@<name>`.
     pub routing_target: Option<String>,
+    /// `Monitor`'s task — and other tools' unrelated ids, so join on the call.
+    pub task_id: Option<String>,
+    /// A `Bash` call sent to the background.
+    pub background_task_id: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for ToolUseResult {
@@ -141,6 +145,8 @@ impl<'de> serde::de::Visitor<'de> for ToolUseResultVisitor {
                 "agentId" => &mut r.agent_id,
                 "name" => &mut r.name,
                 "resumedAgentId" => &mut r.resumed_agent_id,
+                "taskId" => &mut r.task_id,
+                "backgroundTaskId" => &mut r.background_task_id,
                 "success" => {
                     r.success = map.next_value::<Value>()?.as_bool();
                     continue;
