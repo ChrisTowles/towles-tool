@@ -27,6 +27,7 @@ mod queue;
 mod resume;
 mod scheduler;
 mod settings;
+mod sim;
 mod slack;
 mod slack_socket;
 mod store;
@@ -283,6 +284,7 @@ pub fn run() {
                 ever_live: Mutex::new(std::collections::HashSet::new()),
                 shutting_down: std::sync::atomic::AtomicBool::new(false),
                 coalescer: Mutex::new(tt_agentboard::Coalescer::new()),
+                status_log: Mutex::new(tt_agentboard::status_log::StatusLog::new()),
             });
 
             // Compiler-diagnostics hub for the Claude Code IDE bridge, consumed
@@ -309,6 +311,9 @@ pub fn run() {
                     loop {
                         emit.notified().await;
                         tokio::time::sleep(Duration::from_millis(200)).await;
+                        if sim::active(&handle) {
+                            continue;
+                        }
                         let rebuild_handle = handle.clone();
                         let Ok(mut payload) = tauri::async_runtime::spawn_blocking(move || {
                             agentboard::stamped_payload(&rebuild_handle)
@@ -663,6 +668,10 @@ pub fn run() {
 
             // Kick an initial scan so the first snapshot has data.
             scan.notify_one();
+            if let Some(scenario) = sim::Sim::from_env() {
+                app.manage(scenario);
+                sim::spawn(app.handle().clone());
+            }
             Ok(())
         })
         .manage(queue::QueueState::default())
@@ -719,6 +728,8 @@ pub fn run() {
             queue::queue_move,
             queue::queue_snooze,
             queue::queue_unsnooze,
+            sim::sim_status,
+            sim::sim_control,
             agentboard::ab_mark_seen,
             agentboard::ab_add_repo,
             agentboard::ab_create_repo,

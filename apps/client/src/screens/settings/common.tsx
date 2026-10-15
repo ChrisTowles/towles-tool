@@ -338,7 +338,7 @@ export function SlackUserPicker({
           {(u: SlackUser) => (
             <Combobox.Item key={u.id} value={u}>
               <span className="truncate">{u.name}</span>
-              <span className="ml-2 font-mono text-[10px] text-kumo-subtle">{u.id}</span>
+              <span className="ml-2 font-mono text-micro text-kumo-subtle">{u.id}</span>
             </Combobox.Item>
           )}
         </Combobox.List>

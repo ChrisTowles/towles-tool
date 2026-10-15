@@ -52,20 +52,26 @@ impl Default for HexColor {
     }
 }
 
-/// The colors a repo can be dealt or pinned from — the client picker's
-/// `REPO_PALETTE`. Each clears the lightness, chroma and contrast gates on both
-/// the light and dark surface, and none is a reserved status hue (amber,
-/// violet, sky). The order breaks ties: earlier is preferred.
-pub const AUTO_PALETTE: [&str; 15] = [
-    "#3b82f6", "#e11d48", "#059669", "#d946ef", "#0891b2", "#65a30d", "#ec4899", "#0d9488",
-    "#ef4444", "#2563eb", "#16a34a", "#c026d3", "#f43f5e", "#db2777", "#dc2626",
+/// The only colors a repo can be dealt or pinned: the app's one palette, owned
+/// by the client's `lib/colors.ts` (every chart pulls from it too) and checked
+/// against it by a test here. Why these colors is written down there. The order
+/// breaks ties: earlier is preferred.
+pub const AUTO_PALETTE: [&str; 12] = [
+    "#718dba", "#818e9b", "#536992", "#787ca7", "#567786", "#8a697b", "#b08c9f", "#9d7a8d",
+    "#6f7192", "#9b95a2", "#8d7f9f", "#78717d",
 ];
 
+/// `color` as a pin, if it is one of [`AUTO_PALETTE`]'s — no other color is kept.
+pub fn palette_pin(color: &HexColor) -> Option<&HexColor> {
+    AUTO_PALETTE.contains(&color.as_str()).then_some(color)
+}
+
 /// Every repo's color, in order, the way a chart colors its series: a pinned
-/// repo keeps its pin, and each other repo is dealt the palette color that
+/// repo keeps its pin (a pin from outside the palette is ignored), and each other repo is dealt the palette color that
 /// stands furthest (OKLab) from every color already held — a pin, or one dealt
 /// before it — so a dealt color never lands beside a near-twin of a pin.
 pub fn resolve_colors(pins: &[Option<&HexColor>]) -> Vec<HexColor> {
+    let pins: Vec<Option<&HexColor>> = pins.iter().map(|p| p.and_then(palette_pin)).collect();
     let mut held: Vec<[f64; 3]> = pins.iter().flatten().map(|c| oklab(c.as_str())).collect();
     pins.iter()
         .map(|pin| match pin {
@@ -270,19 +276,32 @@ mod tests {
 
     #[test]
     fn a_dealt_color_keeps_clear_of_every_pin() {
-        let rose = HexColor::parse("#e11d48").unwrap();
-        let got = resolve_colors(&[Some(&rose), None, None]);
-        assert_eq!(got[0], rose, "a pin is kept as is");
-        for dealt in &got[1..] {
-            let gap = distance(&oklab(dealt.as_str()), &oklab(rose.as_str()));
-            assert!(gap > 0.15, "{} sits too close to the pinned rose", dealt.as_str());
-        }
+        let pin = HexColor::parse(AUTO_PALETTE[0]).unwrap();
+        let got = resolve_colors(&[Some(&pin), None, None]);
+        assert_eq!(got[0], pin, "a pin is kept as is");
+        assert!(!got[1..].contains(&pin), "nothing dealt shares the pinned color");
         assert_ne!(got[1], got[2], "two dealt repos never share a color");
     }
 
     #[test]
+    fn the_palette_is_the_clients() {
+        let ts = include_str!("../../../apps/client/src/lib/colors.ts");
+        let list = &ts[ts.find("PALETTE").unwrap()..];
+        let list = &list[..list.find("];").unwrap()];
+        let hexes: Vec<&str> = list.split('"').filter(|s| s.starts_with('#')).collect();
+        assert_eq!(hexes, AUTO_PALETTE, "AUTO_PALETTE has drifted from lib/colors.ts");
+    }
+
+    #[test]
+    fn a_pin_from_outside_the_palette_is_dealt_over() {
+        let rose = HexColor::parse("#e11d48").unwrap();
+        let got = resolve_colors(&[Some(&rose)]);
+        assert_eq!(got[0].as_str(), AUTO_PALETTE[0]);
+    }
+
+    #[test]
     fn dealing_is_stable_for_the_same_repos() {
-        let lime = HexColor::parse("#65a30d").unwrap();
+        let lime = HexColor::parse(AUTO_PALETTE[1]).unwrap();
         let pins = [None, Some(&lime), None, None];
         assert_eq!(resolve_colors(&pins), resolve_colors(&pins));
     }

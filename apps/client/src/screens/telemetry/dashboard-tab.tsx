@@ -190,7 +190,7 @@ function DashboardGrid({
 
       <ChartCard icon={HourglassIcon} title="Subprocess wait per day">
         <WaitBars summary={summary} />
-        <p className="mt-1 text-[11px] text-muted-foreground">
+        <p className="mt-1 text-mini text-muted-foreground">
           Overlaps allowed, so it can exceed wall time.
         </p>
       </ChartCard>
@@ -228,7 +228,7 @@ function ChartCard({
           {title}
         </h3>
         {note && (
-          <span className="font-mono text-[11px] text-muted-foreground [font-variant-numeric:tabular-nums]">
+          <span className="font-mono text-mini text-muted-foreground [font-variant-numeric:tabular-nums]">
             {note}
           </span>
         )}

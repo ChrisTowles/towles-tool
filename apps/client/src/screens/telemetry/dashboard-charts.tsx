@@ -1,27 +1,15 @@
-import { cn } from "@/lib/utils";
+import { NEUTRAL, PALETTE } from "@/lib/colors";
 import { fmtDuration, type DashboardSummary } from "@/lib/telemetry";
 
 /** Series colours go by position in `summary.series`, never by name, so a series
  * keeps its hue across ranges and groupings; `other` (always last) is neutral.
- * The five hues were validated as a set for CVD separation in both themes. */
-
-const SERIES_TONES = [
-  { fill: "fill-violet-600", stroke: "stroke-violet-600", bg: "bg-violet-600" },
-  { fill: "fill-sky-600", stroke: "stroke-sky-600", bg: "bg-sky-600" },
-  { fill: "fill-emerald-600", stroke: "stroke-emerald-600", bg: "bg-emerald-600" },
-  { fill: "fill-orange-600", stroke: "stroke-orange-600", bg: "bg-orange-600" },
-  { fill: "fill-pink-600", stroke: "stroke-pink-600", bg: "bg-pink-600" },
-];
-
-const OTHER_TONE = {
-  fill: "fill-muted-foreground/50",
-  stroke: "stroke-muted-foreground/50",
-  bg: "bg-muted-foreground/50",
-};
-
-export function seriesTone(name: string, index: number) {
-  return name === "other" ? OTHER_TONE : (SERIES_TONES[index] ?? OTHER_TONE);
+ * They are the app's shared palette, so a chart never borrows a status hue. */
+export function seriesColor(name: string, index: number): string {
+  return name === "other" ? NEUTRAL : (PALETTE[index] ?? NEUTRAL);
 }
+
+/** The one-series charts' color. */
+const SOLO = PALETTE[0];
 
 export type LogPoint = { day: string; hour?: number; executable?: string };
 
@@ -119,7 +107,7 @@ export function StackedBars({
         return b.spawnsByExec.map((s) => {
           const h = scale(s.count);
           y -= h;
-          const tone = seriesTone(s.name, series.indexOf(s.name));
+          const color = seriesColor(s.name, series.indexOf(s.name));
           return (
             <rect
               key={`${b.key}-${s.name}`}
@@ -127,7 +115,8 @@ export function StackedBars({
               y={y + 0.5}
               width={barW}
               height={Math.max(0, h - 1)}
-              className={cn(tone.fill, "cursor-pointer hover:opacity-80")}
+              fill={color}
+              className="cursor-pointer hover:opacity-80"
               onClick={() => onPoint(pointOf(b.key, s.name))}
             >
               <title>{`${b.key} · ${s.name} · ${s.count} spawns, ${s.failures} failed`}</title>
@@ -156,7 +145,7 @@ export function ErrorRateLines({
     <svg {...svgProps} aria-label="Share of failed spawns per bucket, one line per series">
       <Grid top="100%" mid="50%" unit="0" />
       {series.map((name, si) => {
-        const tone = seriesTone(name, si);
+        const color = seriesColor(name, si);
         const points = buckets.map((b, i) => {
           const s = b.spawnsByExec.find((e) => e.name === name);
           return s && s.count > 0 ? { i, x: xOf(i), y: yOf(s.failures / s.count), s, b } : null;
@@ -174,8 +163,8 @@ export function ErrorRateLines({
         const last = points.findLast((p) => p !== null);
         return (
           <g key={name}>
-            <path d={d} fill="none" strokeWidth={1.5} className={tone.stroke} />
-            {last && <circle cx={last.x} cy={last.y} r={3} className={tone.fill} />}
+            <path d={d} fill="none" strokeWidth={1.5} stroke={color} />
+            {last && <circle cx={last.x} cy={last.y} r={3} fill={color} />}
             {points.map(
               (p) =>
                 p && (
@@ -224,14 +213,7 @@ export function WaitBars({ summary }: { summary: DashboardSummary }) {
         const x = PAD.left + step * i + (step - barW) / 2;
         return (
           <g key={d.day}>
-            <rect
-              x={x}
-              y={PAD.top + plotH - h}
-              width={barW}
-              height={h}
-              rx={1.5}
-              className="fill-violet-600"
-            >
+            <rect x={x} y={PAD.top + plotH - h} width={barW} height={h} rx={1.5} fill={SOLO}>
               <title>{`${d.day} · ${fmtDuration(d.totalMs)} over ${d.count} spawns`}</title>
             </rect>
             <text
@@ -274,35 +256,40 @@ export function DurationBars({ summary }: { summary: DashboardSummary }) {
   const width = (ms: number) => `${Math.max(1, (Math.log10(ms + 1) / Math.log10(top + 1)) * 100)}%`;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    // In a narrow card the numbers drop under their bar: on one line, a fixed
+    // name and number column would squeeze the bar to a dot.
+    <div className="@container flex flex-col gap-1.5">
       {rows.map((r) => (
-        <div key={r.name} className="flex items-center gap-2 text-xs">
-          <span className="w-16 truncate font-mono" title={r.name}>
+        <div
+          key={r.name}
+          className="grid grid-cols-[4rem_minmax(0,1fr)] items-center gap-x-2 text-xs @[26rem]:grid-cols-[4rem_minmax(0,1fr)_auto]"
+        >
+          <span className="truncate font-mono" title={r.name}>
             {r.name}
           </span>
           <div className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
             <div
-              className="absolute inset-y-0 left-0 rounded-full bg-violet-600/30"
-              style={{ width: width(r.p95Ms) }}
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{
+                width: width(r.p95Ms),
+                backgroundColor: `color-mix(in srgb, ${SOLO} 30%, transparent)`,
+              }}
               title={`p95 ${fmtMs.format(r.p95Ms)} ms`}
             />
             <div
-              className="absolute inset-y-0 left-0 rounded-full bg-violet-600"
-              style={{ width: width(r.p50Ms) }}
+              className="absolute inset-y-0 left-0 rounded-full"
+              style={{ width: width(r.p50Ms), backgroundColor: SOLO }}
               title={`p50 ${fmtMs.format(r.p50Ms)} ms`}
             />
           </div>
-          <span className="w-36 shrink-0 whitespace-nowrap text-right font-mono text-muted-foreground [font-variant-numeric:tabular-nums]">
+          <span className="col-start-2 whitespace-nowrap font-mono text-mini text-muted-foreground [font-variant-numeric:tabular-nums] @[26rem]:col-start-auto @[26rem]:text-right @[26rem]:text-xs">
             {r.maxMs === 0 ? (
               "detached"
             ) : (
               <>
                 {fmtMs.format(r.p50Ms)} · {fmtMs.format(r.p95Ms)} ms
                 {r.maxMs > LONG_SPAWN_MS && (
-                  <span className="text-orange-800 dark:text-orange-400">
-                    {" "}
-                    max {Math.round(r.maxMs / 1000)}s
-                  </span>
+                  <span className="text-warn"> max {Math.round(r.maxMs / 1000)}s</span>
                 )}
               </>
             )}
@@ -319,10 +306,13 @@ export function SeriesLegend({
   items: { name: string; index: number; note: string }[];
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground [font-variant-numeric:tabular-nums]">
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-mini text-muted-foreground [font-variant-numeric:tabular-nums]">
       {items.map((it) => (
         <span key={it.name} className="flex items-center gap-1.5">
-          <span className={cn("size-2 rounded-sm", seriesTone(it.name, it.index).bg)} />
+          <span
+            className="size-2 rounded-sm"
+            style={{ backgroundColor: seriesColor(it.name, it.index) }}
+          />
           <span className="max-w-32 truncate" title={it.name}>
             {it.name}
           </span>

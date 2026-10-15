@@ -94,7 +94,7 @@ export function ResumePicker() {
             <div key={dir} className="mb-3 last:mb-0">
               <div className="flex items-center gap-2 border-b border-kumo-hairline px-1 pb-1">
                 <FolderIcon className="size-3.5 text-kumo-subtle" />
-                <span className="truncate font-medium text-kumo-subtle text-[13px]">
+                <span className="truncate font-medium text-kumo-subtle text-caption">
                   {folderLabel(dir)}
                 </span>
               </div>
@@ -116,16 +116,16 @@ export function ResumePicker() {
                       checked={picked}
                       onCheckedChange={() => toggle(c.paneId)}
                     />
-                    <span className="w-4 text-center font-mono text-violet-500 text-xs">✦</span>
+                    <span className="w-4 text-center font-mono text-agent text-xs">✦</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] text-kumo-default">
+                      <span className="block truncate text-caption text-kumo-default">
                         {c.title ?? c.paneName}
                       </span>
-                      <span className="block truncate font-mono text-[11px] text-kumo-subtle">
+                      <span className="block truncate font-mono text-mini text-kumo-subtle">
                         {c.paneName}
                       </span>
                     </span>
-                    <span className="shrink-0 font-mono text-[11px] text-kumo-subtle">
+                    <span className="shrink-0 font-mono text-mini text-kumo-subtle">
                       {fmtAge(c.lastActiveMs, now)}
                     </span>
                   </label>

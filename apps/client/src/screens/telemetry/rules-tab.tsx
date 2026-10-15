@@ -28,16 +28,16 @@ const RANGES: { value: RulesRange; label: string }[] = [
 export const DEFAULT_RULES_RANGE: RulesRange = 14;
 
 const VALUE_TONE: Record<RuleState, string> = {
-  failing: "text-red-600 dark:text-red-400",
-  near: "text-amber-600 dark:text-amber-400",
-  passing: "text-emerald-600 dark:text-emerald-500",
+  failing: "text-danger",
+  near: "text-warn",
+  passing: "text-ok",
   empty: "text-muted-foreground/60",
 };
 
 const LINE_TONE: Record<RuleState, string> = {
-  failing: "stroke-red-600 dark:stroke-red-400",
-  near: "stroke-amber-600 dark:stroke-amber-400",
-  passing: "stroke-emerald-600 dark:stroke-emerald-500",
+  failing: "stroke-danger",
+  near: "stroke-warn",
+  passing: "stroke-ok",
   empty: "stroke-muted-foreground/60",
 };
 
@@ -155,7 +155,7 @@ function RuleCard({ score, onOpen }: { score: RuleScore; onOpen: () => void }) {
       >
         {fmtRuleValue(score.kind, score.today)}
       </span>
-      <span className="font-mono text-[11px] text-muted-foreground [font-variant-numeric:tabular-nums]">
+      <span className="font-mono text-mini text-muted-foreground [font-variant-numeric:tabular-nums]">
         {ruleDetail(score)}
       </span>
       <Sparkline score={score} state={state} />

@@ -41,7 +41,7 @@ pane *header* is the opposite case and keeps the bordered `labeled` form. The
 rest of the look lives in the `visual-design` skill.
 
 A folder row is **one line when the rail is wide enough, two when it isn't** —
-`@container/row` at 34rem, an `order` swap keeping the toolbar on the name's line
+`@container/row` at 26rem, an `order` swap keeping the toolbar on the name's line
 while git counts drop below. Container, not viewport: the rail is independently
 resizable, so the question is *this row's* room.
 
@@ -56,7 +56,10 @@ Nothing else has that luxury. The rail renders a backend snapshot, so a removed
 row is simply absent from the next payload and React unmounts it before any CSS
 can run. That case uses `motion`: `<AnimatePresence>` holds the departed row on
 screen and `layout` slides the survivors in, configured from
-`lib/rail-motion.ts` — spread it rather than hand-rolling per-row variants.
+`lib/rail-motion.ts` — spread it rather than hand-rolling per-row variants. The
+queue rail is the one exception, with slow (0.9s) fades of its own in
+`queue-rail.tsx`: its rows move on agents' schedule rather than yours, so motion
+there has to stay below the threshold of pulling your eye.
 
 Deliberately **not** yaak's `<LazyMotion strict>` + `m.*`, which splits motion
 into its own chunk only when every `AnimatePresence` consumer is lazily imported

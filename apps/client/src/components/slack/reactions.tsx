@@ -53,13 +53,13 @@ function Chip({
       title={`:${reaction.name}:`}
       onClick={() => onToggle(reaction.name, !reaction.mine)}
       className={cn(
-        "flex h-[22px] items-center gap-1 rounded-full border px-1.5 text-[11px] tabular-nums transition-colors",
+        "flex h-[22px] items-center gap-1 rounded-full border px-1.5 text-mini tabular-nums transition-colors",
         reaction.mine
-          ? "border-violet-500/50 bg-violet-500/15 text-violet-700 dark:text-violet-300"
+          ? "border-agent/50 bg-agent/15 text-agent"
           : "border-border bg-card text-muted-foreground hover:bg-muted",
       )}
     >
-      <span className={cn(char ? "font-emoji text-[13px] leading-none" : "font-mono text-[10px]")}>
+      <span className={cn(char ? "font-emoji text-caption leading-none" : "font-mono text-micro")}>
         {char ?? `:${reaction.name}:`}
       </span>
       <span>{reaction.count}</span>

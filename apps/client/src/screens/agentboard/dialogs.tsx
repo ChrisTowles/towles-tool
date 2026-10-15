@@ -192,9 +192,7 @@ export function DeleteWorktreeDialog({
             <span
               className={cn(
                 "rounded px-1.5 py-0.5 font-mono",
-                outcome === "done"
-                  ? "bg-emerald-500/10 text-emerald-500"
-                  : "bg-kumo-recessed text-kumo-subtle",
+                outcome === "done" ? "bg-ok/10 text-ok" : "bg-kumo-recessed text-kumo-subtle",
               )}
             >
               {(() => {

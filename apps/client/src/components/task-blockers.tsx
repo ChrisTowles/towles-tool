@@ -82,9 +82,9 @@ export function BlockedDeleteDialog({
           </Dialog.Description>
         </div>
         {messages.length > 0 && (
-          <ul className="flex flex-col gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2">
+          <ul className="flex flex-col gap-1 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-2">
             {messages.map((message) => (
-              <li key={message} className="text-[11.5px] text-amber-600 dark:text-amber-400">
+              <li key={message} className="text-mini text-warn">
                 {message}
               </li>
             ))}

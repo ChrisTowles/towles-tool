@@ -193,18 +193,15 @@ export function onYouHead(queue: TaskQueue): QueueItem | undefined {
   return queue.items.find((i) => i.lane === "on_you");
 }
 
-/** When the head of On you changes: open it in place only when nothing is
- * open, else announce it. What you have open is never swapped out — opening a
- * finished agent marks it seen and drops its row from On you, so "the row left On
- * you" can't mean "you're done with it". */
+/** When the head of On you changes, open it in place only when nothing is open
+ * and nothing is being typed in. Otherwise nothing happens: the queue is where
+ * you go when you're done, never something that calls you over. */
 export function nextUpArrival(
   prevHeadId: string | null | undefined,
   head: QueueItem | undefined,
   ctx: { terminalFocused: boolean; selectedId: string | null },
-): "open" | "announce" | null {
+): "open" | null {
   if (!head) return null;
   if (head.folderDir === prevHeadId || head.folderDir === ctx.selectedId) return null;
-  const free = ctx.selectedId === null && !ctx.terminalFocused;
-  if (prevHeadId === undefined) return free ? "open" : null;
-  return free ? "open" : "announce";
+  return ctx.selectedId === null && !ctx.terminalFocused ? "open" : null;
 }

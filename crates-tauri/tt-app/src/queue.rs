@@ -48,6 +48,9 @@ pub fn refresh(app: &AppHandle) {
 }
 
 fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
+    if crate::sim::active(app) {
+        return;
+    }
     let Some(queue) = build(app, payload) else {
         return;
     };
@@ -63,6 +66,9 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
     if last.as_ref() == Some(&queue) {
         return;
     }
+    if let Some(prev) = last.as_ref() {
+        log_lane_changes(prev, &queue);
+    }
     if last.as_ref().map(|q| &q.next) != Some(&queue.next) {
         let head = queue.items.iter().find(|i| Some(&i.folder_dir) == queue.next.as_ref());
         tracing::info!(
@@ -75,8 +81,31 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
     *last = Some(queue);
 }
 
+/// One record per row that changed lane — the queue jumping, as the eye sees it.
+fn log_lane_changes(prev: &TaskQueue, next: &TaskQueue) {
+    for item in &next.items {
+        let Some(was) = prev.items.iter().find(|p| p.folder_dir == item.folder_dir) else {
+            continue;
+        };
+        if was.lane != item.lane {
+            let folder = item.folder_dir.rsplit('/').next().unwrap_or_default();
+            tracing::info!(
+                folder,
+                session = item.session_id.as_deref(),
+                from = ?was.lane,
+                to = ?item.lane,
+                reason = item.reason.map(|r| r.as_str()),
+                "queue.lane_changed"
+            );
+        }
+    }
+}
+
 #[tauri::command]
 pub fn queue_get(app: AppHandle, state: State<QueueState>) -> Option<TaskQueue> {
+    if let Some(simulated) = crate::sim::queue(&app) {
+        return Some(simulated);
+    }
     if let Some(queue) = state.last.lock().unwrap().clone() {
         return Some(queue);
     }

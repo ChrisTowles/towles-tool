@@ -74,8 +74,8 @@ import { uiAction } from "@/lib/ui-action";
  * a filtered page over its own day range, since a fortnight is far more. */
 
 const LEVEL_TONE: Record<string, string> = {
-  ERROR: "text-red-600 dark:text-red-400",
-  WARN: "text-amber-600 dark:text-amber-400",
+  ERROR: "text-danger",
+  WARN: "text-warn",
   INFO: "text-foreground",
   DEBUG: "text-muted-foreground",
   TRACE: "text-muted-foreground/70",
@@ -830,7 +830,7 @@ function OverviewTab({
   return (
     <div className="flex flex-col gap-4">
       {dominant && dominant.count / events.length >= DOMINANCE_THRESHOLD && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+        <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
           <WarningCircleIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>
             <span className="font-mono">{dominant.key}</span> accounts for{" "}
@@ -881,8 +881,8 @@ function OverviewTab({
             {recentErrors.map((e, i) => (
               <div key={`${e.ts}-${i}`} className="flex items-center gap-2.5 px-1 py-1">
                 <span className="font-mono text-xs text-foreground">{e.name}</span>
-                <span className="font-mono text-[11px] text-muted-foreground/60">{e.target}</span>
-                <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+                <span className="font-mono text-mini text-muted-foreground/60">{e.target}</span>
+                <span className="ml-auto font-mono text-mini text-muted-foreground">
                   {timeOf(e.ts)}
                 </span>
               </div>
@@ -942,7 +942,7 @@ function InsightsTab({
                 className="flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left hover:bg-accent/50"
               >
                 <span className="font-mono text-xs text-foreground">{e.name}</span>
-                <span className="font-mono text-[11px] text-muted-foreground/60">{e.target}</span>
+                <span className="font-mono text-mini text-muted-foreground/60">{e.target}</span>
                 <span className="ml-auto font-mono text-xs text-muted-foreground">
                   {e.durationMs}ms
                 </span>
@@ -994,13 +994,13 @@ function TelemetryRow({
       onClick={onSelect}
       className={cn(
         "flex w-full flex-col gap-0.5 rounded-md border-l-2 border-transparent px-3 py-2 text-left hover:bg-accent/50",
-        record.level === "ERROR" && "border-l-red-500 bg-red-500/5",
+        record.level === "ERROR" && "border-l-danger bg-danger/5",
       )}
     >
       <div className="flex w-full items-center gap-2.5">
         <span
           className={cn(
-            "shrink-0 font-mono text-[11px] text-muted-foreground",
+            "shrink-0 font-mono text-mini text-muted-foreground",
             showDay ? "w-36" : "w-20",
           )}
         >
@@ -1008,23 +1008,20 @@ function TelemetryRow({
           {timeOf(record.ts)}
         </span>
         <span
-          className={cn(
-            "w-12 shrink-0 font-mono text-[10.5px] font-medium",
-            LEVEL_TONE[record.level],
-          )}
+          className={cn("w-12 shrink-0 font-mono text-mini font-medium", LEVEL_TONE[record.level])}
         >
           {record.level}
         </span>
         <span className="font-mono text-xs text-foreground">{record.name}</span>
-        <span className="font-mono text-[11px] text-muted-foreground/60">{record.target}</span>
-        <div className="ml-auto flex shrink-0 items-center gap-3 font-mono text-[11px] text-muted-foreground">
+        <span className="font-mono text-mini text-muted-foreground/60">{record.target}</span>
+        <div className="ml-auto flex shrink-0 items-center gap-3 font-mono text-mini text-muted-foreground">
           {record.durationMs !== null && <span>{record.durationMs}ms</span>}
         </div>
       </div>
       {summary && (
         <span
           className={cn(
-            "w-full truncate font-mono text-[11px] text-muted-foreground/70",
+            "w-full truncate font-mono text-mini text-muted-foreground/70",
             showDay ? "pl-[150px]" : "pl-[86px]",
           )}
         >

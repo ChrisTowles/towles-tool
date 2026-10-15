@@ -57,9 +57,9 @@ export function ThreadPanel({
   return (
     <aside className="flex w-[380px] shrink-0 flex-col border-l border-kumo-hairline bg-background">
       <header className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-kumo-base px-3 py-2.5">
-        <ChatsCircleIcon className="size-4 text-violet-500" />
+        <ChatsCircleIcon className="size-4 text-agent" />
         <span className="text-sm font-semibold text-foreground">Thread</span>
-        <span className="font-mono text-[11px] text-kumo-subtle/60">
+        <span className="font-mono text-mini text-kumo-subtle/60">
           {replies} {replies === 1 ? "reply" : "replies"}
         </span>
         <div className="flex-1" />
@@ -76,7 +76,9 @@ export function ThreadPanel({
 
       {error ? (
         <div className="flex flex-1 items-center justify-center p-6">
-          <p className="max-w-full text-center text-[13px] break-words text-kumo-subtle">{error}</p>
+          <p className="max-w-full text-center text-caption break-words text-kumo-subtle">
+            {error}
+          </p>
         </div>
       ) : (
         <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
@@ -95,7 +97,7 @@ export function ThreadPanel({
                 {i === 0 && replies > 0 && (
                   <div className="my-2 flex items-center gap-2">
                     <div className="h-px flex-1 bg-border" />
-                    <span className="text-[10px] tracking-wide text-kumo-subtle uppercase">
+                    <span className="text-micro tracking-wide text-kumo-subtle uppercase">
                       {replies} {replies === 1 ? "reply" : "replies"}
                     </span>
                     <div className="h-px flex-1 bg-border" />

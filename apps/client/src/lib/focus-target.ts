@@ -51,7 +51,7 @@ export class FocusTargetStore {
 export const focusTargetStore = new FocusTargetStore();
 
 /** Literals, so Tailwind's scanner keeps them in the build. */
-const FLASH_CLASSES = ["ring-2", "ring-inset", "ring-amber-400", "dark:ring-amber-500"];
+const FLASH_CLASSES = ["ring-2", "ring-inset", "ring-warn"];
 const FLASH_MS = 1600;
 /** The row may not be painted yet (snapshot still loading) — retry a few frames. */
 const MAX_ATTEMPTS = 12;

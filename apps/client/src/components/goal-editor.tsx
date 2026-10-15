@@ -117,9 +117,9 @@ export function GoalEditor({
               key={i}
               className={
                 seg.kind === "url"
-                  ? "text-sky-600 underline decoration-sky-600/60 dark:text-sky-400 dark:decoration-sky-400/60"
+                  ? "text-info underline decoration-info/60"
                   : seg.kind === "ref"
-                    ? "rounded bg-sky-500/20 text-sky-700 dark:text-sky-300"
+                    ? "rounded bg-info/20 text-info"
                     : undefined
               }
             >
@@ -180,11 +180,11 @@ export function GoalEditor({
         {open && (
           <div className="absolute top-full left-0 z-50 mt-1 w-full overflow-hidden rounded-md border border-kumo-hairline bg-kumo-overlay shadow-md">
             {issuesError ? (
-              <p className="p-2 text-[11px] text-red-500">{issuesError}</p>
+              <p className="p-2 text-mini text-danger">{issuesError}</p>
             ) : issues === null ? (
-              <p className="p-2 text-[11px] text-kumo-subtle">Loading issues…</p>
+              <p className="p-2 text-mini text-kumo-subtle">Loading issues…</p>
             ) : matches.length === 0 ? (
-              <p className="p-2 text-[11px] text-kumo-subtle">No matching issues.</p>
+              <p className="p-2 text-mini text-kumo-subtle">No matching issues.</p>
             ) : (
               matches.map((issue, i) => (
                 <button
@@ -201,7 +201,7 @@ export function GoalEditor({
                     i === active && "bg-kumo-tint",
                   )}
                 >
-                  <span className="shrink-0 font-mono text-[10.5px] text-kumo-subtle">
+                  <span className="shrink-0 font-mono text-mini text-kumo-subtle">
                     #{issue.number}
                   </span>
                   <span className="truncate text-xs">{issue.title}</span>
@@ -214,7 +214,7 @@ export function GoalEditor({
       {/* Persistent, because the placeholder that used to carry this vanishes
           on the first keystroke — which is exactly when someone is composing a
           goal and might want to reference an issue. */}
-      <p className="flex items-center gap-1.5 text-[10.5px] text-kumo-subtle">
+      <p className="flex items-center gap-1.5 text-mini text-kumo-subtle">
         <button
           type="button"
           aria-label="Link an issue"
@@ -223,7 +223,7 @@ export function GoalEditor({
             e.preventDefault();
             startMention();
           }}
-          className="rounded bg-sky-500/20 px-1 font-mono text-sky-700 hover:bg-sky-500/35 dark:text-sky-300"
+          className="rounded bg-info/20 px-1 font-mono text-info hover:bg-info/35"
         >
           #
         </button>

@@ -68,7 +68,7 @@ export function useAttention(args: {
         kind: "event",
         title: soon.title,
         sub: `Starts in ${fmtCountdown(soon.startTs - now)}`,
-        border: "border-l-blue-500",
+        border: "border-l-waiting",
         onClick: () => {
           uiAction("agentboard.attention_open", "agentboard", "event");
           openTab("agentboard");

@@ -97,16 +97,16 @@ export function ViewPaneRow({
         className={cn(
           "relative ml-1.5 flex cursor-pointer items-center gap-2.5 border-l-2 border-transparent py-1 pr-3 pl-9",
           hovered && "bg-accent",
-          active && "border-l-violet-500 bg-accent",
+          active && "border-l-agent bg-accent",
         )}
       >
         <Icon className="w-4 shrink-0 text-muted-foreground/60" />
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate font-mono text-mini text-muted-foreground">
           {label}
         </span>
         {hovered && (
           <span className="absolute inset-y-0 right-2 z-10 flex items-center gap-1 bg-accent pl-1.5">
-            <IconBtn title={`close ${label} pane`} onClick={onClose} className="hover:text-red-500">
+            <IconBtn title={`close ${label} pane`} onClick={onClose} className="hover:text-danger">
               ✕
             </IconBtn>
           </span>

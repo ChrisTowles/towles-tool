@@ -27,7 +27,7 @@ export function JarvisPane({
     <div
       className={cn(
         "flex h-full flex-col overflow-hidden rounded-lg border bg-card",
-        focused && "border-violet-500/60",
+        focused && "border-agent/60",
       )}
     >
       <PaneChrome
@@ -38,7 +38,7 @@ export function JarvisPane({
             title="close pane (parks the surface and stops the renderer)"
             shortcut={focused ? "ab-close-pane" : undefined}
             onClick={onClose}
-            className="hover:text-sky-500"
+            className="hover:text-info"
           >
             <XIcon className="size-3" />
           </IconBtn>

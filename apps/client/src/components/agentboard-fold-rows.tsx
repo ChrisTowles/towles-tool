@@ -28,7 +28,7 @@ export function FoldedRepoStub({
         <Chevron collapsed />
         <GitBranchIcon className="size-3.5 shrink-0 opacity-60" />
         <span className="min-w-0 truncate text-sm">{name}</span>
-        <span className="ml-auto shrink-0 font-mono text-[10px]">
+        <span className="ml-auto shrink-0 font-mono text-micro">
           {foldedRepoLabel(idle, unmanaged)}
         </span>
       </button>
@@ -64,7 +64,7 @@ export function FoldToggleRow({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-1.5 py-1 pr-3 pl-6 text-left font-mono text-[10.5px] text-muted-foreground/50 hover:text-muted-foreground"
+        className="flex w-full items-center gap-1.5 py-1 pr-3 pl-6 text-left font-mono text-mini text-muted-foreground/50 hover:text-muted-foreground"
       >
         <Chevron collapsed={!revealed} />
         {revealed ? `hide ${count} ${noun}` : `${count} ${noun}`}

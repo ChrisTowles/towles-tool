@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 // echarts is ~1MB, so it's dynamically imported at chart-mount time (see
 // useEChart) rather than pulled into the initial bundle. The type-only import
 // keeps `echarts.ECharts` available without emitting a runtime dependency.
@@ -41,6 +41,9 @@ import {
   type SessionBreakdown,
 } from "@/lib/claude-sessions";
 import { requestAgentboardNav } from "@/lib/agentboard";
+import { useAgentboardState } from "@/lib/agentboard-state";
+import { NEUTRAL, PALETTE, paletteAt } from "@/lib/colors";
+import { repoInk, seriesColors } from "@/lib/repo-identity";
 import { NotInTauri, type IpcError } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import { useClipboardCopy } from "@/lib/use-clipboard-copy";
@@ -67,21 +70,10 @@ const MAX_STACKED_REPOS = 4;
  * the amber outlier treatment — "this one is not like the others". */
 const OUTLIER_FACTOR = 5;
 
-/** CVD-validated categorical palette (from the retired HTML report). Hue
- * encodes series identity on this data-exploration screen — a sanctioned
- * exception to the app's hue-is-for-status default. */
-const PALETTE = [
-  "#3987e5", // blue
-  "#008300", // green
-  "#d55181", // magenta
-  "#c98500", // amber
-  "#199e70", // teal
-  "#d95926", // orange
-  "#9085e9", // violet
-  "#e66767", // red
-];
-/** Uncommon tools and the "Other" fold both land on neutral gray. */
-const FALLBACK_COLOR = "#8a8a8a";
+/** Cadence outlines: from the palette too, so the heat map has no status hue. */
+const WEEKEND_OUTLINE = PALETTE[6];
+const WORK_HOUR_OUTLINE = PALETTE[1];
+const NO_SERIES_COLORS = new Map<string, string>();
 
 /** The 8 common tools get dedicated hues (same assignment the old report
  * used); anything else folds to gray so the legend stays honest. */
@@ -97,8 +89,8 @@ const TOOL_COLORS: Record<string, string> = {
 };
 
 function toolColor(name: string | null | undefined): string {
-  if (!name) return FALLBACK_COLOR;
-  return TOOL_COLORS[name] ?? (name.startsWith("mcp") ? PALETTE[2] : FALLBACK_COLOR);
+  if (!name) return NEUTRAL;
+  return TOOL_COLORS[name] ?? (name.startsWith("mcp") ? PALETTE[2] : NEUTRAL);
 }
 
 const INSIGHT_META: Record<InsightKind, { label: string; icon: Icon; color: string }> = {
@@ -124,6 +116,16 @@ function cssVar(name: string): string {
   ctx.fillRect(0, 0, 1, 1);
   const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
   return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+}
+
+/** A type-scale size from `index.css` (`--text-mini`), in px for echarts. */
+function cssPx(name: string): number {
+  return Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+}
+
+/** A font stack from `index.css` (`--font-sans`), so a canvas sets the app's face. */
+function cssFont(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 function formatTokens(n: number): string {
@@ -175,6 +177,7 @@ function useEChart(render: (chart: echarts.ECharts) => void, deps: unknown[]) {
       const initWhenSized = () => {
         if (chart || el.clientWidth === 0 || el.clientHeight === 0) return;
         chart = echarts.init(el);
+        chart.setOption({ textStyle: { fontFamily: cssFont("--font-sans") } });
         render(chart);
       };
       initWhenSized();
@@ -231,7 +234,7 @@ type TooltipParam = {
 /** Stacked day×repo bars, capped with the day's estimated cost. Repos are
  * ranked by window total, so a repo's palette hue matches its row in the
  * "By repo" ranked chart; the "Other" fold stays neutral gray. */
-function DayStackChart({ days }: { days: LedgerDay[] }) {
+function DayStackChart({ days, colors }: { days: LedgerDay[]; colors: Map<string, string> }) {
   const ref = useEChart(
     (chart) => {
       const { repos, rows } = stackSeries(days);
@@ -247,7 +250,7 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
           bottom: 0,
           // Only the repo series — the cost cap carries a label, not an identity.
           data: repos,
-          textStyle: { color: muted, fontSize: 11 },
+          textStyle: { color: muted, fontSize: cssPx("--text-mini") },
           itemWidth: 10,
           itemHeight: 10,
         },
@@ -278,7 +281,7 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
           data: days.map((d) => d.date.slice(5)),
           axisLine: { lineStyle: { color: border } },
           axisTick: { show: false },
-          axisLabel: { color: muted, fontSize: 10.5 },
+          axisLabel: { color: muted, fontSize: cssPx("--text-mini") },
         },
         yAxis: {
           type: "value",
@@ -286,14 +289,14 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
           axisLabel: { color: muted, formatter: (v: number) => formatTokens(v) },
         },
         series: [
-          ...repos.map((repo, i) => ({
+          ...repos.map((repo) => ({
             name: repo,
             type: "bar",
             stack: "day",
             barMaxWidth: 26,
             data: rows.get(repo),
             itemStyle: {
-              color: repo === "Other" ? FALLBACK_COLOR : PALETTE[i % PALETTE.length],
+              color: colors.get(repo) ?? NEUTRAL,
             },
           })),
           // Zero-height cap on the same stack: the only place a label sits at the
@@ -310,14 +313,14 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
               show: true,
               position: "top",
               color: muted,
-              fontSize: 10.5,
+              fontSize: cssPx("--text-mini"),
               formatter: (p: { dataIndex: number }) => formatCost(days[p.dataIndex]?.costUsd ?? 0),
             },
           },
         ],
       });
     },
-    [days],
+    [days, colors],
   );
 
   if (days.length === 0)
@@ -330,8 +333,10 @@ function DayStackChart({ days }: { days: LedgerDay[] }) {
  * each row labelled with tokens and estimated cost. */
 function RankedBarChart({
   bars,
+  colors,
 }: {
   bars: { label: string; totalTokens: number; costUsd: number }[];
+  colors: Map<string, string>;
 }) {
   const ref = useEChart(
     (chart) => {
@@ -373,7 +378,7 @@ function RankedBarChart({
             data: bars.map((b, i) => ({
               value: b.totalTokens,
               itemStyle: {
-                color: PALETTE[i % PALETTE.length],
+                color: colors.get(b.label) ?? paletteAt(i),
                 borderRadius: [0, 4, 4, 0],
               },
             })),
@@ -389,7 +394,7 @@ function RankedBarChart({
         ],
       });
     },
-    [bars],
+    [bars, colors],
   );
 
   if (bars.length === 0)
@@ -458,17 +463,11 @@ function isWorkHour(date: string, hour: number): boolean {
   return !isWeekend(date) && hour >= 8 && hour < 17;
 }
 
-/** Linear-interpolates two `#rrggbb` colors at `t` (0..1). */
-function lerpColor(a: string, b: string, t: number): string {
-  const pa = [1, 3, 5].map((i) => Number.parseInt(a.slice(i, i + 2), 16));
-  const pb = [1, 3, 5].map((i) => Number.parseInt(b.slice(i, i + 2), 16));
-  return `#${pa
-    .map((ca, i) =>
-      Math.round(ca + (pb[i] - ca) * t)
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("")}`;
+/** `#rrggbb` at opacity `a` — the heat ramp fades one palette color in, so it
+ * reads on either theme's card. */
+function withAlpha(hex: string, a: number): string {
+  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${a.toFixed(3)})`;
 }
 
 /** Quantile (equal-*count*, not equal-value) bins over the nonzero counts, so
@@ -487,14 +486,14 @@ function buildCountPieces(counts: number[]): { min: number; max: number; color: 
   let lo = 1;
   return uniqueBoundaries.map((hi, i) => {
     const t = uniqueBoundaries.length === 1 ? 1 : i / (uniqueBoundaries.length - 1);
-    const piece = { min: lo, max: hi, color: lerpColor(PALETTE[0], "#0b2f70", t) };
+    const piece = { min: lo, max: hi, color: withAlpha(PALETTE[0], 0.3 + 0.7 * t) };
     lo = hi + 1;
     return piece;
   });
 }
 
 /** Punch-card heat map: a column per day (oldest left), a row per hour; zero
- * cells stay included and render white. Square cells via the grid's pixel
+ * cells stay included and render as the muted surface. Square cells via the grid's pixel
  * `width`/`height` — `left`+`right` makes echarts re-stretch cells to fill. */
 function DayHourHeatmap({
   byDayHour,
@@ -518,15 +517,15 @@ function DayHourHeatmap({
       const countByCell = new Map(byDayHour.map((c) => [`${c.date}|${c.hour}`, c.count]));
       // Cells are fully opaque and paint over any background layer (markArea
       // and xAxis.splitArea both verified painted-over live); a per-cell
-      // border is the one cue that survives — amber weekend, teal work hour.
+      // border is the one cue that survives — one outline for a weekend, another for a work hour.
       const data: { value: [number, number, number]; itemStyle?: { borderColor: string } }[] = [];
       days.forEach((date, dayIndex) => {
         const weekend = isWeekend(date);
         for (let hour = 0; hour < 24; hour++) {
           const borderColor = weekend
-            ? PALETTE[3]
+            ? WEEKEND_OUTLINE
             : isWorkHour(date, hour)
-              ? PALETTE[4]
+              ? WORK_HOUR_OUTLINE
               : undefined;
           data.push({
             value: [dayIndex, hour, countByCell.get(`${date}|${hour}`) ?? 0],
@@ -548,12 +547,12 @@ function DayHourHeatmap({
         visualMap: {
           // Piecewise, not continuous: with `min: 1` a continuous visualMap
           // still painted zero cells like the nonzero low end (verified live —
-          // `outOfRange` never took effect); piecewise zero renders white.
+          // `outOfRange` never took effect); piecewise zero takes `--muted`.
           type: "piecewise",
           dimension: 2,
           show: false,
           pieces: [
-            { min: 0, max: 0, color: "#ffffff" },
+            { min: 0, max: 0, color: cssVar("--muted") },
             ...buildCountPieces(byDayHour.map((c) => c.count)),
           ],
         },
@@ -564,8 +563,9 @@ function DayHourHeatmap({
           axisLine: { show: false },
           axisTick: { show: false },
           axisLabel: {
-            color: (_value: string, index: number) => (isWeekend(days[index]) ? PALETTE[3] : muted),
-            fontSize: 9.5,
+            color: (_value: string, index: number) =>
+              isWeekend(days[index]) ? WEEKEND_OUTLINE : muted,
+            fontSize: cssPx("--text-micro"),
             interval: Math.ceil(days.length / 15) - 1,
             rotate: 45,
           },
@@ -576,7 +576,7 @@ function DayHourHeatmap({
           data: Array.from({ length: 24 }, (_, h) => formatHourLabel(h)),
           axisLine: { show: false },
           axisTick: { show: false },
-          axisLabel: { color: muted, fontSize: 10 },
+          axisLabel: { color: muted, fontSize: cssPx("--text-micro") },
         },
         series: [
           {
@@ -642,15 +642,39 @@ function CadenceTab({ days, nonce, active }: { days: string; nonce: number; acti
       <Card title="Prompts by day & hour">
         <DayHourHeatmap byDayHour={cadence.byDayHour} range={range} />
       </Card>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-mini text-muted-foreground">
         Dates and hours are local time. Counts are human-typed prompts only — tool results and
         injected envelopes are excluded, and token/cost volume plays no part here.{" "}
-        <span style={{ color: PALETTE[3] }}>Amber</span> outlines a weekend day;{" "}
-        <span style={{ color: PALETTE[4] }}>teal</span> outlines 8am–5pm on a weekday.
+        <OutlineKey color={WEEKEND_OUTLINE} /> outlines a weekend day;{" "}
+        <OutlineKey color={WORK_HOUR_OUTLINE} /> outlines 8am–5pm on a weekday.
       </p>
     </div>
   );
 }
+
+function OutlineKey({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-block size-2.5 rounded-[2px] border-2 align-middle"
+      style={{ borderColor: color }}
+    />
+  );
+}
+
+/** A Claude Sessions project, in its repo's color — the same one the rail and
+ * the charts give it. */
+function ProjectName({ name, className }: { name: string; className?: string }) {
+  const colors = useContext(ProjectColorsContext);
+  const hex = colors.get(name);
+  return (
+    <span className={className} style={hex ? { color: repoInk(hex) } : undefined}>
+      {name}
+    </span>
+  );
+}
+
+const ProjectColorsContext = createContext<Map<string, string>>(new Map());
 
 type SessionSortKey =
   | "title"
@@ -781,7 +805,7 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
             aria-label="Copy session ID"
             icon={
               copiedKey === "id" ? (
-                <CheckIcon className="size-3.5 text-green-500" />
+                <CheckIcon className="size-3.5 text-ok" />
               ) : (
                 <CopyIcon className="size-3.5" />
               )
@@ -804,7 +828,7 @@ function SessionButtons({ session }: { session: ClaudeSession }) {
             aria-label="Copy session file path"
             icon={
               copiedKey === "path" ? (
-                <CheckIcon className="size-3.5 text-green-500" />
+                <CheckIcon className="size-3.5 text-ok" />
               ) : (
                 <CopyIcon className="size-3.5" />
               )
@@ -874,7 +898,7 @@ function BreakdownDialog({
             {session && <SessionButtons session={session} />}
           </Dialog.Title>
           <Dialog.Description className="text-sm">
-            {session?.project} · {session?.date} ·{" "}
+            {session && <ProjectName name={session.project} />} · {session?.date} ·{" "}
             {formatTokens((session?.inputTokens ?? 0) + (session?.outputTokens ?? 0))} in+out
           </Dialog.Description>
         </div>
@@ -884,7 +908,7 @@ function BreakdownDialog({
         ) : data ? (
           <div className="flex flex-col gap-5">
             <section>
-              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+              <h4 className="mb-2 text-mini font-medium uppercase tracking-wider text-muted-foreground">
                 Where the tokens went
               </h4>
               {topTools.length === 0 ? (
@@ -915,7 +939,7 @@ function BreakdownDialog({
             </section>
 
             <section>
-              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+              <h4 className="mb-2 text-mini font-medium uppercase tracking-wider text-muted-foreground">
                 Heaviest steps
               </h4>
               {topTurns.length === 0 ? (
@@ -943,7 +967,7 @@ function BreakdownDialog({
                 </div>
               )}
               {data.turns.length > topTurns.length && (
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                <p className="mt-1.5 text-mini text-muted-foreground">
                   Top {topTurns.length} of {data.turns.length} token-bearing steps.
                 </p>
               )}
@@ -997,7 +1021,7 @@ function SessionTable({ sessions, searching }: { sessions: ClaudeSession[]; sear
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-border text-left text-[10.5px] uppercase tracking-wider text-muted-foreground">
+          <tr className="border-b border-border text-left text-mini uppercase tracking-wider text-muted-foreground">
             <SortableTh
               sortKey="title"
               active={sort?.key === "title"}
@@ -1081,15 +1105,17 @@ function SessionTable({ sessions, searching }: { sessions: ClaudeSession[]; sear
                     )}
                   </div>
                   {s.snippet && (
-                    <div className="truncate text-[11px] text-muted-foreground">{s.snippet}</div>
+                    <div className="truncate text-mini text-muted-foreground">{s.snippet}</div>
                   )}
                 </td>
-                <td className="py-1.5 pr-3 font-mono text-xs text-muted-foreground">{s.project}</td>
+                <td className="py-1.5 pr-3 font-mono text-xs text-muted-foreground">
+                  <ProjectName name={s.project} />
+                </td>
                 <td className="py-1.5 pr-3 font-mono text-xs text-muted-foreground">{s.date}</td>
                 <td
                   className={cn(
                     "py-1.5 pr-3 text-right font-mono text-xs",
-                    outlier ? "font-semibold text-amber-500" : "text-foreground",
+                    outlier ? "font-semibold text-warn" : "text-foreground",
                   )}
                 >
                   {formatTokens(billable)}
@@ -1148,7 +1174,7 @@ function InsightsTab({ days, nonce, active }: { days: string; nonce: number; act
   if (insights.length === 0)
     return (
       <div className="flex items-center gap-2.5 p-4 text-sm text-muted-foreground">
-        <CheckCircleIcon className="size-4 shrink-0" style={{ color: PALETTE[1] }} />
+        <CheckCircleIcon className="size-4 shrink-0 text-ok" />
         No waste patterns in this window — sessions look healthy.
       </div>
     );
@@ -1192,10 +1218,10 @@ function InsightsTab({ days, nonce, active }: { days: string; nonce: number; act
               <span className="mt-0.5 block truncate text-sm text-foreground">
                 {s.title ?? s.sessionId.slice(0, 8)}
                 <span className="ml-2 font-mono text-xs text-muted-foreground">
-                  {s.project} · {s.date}
+                  <ProjectName name={s.project} /> · {s.date}
                 </span>
               </span>
-              <span className="mt-0.5 block text-[12px] leading-snug text-muted-foreground">
+              <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
                 {insight.detail}
               </span>
             </span>
@@ -1203,7 +1229,7 @@ function InsightsTab({ days, nonce, active }: { days: string; nonce: number; act
           </div>
         );
       })}
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-mini text-muted-foreground">
         Click a finding for its turn/tool breakdown, or{" "}
         <CopyIcon className="inline size-3 align-[-2px]" /> to copy the session ID or file path.
       </p>
@@ -1224,6 +1250,15 @@ export function ClaudeSessionsScreen() {
   const [results, setResults] = useState<ClaudeSession[] | null>(null);
   // Bumped by the Refresh button so the Treemap tab rebuilds its report too.
   const [refreshNonce, setRefreshNonce] = useState(0);
+  // Keyed on the identities, not the snapshot: the board re-sends `repos` every
+  // tick, and a new map would rebuild every chart.
+  const { repos } = useAgentboardState();
+  const repoKey = repos.map((r) => `${r.name}=${r.color}`).join(",");
+  const projectColors = useMemo(
+    () => seriesColors(summary?.byProject.map((b) => b.project) ?? [], repos),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- `repos` is read through `repoKey`
+    [summary, repoKey],
+  );
 
   async function refresh(d: string) {
     setLoading(true);
@@ -1268,183 +1303,189 @@ export function ClaudeSessionsScreen() {
   const sessions = searching ? (results ?? []) : (summary?.topSessions ?? []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
-        <h2 className="font-heading text-lg font-semibold">Claude Sessions</h2>
-        <div className="flex items-center gap-2">
-          <Select
-            size="sm"
-            label="Range"
-            value={days}
-            onValueChange={(v) => {
-              if (typeof v !== "string") return;
-              uiAction("claude_sessions.range", "claude-sessions", v);
-              setDays(v);
-            }}
-            className="w-36"
-          >
-            {DAY_OPTIONS.map((o) => (
-              <Select.Option key={o.value} value={o.value}>
-                {o.label}
-              </Select.Option>
-            ))}
-          </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            icon={<ArrowClockwiseIcon className="size-3.5" />}
-            onClick={() => {
-              uiAction("claude_sessions.refresh", "claude-sessions");
-              setRefreshNonce((n) => n + 1);
-              void refresh(days);
-            }}
-          >
-            Refresh
-          </Button>
-        </div>
-      </header>
-
-      {loading && !summary ? (
-        <p className="p-6 text-sm text-muted-foreground">Scanning sessions…</p>
-      ) : summary && totals ? (
-        <>
-          <div
-            data-testid="claude-sessions-totals"
-            className="grid grid-cols-2 gap-3 border-b border-border p-4 lg:grid-cols-5"
-          >
-            <StatTile label="Sessions" value={String(totals.sessions)} />
-            <StatTile
-              label="In + Out"
-              value={formatTokens(totals.inputTokens + totals.outputTokens)}
-              detail={`${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out`}
-            />
-            <StatTile label="Cache read" value={formatTokens(totals.cacheReadTokens)} />
-            <StatTile label="Cache write" value={formatTokens(totals.cacheCreationTokens)} />
-            <StatTile
-              label="Est. cost"
-              value={formatCost(totals.costUsd)}
-              detail="approx · per-model rates"
-            />
+    <ProjectColorsContext.Provider value={projectColors}>
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="flex items-center justify-between gap-2 border-b border-border bg-card px-4 py-3">
+          <h2 className="font-heading text-lg font-semibold">Claude Sessions</h2>
+          <div className="flex items-center gap-2">
+            <Select
+              size="sm"
+              label="Range"
+              value={days}
+              onValueChange={(v) => {
+                if (typeof v !== "string") return;
+                uiAction("claude_sessions.range", "claude-sessions", v);
+                setDays(v);
+              }}
+              className="w-36"
+            >
+              {DAY_OPTIONS.map((o) => (
+                <Select.Option key={o.value} value={o.value}>
+                  {o.label}
+                </Select.Option>
+              ))}
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<ArrowClockwiseIcon className="size-3.5" />}
+              onClick={() => {
+                uiAction("claude_sessions.refresh", "claude-sessions");
+                setRefreshNonce((n) => n + 1);
+                void refresh(days);
+              }}
+            >
+              Refresh
+            </Button>
           </div>
+        </header>
 
-          <Tabs
-            variant="underline"
-            value={tab}
-            onValueChange={(v) => {
-              uiAction("claude_sessions.tab", "claude-sessions", v);
-              setTab(v as typeof tab);
-            }}
-            className="shrink-0 border-b border-kumo-hairline bg-kumo-base px-2"
-            tabs={[
-              {
-                value: "overview",
-                label: (
-                  <span className="flex items-center gap-2">
-                    <ChartBarIcon className="size-4" />
-                    Overview
-                  </span>
-                ),
-              },
-              {
-                value: "sessions",
-                label: (
-                  <span className="flex items-center gap-2">
-                    <ListIcon className="size-4" />
-                    {"Sessions" + (searching ? " · search" : "")}
-                  </span>
-                ),
-              },
-              {
-                value: "insights",
-                label: (
-                  <span className="flex items-center gap-2">
-                    <LightbulbIcon className="size-4" />
-                    Insights
-                  </span>
-                ),
-              },
-              {
-                value: "cadence",
-                label: (
-                  <span className="flex items-center gap-2">
-                    <ClockIcon className="size-4" />
-                    Cadence
-                  </span>
-                ),
-              },
-            ]}
-          />
+        {loading && !summary ? (
+          <p className="p-6 text-sm text-muted-foreground">Scanning sessions…</p>
+        ) : summary && totals ? (
+          <>
+            <div
+              data-testid="claude-sessions-totals"
+              className="grid grid-cols-2 gap-3 border-b border-border p-4 lg:grid-cols-5"
+            >
+              <StatTile label="Sessions" value={String(totals.sessions)} />
+              <StatTile
+                label="In + Out"
+                value={formatTokens(totals.inputTokens + totals.outputTokens)}
+                detail={`${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out`}
+              />
+              <StatTile label="Cache read" value={formatTokens(totals.cacheReadTokens)} />
+              <StatTile label="Cache write" value={formatTokens(totals.cacheCreationTokens)} />
+              <StatTile
+                label="Est. cost"
+                value={formatCost(totals.costUsd)}
+                detail="approx · per-model rates"
+              />
+            </div>
 
-          <div
-            role="tabpanel"
-            aria-label={tab[0].toUpperCase() + tab.slice(1)}
-            className="min-h-0 flex-1 overflow-y-auto"
-          >
-            {tab === "overview" && (
-              <div className="flex flex-col gap-4 p-4">
-                <Card title="Tokens by day">
-                  <DayStackChart days={summary.days} />
-                </Card>
+            <Tabs
+              variant="underline"
+              value={tab}
+              onValueChange={(v) => {
+                uiAction("claude_sessions.tab", "claude-sessions", v);
+                setTab(v as typeof tab);
+              }}
+              className="shrink-0 border-b border-kumo-hairline bg-kumo-base px-2"
+              tabs={[
+                {
+                  value: "overview",
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <ChartBarIcon className="size-4" />
+                      Overview
+                    </span>
+                  ),
+                },
+                {
+                  value: "sessions",
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <ListIcon className="size-4" />
+                      {"Sessions" + (searching ? " · search" : "")}
+                    </span>
+                  ),
+                },
+                {
+                  value: "insights",
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <LightbulbIcon className="size-4" />
+                      Insights
+                    </span>
+                  ),
+                },
+                {
+                  value: "cadence",
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <ClockIcon className="size-4" />
+                      Cadence
+                    </span>
+                  ),
+                },
+              ]}
+            />
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Card title="By repo">
-                    <RankedBarChart
-                      bars={summary.byProject.map((b) => ({ label: b.project, ...b }))}
-                    />
+            <div
+              role="tabpanel"
+              aria-label={tab[0].toUpperCase() + tab.slice(1)}
+              className="min-h-0 flex-1 overflow-y-auto"
+            >
+              {tab === "overview" && (
+                <div className="flex flex-col gap-4 p-4">
+                  <Card title="Tokens by day">
+                    <DayStackChart days={summary.days} colors={projectColors} />
                   </Card>
-                  <Card title="By model">
-                    <RankedBarChart bars={summary.byModel.map((b) => ({ label: b.model, ...b }))} />
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card title="By repo">
+                      <RankedBarChart
+                        bars={summary.byProject.map((b) => ({ label: b.project, ...b }))}
+                        colors={projectColors}
+                      />
+                    </Card>
+                    <Card title="By model">
+                      <RankedBarChart
+                        bars={summary.byModel.map((b) => ({ label: b.model, ...b }))}
+                        colors={NO_SERIES_COLORS}
+                      />
+                    </Card>
+                  </div>
+                </div>
+              )}
+
+              {tab === "sessions" && (
+                <div className="p-4">
+                  <Card
+                    title={searching ? "Search results" : "Top sessions"}
+                    action={
+                      <div className="relative w-72 self-center">
+                        <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          size="sm"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          placeholder="Search titles & prompts…"
+                          aria-label="Search sessions"
+                          className="pl-8"
+                        />
+                      </div>
+                    }
+                  >
+                    <SessionTable sessions={sessions} searching={searching} />
+                    <p className="mt-2 text-mini text-muted-foreground">
+                      {searching
+                        ? "Matches session titles and what you typed, newest first."
+                        : "Ranked by input+output tokens; amber marks outliers vs the median."}{" "}
+                      Click <CopyIcon className="inline size-3 align-[-2px]" /> to copy the session
+                      ID or file path.
+                    </p>
                   </Card>
                 </div>
-              </div>
-            )}
+              )}
 
-            {tab === "sessions" && (
-              <div className="p-4">
-                <Card
-                  title={searching ? "Search results" : "Top sessions"}
-                  action={
-                    <div className="relative w-72 self-center">
-                      <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        size="sm"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search titles & prompts…"
-                        aria-label="Search sessions"
-                        className="pl-8"
-                      />
-                    </div>
-                  }
-                >
-                  <SessionTable sessions={sessions} searching={searching} />
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    {searching
-                      ? "Matches session titles and what you typed, newest first."
-                      : "Ranked by input+output tokens; amber marks outliers vs the median."}{" "}
-                    Click <CopyIcon className="inline size-3 align-[-2px]" /> to copy the session ID
-                    or file path.
-                  </p>
-                </Card>
-              </div>
-            )}
+              {tab === "insights" && (
+                <div>
+                  <InsightsTab days={days} nonce={refreshNonce} active={tab === "insights"} />
+                </div>
+              )}
 
-            {tab === "insights" && (
-              <div>
-                <InsightsTab days={days} nonce={refreshNonce} active={tab === "insights"} />
-              </div>
-            )}
-
-            {tab === "cadence" && (
-              <div>
-                <CadenceTab days={days} nonce={refreshNonce} active={tab === "cadence"} />
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        <p className="p-6 text-sm text-muted-foreground">Not available outside the app.</p>
-      )}
-    </div>
+              {tab === "cadence" && (
+                <div>
+                  <CadenceTab days={days} nonce={refreshNonce} active={tab === "cadence"} />
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="p-6 text-sm text-muted-foreground">Not available outside the app.</p>
+        )}
+      </div>
+    </ProjectColorsContext.Provider>
   );
 }

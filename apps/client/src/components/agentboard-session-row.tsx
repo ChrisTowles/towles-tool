@@ -85,21 +85,21 @@ export function SessionRow({
         className={cn(
           "relative ml-1.5 flex cursor-pointer items-center gap-2 border-l-2 border-transparent py-1 pr-3 pl-9",
           hovered && !needs && "bg-kumo-tint",
-          active && !needs && "border-l-violet-500 bg-kumo-tint",
-          cursor && "ring-1 ring-inset ring-violet-500",
+          active && !needs && "border-l-agent bg-kumo-tint",
+          cursor && "ring-1 ring-inset ring-agent",
           // Needs-you wins over hover/active for both the edge and the fill —
           // a thin 2px border alone was too easy to miss scanning the rail, so
           // the whole row washes amber, not just its left pixel.
-          needs && "border-l-amber-500 bg-amber-500/10",
-          needs && hovered && "bg-amber-500/15",
+          needs && "border-l-warn bg-warn/10",
+          needs && hovered && "bg-warn/15",
           // Amber already owns the edge and the fill, so focus moves to a ring
           // — otherwise a jump between two needs-you rows lands invisibly.
-          active && needs && "ring-1 ring-inset ring-violet-500/70",
+          active && needs && "ring-1 ring-inset ring-agent/70",
         )}
       >
         {hotkey === undefined ? <Glyph agent={agent} /> : <HotkeyBadge n={hotkey} />}
         <Dot session={session} />
-        {needs && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
+        {needs && <span className="size-1.5 shrink-0 rounded-full bg-warn" />}
         {renaming ? (
           <input
             autoFocus
@@ -128,7 +128,7 @@ export function SessionRow({
               height and the status column sits at one vertical offset. The
               lifecycle controls overlay it (absolute, opaque accent) instead
               of swapping it out, so hovering never reflows the row. */}
-            <span className="ml-auto flex shrink-0 flex-col items-end gap-px font-mono text-[10.5px] leading-none">
+            <span className="ml-auto flex shrink-0 flex-col items-end gap-px font-mono text-mini leading-none">
               <span className="flex h-3 items-center gap-1.5">
                 {session.live && <PortDriftBadge drift={session.portDrift ?? []} />}
                 {!agent && session.shellKind && (
@@ -154,14 +154,14 @@ export function SessionRow({
                     <EnvelopeSimpleIcon
                       className={cn(
                         "size-3",
-                        chip.kind === "pending" ? "text-violet-500" : "text-kumo-subtle",
+                        chip.kind === "pending" ? "text-agent" : "text-kumo-subtle",
                       )}
                     />
                   </Hint>
                 )}
                 {age && (
                   <Hint label="how long this has been needing you">
-                    <span className="text-amber-500/80">{age}</span>
+                    <span className="text-warn/80">{age}</span>
                   </Hint>
                 )}
               </span>
@@ -178,7 +178,7 @@ export function SessionRow({
                 )}
                 {/* Fixed 7ch slot: the status word is short and uniform
                   ("Waiting", "Working", "Done"), so it lines up across rows. */}
-                <span className="inline-block w-[7ch] truncate font-sans text-[11px] text-kumo-subtle">
+                <span className="inline-block w-[7ch] truncate font-sans text-mini text-kumo-subtle">
                   {sessionStatusText(session)}
                 </span>
               </span>
@@ -224,7 +224,7 @@ function RowControls({
       glyph: "✦",
       label: "Start Claude here",
       onSelect: () => actions.startClaude(folderDir, session),
-      className: "text-violet-500",
+      className: "text-agent",
     });
   }
   if (session.live && agent) {
@@ -258,7 +258,7 @@ function RowControls({
       <IconBtn
         title="close session"
         onClick={() => actions.close(session.id)}
-        className="hover:text-red-500"
+        className="hover:text-danger"
       >
         ✕
       </IconBtn>

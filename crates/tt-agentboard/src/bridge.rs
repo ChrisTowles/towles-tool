@@ -324,6 +324,11 @@ impl NeedsSince {
     pub fn get(&self, session_id: &str) -> Option<i64> {
         self.stamps.get(session_id).copied()
     }
+
+    /// Hold `session_id`'s wait as begun at `since_ms` — a replay knows when.
+    pub fn seed(&mut self, session_id: &str, since_ms: i64) {
+        self.stamps.insert(session_id.to_string(), since_ms);
+    }
 }
 
 /// Recompute every folder's and repo's `needs`, and each session's `needs_reason`

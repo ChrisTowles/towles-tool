@@ -2,12 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateActio
 import { FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
 import { fmtMins } from "@/components/agentboard-bits";
 import { WorkingContext } from "@/components/agentboard-working-context";
-import {
-  QueueRail,
-  FOLDED_BY_DEFAULT,
-  NextUpBanner,
-  rerankQueueItem,
-} from "@/components/queue-rail";
+import { QueueRail, FOLDED_BY_DEFAULT, rerankQueueItem } from "@/components/queue-rail";
 import { RailIconStrip, RollupChip } from "@/components/agentboard-rail";
 import { RepoGroup } from "@/components/agentboard-repo-group";
 import { NativePane } from "@/components/native-pane";
@@ -28,6 +23,7 @@ import { useTauriEvent } from "./agentboard/use-tauri-event";
 import { useWindowLayout } from "./agentboard/use-window-layout";
 import { useWorktreeDelete } from "./agentboard/use-worktree-delete";
 import { RailViewToggle } from "./agentboard/rail-view-toggle";
+import { SimBar } from "./agentboard/sim-bar";
 import { PaneGrid } from "./agentboard/pane-grid";
 import { RailHeader } from "./agentboard/rail-header";
 import { defaultTaskRepo, RailNewTask } from "./agentboard/rail-new-task";
@@ -203,8 +199,6 @@ export function AgentBoardScreen() {
   const [repoFilter, setRepoFilter] = useState<ReadonlySet<string>>(() => new Set());
   const railEdges = useScrollEdges();
   const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(() => new Set(FOLDED_BY_DEFAULT));
-  // Next up changed while you were busy: the checkout it was announced for.
-  const [announced, setAnnounced] = useState<string | null>(null);
   // The checkout whose snooze menu is open — `z` opens it from the keyboard.
   const [snoozeId, setSnoozeId] = useState<string | null>(null);
   // The nonce lets a re-request of the *same* session still fire.
@@ -726,7 +720,6 @@ export function AgentBoardScreen() {
   /** Open a queue row in place: its session, else its checkout. */
   /** `hint` is for a row you opened; an automatic open says nothing. */
   function selectQueueItem(item: QueueItem, hint = true) {
-    setAnnounced(null);
     if (item.sessionId) selectSession(item.folderDir, item.sessionId);
     else selectFolder(item.folderDir);
     if (hint && item.reason === "land") toast.info("Run /done in the task's terminal to land it.");
@@ -774,8 +767,8 @@ export function AgentBoardScreen() {
     });
   }
 
-  // The head of On you changed: open it where nothing would be interrupted,
-  // else say so above the panes. Never moves DOM focus.
+  // The head of On you changed: open it only where nothing would be
+  // interrupted. Never moves DOM focus, and never announces itself.
   const onYou = onYouHead(railQueue);
   const onYouId = onYou?.folderDir ?? null;
   const lastOnYouId = useRef<string | null | undefined>(undefined);
@@ -789,7 +782,6 @@ export function AgentBoardScreen() {
     // The tree is walked by place: the queue's pull is the queue's business.
     if (!onYou || tree) return;
     if (verdict === "open") selectQueueItem(onYou, false);
-    else if (verdict === "announce") setAnnounced(onYouId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on a new head only; the rest is read at that moment
   }, [onYouId, queueLive]);
   // A deep link to a PR lands on its checkout's row, which a folded lane would hide.
@@ -817,10 +809,6 @@ export function AgentBoardScreen() {
       }),
     [setRailView],
   );
-  const announcedItem =
-    !tree && announced !== null && announced === onYouId && announced !== ringId
-      ? onYou
-      : undefined;
 
   function jumpToNotBusy() {
     jumpTo(
@@ -1606,6 +1594,7 @@ export function AgentBoardScreen() {
               >
                 <div className="flex h-full flex-col border-r">
                   <RailViewToggle view={railView} onChange={setRailView} />
+                  <SimBar />
                   <RollupChip
                     repos={railRepos}
                     compactPct={state.compactRecommendPercent}
@@ -1703,20 +1692,6 @@ export function AgentBoardScreen() {
               zero width. */}
           <ResizablePanel key="main" minSize="320px">
             <div className="flex h-full min-w-0 flex-col">
-              {announcedItem && (
-                <NextUpBanner
-                  item={announcedItem}
-                  repo={repoByFolder.get(announcedItem.folderDir)}
-                  onOpen={() => {
-                    mouseAction("queue-next", "agentboard");
-                    selectQueueItem(announcedItem);
-                  }}
-                  onDismiss={() => {
-                    uiAction("queue.announce_dismiss", "agentboard");
-                    setAnnounced(null);
-                  }}
-                />
-              )}
               {activeFolder && activeRepo && (
                 <WorkingContext
                   repo={activeRepo}

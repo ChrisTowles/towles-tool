@@ -59,8 +59,6 @@ const MATCH_FILL = "rgba(250, 204, 21, 0.3)";
 const CURRENT_MATCH_FILL = "rgba(249, 115, 22, 0.5)";
 const CURRENT_MATCH_STROKE = "rgba(249, 115, 22, 0.9)";
 
-const FONT_FAMILY =
-  "'FiraCode Nerd Font Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', monospace";
 const LINE_HEIGHT = 1.25;
 
 /** Rust owns the PTY and the state, keyed by `termId`; this paints
@@ -203,6 +201,8 @@ export function TerminalView({
     // Seeded from the host's colors; frame.colors are authoritative after.
     const cs = getComputedStyle(host);
     const theme = { bg: cs.backgroundColor || "#1e1e2e", fg: cs.color || "#cdd6f4" };
+    // `index.css`'s `--font-terminal`: a Nerd Font first, for prompt glyphs.
+    const fontFamily = cs.getPropertyValue("--font-terminal").trim() || "monospace";
 
     // Mutable so a zoom can re-measure in place without tearing down the shell.
     let fontPx = fontSizeRef.current;
@@ -210,7 +210,7 @@ export function TerminalView({
     let cellH = 0;
     let baseline = 0;
     const measure = () => {
-      ctx.font = `${fontPx}px ${FONT_FAMILY}`;
+      ctx.font = `${fontPx}px ${fontFamily}`;
       cellW = ctx.measureText("M").width;
       cellH = Math.ceil(fontPx * LINE_HEIGHT);
       baseline = Math.round((cellH - fontPx) / 2 + fontPx * 0.8);
@@ -238,7 +238,7 @@ export function TerminalView({
     const setFont = (flags: number) => {
       const bold = flags & BOLD ? "bold " : "";
       const italic = flags & ITALIC ? "italic " : "";
-      ctx.font = `${italic}${bold}${fontPx}px ${FONT_FAMILY}`;
+      ctx.font = `${italic}${bold}${fontPx}px ${fontFamily}`;
     };
 
     const paintRow = (y: number) => {
@@ -1087,7 +1087,7 @@ export function TerminalView({
             spellCheck={false}
             aria-label="search scrollback"
           />
-          <span className="min-w-10 text-center font-mono text-[10px] tabular-nums text-kumo-subtle">
+          <span className="min-w-10 text-center font-mono text-micro tabular-nums text-kumo-subtle">
             {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : "0/0"}
           </span>
           <IconBtn title="Previous match (Shift+Enter)" onClick={() => step(-1)}>

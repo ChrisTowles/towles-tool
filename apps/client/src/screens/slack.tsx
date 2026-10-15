@@ -69,10 +69,10 @@ export function SlackScreen() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex shrink-0 items-center gap-2.5 border-b border-kumo-hairline bg-kumo-base px-4 py-2.5">
-        <ChatCircleIcon className="size-4 text-violet-500" />
+        <ChatCircleIcon className="size-4 text-agent" />
         <span className="font-semibold text-foreground">{watchName}</span>
         {view?.configured && (
-          <span className="font-mono text-[11px] text-kumo-subtle/60">direct message</span>
+          <span className="font-mono text-mini text-kumo-subtle/60">direct message</span>
         )}
         <div className="flex-1" />
         {view?.configured && <AppManifestDialog />}

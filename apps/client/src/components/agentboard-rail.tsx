@@ -75,10 +75,9 @@ export function RailIconStrip({
             style={statusOwnsEdge ? undefined : { ...accent.edgeStyle, ...accent.surfaceStyle }}
             className={cn(
               "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-kumo-subtle hover:bg-kumo-tint",
-              active &&
-                "border-l-violet-500 text-kumo-default ring-1 ring-inset ring-violet-500/50",
+              active && "border-l-agent text-kumo-default ring-1 ring-inset ring-agent/50",
               // Attention outranks focus on the accent edge (visual-design rule).
-              needs > 0 && "border-l-amber-500",
+              needs > 0 && "border-l-warn",
             )}
           >
             {solo ? (
@@ -88,7 +87,7 @@ export function RailIconStrip({
             )}
             {live && <span className={cn("absolute top-1 right-1 size-2 rounded-full", live)} />}
             {needs > 0 && (
-              <span className="absolute -right-1 -bottom-1 min-w-4 rounded-full border border-amber-500/50 bg-background px-0.5 text-center font-mono text-[9px] leading-[14px] text-amber-500">
+              <span className="absolute -right-1 -bottom-1 min-w-4 rounded-full border border-warn/50 bg-background px-0.5 text-center font-mono text-micro leading-[14px] text-warn">
                 {needs}
               </span>
             )}
@@ -119,7 +118,7 @@ export function RailIconStrip({
       />
       {liveColor && (
         <Hint label={`${liveN} running session${liveN === 1 ? "" : "s"}`} side="right">
-          <span className="flex items-center gap-1 py-1 font-mono text-[10px] text-kumo-subtle">
+          <span className="flex items-center gap-1 py-1 font-mono text-micro text-kumo-subtle">
             <span className={cn("size-2 rounded-full", liveColor)} />
             {liveN}
           </span>
@@ -134,7 +133,7 @@ export function RailIconStrip({
               type="button"
               aria-label="Expand the rail to see attention items"
               onClick={onExpand}
-              className="mt-1 rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-500 hover:bg-amber-500/20"
+              className="mt-1 rounded-md border border-warn/50 bg-warn/10 px-1.5 py-0.5 font-mono text-micro text-warn hover:bg-warn/20"
             >
               {attentionCount} ⚑
             </button>
@@ -177,7 +176,7 @@ export function RollupChip({
   const pct = draft ?? threshold;
 
   return (
-    <div className="flex items-center gap-2.5 border-b border-kumo-hairline bg-kumo-base px-3 py-2 font-mono text-[11px]">
+    <div className="flex items-center gap-2.5 border-b border-kumo-hairline bg-kumo-base px-3 py-2 font-mono text-mini">
       {r.total === 0 ? (
         <span className="text-kumo-subtle">no agents running</span>
       ) : (
@@ -188,12 +187,12 @@ export function RollupChip({
           <RollupDots r={r} bare />
           {r.expiring > 0 && (
             <Hint label="warm prompt caches about to expire — nudge them">
-              <span className="text-amber-500">◔{r.expiring}</span>
+              <span className="text-warn">◔{r.expiring}</span>
             </Hint>
           )}
           {r.compact > 0 && (
             <Hint label="cold sessions worth compacting">
-              <span className="text-sky-500">❄{r.compact}</span>
+              <span className="text-info">❄{r.compact}</span>
             </Hint>
           )}
         </>
@@ -217,7 +216,7 @@ export function RollupChip({
             <div className="text-sm font-medium">Agentboard settings</div>
             <div className="text-xs text-kumo-subtle">
               Recommend compacting a cold session at or above{" "}
-              <span className="font-mono text-sky-500">{pct}%</span> context.
+              <span className="font-mono text-info">{pct}%</span> context.
             </div>
             <Slider
               min={10}
@@ -230,7 +229,7 @@ export function RollupChip({
                 void invoke("ab_set_compact_percent", { percent: v });
               }}
             />
-            <div className="text-[11px] text-kumo-subtle">
+            <div className="text-mini text-kumo-subtle">
               Past this threshold, a session whose prompt cache expired shows the ❄ compact nudge.
               Stored in the shared towles-tool settings file.
             </div>

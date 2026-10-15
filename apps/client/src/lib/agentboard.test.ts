@@ -1932,8 +1932,8 @@ describe("agentRollup expiring count", () => {
     });
     const r = agentRollup([repoOf([idle, done])], now, 30);
     expect(r).toMatchObject({ total: 2, busy: 0, background: 2, waiting: 0 });
-    expect(rollupAlertColor(r)).toBe("bg-cyan-700");
-    expect(rollupAlertColor({ ...r, busy: 1 })).toBe("bg-cyan-500");
+    expect(rollupAlertColor(r)).toBe("bg-busy-deep");
+    expect(rollupAlertColor({ ...r, busy: 1 })).toBe("bg-busy");
     // Mid-turn is busy whatever is out; the count is a fact beside the status.
     const busy = session({ live: true, working: true, agentState: withAgents("busy") });
     expect(agentRollup([repoOf([busy])], now, 30)).toMatchObject({ busy: 1, background: 0 });
@@ -1948,10 +1948,10 @@ describe("agentRollup expiring count", () => {
     const stale = session({ live: false, agentState: agent("waiting") });
     const r = agentRollup([repoOf([stale])], now, 30);
     expect(r).toMatchObject({ total: 1, waiting: 0 });
-    expect(rollupAlertColor(r)).toBe("bg-emerald-500");
+    expect(rollupAlertColor(r)).toBe("bg-ok");
     const unflagged = session({ live: true, agentState: agent("busy") });
-    expect(collapsedLiveColor([unflagged])).toBe("bg-emerald-500");
-    expect(collapsedLiveColor([{ ...unflagged, working: true }])).toBe("bg-cyan-500");
+    expect(collapsedLiveColor([unflagged])).toBe("bg-ok");
+    expect(collapsedLiveColor([{ ...unflagged, working: true }])).toBe("bg-busy");
   });
 });
 

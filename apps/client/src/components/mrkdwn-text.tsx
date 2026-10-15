@@ -23,8 +23,7 @@ function renderNodes(nodes: MrkdwnNode[], opts: MentionOpts): ReactNode {
   return nodes.map((node, i) => <Fragment key={i}>{renderNode(node, opts)}</Fragment>);
 }
 
-const MENTION_CLASS =
-  "rounded bg-violet-500/15 px-1 font-medium text-violet-700 dark:text-violet-300";
+const MENTION_CLASS = "rounded bg-agent/15 px-1 font-medium text-agent";
 
 function renderNode(node: MrkdwnNode, opts: MentionOpts): ReactNode {
   switch (node.type) {
@@ -54,7 +53,7 @@ function renderNode(node: MrkdwnNode, opts: MentionOpts): ReactNode {
             e.preventDefault();
             void openExternalUrl(node.url);
           }}
-          className="text-violet-700 underline underline-offset-2 hover:text-violet-500 dark:text-violet-300"
+          className="text-agent underline underline-offset-2 hover:text-agent"
         >
           {node.label}
         </a>

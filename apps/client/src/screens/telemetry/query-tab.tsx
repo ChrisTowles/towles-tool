@@ -236,7 +236,7 @@ export function QueryTab() {
               className="min-h-36 shrink-0 resize-y rounded-none border-0 border-b border-kumo-hairline font-mono text-xs leading-5 field-sizing-fixed focus-visible:ring-0 md:text-xs"
             />
             {error && (
-              <p className="shrink-0 border-b border-kumo-hairline bg-red-500/5 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-red-600 dark:text-red-400">
+              <p className="shrink-0 border-b border-kumo-hairline bg-danger/5 px-3 py-2 font-mono text-xs whitespace-pre-wrap text-danger">
                 {error}
               </p>
             )}
@@ -388,7 +388,7 @@ function ResultsGrid({ result, running }: { result: QueryResult | null; running:
           </table>
         )}
       </div>
-      <div className="shrink-0 border-t border-kumo-hairline px-3 py-1.5 font-mono text-[11px] text-kumo-subtle">
+      <div className="shrink-0 border-t border-kumo-hairline px-3 py-1.5 font-mono text-mini text-kumo-subtle">
         {resultCaption(result)}
       </div>
     </div>

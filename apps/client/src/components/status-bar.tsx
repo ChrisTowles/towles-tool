@@ -68,8 +68,8 @@ function useClaudeUsageLimits(): UsageLimits | null {
 
 /** Same severity ramp as {@link COLLECTOR_STATE_DOT}. */
 function limitFillColor(percent: number): string {
-  if (percent >= 90) return "bg-red-500 dark:bg-red-400";
-  if (percent >= 70) return "bg-amber-500/80 dark:bg-amber-400/80";
+  if (percent >= 90) return "bg-danger";
+  if (percent >= 70) return "bg-warn/80";
   return "bg-kumo-contrast/50";
 }
 
@@ -214,11 +214,9 @@ function KeyboardHabit({ score }: { score: KeyboardScore }) {
       }
     >
       <KeyboardIcon className="size-3.5" />
-      <span className={today.goalMet ? "text-emerald-600 dark:text-emerald-500" : undefined}>
-        {fmtShare(today.share)}
-      </span>
+      <span className={today.goalMet ? "text-ok" : undefined}>{fmtShare(today.share)}</span>
       {streak > 0 && (
-        <span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-500">
+        <span className="flex items-center gap-0.5 text-warn">
           <FireIcon className="size-3" />
           {streak}
         </span>
@@ -248,9 +246,7 @@ function RulesFailing({ count }: { count: number }) {
       }
     >
       <ShieldWarningIcon className="size-3.5" />
-      <span className="rounded-full bg-sky-500/15 px-1.5 font-mono text-[11px] text-sky-700 dark:text-sky-300">
-        {count}
-      </span>
+      <span className="rounded-full bg-info/15 px-1.5 font-mono text-mini text-info">{count}</span>
     </Tooltip>
   );
 }
@@ -298,7 +294,7 @@ export function StatusBar() {
             {usage.cpuPercent.toFixed(0)}% CPU · {formatMemory(usage.memoryBytes)}
           </button>
         )}
-        <span className={isTauri() ? undefined : "font-medium text-amber-600 dark:text-amber-500"}>
+        <span className={isTauri() ? undefined : "font-medium text-warn"}>
           {isTauri() ? "Tauri shell" : "browser"}
         </span>
         <span>{version}</span>

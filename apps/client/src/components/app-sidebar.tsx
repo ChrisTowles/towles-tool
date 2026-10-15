@@ -75,11 +75,11 @@ export function AppSidebar() {
                   <screen.icon className="text-kumo-subtle" />
                   {screen.title}
                   {showBadge && (
-                    <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] text-kumo-subtle">
+                    <span className="ml-auto flex items-center gap-1.5 font-mono text-mini text-kumo-subtle">
                       {rollup.total}
                       <RollupDots r={rollup} />
                       {rollup.compact > 0 && (
-                        <span className="text-sky-500" title="cold sessions worth compacting">
+                        <span className="text-info" title="cold sessions worth compacting">
                           ❄{rollup.compact}
                         </span>
                       )}
@@ -87,7 +87,7 @@ export function AppSidebar() {
                   )}
                   {showSlackDot && (
                     <span
-                      className="ml-auto size-1.5 rounded-full bg-rose-500"
+                      className="ml-auto size-1.5 rounded-full bg-alert"
                       title="unanswered DM"
                     />
                   )}
@@ -154,7 +154,7 @@ export function AppSidebarIcons() {
                       }}
                       className={cn(
                         "relative flex size-9 shrink-0 items-center justify-center rounded-md border-l-2 border-transparent text-kumo-subtle hover:bg-kumo-tint",
-                        active && "border-l-violet-500 bg-kumo-tint text-kumo-default",
+                        active && "border-l-agent bg-kumo-tint text-kumo-default",
                       )}
                     />
                   }
@@ -163,7 +163,7 @@ export function AppSidebarIcons() {
                   {showBadge && (
                     <span
                       className={cn(
-                        "absolute -right-1 -bottom-1 min-w-4 rounded-full px-0.5 text-center font-mono text-[9px] leading-[14px]",
+                        "absolute -right-1 -bottom-1 min-w-4 rounded-full px-0.5 text-center font-mono text-micro leading-[14px]",
                         badgeColor,
                         rollupAlertTextColor(badgeColor),
                       )}
@@ -172,7 +172,7 @@ export function AppSidebarIcons() {
                     </span>
                   )}
                   {showSlackDot && (
-                    <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-rose-500" />
+                    <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-alert" />
                   )}
                 </Tooltip>
               );

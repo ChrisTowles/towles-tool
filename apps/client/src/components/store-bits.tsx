@@ -3,6 +3,7 @@ import { ArrowSquareOutIcon, RecordIcon, EyeSlashIcon } from "@phosphor-icons/re
 import { fmtAge, type CollectRun, type IssueItem } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import { cn } from "@/lib/utils";
+import { PALETTE } from "@/lib/colors";
 
 /** Shared atoms for screens rendering store-snapshot data (Agent Board, Pull
  * requests, Config) — one home so the row anatomy can't drift between them. */
@@ -73,7 +74,7 @@ export function Card({
     <div className="rounded-lg border border-border bg-card p-3.5">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
-        {note && <span className="font-mono text-[11px] text-muted-foreground">{note}</span>}
+        {note && <span className="font-mono text-mini text-muted-foreground">{note}</span>}
         {action}
       </div>
       {children}
@@ -93,11 +94,11 @@ export function StatTile({
 }) {
   return (
     <div className="rounded-lg border border-border bg-card px-3.5 py-2.5">
-      <div className="text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="text-mini font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
       <div className="mt-0.5 font-mono text-xl font-semibold text-foreground">{value}</div>
-      {detail && <div className="text-[11px] text-muted-foreground">{detail}</div>}
+      {detail && <div className="text-mini text-muted-foreground">{detail}</div>}
     </div>
   );
 }
@@ -125,8 +126,8 @@ export function BarRow({
       </span>
       <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-violet-500"
-          style={{ width: `${Math.max(2, (count / max) * 100)}%` }}
+          className="h-full rounded-full"
+          style={{ width: `${Math.max(2, (count / max) * 100)}%`, backgroundColor: PALETTE[0] }}
         />
       </div>
       <span className="w-10 shrink-0 text-right font-mono text-xs text-muted-foreground">
@@ -213,21 +214,18 @@ export function IssueRow({
 /** One collector's freshness: green age, red with the error, muted "never". */
 export function CollectorFreshness({ run, now }: { run: CollectRun | undefined; now: number }) {
   if (!run) {
-    return <span className="font-mono text-[11px] text-muted-foreground/60">never ran</span>;
+    return <span className="font-mono text-mini text-muted-foreground/60">never ran</span>;
   }
   if (!run.ok) {
     return (
-      <span
-        className="truncate font-mono text-[11px] text-red-600 dark:text-red-500"
-        title={run.message}
-      >
+      <span className="truncate font-mono text-mini text-danger" title={run.message}>
         failed {fmtAge(run.ranAt, now)}
         {run.message ? ` · ${run.message}` : ""}
       </span>
     );
   }
   return (
-    <span className="font-mono text-[11px] text-muted-foreground">
+    <span className="font-mono text-mini text-muted-foreground">
       ran {fmtAge(run.ranAt, now)}
       {run.message ? ` · ${run.message}` : ""}
     </span>

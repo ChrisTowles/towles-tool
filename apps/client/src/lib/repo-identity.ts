@@ -37,6 +37,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import type { CSSProperties } from "react";
+import { PALETTE } from "@/lib/colors";
 
 export type RepoMeta = {
   icon?: string;
@@ -86,27 +87,33 @@ export const REPO_ICONS: Record<string, Icon> = {
 
 export const DEFAULT_REPO_ICON: Icon = GitBranchIcon;
 
-/** The swatches a repo can be pinned to — and dealt from: Rust's
- * `repo_meta::AUTO_PALETTE`, in the same order. Each clears the lightness,
- * chroma and contrast gates on both surfaces, and none is a reserved status
- * hue (amber, violet, sky), so identity can't read as a signal. */
-export const REPO_PALETTE: readonly string[] = [
-  "#3b82f6",
-  "#e11d48",
-  "#059669",
-  "#d946ef",
-  "#0891b2",
-  "#65a30d",
-  "#ec4899",
-  "#0d9488",
-  "#ef4444",
-  "#2563eb",
-  "#16a34a",
-  "#c026d3",
-  "#f43f5e",
-  "#db2777",
-  "#dc2626",
-];
+/** Chart series colors by label, so a repo looks the same in a chart as on the
+ * rail: a label naming a tracked repo takes that repo's color, and the rest
+ * deal the palette swatches no tracked repo holds, in order (cycling when
+ * there are more labels than swatches). */
+export function seriesColors(
+  labels: readonly string[],
+  repos: readonly { name: string; color: string }[],
+): Map<string, string> {
+  const byName = new Map(repos.map((r) => [r.name, normalizeHex(r.color)]));
+  const held = new Set(byName.values());
+  const free = PALETTE.filter((c) => !held.has(c));
+  const deck = free.length > 0 ? free : PALETTE;
+  const out = new Map<string, string>();
+  let next = 0;
+  for (const label of labels) {
+    if (out.has(label)) continue;
+    const own = byName.get(label);
+    out.set(label, own ?? deck[next++ % deck.length]);
+  }
+  return out;
+}
+
+/** `color` when it is a palette swatch; a pin from anywhere else isn't kept. */
+export function paletteColor(color: string | undefined): string | undefined {
+  const hex = color ? normalizeHex(color) : null;
+  return hex && PALETTE.includes(hex) ? hex : undefined;
+}
 
 export function repoIcon(meta: RepoMeta | null | undefined): Icon {
   const name = meta?.icon;
@@ -132,17 +139,21 @@ export function normalizeHex(s: string): string | null {
 }
 
 /** All `undefined` with no repo, so a call site can spread them blind.
- * `edgeStyle` yields whenever a status accent owns the edge. */
+ * `edgeStyle` yields whenever a status accent owns the edge. `headerStyle` is a
+ * rail repo header's edge plus a `--repo-wash` for its `bg-(--repo-wash)`, a
+ * variable so `hover:` still wins over it. */
 export type RepoAccentStyles = {
   iconStyle: CSSProperties | undefined;
   edgeStyle: CSSProperties | undefined;
   surfaceStyle: CSSProperties | undefined;
+  headerStyle: CSSProperties | undefined;
 };
 
 const EMPTY_ACCENT: RepoAccentStyles = {
   iconStyle: undefined,
   edgeStyle: undefined,
   surfaceStyle: undefined,
+  headerStyle: undefined,
 };
 
 export function repoAccentStyles(
@@ -152,35 +163,51 @@ export function repoAccentStyles(
 ): RepoAccentStyles {
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return EMPTY_ACCENT;
+  // The palette is muted, so the edge is drawn solid — loud in placement, not hue.
+  const edgeStyle = { borderLeftColor: hex };
   return {
-    iconStyle: { color: hex },
-    edgeStyle: { borderLeftColor: `color-mix(in srgb, ${hex} 70%, transparent)` },
-    surfaceStyle: { backgroundColor: `color-mix(in srgb, ${hex} 8%, ${base})` },
+    iconStyle: { color: repoInk(hex) },
+    edgeStyle,
+    surfaceStyle: { backgroundColor: `color-mix(in srgb, ${hex} 6%, ${base})` },
+    headerStyle: {
+      ...edgeStyle,
+      "--repo-wash": `color-mix(in srgb, ${hex} 6%, var(--card))`,
+    } as CSSProperties,
   };
 }
 
-/** A button that stands for one repo and is picked: its color as text and
- * border, washed through. */
-export function repoChipStyle(repo: RepoIdentity | undefined): CSSProperties | undefined {
-  const hex = repo ? normalizeHex(repo.color) : null;
-  if (!hex) return undefined;
-  return {
-    color: hex,
-    backgroundColor: `color-mix(in srgb, ${hex} 14%, transparent)`,
-    borderColor: `color-mix(in srgb, ${hex} 45%, transparent)`,
-  };
+/** A repo color as text: muted, so lifted toward the foreground to read on
+ * either surface. */
+export function repoInk(hex: string): string {
+  return `color-mix(in oklab, ${hex} 88%, var(--foreground))`;
 }
 
-/** A surface that *is* one repo wears the color whole, at the identity wash's
- * alphas. `accent` can't withhold the fill here the way it does on a row. */
-export function repoBandStyle(
+/** A button that stands for one repo, in the rail header's treatment: its
+ * color as text, a solid left edge (the caller sets its width) and a 6% wash.
+ * Picked, the wash deepens and the whole border takes the color. */
+export function repoChipStyle(
   repo: RepoIdentity | undefined,
-  base = "transparent",
+  picked: boolean,
 ): CSSProperties | undefined {
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return undefined;
+  const wash = `color-mix(in srgb, ${hex} ${picked ? 14 : 6}%, transparent)`;
+  return picked
+    ? { color: repoInk(hex), backgroundColor: wash, borderColor: hex }
+    : { color: repoInk(hex), backgroundColor: wash, borderLeftColor: hex };
+}
+
+/** A surface that *is* one repo wears the rail header's treatment: a solid
+ * left edge (the caller sets its width), a 6% wash, and `ink` for its name.
+ * `accent` can't withhold the fill here the way it does on a row. */
+export function repoBandStyle(
+  repo: RepoIdentity | undefined,
+  base = "transparent",
+): { band: CSSProperties; ink: CSSProperties } | undefined {
+  const hex = repo ? normalizeHex(repo.color) : null;
+  if (!hex) return undefined;
   return {
-    backgroundColor: `color-mix(in srgb, ${hex} 10%, ${base})`,
-    borderBottomColor: `color-mix(in srgb, ${hex} 40%, transparent)`,
+    band: { backgroundColor: `color-mix(in srgb, ${hex} 6%, ${base})`, borderLeftColor: hex },
+    ink: { color: repoInk(hex) },
   };
 }

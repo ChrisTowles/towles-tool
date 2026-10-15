@@ -73,7 +73,7 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
       </Card>
 
       {remaining !== null && !today.idle && (
-        <div className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-2 text-xs text-violet-700 dark:text-violet-300">
+        <div className="rounded-md border border-kumo-hairline bg-muted/40 px-3 py-2 text-xs text-foreground">
           {remaining} more keyboard {remaining === 1 ? "action" : "actions"} today clears the{" "}
           {goalPercent}% goal{streak > 0 && ` and extends the ${streak}-day streak`}.
         </div>
@@ -84,7 +84,7 @@ export function KeyboardTab({ score, loading }: { score: KeyboardScore | null; l
         note={`${days.filter((d) => d.goalMet).length} of ${days.length} days won`}
       >
         <StreakStrip days={days} />
-        <p className="mt-2.5 text-[11px] text-muted-foreground">
+        <p className="mt-2.5 text-mini text-muted-foreground">
           A day is won at {goalPercent}% keyboard over {score.goalMinActions}+ actions that had a
           shortcut. Quiet days are skipped rather than breaking the streak, and today is forgiven
           until it ends.
@@ -163,11 +163,7 @@ function StreakStrip({ days }: { days: KeyboardDay[] }) {
             <div
               className={cn(
                 "h-8 flex-1 rounded-sm",
-                day.idle
-                  ? "bg-muted"
-                  : day.goalMet
-                    ? "bg-emerald-500/70"
-                    : "bg-muted-foreground/30",
+                day.idle ? "bg-muted" : day.goalMet ? "bg-ok/70" : "bg-muted-foreground/30",
               )}
             />
           }
@@ -188,7 +184,7 @@ function RecommendationRow({ rec, rank }: { rec: Recommendation; rank: number })
           <Keycaps id={rec.shortcut} />
           <span className="font-medium">{rec.title}</span>
           {rank === 1 && (
-            <span className="rounded-sm bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-700 dark:text-violet-300">
+            <span className="rounded-sm bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
               this week
             </span>
           )}
@@ -230,9 +226,7 @@ function SplitRow({ split }: { split: ShortcutSplit }) {
       <span className="flex shrink-0 items-center gap-1.5 font-mono tabular-nums">
         <span className="text-muted-foreground">{split.shortcut}</span>
         <span className="text-muted-foreground/40">/</span>
-        <span className={split.mouse > split.shortcut ? "text-amber-600 dark:text-amber-500" : ""}>
-          {split.mouse}
-        </span>
+        <span className={split.mouse > split.shortcut ? "text-warn" : ""}>{split.mouse}</span>
         <span className="w-10 text-right text-muted-foreground/70">
           {total > 0 ? fmtShare(split.shortcut / total) : "—"}
         </span>

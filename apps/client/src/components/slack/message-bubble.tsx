@@ -39,7 +39,7 @@ export function MessageBubble({
           className={cn(
             "min-w-0 rounded-lg border px-3 py-1.5 text-sm whitespace-pre-wrap",
             mine
-              ? "border-violet-500/30 bg-violet-500/15 text-foreground"
+              ? "border-agent/30 bg-agent/15 text-foreground"
               : "border-border bg-card text-foreground",
           )}
         >
@@ -81,19 +81,19 @@ export function MessageBubble({
         <button
           type="button"
           onClick={() => actions.onOpenThread?.(threadTs)}
-          className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[11px] font-medium text-violet-600 hover:bg-violet-500/10 dark:text-violet-300"
+          className="flex items-center gap-1.5 rounded px-1 py-0.5 text-mini font-medium text-agent hover:bg-agent/10"
         >
           <ArrowBendUpLeftIcon className="size-3" />
           {message.replyCount} {message.replyCount === 1 ? "reply" : "replies"}
           {message.latestReplyTs > 0 && (
-            <span className="font-mono text-[10.5px] font-normal text-muted-foreground/70">
+            <span className="font-mono text-mini font-normal text-muted-foreground/70">
               last {fmtClock(message.latestReplyTs)}
             </span>
           )}
         </button>
       )}
 
-      <span className="px-1 font-mono text-[10.5px] text-muted-foreground/60">
+      <span className="px-1 font-mono text-mini text-muted-foreground/60">
         {fmtClock(message.ts)}
       </span>
     </div>
