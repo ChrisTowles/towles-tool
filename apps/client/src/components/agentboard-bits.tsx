@@ -162,7 +162,7 @@ export function HotkeyBadge({ n }: { n: number }) {
 export function Dot({ session }: { session: SessionData }) {
   if (!session.live) {
     return (
-      <Hint label="not started">
+      <Hint label="starting">
         <span className="size-2 shrink-0 rounded-full border-[1.5px] border-muted-foreground/50 bg-transparent" />
       </Hint>
     );
@@ -1644,14 +1644,10 @@ export function RepoMenu({
  * only affordance on purpose — restarting is the rail's job. */
 export function PanePlaceholder({
   label,
-  detail,
-  tone = "muted",
   focused = false,
   onRemove,
 }: {
   label: string;
-  detail?: string;
-  tone?: "muted" | "alert";
   /** See the focus-ring rule at `screens/agentboard.tsx`'s `focusedPaneId`. */
   focused?: boolean;
   onRemove: () => void;
@@ -1661,11 +1657,9 @@ export function PanePlaceholder({
       className={cn(
         "flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-kumo-subtle",
         focused && "border-violet-500/60",
-        tone === "alert" && "border-amber-500/40",
       )}
     >
       <span className="text-sm">{label}</span>
-      {detail && <span className="font-mono text-xs text-amber-500">{detail}</span>}
       <button
         type="button"
         onClick={() => {

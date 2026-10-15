@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderIcon } from "@phosphor-icons/react";
 
 import { Button, Checkbox, Dialog } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { requestOpenSession, resumeCandidates } from "@/lib/agentboard";
+import { invoke } from "@/lib/tauri";
 import type { ResumeCandidate } from "@/lib/agentboard";
 import { fmtAge } from "@/lib/data";
 import { useWorkspace } from "@/lib/workspace";
@@ -16,6 +17,7 @@ export function ResumePicker() {
   const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
+  const settled = useRef(false);
   const { openTab } = useWorkspace();
 
   useEffect(() => {
@@ -36,9 +38,21 @@ export function ResumePicker() {
     });
   }
 
+  // Whatever isn't relaunched now is gone: its shell died with the last run,
+  // and a dead shell is not a row the rail keeps.
+  // Once only, so a close event after Resume can't retire what was picked.
+  function settle(picked: ReadonlySet<string>) {
+    setOpen(false);
+    if (settled.current) return;
+    settled.current = true;
+    for (const c of candidates) {
+      if (!picked.has(c.paneId)) void invoke("ab_close_session", { id: c.paneId });
+    }
+  }
+
   function resume() {
     const picked = candidates.filter((c) => chosen.has(c.paneId));
-    setOpen(false);
+    settle(chosen);
     if (picked.length === 0) return;
     // Agentboard owns the pane→PTY machinery, so hand off rather than
     // duplicating it. It may not be mounted yet at boot, which is exactly why
@@ -65,7 +79,7 @@ export function ResumePicker() {
   }, [candidates]);
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
+    <Dialog.Root open={open} onOpenChange={(next) => (next ? setOpen(true) : settle(new Set()))}>
       <Dialog size="lg" className="flex flex-col gap-4 p-6">
         <div className="flex flex-col gap-1.5">
           <Dialog.Title className="text-lg font-semibold">Resume your sessions?</Dialog.Title>
@@ -122,8 +136,8 @@ export function ResumePicker() {
         </ScrollArea>
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => setOpen(false)}>
-            Not now
+          <Button variant="ghost" onClick={() => settle(new Set())}>
+            Don't resume
           </Button>
           <Button variant="primary" onClick={resume} disabled={chosen.size === 0}>
             {chosen.size === 1 ? "Resume 1 session" : `Resume ${chosen.size} sessions`}

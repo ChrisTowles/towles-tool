@@ -294,7 +294,6 @@ const FILES_PANE_PREFIX = "~files:";
 const PREVIEW_PANE_PREFIX = "~preview:";
 const JARVIS_PANE_PREFIX = "~jarvis:";
 const BROWSER_PANE_PREFIX = "~browser:";
-const EXIT_PANE_PREFIX = "~exit:";
 
 export function filesPaneId(folderDir: string): string {
   return `${FILES_PANE_PREFIX}${folderDir}`;
@@ -371,22 +370,9 @@ export function folderPaneDir(paneId: string): string | null {
   );
 }
 
-export function exitPaneId(sessionId: string): string {
-  return `${EXIT_PANE_PREFIX}${sessionId}`;
-}
-
-export function isExitPane(paneId: string): boolean {
-  return paneId.startsWith(EXIT_PANE_PREFIX);
-}
-
-export function exitPaneSession(paneId: string): string | null {
-  return isExitPane(paneId) ? paneId.slice(EXIT_PANE_PREFIX.length) : null;
-}
-
-/** A session pane is its own id, a tombstone unwraps, folder panes have none. */
+/** A session pane is its own id; folder panes have none. */
 export function paneSession(paneId: string): string | null {
-  if (folderPaneDir(paneId) !== null) return null;
-  return exitPaneSession(paneId) ?? paneId;
+  return folderPaneDir(paneId) === null ? paneId : null;
 }
 
 /** What closing a pane actually means: end the shell behind it, or just drop the tile. */
@@ -395,13 +381,13 @@ export type PaneCloseTarget =
   | { kind: "pane"; paneId: string };
 
 /** Null when the ring sits on a pane the visible window doesn't hold: a chord
- * that closes something off-screen loses work. A tombstone closes as a pane. */
+ * that closes something off-screen loses work. */
 export function paneCloseTarget(
   focusedPaneId: string | null,
   panes: readonly string[],
 ): PaneCloseTarget | null {
   if (!focusedPaneId || !panes.includes(focusedPaneId)) return null;
-  const sessionId = isExitPane(focusedPaneId) ? null : paneSession(focusedPaneId);
+  const sessionId = paneSession(focusedPaneId);
   return sessionId === null
     ? { kind: "pane", paneId: focusedPaneId }
     : { kind: "session", sessionId };
@@ -506,22 +492,6 @@ export function successorPane(w: WindowsPayload, paneId: string): string | null 
   return sibling?.panes[0] ?? null;
 }
 
-/** Swap one pane id for another in place — same window, same position, same column widths. */
-export function replacePane(w: WindowsPayload, fromId: string, toId: string): WindowsPayload {
-  const host = w.windows.find((win) => win.panes.includes(fromId));
-  if (!host) return w;
-  const swap = (p: string) => (p === fromId ? toId : p);
-  return {
-    ...w,
-    windows: w.windows.map((win) => {
-      if (win.id !== host.id) return win;
-      // Rebuilt head-first so the non-empty tuple type survives the map.
-      const [first, ...rest] = win.panes;
-      return { ...win, panes: [swap(first), ...rest.map(swap)] };
-    }),
-  };
-}
-
 /** Exactly the `touchedFolders` the backend's merge-by-folder save needs. */
 export function changedFolderDirs(a: WireWindowsPayload, b: WireWindowsPayload): string[] {
   const dirs = new Set<string>([
@@ -562,8 +532,7 @@ export function pruneWins(
       win.panes.filter((p) => {
         const dir = folderPaneDir(p);
         if (dir !== null) return validFolderDirs.has(dir);
-        // A tombstone dies with the session it reports on — nothing left to name.
-        return validSessionIds.has(paneSession(p)!);
+        return validSessionIds.has(p);
       }),
     );
     if (!panes) continue;
@@ -679,7 +648,7 @@ export function claudeTitleName(raw: string | undefined): string | null {
 
 /** A one-word status label for a session row. */
 export function sessionStatusText(s: SessionData): string {
-  if (!s.live) return "Off";
+  if (!s.live) return "Starting";
   return STATUS[s.agentState?.status ?? "idle"].label;
 }
 
@@ -1563,7 +1532,6 @@ export function onAgentboardNavRequest(cb: (req: AgentboardNav) => void): () => 
 
 /** All PTY writes — the agent is the real shell, never a re-rendered proxy. */
 export type SessionActions = {
-  start: (folderDir: string, s: SessionData) => void;
   startClaude: (folderDir: string, s: SessionData) => void;
   stopClaude: (s: SessionData) => void;
   compactClaude: (s: SessionData) => void;

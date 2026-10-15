@@ -72,29 +72,40 @@ pub fn on_window_destroyed(app: &AppHandle) {
 
 /// Panes that were running Claude when the app last went down — empty unless
 /// a previous run (of any kind: crash, kill, or an ordinary quit) was found,
-/// and empty on every call after the first.
+/// and empty on every call after the first. The first call also retires every
+/// other previous-run record: its shell is gone and nothing will relaunch it.
 #[tauri::command]
 pub async fn ab_resume_candidates(app: AppHandle) -> Result<Vec<ResumeCandidate>, String> {
-    let Some(ended_at_ms) = app.state::<ResumeState>().ended_at_ms.lock().unwrap().take() else {
-        return Ok(Vec::new());
-    };
+    let ended_at_ms = app.state::<ResumeState>().ended_at_ms.lock().unwrap().take();
 
     tauri::async_runtime::spawn_blocking(move || {
         // Snapshot under the lock, scan without it: locating and parsing
         // transcripts is disk work, and every `ab_*` command plus the state
         // poll would queue behind the engine lock for its duration.
         let ab = app.state::<Ab>();
-        let (records, projects_dir) = {
-            let engine = ab.engine.lock().unwrap();
-            (engine.session_records(), engine.projects_dir())
+        let candidates = match ended_at_ms {
+            Some(ended_at_ms) => {
+                let (records, projects_dir) = {
+                    let engine = ab.engine.lock().unwrap();
+                    (engine.session_records(), engine.projects_dir())
+                };
+                resume::select_candidates(
+                    records.iter().map(|(dir, rec)| (dir.as_str(), rec)),
+                    ended_at_ms,
+                    resume::DEFAULT_RESUME_WINDOW_MS,
+                    |dir, sid| resume::locate_transcript(&projects_dir, dir, sid),
+                    resume::transcript_title,
+                )
+            }
+            None => Vec::new(),
         };
-        resume::select_candidates(
-            records.iter().map(|(dir, rec)| (dir.as_str(), rec)),
-            ended_at_ms,
-            resume::DEFAULT_RESUME_WINDOW_MS,
-            |dir, sid| resume::locate_transcript(&projects_dir, dir, sid),
-            resume::transcript_title,
-        )
+        let keep = candidates.iter().map(|c| c.pane_id.clone()).collect();
+        let retired = ab.engine.lock().unwrap().retire_prior_run(&keep, now_ms());
+        if !retired.is_empty() {
+            tracing::info!(count = retired.len(), "session.retired_prior_run");
+            ab.emit.notify_one();
+        }
+        candidates
     })
     .await
     .map_err(|e| format!("resume scan failed: {e}"))

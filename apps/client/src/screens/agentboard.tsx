@@ -46,7 +46,6 @@ import {
   consumePendingAgentboardNav,
   consumePendingOpenSessions,
   cycleNotBusy,
-  exitPaneId,
   filesPaneId,
   filesPaneTarget,
   folderBusy,
@@ -222,8 +221,6 @@ export function AgentBoardScreen() {
   // Session ids whose PTY is mounted (kept alive for scrollback), + their cwd.
   const [open, setOpen] = useState<string[]>([]);
   const cwds = useRef<Record<string, string>>({});
-  // Only *crashes* land here — a clean logout takes its pane with it.
-  const [exitLabels, setExitLabels] = useState<Record<string, string>>({});
   const expectedKills = useRef<Set<string>>(new Set());
   const { collapsed, toggleCollapsed, applyCollapse, railCollapsed, toggleRail } = useCollapseState(
     state,
@@ -322,13 +319,12 @@ export function AgentBoardScreen() {
     [railQueue, repoFilter, repoByFolder],
   );
 
-  const { wins, updateWins, addPaneToActive, removePane, replacePaneInPlace, removeSessionPane } =
-    useWindowLayout({
-      state,
-      repos,
-      open,
-      cwds,
-    });
+  const { wins, updateWins, addPaneToActive, removePane } = useWindowLayout({
+    state,
+    repos,
+    open,
+    cwds,
+  });
 
   // Hold-to-reveal jump keys: the badges paint on the rows the numbering is
   // computed from, so what you press is what you read. The targets are kept
@@ -421,7 +417,7 @@ export function AgentBoardScreen() {
     onSessionRemoved: (id) => {
       setOpen((prev) => prev.filter((x) => x !== id));
       setSelected((cur) => (cur?.sessionId === id ? null : cur));
-      removeSessionPane(id);
+      removePane(id);
     },
   });
   const { requestDeleteWorktree } = worktreeDelete;
@@ -630,21 +626,16 @@ export function AgentBoardScreen() {
 
   const columns = useColumnDrag(updateWins);
 
-  /** A shell exited on its own. */
+  /** A shell exited on its own. Its pane goes with it, and the backend drops
+   * the session — a crash leaves only the toast saying how it died. */
   function handleExit(sessionId: string, exit: TermExit) {
     setOpen((prev) => prev.filter((id) => id !== sessionId));
+    setSelected((cur) => (cur?.sessionId === sessionId ? null : cur));
+    closePane(sessionId);
     const expected = expectedKills.current.delete(sessionId);
-    if (expected || !exitIsCrash(exit.code, exit.signal)) {
-      closePane(sessionId);
-      return;
-    }
-    const label = exitLabel(exit.code, exit.signal);
+    if (expected || !exitIsCrash(exit.code, exit.signal)) return;
     const s = sessionById.get(sessionId);
-    toast.error(`${s ? labelFor(s) : "shell"} ${label}`);
-    setExitLabels((m) => ({ ...m, [sessionId]: label }));
-    // The tile keeps its place; only its occupant changes.
-    setFocusedPaneId((cur) => (cur === sessionId ? exitPaneId(sessionId) : cur));
-    replacePaneInPlace(sessionId, exitPaneId(sessionId));
+    toast.error(`${s ? labelFor(s) : "shell"} ${exitLabel(exit.code, exit.signal)}`);
   }
 
   // Reaching a checkout any way at all hands Agent Board's cursor to it, its
@@ -1224,11 +1215,10 @@ export function AgentBoardScreen() {
 
   async function closeSession(sessionId: string) {
     await invoke("ab_close_session", { id: sessionId });
-    // Both ids: a crashed session's tile holds its tombstone, not the session id itself.
-    shiftFocusFrom(sessionId, exitPaneId(sessionId));
+    shiftFocusFrom(sessionId);
     setOpen((prev) => prev.filter((id) => id !== sessionId));
     setSelected((cur) => (cur?.sessionId === sessionId ? null : cur));
-    removeSessionPane(sessionId);
+    removePane(sessionId);
   }
 
   /** A view pane's ✕ / close shortcut: focus hand-off, then the layout drop. */
@@ -1253,10 +1243,6 @@ export function AgentBoardScreen() {
   }
 
   const actions: SessionActions = {
-    start: (folderDir, s) => {
-      // Selecting mounts the TerminalView, whose effect spawns the PTY.
-      selectSession(folderDir, s.id);
-    },
     startClaude: (folderDir, s) => {
       selectSession(folderDir, s.id);
       setStartClaudeTarget({ folderDir, sessionId: s.id, sessionName: s.name, restart: false });
@@ -1772,7 +1758,6 @@ export function AgentBoardScreen() {
                   jumpRecall={jumpRecall}
                   onDismissJumpRecall={() => setJumpRecall(null)}
                   termAttention={termAttention}
-                  exitLabels={exitLabels}
                   filesOpenRequests={filesOpenRequests}
                   previewRequests={previewRequests}
                   nativeVisible={nativeVisible}
