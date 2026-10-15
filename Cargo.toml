@@ -24,7 +24,6 @@ members = [
   "crates/tt-tasks",
   "crates/tt-store",
   "crates/tt-telemetry",
-  "crates/tt-update",
   "crates/tt-vt",
   # CLI crates
   "crates-cli/tt-cli",
@@ -84,6 +83,8 @@ tauri-build = "2.6.1"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2.5.0"
+# native-tls, not the default rustls: a TLS-inspecting proxy's root CA is only in the OS store.
+tauri-plugin-updater = { version = "~2.12.0", default-features = false, features = ["native-tls", "system-proxy", "zip"] }
 thiserror = "2.0.17"
 tokio = "1.48.0"
 # Instrumentation. `tracing` is the API every crate calls; the subscriber's
@@ -115,7 +116,6 @@ tt-mcp = { path = "crates/tt-mcp" }
 tt-tasks = { path = "crates/tt-tasks" }
 tt-store = { path = "crates/tt-store" }
 tt-telemetry = { path = "crates/tt-telemetry" }
-tt-update = { path = "crates/tt-update" }
 tt-vt = { path = "crates/tt-vt" }
 
 [profile.release]

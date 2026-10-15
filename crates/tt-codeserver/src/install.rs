@@ -259,7 +259,7 @@ fn untar(tarball: &Path, into: &Path) -> Result<(), InstallError> {
 }
 
 /// native-tls, not ureq's bundled roots: a TLS-inspecting proxy's CA is in the
-/// OS trust store and nowhere else. Same reasoning as `tt_update::agent`.
+/// OS trust store and nowhere else.
 fn agent() -> Result<&'static ureq::Agent, InstallError> {
     static AGENT: OnceLock<Result<ureq::Agent, String>> = OnceLock::new();
     AGENT

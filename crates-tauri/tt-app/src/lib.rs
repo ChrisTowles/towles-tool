@@ -154,7 +154,7 @@ pub fn run() {
 
     // With `enableGTKAppId` off, nothing else stops one checkout launching
     // twice, duplicating windows/PTYs/polling. A killed process's lock is stolen.
-    let Some(_instance_lock) =
+    let Some(instance_lock) =
         instance_lock::InstanceLock::try_acquire(&format!("app-{identifier}"))
     else {
         eprintln!("Towles Tool ({identifier}) is already running — focus its existing window.");
@@ -164,7 +164,8 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
     // WebdriverIO E2E plugins, only under `--features wdio` (see e2e/): the
     // execute/mock IPC surface plus the in-app WebDriver server wdio dials.
@@ -204,8 +205,8 @@ pub fn run() {
             // No-op off macOS — see macos_keys' module doc.
             macos_keys::install(app.handle());
 
-            // Fire-and-forget release check → update banner + OS notification.
-            update::check_on_startup(app.handle().clone());
+            // Release checks → update banner + OS notification.
+            update::spawn_checks(app.handle().clone());
 
             // A Debug-mode Zig parser saturates a core at ~130 KB/s of PTY
             // output; be loud if the dev-profile override regresses.
@@ -674,6 +675,8 @@ pub fn run() {
             }
             Ok(())
         })
+        .manage(update::AppInstanceLock(Mutex::new(Some(instance_lock))))
+        .manage(update::PendingUpdate::default())
         .manage(queue::QueueState::default())
         .manage(browser::BrowserHost::default())
         .manage(codeserver::CodeServerHost::default())
@@ -871,6 +874,8 @@ pub fn run() {
             terminal::open_path::term_open_path,
             terminal::open_path::term_resolve_path,
             ide::ide_status,
+            update::update_pending,
+            update::update_install,
         ])
         .run(context)
         .expect("error while running Towles Tool application");

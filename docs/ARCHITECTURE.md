@@ -116,8 +116,6 @@ the CLI and the app can consume it.
   tier. A PR, CI run or backlog task with no checkout is not a row.
 - `tt-claude-code` — transcript/session parsing models.
 - `tt-doctor` — doctor checks logic (the app screen consumes it).
-- `tt-update` — checks GitHub Releases for a newer version. Uses `native-tls`,
-  for the TLS-proxy reason in the conventions.
 
 ## `crates-tauri/`
 
