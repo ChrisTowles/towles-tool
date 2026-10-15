@@ -221,6 +221,28 @@ export type CommitStat = {
   linesRemoved: number;
 };
 
+/** One file of a branch's diff against its merge-base with the base. */
+export type BranchDiffFile = {
+  path: string;
+  oldPath: string | null;
+  /** git's name-status letter, `?` for untracked. */
+  status: string;
+  linesAdded: number;
+  linesRemoved: number;
+  binary: boolean;
+  /** Not committed — lost when the checkout is deleted. */
+  uncommitted: boolean;
+};
+
+export type BranchDiff = {
+  branch: string;
+  comparedBase: string;
+  commits: CommitStat[];
+  files: BranchDiffFile[];
+  /** An untracked directory was too large to list, so `files` is a floor. */
+  capped: boolean;
+};
+
 export function comparedBaseLabel(folder: Pick<FolderData, "comparedBase">): string {
   const base = folder.comparedBase?.trim();
   if (!base) return "main";
@@ -1691,6 +1713,8 @@ export type RemoveTarget = {
   sessionIds: string[];
   /** Not on disk, so the dialog asks about closing the task instead. */
   dirMissing?: boolean;
+  /** The folder's base override, so the dialog's diff matches the rail's. */
+  baseBranch?: string | null;
 };
 
 export type BlockedDelete = {

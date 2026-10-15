@@ -740,6 +740,7 @@ pub fn run() {
             agentboard::ab_set_show_unmanaged_worktrees,
             agentboard::ab_save_windows,
             agentboard::ab_save_collapsed,
+            agentboard::ab_get_branch_diff,
             agentboard::ab_get_commit_stats,
             codeserver::code_server_open,
             codeserver::code_server_reveal,

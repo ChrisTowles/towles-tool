@@ -666,7 +666,7 @@ export function BaseMovedChip({
   );
 }
 
-function CommitStatRow({ commit }: { commit: CommitStat }) {
+export function CommitStatRow({ commit }: { commit: CommitStat }) {
   return (
     <div className="flex items-center gap-2 font-mono text-[10.5px] leading-tight">
       <span className="shrink-0 text-kumo-subtle">{commit.sha.slice(0, 7)}</span>

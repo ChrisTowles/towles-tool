@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TerminalWindowIcon } from "@phosphor-icons/react";
 import { Button, Checkbox, CommandPalette, Dialog, Input } from "@cloudflare/kumo";
+import { BranchDiffSummary } from "@/components/branch-diff-summary";
 import {
   sessionLabel,
   type RemoveTarget,
@@ -179,6 +180,9 @@ export function DeleteWorktreeDialog({
             )}
           </Dialog.Description>
         </div>
+        {target && !target.dirMissing && target.dirs[0] && (
+          <BranchDiffSummary dir={target.dirs[0]} baseBranch={target.baseBranch} />
+        )}
         {/* How the task ended, defaulted to `done` — the common case — with
             one underlined link to flip it to `abandoned`. Only rendered
             when a board task is bound; a bare worktree has nothing to

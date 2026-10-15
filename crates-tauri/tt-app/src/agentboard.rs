@@ -606,6 +606,21 @@ pub fn ab_save_collapsed(state: State<Ab>, key: String, collapsed: bool) {
     state.engine.lock().unwrap().set_collapsed(&key, collapsed);
 }
 
+/// The delete dialog's branch-vs-base summary. Async: two diffs plus one tree
+/// diff per commit.
+#[tauri::command]
+pub async fn ab_get_branch_diff(
+    dir: String,
+    base_branch: Option<String>,
+) -> Option<tt_agentboard::BranchDiff> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tt_agentboard::branch_diff(&dir, base_branch.as_deref())
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// Per-commit line counts for the committed chip's hover card, oldest commit
 /// first. Async: a many-commit branch is one tree diff per commit.
 #[tauri::command]
