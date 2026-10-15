@@ -45,7 +45,6 @@ import { Input } from "@cloudflare/kumo";
 import { repoAccentStyles, repoIcon, type RepoIdentity } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import {
-  branchRedundant,
   comparedBaseLabel,
   folderBranchDrift,
   folderCreating,
@@ -148,11 +147,10 @@ export function FolderHeader({
   const displayTitle =
     humanTitle ||
     (folder.isWorktree ? humanizeFolderName(title) : isMainWorktreeSubrow ? "Root" : title);
-  // Asked of the title actually rendered, human or de-slugified — the branch
-  // was minted from it either way. The hidden branch moves to the tooltip.
-  const showBranchLabel = !branchRedundant(displayTitle, folder.branch);
-  const titleHint =
-    !showBranchLabel && folder.branch ? folder.branch : humanTitle ? folder.name : undefined;
+  // Only the primary checkout names its branch: a worktree's branch is the
+  // task's own, so it lives in the title's tooltip instead.
+  const showBranchLabel = !folder.isWorktree;
+  const titleHint = folder.isWorktree && folder.branch ? folder.branch : undefined;
   const drift = folderBranchDrift(folder);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -328,12 +326,7 @@ export function FolderHeader({
                 line in the wrapped layout, and do nothing in the inline one. */}
             <span className="mr-auto flex min-w-0 items-center gap-x-1.5">
               {showBranchLabel && (
-                <BranchLabel
-                  branch={folder.branch}
-                  isWorktree={folder.isWorktree}
-                  diverged
-                  onClick={onToggle}
-                />
+                <BranchLabel branch={folder.branch} isWorktree={false} onClick={onToggle} />
               )}
               {links}
             </span>
