@@ -39,6 +39,7 @@ into its terminals beside `TT_MCP_PORT`: Claude Code otherwise probes
 (a #339 board task in a tracked repo's swimlane, same store path as the
 app's `store_add_task`), `task_summary`, `task_sync` (re-read a task
 worktree's branch onto its row after a `git switch`), `task_start`, `task_delete`,
+`task_done` (`/done` as one call, below),
 `preview_file`, `file_open`, `needs_you` (the other sessions waiting on
 the user, read from the rail's PTY-stamped state through `AttentionHost`),
 `summon` (the agent→human interrupt, below), plus the calendar family `calendar_today`, `calendar_next` and the
@@ -51,7 +52,15 @@ from `notes` on purpose* — `notes` is the user's own context and
 there would come back as instructions to the next session. It records only:
 it never closes the task or touches the worktree, because confirming a task
 is done is the user's job.
-**`task_start` and `task_delete` are the two tools that cannot work from the
+`task_done` is `/done`'s whole deterministic half. It finds the task from the
+caller's `dir` by walking up to a bound `worktree_dir`, closed rows included:
+a merge moves the card to done while the worktree lives on, so `task_list`
+never finds it. It refuses with typed `blockers` while a PR from the branch
+is open (asked of `gh` live, since the board's links lag a merge), the tree
+is dirty, or commits reached the base through no PR. Then it stops the
+task's own listeners on its claimed ports, never this process, writes the
+summary and runs the same host delete with `outcome: done`.
+**`task_start`, `task_delete` and `task_done` are the tools that cannot work from the
 dispatcher alone**, and both enter through the injected `TaskHost`; a
 dispatcher without one refuses rather than half-doing the job. `task_delete`
 kills the task's panes and removes its worktree (the row itself is

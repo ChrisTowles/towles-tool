@@ -123,6 +123,24 @@ pub fn list_open(checkout: &Path) -> Result<Vec<PullRequest>, String> {
     Ok(value.as_array().map(|list| list.iter().filter_map(parse_pr).collect()).unwrap_or_default())
 }
 
+/// Open PRs whose head is `branch` — what still has to merge before a task is finished.
+pub fn list_open_for_head(checkout: &Path, branch: &str) -> Result<Vec<PullRequest>, String> {
+    let value = gh_json(
+        checkout,
+        &[
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--head",
+            branch,
+            "--json",
+            VIEW_FIELDS,
+        ],
+    )?;
+    Ok(value.as_array().map(|list| list.iter().filter_map(parse_pr).collect()).unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
