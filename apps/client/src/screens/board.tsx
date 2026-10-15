@@ -9,6 +9,7 @@ import {
 import { Badge, Button, Dialog, DropdownMenu, Input, InputArea, Switch } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  landingSummaryForDir,
   ownerRepoFromOrigin,
   requestAgentboardNav,
   sessionCatchesEye,
@@ -343,6 +344,8 @@ export function BoardScreen() {
     [openTab],
   );
 
+  const blockedTask = merged.find((t) => t.id === blockedDelete?.id);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
@@ -569,7 +572,12 @@ export function BoardScreen() {
         onOpenChange={(isOpen) => {
           if (!isOpen) setBlockedDelete(null);
         }}
-        name={merged.find((t) => t.id === blockedDelete?.id)?.text}
+        name={blockedTask?.text}
+        landing={
+          blockedTask?.worktree?.dir
+            ? landingSummaryForDir(agentState.repos, snapshot.prs, blockedTask.worktree.dir)
+            : undefined
+        }
         description="This task’s worktree still holds work. Clear what’s below and it’ll close cleanly, or close anyway."
         cancelLabel="Keep the task"
         blockers={blockedDelete?.blockers ?? []}

@@ -22,6 +22,7 @@ import {
   fmtWaitingAge,
   gitCheckedLabel,
   folderActionableItems,
+  folderLandingSummary,
   folderLanded,
   folderLandedButHasWork,
   folderBranchDrift,
@@ -1707,6 +1708,48 @@ describe("fmtWaitingAge", () => {
     expect(fmtWaitingAge(NOW - 12 * 60_000, NOW)).toBe("waiting 12m");
     expect(fmtWaitingAge(NOW - 3 * 60 * 60_000, NOW)).toBe("waiting 3h");
     expect(fmtWaitingAge(NOW - 2 * 24 * 60 * 60_000, NOW)).toBe("waiting 2d");
+  });
+});
+
+describe("folderLandingSummary", () => {
+  it("leads with the merged PR and how git saw it land", () => {
+    const f = folder({ landed: "squash-merged", comparedBase: "origin/main" });
+    expect(folderLandingSummary(f, pr({ state: "merged", number: 732 }))).toEqual({
+      landed: true,
+      text: "PR #732 merged, squash-merged into main",
+    });
+  });
+
+  it("counts a merged PR as landed even before git proves it", () => {
+    expect(folderLandingSummary(folder({}), pr({ state: "merged", number: 4 }))).toEqual({
+      landed: true,
+      text: "PR #4 merged",
+    });
+  });
+
+  it("says an open PR's branch isn't in its base yet", () => {
+    const f = folder({ comparedBase: "origin/develop" });
+    expect(folderLandingSummary(f, pr({ state: "open", number: 7 }))).toEqual({
+      landed: false,
+      text: "PR #7 open, not in develop",
+    });
+  });
+
+  it("names a closed PR as unmerged", () => {
+    expect(folderLandingSummary(folder({}), pr({ state: "closed", number: 3 })).text).toBe(
+      "PR #3 closed, unmerged, not in main",
+    );
+  });
+
+  it("falls back to git's proof, or its absence, with no PR", () => {
+    expect(folderLandingSummary(folder({ landed: "rebase-merged" }), undefined)).toEqual({
+      landed: true,
+      text: "rebase-merged into main",
+    });
+    expect(folderLandingSummary(folder({}), undefined)).toEqual({
+      landed: false,
+      text: "Not merged into main",
+    });
   });
 });
 

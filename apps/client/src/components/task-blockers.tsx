@@ -9,6 +9,7 @@ import {
 import { Button, Dialog } from "@cloudflare/kumo";
 import {
   forceDeleteLabel,
+  type LandingSummary,
   type TaskBlocker,
   type TaskBlockerKind,
   stoppablePort,
@@ -35,10 +36,32 @@ function BlockerIcon({ kind, losesWork }: { kind: string; losesWork: boolean }) 
   );
 }
 
+/** Where the branch stands, atop every close dialog — the same line the
+ * header's "Safe to delete" callout leads with. */
+export function LandingLine({ landing }: { landing: LandingSummary }) {
+  return (
+    <p
+      className={cn(
+        "flex items-center gap-2 rounded-md border border-l-2 bg-card px-2.5 py-1.5 text-xs",
+        landing.landed ? "border-ok/40" : "border-kumo-hairline",
+      )}
+    >
+      <span
+        className={cn("shrink-0 font-mono", landing.landed ? "text-ok" : "text-kumo-subtle")}
+        aria-hidden
+      >
+        {landing.landed ? "✓" : "○"}
+      </span>
+      <span className="min-w-0 wrap-anywhere text-kumo-default">{landing.text}</span>
+    </p>
+  );
+}
+
 export function BlockedDeleteDialog({
   open,
   onOpenChange,
   name,
+  landing,
   description,
   cancelLabel,
   blockers,
@@ -59,6 +82,8 @@ export function BlockedDeleteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   name: ReactNode;
+  /** `undefined` for a checkout the rail doesn't track. */
+  landing?: LandingSummary;
   description: ReactNode;
   cancelLabel: string;
   blockers: TaskBlocker[];
@@ -81,6 +106,7 @@ export function BlockedDeleteDialog({
             {description}
           </Dialog.Description>
         </div>
+        {landing && <LandingLine landing={landing} />}
         {messages.length > 0 && (
           <ul className="flex flex-col gap-1 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-2">
             {messages.map((message) => (

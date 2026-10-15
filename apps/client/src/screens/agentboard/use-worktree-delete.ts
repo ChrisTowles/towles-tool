@@ -1,12 +1,13 @@
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import {
+  landingSummaryForDir,
   liveSessions,
   type BlockedDelete,
   type RemoveTarget,
   type RepoData,
 } from "@/lib/agentboard";
-import { taskDelete, type TaskItem, type TaskOutcome } from "@/lib/data";
+import { taskDelete, type PrItem, type TaskItem, type TaskOutcome } from "@/lib/data";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 
@@ -40,11 +41,12 @@ export type WorktreeDelete = {
  * dirty tree, unreachable commits or a foreign port as reasons, not a deletion. */
 export function useWorktreeDelete(args: {
   repos: RepoData[];
+  prs: PrItem[];
   tasks: TaskItem[];
   expectedKills: React.RefObject<Set<string>>;
   onSessionRemoved: (sessionId: string) => void;
 }): WorktreeDelete {
-  const { repos, tasks, expectedKills, onSessionRemoved } = args;
+  const { repos, prs, tasks, expectedKills, onSessionRemoved } = args;
 
   const [confirmDeleteWt, setConfirmDeleteWt] = useState<RemoveTarget | null>(null);
   const [deleteWtTask, setDeleteWtTask] = useState<TaskItem | null>(null);
@@ -77,6 +79,7 @@ export function useWorktreeDelete(args: {
       sessionIds,
       dirMissing: folder?.dirMissing,
       baseBranch: folder?.baseBranch,
+      landing: landingSummaryForDir(repos, prs, dir),
     });
   }
 
