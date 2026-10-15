@@ -193,12 +193,15 @@ pub enum RowRecord {
     Detected {
         task: RowTask,
     },
+    /// The home directory, pinned atop the rail so a shell or agent started in
+    /// `~` has a row. Not a repo: no git is read for it and it can't be untracked.
+    Home,
 }
 
 impl RowRecord {
     pub fn task(&self) -> Option<&RowTask> {
         match self {
-            RowRecord::Checkout => None,
+            RowRecord::Checkout | RowRecord::Home => None,
             RowRecord::Task { task } | RowRecord::Detected { task } => Some(task),
         }
     }

@@ -15,15 +15,21 @@ owns is on the tree only, until its "adopt" chip makes it a task. On Tree the
 checkout tree below *is* the rail, and `lib/rail-nodes.ts` is the one walk its
 cursor, jump digits and fold chords read.
 
-## The checkout tree is six files, split by what a row *is*
+## The checkout tree is seven files, split by what a row *is*
 
 `components/agentboard-rail.tsx` is the rail's own chrome (collapsed strip,
 rollup tally) — not the tree, which is `agentboard-repo-group` (a repo) →
-`agentboard-folder-header` (a checkout) → `agentboard-session-row` (a PTY) /
+`agentboard-folder-header` (a checkout), or `agentboard-home-header` (`~`) → `agentboard-session-row` (a PTY) /
 `agentboard-pane-rows`, plus `agentboard-fold-rows` for the rows that stand for
 rows *not* shown ("N idle", "N unmanaged"), with shared atoms in
-`agentboard-bits` and pure logic in `lib/agentboard.ts`. A new row kind gets a
-seventh file, not a grown one.
+`agentboard-bits` and pure logic in `lib/agentboard.ts`. A new row kind gets an
+eighth file, not a grown one.
+
+**`~` is always the first group.** The engine appends one `home`-origin row
+for the home directory (a tracked `~` repo replaces it), and the longest-prefix
+resolve sends any app-launched agent whose cwd no repo claims there. It is no
+repo: git is never read for it, the idle filter never folds it, and it is kept
+out of the queue's repo pills and the new-repo parent dirs.
 
 **Folding is per-repo, and always reversible in place.** The rail filter demotes
 idle checkouts; `isFolderUnmanaged` demotes the worktrees agents make for

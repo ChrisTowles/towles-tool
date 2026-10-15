@@ -574,6 +574,12 @@ describe("folderRemovableTask", () => {
       folderRemovableTask(folder({ record: taskRow, dirMissing: true, isWorktree: false })),
     ).toBe(true);
   });
+
+  it("never offers deletion on home", () => {
+    expect(folderRemovableTask(folder({ record: { origin: "home" }, isWorktree: true }))).toBe(
+      false,
+    );
+  });
 });
 
 describe("folderBranchDrift", () => {
@@ -1526,6 +1532,12 @@ describe("isFolderFiltered", () => {
     });
     expect(isFolderFiltered(abandoned, "active", NOW, 4)).toBe(false);
     expect(isFolderFiltered(abandoned, "recent", NOW, 4)).toBe(true);
+  });
+
+  it("never folds home — it is always on the rail", () => {
+    const home = folder({ record: { origin: "home" }, workedAtMs: 0 });
+    expect(isFolderFiltered(home, "active", NOW, 4)).toBe(false);
+    expect(isFolderFiltered(home, "recent", NOW, 4)).toBe(false);
   });
 });
 

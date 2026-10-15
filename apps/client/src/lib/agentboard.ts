@@ -98,13 +98,24 @@ export type RowRecord =
   /** The user's own work. */
   | { origin: "task"; task: RowTask }
   /** A worktree on disk no task claimed — Claude Code's own, or hand-added. */
-  | { origin: "detected"; task: RowTask };
+  | { origin: "detected"; task: RowTask }
+  /** `~`, pinned atop the tree: not a repo, so no git, no tasks, no untrack. */
+  | { origin: "home" };
 
 /** Stamped by the app — the only thing that tells a live create from a dead one. */
 export type RowPhase = { state: "creating"; label: string } | { state: "removing"; label: string };
 
 export function folderTask(folder: FolderData): RowTask | undefined {
-  return folder.record.origin === "checkout" ? undefined : folder.record.task;
+  return "task" in folder.record ? folder.record.task : undefined;
+}
+
+export function folderIsHome(folder: Pick<FolderData, "record">): boolean {
+  return folder.record.origin === "home";
+}
+
+/** The home row's group — a repo in the payload's shape only. */
+export function isHomeRepo(r: Pick<RepoData, "folders">): boolean {
+  return r.folders.some(folderIsHome);
 }
 
 export function folderIsUnclaimed(folder: FolderData): boolean {
@@ -121,7 +132,7 @@ export function folderRemoving(folder: FolderData): boolean {
 
 /** Not on disk and nothing working on it — a failed create, or deleted outside. */
 export function folderDetached(folder: FolderData): boolean {
-  return folder.record.origin !== "checkout" && folder.dirMissing && !folderBusy(folder);
+  return "task" in folder.record && folder.dirMissing && !folderBusy(folder);
 }
 
 /** The task's own record first: a row with no directory has no git to read from.
@@ -838,6 +849,8 @@ export function isFolderFiltered(
   now: number,
   recentHours: number,
 ): boolean {
+  // Always on the rail: it is where a session with no repo goes.
+  if (folderIsHome(f)) return false;
   switch (filter) {
     case "all":
       return false;
@@ -905,6 +918,7 @@ export function folderLanded(
 export function folderRemovableTask(
   folder: Pick<FolderData, "record" | "isWorktree" | "dirMissing">,
 ): boolean {
+  if (folder.record.origin === "home") return false;
   if (folder.record.origin !== "checkout") return true;
   return folder.isWorktree && !folder.dirMissing;
 }

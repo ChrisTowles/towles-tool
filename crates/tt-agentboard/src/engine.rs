@@ -135,6 +135,8 @@ pub struct Engine {
     /// `agentboard.showUnmanagedWorktrees`, off by default — a display filter over
     /// [`RowRecord::Detected`]; the host gates its reconciler on it too.
     show_unmanaged_worktrees: bool,
+    /// `~`, the rail's one [`RowRecord::Home`] row; `None` when there is no home.
+    home_dir: Option<String>,
     /// The rail's worktree rows, pushed in by the host since the engine is
     /// store-free. **Records, not directories**: an entry puts a row on the rail
     /// whether or not anything exists at its `dir`.
@@ -286,6 +288,7 @@ impl Engine {
             watcher: Some(ClaudeCodeAgentWatcher::with_defaults(scope.clone())),
             compact_recommend_percent,
             show_unmanaged_worktrees,
+            home_dir: dirs::home_dir().map(|h| h.to_string_lossy().into_owned()),
             task_worktrees: Vec::new(),
             prs: Vec::new(),
             thread_sessions: HashMap::new(),
@@ -372,11 +375,32 @@ impl Engine {
                 });
             }
         }
+        // Last, so the colors dealt in rail order stay where they were;
+        // `compute_payload` lifts it to the top. Tracking `~` as a repo wins.
+        if let Some(home) = &self.home_dir
+            && seen.insert(home.as_str())
+        {
+            rows.push(RailRow {
+                dir: home.clone(),
+                repo_root: home.clone(),
+                record: RowRecord::Home,
+            });
+        }
         rows
     }
 
     fn rail_dirs(&mut self) -> Vec<String> {
         self.rail_rows().into_iter().map(|r| r.dir).collect()
+    }
+
+    /// [`Self::rail_dirs`] minus the home row: `~` is no repo, and one that is
+    /// (a dotfiles checkout) would cost a status walk over the whole home dir.
+    fn git_dirs(&mut self) -> Vec<String> {
+        self.rail_rows()
+            .into_iter()
+            .filter(|r| r.record != RowRecord::Home)
+            .map(|r| r.dir)
+            .collect()
     }
 
     /// Checkouts under a tracked repo that no task row claims; the host mints a
@@ -435,7 +459,7 @@ impl Engine {
     /// so a commit/fetch/switch invalidates that dir instead of waiting out the TTL.
     pub fn control_watch_files(&mut self) -> std::collections::HashMap<std::path::PathBuf, String> {
         self.reload_repos();
-        let dirs = self.rail_dirs();
+        let dirs = self.git_dirs();
         let mut out = std::collections::HashMap::new();
         for dir in dirs {
             let info = self.git_cache.get(&dir);
@@ -489,7 +513,7 @@ impl Engine {
         now: i64,
     ) -> Vec<(String, Option<String>, crate::git_info::GitInfo)> {
         self.reload_repos();
-        let all_paths = self.rail_dirs();
+        let all_paths = self.git_dirs();
         let pending_guard = |d: &str| {
             self.git_pending
                 .get(d)
@@ -778,7 +802,7 @@ impl Engine {
         if prs == self.prs {
             return;
         }
-        let dirs = self.rail_dirs();
+        let dirs = self.git_dirs();
         let before: Vec<_> = dirs.iter().map(|d| self.effective_base(d)).collect();
         self.prs = prs;
         for (dir, before) in dirs.iter().zip(before) {
@@ -868,6 +892,12 @@ impl Engine {
         let colors = crate::repo_meta::resolve_colors(&pins);
         for (repo, color) in payload.repos.iter_mut().zip(colors) {
             repo.color = color;
+        }
+        if let Some(i) =
+            payload.repos.iter().position(|r| r.folders.iter().any(|f| f.record == RowRecord::Home))
+        {
+            let home = payload.repos.remove(i);
+            payload.repos.insert(0, home);
         }
 
         payload.windows = self.windows.payload().clone();
@@ -1068,6 +1098,7 @@ impl Engine {
             watcher: None,
             compact_recommend_percent: 80,
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
+            home_dir: None,
             task_worktrees: Vec::new(),
             prs: Vec::new(),
             thread_sessions: HashMap::new(),
@@ -1732,6 +1763,35 @@ mod engine_tests {
 
         e.set_folder_base_branch("/repo/x", Some("develop"));
         assert_eq!(e.effective_base("/repo/x").as_deref(), Some("develop"));
+    }
+
+    #[test]
+    fn home_row_leads_the_rail_keeps_its_sessions_and_is_never_a_git_target() {
+        let (_tmp, mut e) = engine();
+        e.home_dir = Some("/home/u".into());
+        assert!(e.add_repo("/home/u/code/a"));
+        let s = e.add_session("/home/u", None, 1000);
+
+        let payload = e.compute_payload(1001);
+        let dirs: Vec<&str> = payload.repos.iter().map(|r| r.dir.as_str()).collect();
+        assert_eq!(dirs, ["/home/u", "/home/u/code/a"]);
+        let home = &payload.repos[0].folders[0];
+        assert_eq!(home.record, RowRecord::Home);
+        assert_eq!(home.sessions.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), [s.id]);
+
+        let git: Vec<String> = e.stale_git_targets(1002).into_iter().map(|t| t.0).collect();
+        assert_eq!(git, ["/home/u/code/a"]);
+        assert!(e.control_watch_files().values().all(|d| d != "/home/u"));
+    }
+
+    #[test]
+    fn tracking_home_as_a_repo_replaces_the_home_row() {
+        let (_tmp, mut e) = engine();
+        e.home_dir = Some("/home/u".into());
+        assert!(e.add_repo("/home/u"));
+        let payload = e.compute_payload(1000);
+        assert_eq!(payload.repos.len(), 1);
+        assert_eq!(payload.repos[0].folders[0].record, RowRecord::Checkout);
     }
 
     #[test]

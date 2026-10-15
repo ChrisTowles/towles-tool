@@ -12,6 +12,7 @@ import {
 } from "@/components/agentboard-bits";
 import { FoldToggleRow, FoldedRepoStub } from "@/components/agentboard-fold-rows";
 import { FolderHeader } from "@/components/agentboard-folder-header";
+import { HomeHeader } from "@/components/agentboard-home-header";
 import {
   ViewPaneRow,
   WindowSpine,
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils";
 import {
   folderBusy,
   folderDetached,
+  folderIsHome,
   folderIsUnclaimed,
   folderRecreateBranch,
   folderPhaseLabel,
@@ -254,7 +256,9 @@ export function RepoGroup({
     // The empty state only under the folder you're in, or a rail of untouched
     // checkouts carries a row apiece saying nothing runs there. With nothing at
     // all to show the block goes too: an empty one is padding reading as a gap.
-    const empty = folder.sessions.length === 0 && activeFolderDir === folder.dir;
+    // Home always offers its way in: it is the row you came to start one in.
+    const empty =
+      folder.sessions.length === 0 && (activeFolderDir === folder.dir || folderIsHome(folder));
     if (!empty && groups.length === 0 && loose.length === 0) return null;
     return (
       <div className={pad}>
@@ -295,6 +299,32 @@ export function RepoGroup({
       </div>
     );
   };
+
+  // Home: one folder, no repo around it, and a heavier rule under it so it reads
+  // as apart from the repos.
+  if (solo && folderIsHome(repo.folders[0])) {
+    const folder = repo.folders[0];
+    const isCollapsed = collapsed[repo.key];
+    return (
+      <div className="border-b-2" data-focus-kind="repo" data-focus-id={repo.key}>
+        <HomeHeader
+          identity={repo}
+          folder={folder}
+          needs={repo.needs}
+          collapsed={isCollapsed}
+          active={activeFolderDir === folder.dir}
+          cursor={cursorKey === repo.key}
+          onToggle={() => {
+            onToggle(repo.key);
+            onSelectFolder(folder.dir);
+          }}
+          onNewSession={() => onNewSession(folder.dir)}
+          onOpenFiles={() => onOpenFiles(folder.dir)}
+        />
+        {!isCollapsed && sessionRows(folder, "pb-2")}
+      </div>
+    );
+  }
 
   // Solo repo: collapse repo + folder into one header (repo · branch).
   if (solo) {

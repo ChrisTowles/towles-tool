@@ -14,6 +14,7 @@ import {
 import { QueueRepoBar } from "@/components/queue-repo-bar";
 import {
   branchRedundant,
+  isHomeRepo,
   prForFolder,
   requestAgentboardNav,
   taskForFolder,
@@ -205,7 +206,8 @@ export function QueueRail({
   return (
     <div className="flex flex-col">
       <QueueRepoBar
-        repos={repos}
+        // `~` is no repo: nothing to start a task in, or to reorder.
+        repos={repos.filter((r) => !isHomeRepo(r))}
         items={allItems}
         repoByFolder={repoByFolder}
         picked={repoFilter}
