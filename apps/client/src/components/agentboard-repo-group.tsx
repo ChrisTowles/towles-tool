@@ -402,16 +402,15 @@ export function RepoGroup({
   const repoActive = repo.folders.some((f) => f.dir === activeFolderDir);
   const scopePrefix = pathScope(repo.folders[0].dir);
   const RepoIcon = repoIcon(repo.meta);
-  // Sticky header: every background on this row must resolve to a fully opaque
-  // color, or rows scrolling underneath show through and read as a glitch.
-  const accent = repoAccentStyles(repo, "var(--card)");
-  // Identity never outranks status: a repo waiting on you keeps the amber. The
-  // active selection is a ring, not a fill, so it layers over the wash.
+  const accent = repoAccentStyles(repo);
+  // Identity never outranks status: a repo waiting on you keeps the amber edge.
+  // Color rides the icon, name and edge only — no wash, so the repos don't
+  // paint the rail.
   const statusOwnsRow = repo.needs > 0;
   return (
     <div className="border-b" data-focus-kind="repo" data-focus-id={repo.key}>
       <div
-        style={statusOwnsRow ? undefined : { ...accent.edgeStyle, ...accent.surfaceStyle }}
+        style={statusOwnsRow ? undefined : accent.edgeStyle}
         className={cn(
           "sticky top-0 z-10 flex w-full items-center gap-2 border-b border-l-2 border-border border-l-transparent bg-card px-3 py-2 hover:bg-accent",
           repoActive && "border-l-violet-500",
@@ -430,7 +429,9 @@ export function RepoGroup({
               {scopePrefix}
             </span>
           )}
-          <span className="truncate text-sm font-semibold">{repo.name}</span>
+          <span style={accent.iconStyle} className="truncate text-sm font-semibold">
+            {repo.name}
+          </span>
           <span className="ml-auto flex items-center gap-2">
             {repoCollapsed && <CollapsedLive sessions={repo.folders.flatMap((f) => f.sessions)} />}
             {repo.needs > 0 && <NeedsBadge n={repo.needs} />}

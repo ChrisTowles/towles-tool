@@ -1,13 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Badge, Button } from "@cloudflare/kumo";
-import {
-  ArrowDownIcon,
-  CaretDownIcon,
-  CaretRightIcon,
-  ClockIcon,
-  PlayIcon,
-} from "@phosphor-icons/react";
+import { CaretDownIcon, CaretRightIcon, ClockIcon } from "@phosphor-icons/react";
 import {
   BaseMovedChip,
   CommittedChip,
@@ -17,9 +11,9 @@ import {
   PrChip,
   UncommittedChip,
 } from "@/components/agentboard-bits";
-import { QueueRepoChips } from "@/components/queue-repo-chips";
-import { QueueRepoFilter } from "@/components/queue-repo-filter";
+import { QueueRepoBar } from "@/components/queue-repo-bar";
 import {
+  branchRedundant,
   prForFolder,
   requestAgentboardNav,
   taskForFolder,
@@ -30,7 +24,7 @@ import { fmtAge, type PrItem, type TaskItem } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
 import { railRowMotion } from "@/lib/rail-motion";
-import { repoAccentStyles, repoRowStyle } from "@/lib/repo-identity";
+import { repoAccentStyles } from "@/lib/repo-identity";
 import type { Lane, QueueItem, TaskQueue, WaitReason } from "@/lib/schemas/queue";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
@@ -54,7 +48,7 @@ const LANE_TITLE: Record<Lane, string> = {
   idle: "Idle",
   running: "Running",
   parked: "Parked",
-  no_shell: "No shell",
+  no_shell: "Not open",
 };
 
 export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "no_shell"];
@@ -140,7 +134,6 @@ export function QueueRail({
   onOpenFiles,
   live,
   now,
-  head,
   selectedId,
   folded,
   hotkeys,
@@ -148,7 +141,6 @@ export function QueueRail({
   onSnoozeIdChange,
   onToggleLane,
   onSelect,
-  onOpenHead,
   repos,
   newTaskRepoKey,
   onPickRepo,
@@ -169,7 +161,6 @@ export function QueueRail({
   onOpenFiles: (folderDir: string) => void;
   live: boolean;
   now: number;
-  head: QueueItem | undefined;
   /** The ringed row's `folderDir`. */
   selectedId: string | null;
   folded: ReadonlySet<Lane>;
@@ -180,10 +171,7 @@ export function QueueRail({
   onSnoozeIdChange: (id: string | null) => void;
   onToggleLane: (lane: Lane) => void;
   onSelect: (item: QueueItem) => void;
-  /** The hero's Open — the mouse twin of `queue-next`. */
-  onOpenHead: () => void;
-  /** The header `+` — the mouse twin of `ab-new-task`. */
-  /** Every tracked repo, one new-task chip each. */
+  /** Every tracked repo, one pill each. */
   repos: readonly RepoData[];
   newTaskRepoKey: string | null;
   onPickRepo: (repo: RepoData) => void;
@@ -201,15 +189,16 @@ export function QueueRail({
   );
   return (
     <div className="flex flex-col">
-      <QueueRepoChips repos={repos} activeKey={newTaskRepoKey} onPick={onPickRepo} />
-      {newTaskForm}
-      <QueueRepoFilter
+      <QueueRepoBar
         repos={repos}
         items={allItems}
         repoByFolder={repoByFolder}
         picked={repoFilter}
-        onChange={onRepoFilterChange}
+        onFilterChange={onRepoFilterChange}
+        activeKey={newTaskRepoKey}
+        onPick={onPickRepo}
       />
+      {newTaskForm}
       {!live ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
       ) : queue.items.length === 0 && repoFilter.size > 0 ? (
@@ -218,7 +207,7 @@ export function QueueRail({
         </p>
       ) : queue.items.length === 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
-          No checkouts yet — start a task from a repo above.
+          No checkouts yet — start a task with a repo's + above.
         </p>
       ) : (
         // One flat list, headers and rows alike, so a row changing lane slides
@@ -247,7 +236,6 @@ export function QueueRail({
               header,
               ...items.map((item) => {
                 const id = item.folderDir;
-                const isHead = id === head?.folderDir;
                 return (
                   <motion.div key={id} {...queueRowMotion}>
                     <QueueRow
@@ -260,14 +248,6 @@ export function QueueRail({
                       snoozeOpen={snoozeId === id}
                       onSnoozeOpenChange={(o) => onSnoozeIdChange(o ? id : null)}
                       onSelect={() => onSelect(item)}
-                      head={
-                        isHead
-                          ? {
-                              onOpen: onOpenHead,
-                              onLater: () => void rerankQueueItem(queue.items, item, "down"),
-                            }
-                          : undefined
-                      }
                     />
                   </motion.div>
                 );
@@ -327,14 +307,11 @@ type RepoLook = {
   rowStyle: CSSProperties | undefined;
 };
 
-/** Which repo a row is — the headspace you'd be switching into — worn by the
- * whole row in the repo's color. */
+/** Which repo a row is — the headspace you'd be switching into — on its name
+ * and left edge only, so the ring and the badges stay what the eye lands on. */
 function repoLook(repo: RepoData | undefined, fallback: string): RepoLook {
-  return {
-    name: repo?.name ?? fallback,
-    textStyle: repoAccentStyles(repo).iconStyle,
-    rowStyle: repoRowStyle(repo),
-  };
+  const accent = repoAccentStyles(repo);
+  return { name: repo?.name ?? fallback, textStyle: accent.iconStyle, rowStyle: accent.edgeStyle };
 }
 
 /** The tree's git and link chips for a checkout — the same components, resolved
@@ -371,9 +348,10 @@ function CheckoutChips({
 
 function rowMeta(item: QueueItem, now: number): string {
   return [
-    item.branch,
+    branchRedundant(item.title, item.branch) ? null : item.branch,
     item.ci.length > 0 ? item.ci.map((c) => c.workflow).join(", ") : null,
-    item.runningAgents > 0
+    // Under Running, one agent working is what the lane already says.
+    item.runningAgents > (item.lane === "running" ? 1 : 0)
       ? `${item.runningAgents} agent${item.runningAgents === 1 ? "" : "s"} working`
       : null,
     item.snoozed
@@ -396,7 +374,6 @@ function QueueRow({
   snoozeOpen,
   onSnoozeOpenChange,
   onSelect,
-  head,
 }: {
   item: QueueItem;
   repo: RepoData | undefined;
@@ -408,12 +385,11 @@ function QueueRow({
   snoozeOpen: boolean;
   onSnoozeOpenChange: (open: boolean) => void;
   onSelect: () => void;
-  /** Set on Next up: the row grows its kicker, quote and actions in place. */
-  head?: { onOpen: () => void; onLater: () => void };
 }) {
   const face = item.reason ? REASON_FACE[item.reason] : null;
   const look = repoLook(repo, item.repo);
   const moved = useMovedFlash(item.lane);
+  const meta = rowMeta(item, now);
   return (
     <div
       data-focus-kind={item.pr ? "pr" : undefined}
@@ -426,11 +402,6 @@ function QueueRow({
         moved && "bg-kumo-brand/15",
       )}
     >
-      {head && (
-        <div className="pl-6 text-[11px] font-semibold tracking-wide text-kumo-brand uppercase">
-          Next up{item.reason && ` · ${HERO_KICKER[item.reason]}`}
-        </div>
-      )}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -449,12 +420,20 @@ function QueueRow({
           ) : item.lane === "on_you" ? (
             <span className="w-20 shrink-0" />
           ) : null}
-          {/* Repo and title share one line: two lines a row, so twenty fit a screen. */}
+          {/* Repo and title share one line: two lines a row, so twenty fit a screen.
+              With no meta to show, the title may take the meta's line instead. */}
           <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
             <span style={look.textStyle} className="max-w-[45%] shrink-0 truncate font-bold">
               {look.name}
             </span>
-            <span className="truncate font-medium text-kumo-default">{item.title}</span>
+            <span
+              className={cn(
+                "min-w-0 font-medium text-kumo-default",
+                meta ? "truncate" : "line-clamp-2 break-words",
+              )}
+            >
+              {item.title}
+            </span>
           </span>
           {item.sinceMs != null && (
             <span className="shrink-0 font-mono text-xs text-kumo-subtle tabular-nums">
@@ -487,35 +466,9 @@ function QueueRow({
         )}
       </div>
       <div className="flex min-w-0 items-center gap-2 pl-6">
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-kumo-subtle">
-          {rowMeta(item, now)}
-        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-kumo-subtle">{meta}</span>
         {chips}
       </div>
-      {head && item.said && item.said !== item.title && (
-        <div className="mt-1 ml-6 line-clamp-2 rounded-md border-l-2 border-kumo-warning bg-kumo-tint px-2 py-1 text-xs">
-          {item.said}
-        </div>
-      )}
-      {head && (!selected || item.taskId != null) && (
-        <div className="mt-1 flex gap-1.5 pl-6">
-          {!selected && (
-            <Button
-              size="xs"
-              variant="primary"
-              icon={<PlayIcon weight="fill" />}
-              onClick={head.onOpen}
-            >
-              Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>
-            </Button>
-          )}
-          {item.taskId != null && (
-            <Button size="xs" variant="ghost" icon={<ArrowDownIcon />} onClick={head.onLater}>
-              Later
-            </Button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

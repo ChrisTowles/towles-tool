@@ -159,32 +159,15 @@ export function repoAccentStyles(
   };
 }
 
-/** A list row that belongs to one repo: tinted through, with a solid left edge
- * the width of the row's `border-l`. */
-export function repoRowStyle(
-  repo: RepoIdentity | undefined,
-  base = "transparent",
-): CSSProperties | undefined {
+/** A button that stands for one repo and is picked: its color as text and
+ * border, washed through. */
+export function repoChipStyle(repo: RepoIdentity | undefined): CSSProperties | undefined {
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return undefined;
   return {
-    backgroundColor: `color-mix(in srgb, ${hex} 12%, ${base})`,
-    borderLeftColor: hex,
-  };
-}
-
-/** A button that stands for one repo: its color as text and border, washed
- * through; `active` fills it, for the one whose form is open. */
-export function repoChipStyle(
-  repo: RepoIdentity | undefined,
-  active: boolean,
-): CSSProperties | undefined {
-  const hex = repo ? normalizeHex(repo.color) : null;
-  if (!hex) return undefined;
-  return {
-    color: active ? "white" : hex,
-    backgroundColor: active ? hex : `color-mix(in srgb, ${hex} 14%, transparent)`,
-    borderColor: `color-mix(in srgb, ${hex} ${active ? 100 : 45}%, transparent)`,
+    color: hex,
+    backgroundColor: `color-mix(in srgb, ${hex} 14%, transparent)`,
+    borderColor: `color-mix(in srgb, ${hex} 45%, transparent)`,
   };
 }
 

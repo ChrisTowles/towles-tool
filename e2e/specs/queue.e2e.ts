@@ -111,9 +111,9 @@ describe("Agent Board queue rail", () => {
     });
   });
 
-  it("opens a repo's new-task form from its chip, and closes it on a second click", async () => {
+  it("opens a repo's new-task form from its +, and closes it on a second click", async () => {
     await gotoRail("Queue");
-    const chip = await browser.$("[data-testid='queue-repo-chip']");
+    const chip = await browser.$("[data-testid='queue-repo-new']");
     await chip.waitForDisplayed({ timeout: 10000 });
     await chip.click();
     const form = await browser.$("[data-testid='rail-new-task']");
