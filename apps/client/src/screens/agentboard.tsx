@@ -86,7 +86,7 @@ import {
   type SessionData,
   type StartClaudeTarget,
 } from "@/lib/agentboard";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage, NotInTauri } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
 import { buildJumpRecall, type JumpRecall } from "@/lib/jump-recall";
 import type { PreviewRequest } from "@/lib/preview-artifact";
@@ -1017,6 +1017,26 @@ export function AgentBoardScreen() {
     }
   }
 
+  // The repo header's "+": a shell in the root checkout, wherever focus was, and
+  // the keyboard goes straight into it — unfolding whatever would hide its row.
+  async function newRootShell(repo: RepoData) {
+    uiAction("agentboard.new_root_shell", "agentboard");
+    const added = await invoke<SessionData>("ab_add_session", { dir: repo.dir, name: null });
+    if (added.isErr()) {
+      if (!NotInTauri.is(added.error)) toast.error(errorMessage(added.error));
+      return;
+    }
+    const rec = added.value;
+    applyCollapse(
+      [repo.key, `${repo.key}::${repo.dir}`]
+        .filter((key) => collapsed[key])
+        .map((key) => ({ key, collapsed: false })),
+    );
+    selectSession(repo.dir, rec.id);
+    setFocusLevel("pane");
+    setFocusTerminalRequest((r) => ({ id: rec.id, nonce: (r?.nonce ?? 0) + 1 }));
+  }
+
   async function launchClaudeIn(
     target: StartClaudeTarget,
     prompt: string,
@@ -1518,6 +1538,7 @@ export function AgentBoardScreen() {
               onSelectFolder={selectFolder}
               onSelect={selectSession}
               onNewSession={newSession}
+              onNewRootShell={() => void newRootShell(repo)}
               onNewTask={(target) => openRailNewTask(target.key)}
               onRemoveRepo={requestRemoveRepo}
               onDeleteWorktree={requestDeleteWorktree}
