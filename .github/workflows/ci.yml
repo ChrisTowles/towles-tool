@@ -13,6 +13,8 @@ on:
       - "bun.lock"
       - ".github/workflows/frontend.yml"
       - ".github/workflows/release.yml"
+      - ".github/workflows/build.yml"
+      - ".github/workflows/main-build.yml"
   pull_request:
     paths-ignore: *non-rust-paths
 
@@ -149,7 +151,7 @@ jobs:
     # lookup. Deliberately ungated: a Linux-only API can be introduced by any
     # crate, so the paths filter that spares rust-app would miss it.
     # macos-14 rather than macos-latest is what dodges the zig 0.15/Xcode 26.4
-    # linker bug release.yml has to work around (ziglang/zig#31658).
+    # linker bug build.yml has to work around (ziglang/zig#31658).
     runs-on: macos-14
     env:
       GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0

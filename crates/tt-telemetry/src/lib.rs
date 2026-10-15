@@ -85,7 +85,7 @@ const DISABLE_ENV: &str = "TT_TELEMETRY";
 const DISK_FILTER: &str = "warn,tt=debug,tt_agentboard=debug,tt_app=debug,tt_cli=debug,\
                            tt_collect=debug,tt_config=debug,tt_exec=debug,tt_git=debug,\
                            tt_ide=debug,tt_journal=debug,tt_mcp=debug,tt_telemetry=debug,\
-                           tt_tasks=debug,tt_store=debug,tt_update=debug,tt_vt=debug";
+                           tt_tasks=debug,tt_store=debug,tt_vt=debug";
 
 #[derive(Debug, Error)]
 pub enum Error {

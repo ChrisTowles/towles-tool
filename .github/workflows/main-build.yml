@@ -1,0 +1,36 @@
+name: Main build
+
+# Every push to main builds and signs the installers exactly as a release
+# would, so breakage surfaces on the commit that caused it rather than when a
+# release is cut. Each commit's bundles stay downloadable for 30 days.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: main-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-latest
+            name: linux
+            args: "--bundles deb,appimage"
+          # Apple Silicon only — Intel Macs are not a supported target.
+          - platform: macos-latest
+            name: macos-arm
+            args: "--target aarch64-apple-darwin"
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build.yml
+    with:
+      platform: ${{ matrix.platform }}
+      name: ${{ matrix.name }}
+      args: ${{ matrix.args }}
+      upload-artifacts: true
+    secrets: inherit

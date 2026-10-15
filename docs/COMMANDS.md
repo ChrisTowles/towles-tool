@@ -52,6 +52,17 @@ job trades its OIDC id-token for a short-lived credential, so no token is stored
 here. That trust can only be configured against a package that already exists,
 so a **new** npm name is published by hand once.
 
+The desktop app ships through **Main build** and **Release**, both over the
+reusable `build.yml`. Every push to main builds and signs the Linux and macOS
+installers, kept as run artifacts for 30 days. To cut a release, bump `version`
+in `crates-tauri/tt-app/tauri.conf.json` and tt-app's `Cargo.toml`, merge, and
+dispatch **Release**: it tags `v<version>`, uploads the bundles plus a signed
+`latest.json` to a draft, and publishes the draft only when every platform
+built. Installed apps poll that manifest and offer the update on a banner
+(`tt-app/src/update.rs`); a from-source build never does. The signing key is
+the `TAURI_SIGNING_PRIVATE_KEY` secret, its public half is in
+`tauri.conf.json`, and losing it strands every installed copy on its version.
+
 `clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), and `tt-app`,
 `tt-pane` and `tt-jarvis` (webkit2gtk/GTK — for `tt-jarvis` only its cadence
 benchmark's dev-deps, which `--all-targets` builds anyway). Bevy is *not* among
