@@ -708,6 +708,73 @@ pub fn commit_stats(dir: &str, base_branch: Option<&str>) -> Vec<CommitStat> {
         .collect()
 }
 
+/// What a checkout holds that its base doesn't — the delete dialog's last look.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchDiff {
+    pub branch: String,
+    pub compared_base: String,
+    pub commits: Vec<CommitStat>,
+    /// Merge-base to working tree, untracked included: everything this branch
+    /// changed, committed or not.
+    pub files: Vec<BranchDiffFile>,
+    /// The untracked walk stopped early, so `files` is a floor.
+    pub capped: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchDiffFile {
+    pub path: String,
+    pub old_path: Option<String>,
+    /// git's name-status letter, `?` for untracked.
+    pub status: String,
+    pub lines_added: i64,
+    pub lines_removed: i64,
+    pub binary: bool,
+    /// Differs from `HEAD` — gone for good once the checkout is deleted.
+    pub uncommitted: bool,
+}
+
+/// `git diff --stat $(git merge-base <base> HEAD)` plus untracked files, each
+/// flagged when its change isn't committed yet. `None` for a non-repo dir.
+pub fn branch_diff(dir: &str, base_branch: Option<&str>) -> Option<BranchDiff> {
+    if dir.is_empty() {
+        return None;
+    }
+    let repo = open_repo(dir)?;
+    let compared_base = resolve_base_ref(&repo, dir, base_branch);
+    let boundary = repo
+        .merge_base(&compared_base, "HEAD")
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| compared_base.clone());
+    let changes = repo.changes_vs(&boundary).ok()?;
+    let uncommitted: HashSet<String> = repo
+        .changes_vs("HEAD")
+        .map(|c| c.files.into_iter().map(|f| f.path).collect())
+        .unwrap_or_default();
+    let files = changes
+        .files
+        .into_iter()
+        .map(|f| BranchDiffFile {
+            uncommitted: uncommitted.contains(&f.path),
+            path: f.path,
+            old_path: f.old_path,
+            status: f.status.to_string(),
+            lines_added: f.lines_added,
+            lines_removed: f.lines_removed,
+            binary: f.binary,
+        })
+        .collect();
+    Some(BranchDiff {
+        branch: repo.head_branch().unwrap_or_default(),
+        commits: commit_stats(dir, base_branch),
+        compared_base,
+        files,
+        capped: changes.untracked_cap.is_some(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -778,6 +845,38 @@ mod tests {
         assert_eq!(stats[1].lines_added, 2);
         assert_eq!(stats[1].lines_removed, 0);
         assert_eq!(stats.iter().map(|c| c.lines_added).sum::<i64>(), 3);
+    }
+
+    #[test]
+    fn branch_diff_lists_files_since_the_merge_base_and_flags_uncommitted_ones() {
+        let root = tempfile::TempDir::new().unwrap();
+        let repo = root.path();
+        init_repo_with(repo, "1\n");
+        git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+        git(repo, &["checkout", "--quiet", "-b", "feature"]);
+        std::fs::write(repo.join("f.txt"), "1\n2\n").unwrap();
+        git(repo, &["commit", "--quiet", "-am", "first"]);
+        // The base moving on must not show up as this branch's work.
+        git(repo, &["checkout", "--quiet", "main"]);
+        std::fs::write(repo.join("g.txt"), "base\n").unwrap();
+        git(repo, &["add", "g.txt"]);
+        git(repo, &["commit", "--quiet", "-m", "base moved"]);
+        git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+        git(repo, &["checkout", "--quiet", "feature"]);
+        std::fs::write(repo.join("new.txt"), "x\n").unwrap();
+
+        let diff = branch_diff(repo.to_str().unwrap(), None).unwrap();
+        assert_eq!(diff.branch, "feature");
+        assert_eq!(diff.compared_base, "origin/main");
+        assert_eq!(diff.commits.len(), 1);
+        let paths: Vec<(&str, &str, bool)> = diff
+            .files
+            .iter()
+            .map(|f| (f.path.as_str(), f.status.as_str(), f.uncommitted))
+            .collect();
+        assert_eq!(paths, vec![("f.txt", "M", false), ("new.txt", "?", true)]);
+        assert_eq!(diff.files[0].lines_added, 1);
+        assert!(branch_diff("", None).is_none());
     }
 
     #[test]

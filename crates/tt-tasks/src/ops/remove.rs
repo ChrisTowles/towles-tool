@@ -143,15 +143,20 @@ pub fn remove_task(
     // there at all, and how dirty the tree is.
     let status = crate::ops::repo_at(&dir).ok().and_then(|repo| repo.status().ok());
 
-    // broken worktree: git can't even report status
+    // Git can't report status: either a broken worktree, or a leftover
+    // directory git already forgot — whose work, if any, no guard could see.
     let Some(status) = status else {
-        if !opts.force {
+        let leftover = is_leftover(&sr.checkout, &dir);
+        if !opts.force && !leftover {
             return Err(OpsError::BrokenWorktree { name });
         }
-        messages.push(
+        messages.push(if leftover {
+            "not a git checkout (git already forgot this worktree) — removing the leftover directory"
+                .to_string()
+        } else {
             "skipping guards (--force): worktree is broken — removing directory + registration"
-                .to_string(),
-        );
+                .to_string()
+        });
         on_phase(RemovePhase::StoppingSessions);
         on_phase(RemovePhase::RunningTeardown);
         if let Some(warning) = run_teardown(&dir)? {
@@ -160,8 +165,7 @@ pub fn remove_task(
         on_phase(RemovePhase::CleaningDocker);
         docker_cleanup(&name, &dir, &mut messages);
         on_phase(RemovePhase::RemovingWorktree);
-        fs::remove_dir_all(&dir)
-            .map_err(|e| OpsError::Io(format!("cannot remove {dir_s}: {e}")))?;
+        remove_dir(&dir)?;
         let _ = git_checkout(&sr.checkout, &["worktree", "prune"]);
         if let Ok(path) = port_registry_path(&sr.checkout) {
             release_task_ports(&sr.checkout, &path, &name);
@@ -259,8 +263,7 @@ pub fn remove_task(
                 return Err(OpsError::Git(format!("git worktree remove failed:\n{detail}")));
             }
             messages.push(format!("git worktree remove failed ({detail}) — removing directory"));
-            fs::remove_dir_all(&dir)
-                .map_err(|e| OpsError::Io(format!("cannot remove {dir_s}: {e}")))?;
+            remove_dir(&dir)?;
         }
     }
     let _ = git_checkout(&sr.checkout, &["worktree", "prune"]);
@@ -275,6 +278,70 @@ pub fn remove_task(
         messages,
         landed,
     }))
+}
+
+/// No `.git` entry and no registration in the primary: a directory a past
+/// removal left behind (typically files a container wrote as root).
+fn is_leftover(checkout: &Path, dir: &Path) -> bool {
+    if dir.join(".git").exists() {
+        return false;
+    }
+    let canonical = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    crate::ops::repo_at(checkout)
+        .is_ok_and(|repo| !repo.worktrees().iter().any(|w| Path::new(&w.dir) == canonical))
+}
+
+/// `remove_dir_all`, failing with the way out when another user owns part of
+/// the tree — which no amount of `--force` from this process can delete.
+fn remove_dir(dir: &Path) -> Result<()> {
+    fs::remove_dir_all(dir).map_err(|e| {
+        let hint = match foreign_owned(dir) {
+            Some((path, uid)) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                let owner = if uid == 0 { "root".to_string() } else { format!("uid {uid}") };
+                format!(
+                    " — {} is owned by {owner} (a docker bind mount leaves these behind); \
+                     remove it with: sudo rm -rf {}",
+                    path.display(),
+                    dir.display()
+                )
+            }
+            _ => String::new(),
+        };
+        OpsError::Io(format!("cannot remove {}: {e}{hint}", dir.display()))
+    })
+}
+
+/// The shallowest entry under `dir` (itself included) not owned by this user.
+#[cfg(unix)]
+fn foreign_owned(dir: &Path) -> Option<(PathBuf, u32)> {
+    use std::os::unix::fs::MetadataExt as _;
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let me = unsafe { libc::getuid() };
+    let mut queue = std::collections::VecDeque::from([dir.to_path_buf()]);
+    let mut budget = 10_000;
+    while let Some(path) = queue.pop_front() {
+        let meta = fs::symlink_metadata(&path).ok()?;
+        if meta.uid() != me {
+            return Some((path, meta.uid()));
+        }
+        if meta.is_dir()
+            && let Ok(entries) = fs::read_dir(&path)
+        {
+            for entry in entries.flatten() {
+                budget -= 1;
+                if budget == 0 {
+                    return None;
+                }
+                queue.push_back(entry.path());
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(unix))]
+fn foreign_owned(_dir: &Path) -> Option<(PathBuf, u32)> {
+    None
 }
 
 /// The ports a checkout claims, from its rendered `.env`.

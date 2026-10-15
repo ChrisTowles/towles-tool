@@ -71,7 +71,13 @@ export function useWorktreeDelete(args: {
     // Never sticky: a waiver granted for one worktree must not carry to the next.
     setDeleteWtForce(false);
     bumpDeleteFlow(dir);
-    setConfirmDeleteWt({ label, dirs: [dir], sessionIds, dirMissing: folder?.dirMissing });
+    setConfirmDeleteWt({
+      label,
+      dirs: [dir],
+      sessionIds,
+      dirMissing: folder?.dirMissing,
+      baseBranch: folder?.baseBranch,
+    });
   }
 
   function confirmDeleteWorktree() {

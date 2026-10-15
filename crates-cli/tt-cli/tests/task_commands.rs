@@ -810,6 +810,35 @@ fn rm_guards_dirty_and_orphan_commits() {
     assert!(!task_dir(&checkout, "feat-redo").exists());
 }
 
+/// A directory git already forgot is residue, not a broken worktree: no guard
+/// can see work in it, so `--force` would only be ceremony.
+#[test]
+fn rm_removes_a_leftover_directory_git_already_forgot() {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkout = make_checkout(tmp.path());
+    let root_s = checkout.to_string_lossy().to_string();
+
+    new_task(&root_s, "feat/residue").assert().success();
+    let task = task_dir(&checkout, "feat-residue");
+    git(&checkout, &["worktree", "remove", "--force", &task.to_string_lossy()]);
+    std::fs::create_dir_all(task.join("services/config")).unwrap();
+
+    tt().args(["task", "rm", "feat-residue", "--root", &root_s])
+        .assert()
+        .success()
+        .stdout(contains("leftover directory"));
+    assert!(!task.exists());
+
+    // A registered worktree whose `.git` link broke is still refused unforced.
+    new_task(&root_s, "feat/broken").assert().success();
+    let broken = task_dir(&checkout, "feat-broken");
+    std::fs::remove_file(broken.join(".git")).unwrap();
+    tt().args(["task", "rm", "feat-broken", "--root", &root_s])
+        .assert()
+        .failure()
+        .stderr(contains("broken"));
+}
+
 /// Committed-but-unlanded work does not block removal — the branch keeps it — but
 /// removal must say so rather than report a bare success.
 #[test]
