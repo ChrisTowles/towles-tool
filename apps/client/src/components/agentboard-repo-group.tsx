@@ -404,15 +404,16 @@ export function RepoGroup({
   const RepoIcon = repoIcon(repo.meta);
   const accent = repoAccentStyles(repo);
   // Identity never outranks status: a repo waiting on you keeps the amber edge.
-  // Color rides the icon, name and edge only — no wash, so the repos don't
-  // paint the rail.
+  // Color rides the icon, name, edge and the header's faint wash — never the
+  // rows beneath, so the repos don't paint the rail.
   const statusOwnsRow = repo.needs > 0;
   return (
     <div className="border-b" data-focus-kind="repo" data-focus-id={repo.key}>
       <div
-        style={statusOwnsRow ? undefined : accent.edgeStyle}
+        style={statusOwnsRow ? undefined : accent.headerStyle}
         className={cn(
-          "sticky top-0 z-10 flex w-full items-center gap-2 border-b border-l-2 border-border border-l-transparent bg-card px-3 py-2 hover:bg-accent",
+          "sticky top-0 z-10 flex w-full items-center gap-2 border-b border-l-[3px] border-border border-l-transparent px-3 py-2 hover:bg-accent",
+          accent.headerStyle && !statusOwnsRow ? "bg-(--repo-wash)" : "bg-card",
           repoActive && "border-l-violet-500",
           cursorKey === repo.key && "ring-1 ring-inset ring-violet-500",
         )}

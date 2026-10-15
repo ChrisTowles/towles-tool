@@ -30,13 +30,22 @@ specimens, token/recipe tables, the ΔE rationale — is
 - **Identity wash**: a surface that *is* one repo/checkout wears its accent as
   a /10 wash. **Every repo has a color** (`RepoData.color`, `lib/repo-identity.ts`):
   its pin, else one the backend deals like a chart series, so no two clash —
-  never hash a repo's color client-side. A *checkout* (the app header) still
+  never hash a repo's color client-side. **Identity whispers**: the palette
+  (`AUTO_PALETTE` = `REPO_PALETTE`) is muted blues, slates and grayed
+  plums only (12) —
+  no red, pink, orange, **green (success)**, teal (reads as success), brown or
+  saturated hue, nor a
+  status hue — and a pin from
+  outside it is ignored; the checkout accents (`identity-color.ts`) follow the
+  same rule. A *checkout* (the app header) still
   takes its hashed `identityColor()`. Never mix keys on one surface. Absence is
   a state: an unwashed header *means* main checkout. Status and attention
-  always render unchanged on top. **The rails don't wash**: a repo row (queue
-  or tree) wears its color on icon, name and left edge only, and a repo pill
-  is neutral until picked — with every repo washed, color stops meaning
-  anything and drowns the status it must never outrank.
+  always render unchanged on top. **The rails barely wash**: a repo row (queue
+  or tree) wears its color on icon and name (ink lifted toward the foreground,
+  since the palette is muted) and a solid left edge; only a tree *repo header*
+  adds a 6% wash, never the rows beneath. A repo pill is neutral until picked —
+  with every row washed, color stops meaning anything and drowns the status it
+  must never outrank.
 - **A box is a control or an alert, never a fact.** Rail facts (diff counts,
   branch, base-moved) are bare `font-mono`; the box arrives on hover. Only
   needs-you, port drift, safe-to-delete and deleting keep a resting box. A

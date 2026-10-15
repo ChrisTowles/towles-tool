@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Badge, Button } from "@cloudflare/kumo";
+import { Button } from "@cloudflare/kumo";
 import { CaretDownIcon, CaretRightIcon, ClockIcon } from "@phosphor-icons/react";
 import {
   BaseMovedChip,
@@ -22,26 +22,22 @@ import {
 } from "@/lib/agentboard";
 import { fmtAge, type PrItem, type TaskItem } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { LANES, rankMove, REASON_FACE, snoozeUntil, type SnoozePreset } from "@/lib/queue";
-import { railRowMotion } from "@/lib/rail-motion";
+import {
+  LANES,
+  rankMove,
+  REASON_FACE,
+  snoozeUntil,
+  type Face,
+  type SnoozePreset,
+} from "@/lib/queue";
 import { repoAccentStyles } from "@/lib/repo-identity";
-import type { Lane, QueueItem, TaskQueue, WaitReason } from "@/lib/schemas/queue";
-import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
+import type { Lane, QueueItem, TaskQueue } from "@/lib/schemas/queue";
+import { useShortcuts } from "@/lib/shortcuts";
 import { invoke } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace";
-
-export const HERO_KICKER: Record<WaitReason, string> = {
-  unblock: "an agent errored",
-  answer: "an agent is waiting on you",
-  review: "an agent finished — review it",
-  fix_ci: "CI is failing",
-  address_review: "changes requested",
-  land: "ready to land",
-  cleanup: "landed — clean it up",
-};
 
 const LANE_TITLE: Record<Lane, string> = {
   on_you: "On you",
@@ -53,15 +49,34 @@ const LANE_TITLE: Record<Lane, string> = {
 
 export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "no_shell"];
 
-/** The rail's row motion, with a slower slide: a row crossing lanes travels far
- * enough that the eye needs time to follow it. */
+/** Soft by design — the queue is somewhere you go, not something that calls
+ * you. A row changing lane fades out where it was and fades in where it went
+ * (it is keyed by lane too) rather than sliding across the list for the eye to
+ * chase, and the rows around it ease over in the time it takes. */
 const queueRowMotion = {
-  ...railRowMotion,
-  transition: { duration: 0.15, layout: { duration: 0.3, ease: "easeOut" } },
+  layout: "position",
+  initial: { opacity: 0, height: 0 },
+  animate: { opacity: 1, height: "auto" },
+  exit: { opacity: 0, height: 0 },
+  style: { overflow: "hidden" },
+  transition: { duration: 0.9, ease: "easeInOut", layout: { duration: 0.9, ease: "easeInOut" } },
 } as const;
 
-/** How long a row that just changed lane stays lit, so you can find where it went. */
-const MOVED_FLASH_MS = 1500;
+/** What a lane change can't do: a lane header holds still. */
+const laneHeaderMotion = {
+  layout: "position",
+  transition: { layout: { duration: 0.9, ease: "easeInOut" } },
+} as const;
+
+/** A wait reason's word, tinted rather than filled: it says what kind of wait
+ * this is, at the volume of the rest of the row. */
+const REASON_TONE: Record<Face["variant"], string> = {
+  red: "bg-red-500/10 text-red-600 dark:text-red-300",
+  orange: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  blue: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  green: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  neutral: "bg-kumo-tint text-kumo-subtle",
+};
 
 const SNOOZES: { preset: SnoozePreset; short: string; label: string }[] = [
   { preset: "1h", short: "1h", label: "for an hour" },
@@ -210,8 +225,8 @@ export function QueueRail({
           No checkouts yet — start a task with a repo's + above.
         </p>
       ) : (
-        // One flat list, headers and rows alike, so a row changing lane slides
-        // there — a row nested per lane would unmount and pop in elsewhere.
+        // One flat list, headers and rows alike, so the rows around a change
+        // ease into place together.
         <AnimatePresence initial={false}>
           {LANES.flatMap((lane) => {
             const items = queue.items.filter((i) => i.lane === lane);
@@ -220,7 +235,7 @@ export function QueueRail({
             const header = (
               <motion.button
                 key={`lane:${lane}`}
-                {...queueRowMotion}
+                {...laneHeaderMotion}
                 type="button"
                 onClick={() => onToggleLane(lane)}
                 aria-expanded={!isFolded}
@@ -237,7 +252,7 @@ export function QueueRail({
               ...items.map((item) => {
                 const id = item.folderDir;
                 return (
-                  <motion.div key={id} {...queueRowMotion}>
+                  <motion.div key={`${lane}:${id}`} {...queueRowMotion}>
                     <QueueRow
                       item={item}
                       repo={repoByFolder.get(item.folderDir)}
@@ -307,11 +322,16 @@ type RepoLook = {
   rowStyle: CSSProperties | undefined;
 };
 
-/** Which repo a row is — the headspace you'd be switching into — on its name
- * and left edge only, so the ring and the badges stay what the eye lands on. */
+/** Which repo a row is — the headspace you'd be switching into — on its name,
+ * left edge and a 6% wash, the tree's repo-header treatment, so the ring and
+ * the badges stay what the eye lands on. */
 function repoLook(repo: RepoData | undefined, fallback: string): RepoLook {
   const accent = repoAccentStyles(repo);
-  return { name: repo?.name ?? fallback, textStyle: accent.iconStyle, rowStyle: accent.edgeStyle };
+  return {
+    name: repo?.name ?? fallback,
+    textStyle: accent.iconStyle,
+    rowStyle: accent.edgeStyle && { ...accent.edgeStyle, ...accent.surfaceStyle },
+  };
 }
 
 /** The tree's git and link chips for a checkout — the same components, resolved
@@ -388,7 +408,6 @@ function QueueRow({
 }) {
   const face = item.reason ? REASON_FACE[item.reason] : null;
   const look = repoLook(repo, item.repo);
-  const moved = useMovedFlash(item.lane);
   const meta = rowMeta(item, now);
   return (
     <div
@@ -396,10 +415,9 @@ function QueueRow({
       data-focus-id={item.pr ? `${item.pr.repo}#${item.pr.number}` : undefined}
       style={look.rowStyle}
       className={cn(
-        "group border-t border-l-4 border-kumo-line px-3 py-1.5 text-sm transition-[background-color] duration-700",
+        "group border-t border-l-4 border-kumo-line px-3 py-1.5 text-sm transition-colors duration-1000",
         selected && "ring-2 ring-kumo-brand ring-inset",
         item.lane !== "on_you" && "text-kumo-subtle",
-        moved && "bg-kumo-brand/15",
       )}
     >
       <div className="flex items-center gap-2">
@@ -413,12 +431,17 @@ function QueueRow({
           {/* A reserved column, so revealing the digits never reflows a row. */}
           {hotkey !== undefined ? <HotkeyBadge n={hotkey} /> : <span className="w-4 shrink-0" />}
           {face ? (
-            <Badge variant={face.variant} className="w-20 shrink-0 justify-center">
+            <span
+              className={cn(
+                "w-24 shrink-0 truncate rounded px-1.5 py-px text-center text-xs font-medium transition-colors duration-1000",
+                REASON_TONE[face.variant],
+              )}
+            >
               {face.label}
               {item.also.length > 0 && ` +${item.also.length}`}
-            </Badge>
+            </span>
           ) : item.lane === "on_you" ? (
-            <span className="w-20 shrink-0" />
+            <span className="w-24 shrink-0" />
           ) : null}
           {/* Repo and title share one line: two lines a row, so twenty fit a screen.
               With no meta to show, the title may take the meta's line instead. */}
@@ -470,59 +493,5 @@ function QueueRow({
         {chips}
       </div>
     </div>
-  );
-}
-
-/** True for a moment after `lane` changes — never on mount, so a fresh list stays calm. */
-function useMovedFlash(lane: Lane): boolean {
-  const prev = useRef(lane);
-  const [moved, setMoved] = useState(false);
-  useEffect(() => {
-    if (prev.current === lane) return;
-    prev.current = lane;
-    setMoved(true);
-    const t = setTimeout(() => setMoved(false), MOVED_FLASH_MS);
-    return () => clearTimeout(t);
-  }, [lane]);
-  return moved;
-}
-
-/** Next up changed while you were busy — said here, never by taking focus. */
-export function NextUpBanner({
-  item,
-  repo,
-  onOpen,
-  onDismiss,
-}: {
-  item: QueueItem;
-  repo: RepoData | undefined;
-  onOpen: () => void;
-  onDismiss: () => void;
-}) {
-  const look = repoLook(repo, item.repo);
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      role="status"
-      className="flex shrink-0 items-center gap-2 border-b border-kumo-brand/40 bg-kumo-brand/10 px-3 py-1.5 text-sm"
-    >
-      <span className="text-xs font-semibold tracking-wide text-kumo-brand uppercase">Next up</span>
-      <span style={look.textStyle} className="shrink-0 font-bold">
-        {look.name}
-      </span>
-      <span className="min-w-0 truncate font-medium">{item.title}</span>
-      {item.reason && (
-        <span className="shrink-0 text-xs text-kumo-subtle">{HERO_KICKER[item.reason]}</span>
-      )}
-      <div className="ml-auto flex shrink-0 gap-1">
-        <Button size="xs" variant="primary" onClick={onOpen}>
-          Open <span className="ml-1 opacity-70">{shortcutHint("queue-next")}</span>
-        </Button>
-        <Button size="xs" variant="ghost" onClick={onDismiss}>
-          Not now
-        </Button>
-      </div>
-    </motion.div>
   );
 }

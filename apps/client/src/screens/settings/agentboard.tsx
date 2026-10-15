@@ -14,7 +14,7 @@ import {
   untrackedCandidates,
 } from "@/lib/repo-manager";
 import {
-  normalizeHex,
+  paletteColor,
   repoAccentStyles,
   repoIcon,
   REPO_ICONS,
@@ -663,13 +663,12 @@ function RepoIdentityRow({
   // seeded it arrives on a poll, and re-syncing from it mid-edit would fight
   // the user's own clicks.
   const [meta, setMeta] = useState<RepoMeta | undefined>(repo.meta);
-  const [hex, setHex] = useState(repo.meta?.color ?? "");
-  const [hexError, setHexError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const dir = repo.dir;
   const Icon = repoIcon(meta);
   // Unpinned, the color is the one the backend dealt — so the row previews it.
-  const accent = repoAccentStyles({ color: meta?.color ?? repo.color, meta });
+  const pinned = paletteColor(meta?.color);
+  const accent = repoAccentStyles({ color: pinned ?? repo.color, meta });
   // `meta` lags an in-flight commit by a full await and `ab_set_repo_meta`
   // replaces the identity *wholesale*, so a second click built off the render
   // closure would send a payload missing the first field and erase it.
@@ -699,56 +698,12 @@ function RepoIdentityRow({
 
   const setIcon = (name: string) =>
     void commit({ ...latest.current, icon: name }, "repo.icon_set", name);
-  const setColor = (raw: string, detail: string) => {
-    // Rust stores a malformed color as null, which would silently blank the
-    // repo — so a bad value never leaves the client.
-    const canonical = normalizeHex(raw);
-    if (!canonical) {
-      setHexError("Use #rgb or #rrggbb");
-      return;
-    }
-    setHexError(null);
-    setHex(canonical);
-    void commit({ ...latest.current, color: canonical }, "repo.color_set", detail);
-  };
-
-  // A partial value is silently ignored while you type — "#3b" is
-  // half-finished, not wrong. The error surfaces on blur and on Enter.
-  const hexTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const editHex = (raw: string) => {
-    setHex(raw);
-    setHexError(null);
-    if (hexTimer.current !== null) clearTimeout(hexTimer.current);
-    hexTimer.current = setTimeout(() => {
-      if (normalizeHex(raw)) setColor(raw, "hex");
-    }, 600);
-  };
-  const commitHex = (detail: string) => {
-    if (hexTimer.current !== null) {
-      clearTimeout(hexTimer.current);
-      hexTimer.current = null;
-    }
-    // Leaving the field empty isn't an error — it just means "no custom color".
-    if (hex.trim() === "") {
-      setHexError(null);
-      return;
-    }
-    setColor(hex, detail);
-  };
-  useEffect(
-    () => () => {
-      if (hexTimer.current !== null) clearTimeout(hexTimer.current);
-    },
-    [],
-  );
+  const setColor = (swatch: string) =>
+    void commit({ ...latest.current, color: swatch }, "repo.color_set", "palette");
   const unpin = () => {
-    setHex("");
-    setHexError(null);
     void commit({ ...latest.current, color: undefined }, "repo.color_unpinned");
   };
   const reset = () => {
-    setHex("");
-    setHexError(null);
     void commit(null, "repo.identity_reset");
   };
 
@@ -829,27 +784,18 @@ function RepoIdentityRow({
         </Popover.Content>
       </Popover>
 
-      <Popover
-        onOpenChange={(open) => {
-          // A rejected hex is only reported inside this popover, so a stale
-          // error would greet you on reopen with nothing explaining it.
-          if (!open) {
-            setHexError(null);
-            setHex(latest.current?.color ?? "");
-          }
-        }}
-      >
+      <Popover>
         <Popover.Trigger
           render={
             <Button variant="outline" size="sm" className="px-2 text-xs">
-              Color · {meta?.color ? "pinned" : "auto"}
+              Color · {pinned ? "pinned" : "auto"}
             </Button>
           }
         />
-        <Popover.Content className="w-60 p-3" align="end">
+        <Popover.Content className="w-auto p-3" align="end">
           <div className="mb-2 flex items-center justify-between gap-2 text-xs text-kumo-subtle">
-            {meta?.color ? "Pinned — kept as is" : "Auto — dealt one no other repo holds"}
-            {meta?.color && (
+            {pinned ? "Pinned — kept as is" : "Auto — dealt one no other repo holds"}
+            {pinned && (
               <Button variant="ghost" size="xs" onClick={unpin}>
                 Auto
               </Button>
@@ -857,11 +803,11 @@ function RepoIdentityRow({
           </div>
           <ToggleGroup
             aria-label="Color"
-            value={meta?.color ? [meta.color] : []}
+            value={pinned ? [pinned] : []}
             onValueChange={(v) => {
-              if (v[0]) setColor(v[0], "palette");
+              if (v[0]) setColor(v[0]);
             }}
-            className="grid grid-cols-5 gap-2"
+            className="grid grid-cols-6 gap-1.5"
           >
             {REPO_PALETTE.map((swatch) => (
               <Toggle
@@ -874,23 +820,6 @@ function RepoIdentityRow({
               />
             ))}
           </ToggleGroup>
-          <div className="mt-2 flex items-center gap-1.5">
-            <Input
-              value={hex}
-              onChange={(e) => editHex(e.target.value)}
-              onBlur={() => commitHex("hex")}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitHex("hex");
-              }}
-              placeholder="#3b82f6"
-              spellCheck={false}
-              aria-label="Custom color"
-              variant={hexError ? "error" : "default"}
-              size="xs"
-              className="flex-1 font-mono text-xs"
-            />
-          </div>
-          {hexError && <p className="mt-1 text-xs text-kumo-danger">{hexError}</p>}
         </Popover.Content>
       </Popover>
 

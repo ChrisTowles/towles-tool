@@ -186,17 +186,20 @@ export function FolderHeader({
       style={
         // Identity never outranks true status: needs-you or missing keep the
         // row to themselves. An edge, not a wash, the same as the queue's rows.
-        scope === "repo" && needs === 0 && !missing ? accent.edgeStyle : undefined
+        scope === "repo" && needs === 0 && !missing ? accent.headerStyle : undefined
       }
       className={cn(
         // pr-3: the rail's trailing controls all land on one right edge.
-        "group @container/row border-b border-l-2 border-border border-l-transparent bg-card pr-3",
+        "group @container/row border-b border-l-2 border-border border-l-transparent pr-3",
         // A sticky repo-scope header must stay opaque or the rows scrolling
         // beneath show through, so its active state is a ring rather than a
         // fill. Folder rows sit in normal flow and keep the fill.
         scope === "repo"
-          ? "sticky top-0 z-10 pl-3 hover:bg-accent"
-          : cn("pl-6 hover:bg-accent/50", active && "bg-accent/60"),
+          ? cn(
+              "sticky top-0 z-10 border-l-[3px] pl-3 hover:bg-accent",
+              accent.headerStyle && needs === 0 && !missing ? "bg-(--repo-wash)" : "bg-card",
+            )
+          : cn("bg-card pl-6 hover:bg-accent/50", active && "bg-accent/60"),
         active && "border-l-violet-500",
         // The cursor is the one ring on the rail: exactly one row wears it, so
         // "where am I" never has to be inferred from a fill or an edge.
@@ -205,14 +208,14 @@ export function FolderHeader({
     >
       {/* Three blocks: who this is (title), what git and GitHub say (branch,
           PR, counts), what you can do (toolbar). Wide enough to hold all
-          three and they sit on one line; below 34rem the git block wraps to a
+          three and they sit on one line; below 26rem the git block wraps to a
           line of its own, right-aligned under the toolbar, and the title gets
           two lines before it clips. The
           `order` swap is what keeps the toolbar on the *name's* line in both
           layouts while the counts move. `@container/row` asks the question
           that actually matters — does this row have room — rather than
           measuring the window. */}
-      <div className="flex flex-wrap items-center gap-x-2 py-1.5 @[34rem]/row:flex-nowrap">
+      <div className="flex flex-wrap items-center gap-x-2 py-1.5 @[26rem]/row:flex-nowrap">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {/* Split from a single button into a button (toggle only) + a
               span/input sibling, per this repo's "swap the element, don't nest
@@ -290,7 +293,7 @@ export function FolderHeader({
             lines this block's left edge up under the name (chevron + icon +
             gaps); inline it sits wherever the title leaves it. */}
         {missing ? (
-          <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-2 pl-11 @[34rem]/row:order-2 @[34rem]/row:basis-auto @[34rem]/row:pl-0">
+          <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-2 pl-11 @[26rem]/row:order-2 @[26rem]/row:basis-auto @[26rem]/row:pl-0">
             <span className="mr-auto min-w-0 truncate text-[11px] text-muted-foreground/70 italic">
               directory missing — moved or deleted
             </span>
@@ -321,7 +324,7 @@ export function FolderHeader({
                 )}
           </div>
         ) : (
-          <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 pl-11 @[34rem]/row:order-2 @[34rem]/row:basis-auto @[34rem]/row:pl-0">
+          <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 pl-11 @[26rem]/row:order-2 @[26rem]/row:basis-auto @[26rem]/row:pl-0">
             {/* `mr-auto` so the branch and links hug the left of their own
                 line in the wrapped layout, and do nothing in the inline one. */}
             <span className="mr-auto flex min-w-0 items-center gap-x-1.5">
@@ -364,7 +367,7 @@ export function FolderHeader({
             (min-w-0, truncating) rather than out of the toolbar. It keeps the
             name's line in both layouts (`order-2` while the counts wrap below),
             so the rail's controls stay in one column top to bottom. */}
-        <div className="order-2 flex shrink-0 items-center gap-1 pl-1 @[34rem]/row:order-3">
+        <div className="order-2 flex shrink-0 items-center gap-1 pl-1 @[26rem]/row:order-3">
           {/* files/preview/jarvis are pure actions carrying no state
               (unlike the diff chips' dirty counts), so they don't earn
               resting-rail pixels on every folder — they fade in on header hover

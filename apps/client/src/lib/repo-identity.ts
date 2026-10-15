@@ -86,27 +86,30 @@ export const REPO_ICONS: Record<string, Icon> = {
 
 export const DEFAULT_REPO_ICON: Icon = GitBranchIcon;
 
-/** The swatches a repo can be pinned to — and dealt from: Rust's
- * `repo_meta::AUTO_PALETTE`, in the same order. Each clears the lightness,
- * chroma and contrast gates on both surfaces, and none is a reserved status
- * hue (amber, violet, sky), so identity can't read as a signal. */
+/** The only colors a repo can be pinned to — and dealt from: Rust's
+ * `repo_meta::AUTO_PALETTE`, in the same order. Identity is not a signal, so it
+ * whispers: muted blues, slates and grayed plums only — nothing red, pink, orange, green
+ * or teal (both read as success), brown or saturated, and no status hue (amber, violet, cyan, sky). */
 export const REPO_PALETTE: readonly string[] = [
-  "#3b82f6",
-  "#e11d48",
-  "#059669",
-  "#d946ef",
-  "#0891b2",
-  "#65a30d",
-  "#ec4899",
-  "#0d9488",
-  "#ef4444",
-  "#2563eb",
-  "#16a34a",
-  "#c026d3",
-  "#f43f5e",
-  "#db2777",
-  "#dc2626",
+  "#718dba",
+  "#818e9b",
+  "#536992",
+  "#787ca7",
+  "#567786",
+  "#8a697b",
+  "#b08c9f",
+  "#9d7a8d",
+  "#6f7192",
+  "#9b95a2",
+  "#8d7f9f",
+  "#78717d",
 ];
+
+/** `color` when it is a palette swatch; a pin from anywhere else isn't kept. */
+export function paletteColor(color: string | undefined): string | undefined {
+  const hex = color ? normalizeHex(color) : null;
+  return hex && REPO_PALETTE.includes(hex) ? hex : undefined;
+}
 
 export function repoIcon(meta: RepoMeta | null | undefined): Icon {
   const name = meta?.icon;
@@ -132,17 +135,21 @@ export function normalizeHex(s: string): string | null {
 }
 
 /** All `undefined` with no repo, so a call site can spread them blind.
- * `edgeStyle` yields whenever a status accent owns the edge. */
+ * `edgeStyle` yields whenever a status accent owns the edge. `headerStyle` is a
+ * rail repo header's edge plus a `--repo-wash` for its `bg-(--repo-wash)`, a
+ * variable so `hover:` still wins over it. */
 export type RepoAccentStyles = {
   iconStyle: CSSProperties | undefined;
   edgeStyle: CSSProperties | undefined;
   surfaceStyle: CSSProperties | undefined;
+  headerStyle: CSSProperties | undefined;
 };
 
 const EMPTY_ACCENT: RepoAccentStyles = {
   iconStyle: undefined,
   edgeStyle: undefined,
   surfaceStyle: undefined,
+  headerStyle: undefined,
 };
 
 export function repoAccentStyles(
@@ -152,11 +159,23 @@ export function repoAccentStyles(
 ): RepoAccentStyles {
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return EMPTY_ACCENT;
+  // The palette is muted, so the edge is drawn solid — loud in placement, not hue.
+  const edgeStyle = { borderLeftColor: hex };
   return {
-    iconStyle: { color: hex },
-    edgeStyle: { borderLeftColor: `color-mix(in srgb, ${hex} 70%, transparent)` },
-    surfaceStyle: { backgroundColor: `color-mix(in srgb, ${hex} 8%, ${base})` },
+    iconStyle: { color: repoInk(hex) },
+    edgeStyle,
+    surfaceStyle: { backgroundColor: `color-mix(in srgb, ${hex} 6%, ${base})` },
+    headerStyle: {
+      ...edgeStyle,
+      "--repo-wash": `color-mix(in srgb, ${hex} 6%, var(--card))`,
+    } as CSSProperties,
   };
+}
+
+/** A repo color as text: muted, so lifted toward the foreground to read on
+ * either surface. */
+function repoInk(hex: string): string {
+  return `color-mix(in oklab, ${hex} 88%, var(--foreground))`;
 }
 
 /** A button that stands for one repo and is picked: its color as text and
@@ -165,22 +184,23 @@ export function repoChipStyle(repo: RepoIdentity | undefined): CSSProperties | u
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return undefined;
   return {
-    color: hex,
+    color: repoInk(hex),
     backgroundColor: `color-mix(in srgb, ${hex} 14%, transparent)`,
-    borderColor: `color-mix(in srgb, ${hex} 45%, transparent)`,
+    borderColor: hex,
   };
 }
 
-/** A surface that *is* one repo wears the color whole, at the identity wash's
- * alphas. `accent` can't withhold the fill here the way it does on a row. */
+/** A surface that *is* one repo wears the rail header's treatment: a solid
+ * left edge (the caller sets its width), a 6% wash, and `ink` for its name.
+ * `accent` can't withhold the fill here the way it does on a row. */
 export function repoBandStyle(
   repo: RepoIdentity | undefined,
   base = "transparent",
-): CSSProperties | undefined {
+): { band: CSSProperties; ink: CSSProperties } | undefined {
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return undefined;
   return {
-    backgroundColor: `color-mix(in srgb, ${hex} 10%, ${base})`,
-    borderBottomColor: `color-mix(in srgb, ${hex} 40%, transparent)`,
+    band: { backgroundColor: `color-mix(in srgb, ${hex} 6%, ${base})`, borderLeftColor: hex },
+    ink: { color: repoInk(hex) },
   };
 }

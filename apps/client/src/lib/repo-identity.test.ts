@@ -6,6 +6,7 @@ import {
   repoAccentStyles,
   repoIcon,
   REPO_ICONS,
+  paletteColor,
   REPO_PALETTE,
 } from "./repo-identity";
 
@@ -44,27 +45,47 @@ describe("repoAccentStyles", () => {
       iconStyle: undefined,
       edgeStyle: undefined,
       surfaceStyle: undefined,
+      headerStyle: undefined,
     });
     expect(repoAccentStyles({ color: "nope", meta: { icon: "Rocket" } }).iconStyle).toBeUndefined();
   });
 
-  it("tints the glyph and edge, and washes the surface", () => {
+  it("lifts the ink, draws the edge solid, and washes the surface", () => {
     const accent = repoAccentStyles({ color: "#3B82F6" });
-    expect(accent.iconStyle).toEqual({ color: "#3b82f6" });
-    expect(accent.edgeStyle?.borderLeftColor).toContain("#3b82f6");
+    expect(accent.iconStyle).toEqual({
+      color: "color-mix(in oklab, #3b82f6 88%, var(--foreground))",
+    });
+    expect(accent.edgeStyle).toEqual({ borderLeftColor: "#3b82f6" });
     expect(accent.surfaceStyle?.backgroundColor).toBe(
-      "color-mix(in srgb, #3b82f6 8%, transparent)",
+      "color-mix(in srgb, #3b82f6 6%, transparent)",
     );
+  });
+
+  it("gives a rail header its edge and an opaque wash variable", () => {
+    expect(repoAccentStyles({ color: "#3b82f6" }).headerStyle).toEqual({
+      borderLeftColor: "#3b82f6",
+      "--repo-wash": "color-mix(in srgb, #3b82f6 6%, var(--card))",
+    });
   });
 
   it("mixes the wash into a caller-supplied opaque base (sticky surfaces)", () => {
     const tint = repoAccentStyles({ color: "#3b82f6" }, "var(--card)");
-    expect(tint.surfaceStyle?.backgroundColor).toBe("color-mix(in srgb, #3b82f6 8%, var(--card))");
+    expect(tint.surfaceStyle?.backgroundColor).toBe("color-mix(in srgb, #3b82f6 6%, var(--card))");
   });
 });
 
 describe("REPO_PALETTE", () => {
   it("is all canonical hex", () => {
     for (const swatch of REPO_PALETTE) expect(normalizeHex(swatch)).toBe(swatch);
+  });
+});
+
+describe("paletteColor", () => {
+  it("keeps a swatch, however it is written", () => {
+    expect(paletteColor(REPO_PALETTE[0].toUpperCase())).toBe(REPO_PALETTE[0]);
+  });
+  it("drops a pin from outside the palette, and nothing", () => {
+    expect(paletteColor("#e11d48")).toBeUndefined();
+    expect(paletteColor(undefined)).toBeUndefined();
   });
 });

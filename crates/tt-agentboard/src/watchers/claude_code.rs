@@ -393,6 +393,77 @@ impl Journal {
     }
 }
 
+/// One change in where a journal leaves its session, replayed from line one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalStep {
+    pub at_ms: i64,
+    pub status: AgentStatus,
+    /// Background agents plus tasks still out.
+    pub background: i64,
+    /// Started by a prompt the user typed, not by a report Claude Code delivered.
+    pub prompted: bool,
+}
+
+/// A whole journal as the watcher would have read it live, line by line.
+#[derive(Debug, Clone, Default)]
+pub struct JournalReplay {
+    pub cwd: Option<String>,
+    /// `cli` for a session someone typed into; `sdk-cli` for a `claude -p`.
+    pub entrypoint: Option<String>,
+    pub git_branch: Option<String>,
+    pub thread_name: Option<String>,
+    /// Every change of status or background count. Every launch counts, as if
+    /// one process ran the session throughout.
+    pub steps: Vec<JournalStep>,
+}
+
+pub fn replay_journal(path: &Path) -> JournalReplay {
+    let mut journal = Journal::default();
+    let mut out = JournalReplay::default();
+    let Ok(file) = std::fs::File::open(path) else {
+        return out;
+    };
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(entry) = serde_json::from_str::<TranscriptEntry>(&line) else {
+            continue;
+        };
+        let Some(at_ms) = entry.timestamp.as_deref().and_then(parse_timestamp_ms) else {
+            continue;
+        };
+        if out.cwd.is_none() {
+            out.cwd = entry.cwd.clone();
+        }
+        if out.entrypoint.is_none() {
+            out.entrypoint = entry.entrypoint.clone();
+        }
+        if entry.git_branch.as_deref().is_some_and(|b| !b.is_empty()) {
+            out.git_branch = entry.git_branch.clone();
+        }
+        journal.observe(&entry);
+        let ledger = &journal.ledger;
+        let background = (ledger.background_running(None) + ledger.tasks_running(None)) as i64;
+        let status = journal.status;
+        if out.steps.last().is_some_and(|s| s.status == status && s.background == background) {
+            continue;
+        }
+        let prompted = is_typed_prompt(&entry);
+        out.steps.push(JournalStep { at_ms, status, background, prompted });
+    }
+    out.thread_name = journal.thread_name;
+    out
+}
+
+fn is_typed_prompt(entry: &TranscriptEntry) -> bool {
+    let text = entry
+        .message
+        .as_ref()
+        .filter(|m| m.role.as_deref() == Some("user"))
+        .and_then(|m| m.content.as_ref())
+        .and_then(|c| c.first_text());
+    determine_status(entry) == Some(AgentStatus::Busy)
+        && text.is_some_and(|t| !t.trim_start().starts_with('<'))
+}
+
 #[derive(Debug, Clone, Default)]
 struct SessionState {
     emitted: Option<Emitted>,

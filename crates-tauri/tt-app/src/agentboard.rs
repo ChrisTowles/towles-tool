@@ -32,6 +32,8 @@ pub struct Ab {
     pub shutting_down: AtomicBool,
     /// Needs-you edges waiting out the notification coalescing window.
     pub coalescer: Mutex<tt_agentboard::Coalescer>,
+    /// The status each session last showed, for `agent.status_changed`.
+    pub status_log: Mutex<tt_agentboard::status_log::StatusLog>,
 }
 
 /// Consecutive `claude agents` failures before the board says so out loud. Two,
@@ -49,6 +51,7 @@ pub fn stamp_pty_state(
     terms: &crate::terminal::TermState,
     phases: &crate::task::TaskPhases,
     since: &mut tt_agentboard::bridge::NeedsSince,
+    log: &mut tt_agentboard::status_log::StatusLog,
     now: i64,
 ) {
     let crate::terminal::PtyEmitState { sessions: ptys, mut port_drift } = terms.emit_state();
@@ -67,6 +70,7 @@ pub fn stamp_pty_state(
                 session.shell_kind = pty.map(|p| p.shell_kind.clone());
                 // Only sessions this app hosts a PTY for; everything else has no
                 // direct evidence to apply.
+                let journal = session.agent_state.as_ref().map(|s| s.status);
                 if let Some(pty) = pty
                     && let Some(state) = session.agent_state.as_mut()
                 {
@@ -78,6 +82,17 @@ pub fn stamp_pty_state(
                     );
                 }
                 session.working = session.agent_state.as_ref().is_some_and(|e| e.is_working());
+                if let (Some(pty), Some(state)) = (pty, session.agent_state.as_ref()) {
+                    log_status_change(
+                        log,
+                        &folder.name,
+                        &session.id,
+                        journal,
+                        state,
+                        &pty.signal,
+                        now,
+                    );
+                }
                 // A stopped shell's last-known ports say nothing about now.
                 session.port_drift = if session.live {
                     port_drift.remove(&session.id).unwrap_or_default()
@@ -89,8 +104,51 @@ pub fn stamp_pty_state(
             folder.has_port_drift = has_port_drift;
         }
     }
+    let present = payload
+        .repos
+        .iter()
+        .flat_map(|r| &r.folders)
+        .flat_map(|f| &f.sessions)
+        .map(|s| s.id.as_str())
+        .collect();
+    log.retain(&present);
     // Only now is `live` truthful enough to recompute the `needs` counts.
     tt_agentboard::bridge::recompute_needs(payload, since, now);
+}
+
+/// One record per move of a session's shown status, carrying what decided it:
+/// the journal's reading, the background count, and the PTY evidence's ages.
+/// `thread` is Claude Code's session id, which `examples/sim.rs` keys on.
+fn log_status_change(
+    log: &mut tt_agentboard::status_log::StatusLog,
+    folder: &str,
+    session_id: &str,
+    journal: Option<tt_agentboard::AgentStatus>,
+    state: &tt_agentboard::AgentEvent,
+    pty: &tt_agentboard::pty_status::PtySignal,
+    now: i64,
+) {
+    let working = state.is_working();
+    let Some(prev) = log.observe(session_id, (state.status, working)) else {
+        return;
+    };
+    let age = |at: Option<i64>| at.map(|t| now - t);
+    tracing::info!(
+        session = session_id,
+        thread = state.thread_id.as_deref(),
+        folder,
+        from = prev.map(|p| format!("{:?}", p.0).to_lowercase()),
+        to = format!("{:?}", state.status).to_lowercase(),
+        was_working = prev.map(|p| p.1),
+        working,
+        journal = journal.map(|j| format!("{j:?}").to_lowercase()),
+        background = state.background_out(),
+        output_age_ms = age(pty.last_output_ms),
+        run_ms = pty.output_since_ms.zip(pty.last_output_ms).map(|(since, last)| last - since),
+        attention_age_ms = age(pty.attention_at_ms),
+        input_age_ms = age(pty.input_at_ms),
+        "agent.status_changed"
+    );
 }
 
 /// Delete a session's record the moment its PTY ends — exit, crash or kill,
@@ -133,6 +191,9 @@ pub fn stop_pruning_for_shutdown(app: &AppHandle) {
 /// Rebuilds from the engine's cached agent snapshot — the scan task owns the
 /// claude CLI, `/proc` and transcript reads, so an emit does none of them.
 pub fn stamped_payload(app: &AppHandle) -> StatePayload {
+    if let Some(simulated) = crate::sim::state(app) {
+        return simulated;
+    }
     let ab = app.state::<Ab>();
     let mut payload = ab.engine.lock().unwrap().compute_payload(now_ms());
     stamp_pty_state(
@@ -140,6 +201,7 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
         &app.state::<crate::terminal::TermState>(),
         &app.state::<crate::task::TaskPhases>(),
         &mut ab.needs_since.lock().unwrap(),
+        &mut ab.status_log.lock().unwrap(),
         now_ms(),
     );
     prune_ended_sessions(&mut payload, &ab);
@@ -207,16 +269,28 @@ pub fn ab_get_state(app: AppHandle) -> StatePayload {
 /// Clear unseen for a session (fast-path: patch + re-emit, no full rebuild).
 #[tauri::command]
 pub fn ab_mark_seen(state: State<Ab>, app: AppHandle, name: String) {
+    if crate::sim::active(&app) {
+        return;
+    }
     let patched = {
         let mut engine = state.engine.lock().unwrap();
         engine.mark_seen_patch(&name)
     };
     if let Some(mut payload) = patched {
+        let thread = payload
+            .repos
+            .iter()
+            .flat_map(|r| &r.folders)
+            .flat_map(|f| &f.sessions)
+            .find(|s| s.id == name)
+            .and_then(|s| s.agent_state.as_ref()?.thread_id.clone());
+        tracing::info!(session = name, thread, "session.seen");
         stamp_pty_state(
             &mut payload,
             &app.state::<crate::terminal::TermState>(),
             &app.state::<crate::task::TaskPhases>(),
             &mut state.needs_since.lock().unwrap(),
+            &mut state.status_log.lock().unwrap(),
             now_ms(),
         );
         prune_ended_sessions(&mut payload, &state);
@@ -499,9 +573,9 @@ pub fn ab_set_repo_order(state: State<Ab>, dirs: Vec<String>) -> Result<(), Stri
     }
 }
 
-/// All-`None` resets to the default look. A `color` that isn't hex is stored as
-/// unset rather than rejecting the whole edit — the picker validates first, so a
-/// malformed value here means a hand-edited file.
+/// All-`None` resets to the default look. A `color` outside the palette is
+/// stored as unset rather than rejecting the whole edit — the picker offers only
+/// the palette, so anything else here came from somewhere hand-edited.
 #[tauri::command]
 pub fn ab_set_repo_meta(
     state: State<Ab>,
@@ -511,7 +585,10 @@ pub fn ab_set_repo_meta(
 ) {
     let meta = tt_agentboard::RepoMeta {
         icon: icon.map(|i| i.trim().to_string()).filter(|i| !i.is_empty()),
-        color: color.as_deref().and_then(tt_agentboard::HexColor::parse),
+        color: color
+            .as_deref()
+            .and_then(tt_agentboard::HexColor::parse)
+            .filter(|c| tt_agentboard::repo_meta::palette_pin(c).is_some()),
     };
     // Field values have to be read before `meta` moves into the engine.
     let (icon, color) = (

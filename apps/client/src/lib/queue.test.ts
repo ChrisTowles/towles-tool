@@ -148,9 +148,9 @@ describe("nextUpArrival", () => {
     expect(nextUpArrival(dir(1), head, { ...idle, selectedId: dir(2) })).toBeNull();
     expect(nextUpArrival(dir(1), undefined, idle)).toBeNull();
   });
-  it("never swaps out what you have open, even once it left On you", () => {
-    expect(nextUpArrival(dir(1), head, { ...idle, terminalFocused: true })).toBe("announce");
-    expect(nextUpArrival(dir(1), head, { ...idle, selectedId: dir(1) })).toBe("announce");
+  it("never swaps out what you have open, and never calls you over", () => {
+    expect(nextUpArrival(dir(1), head, { ...idle, terminalFocused: true })).toBeNull();
+    expect(nextUpArrival(dir(1), head, { ...idle, selectedId: dir(1) })).toBeNull();
   });
   it("opens a new head when nothing is open", () => {
     expect(nextUpArrival(dir(1), head, idle)).toBe("open");

@@ -2,6 +2,7 @@
  * row at a larger size, sharing its grammar (`agentboard-folder-header.tsx`,
  * the `visual-design` skill). Pane *chrome* is `agentboard-pane.tsx`. */
 import { FolderPlusIcon, GitPullRequestIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import type { CSSProperties } from "react";
 import { Hint } from "@/components/hint";
 import {
   BaseMovedChip,
@@ -84,16 +85,17 @@ export function WorkingContext({
   // A lone clone's folder name *is* the repo name: let the plate be the title
   // rather than printing the same word twice.
   const titled = displayTitle !== repo.name;
+  const band = repoBandStyle(repo, "var(--card)");
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   return (
-    // The repo's color, as a wash — where the hue lives on this surface;
-    // nothing on top of it is tinted.
+    // The repo's color the way the rail's repo header wears it: solid edge,
+    // faint wash, and the plate's name in it — nothing else on top is tinted.
     <div
-      style={repoBandStyle(repo, "var(--card)")}
-      className="flex flex-col gap-1.5 border-b bg-card px-4 py-2"
+      style={band?.band}
+      className="flex flex-col gap-1.5 border-b border-l-[3px] border-l-transparent bg-card px-4 py-2"
     >
       <div className="flex items-stretch gap-3">
-        <RepoPlate name={repo.name} scope={scope} />
+        <RepoPlate name={repo.name} scope={scope} inkStyle={band?.ink} />
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
           {/* Two clusters, not one run of icons: pane openers beside the title,
             checkout-level actions at the right edge, where a destructive-ish
@@ -202,7 +204,15 @@ export function WorkingContext({
 /** Mono at display size, so a repo name reads as the directory name it is, not
  * a headline competing with the title. Never the repo's own hue: the band is
  * already washed in it, and hue-on-hue costs the legibility size bought. */
-function RepoPlate({ name, scope }: { name: string; scope: string | null }) {
+function RepoPlate({
+  name,
+  scope,
+  inkStyle,
+}: {
+  name: string;
+  scope: string | null;
+  inkStyle: CSSProperties | undefined;
+}) {
   return (
     <div className="flex shrink-0 flex-col justify-center gap-0.5 border-r border-border/60 pr-3">
       {scope && (
@@ -211,7 +221,10 @@ function RepoPlate({ name, scope }: { name: string; scope: string | null }) {
         </span>
       )}
       <Hint label={`${scope ?? ""}${name}`}>
-        <span className="max-w-[13rem] truncate font-mono text-xl font-semibold leading-none text-foreground">
+        <span
+          style={inkStyle}
+          className="max-w-[13rem] truncate font-mono text-xl font-semibold leading-none text-foreground"
+        >
           {name}
         </span>
       </Hint>
