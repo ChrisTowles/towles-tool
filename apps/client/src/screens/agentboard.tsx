@@ -76,6 +76,7 @@ import {
   type FocusLevel,
   type FolderData,
   isFolderUnmanaged,
+  isHomeRepo,
   type ClaudeLaunchOptions,
   type PendingOpenSession,
   type RemoveTarget,
@@ -396,7 +397,10 @@ export function AgentBoardScreen() {
         }
   }, [state.repos, now]);
 
-  const parentDirs = useMemo(() => repoParentDirs(state.repos.map((r) => r.dir)), [state.repos]);
+  const parentDirs = useMemo(
+    () => repoParentDirs(state.repos.filter((r) => !isHomeRepo(r)).map((r) => r.dir)),
+    [state.repos],
+  );
 
   const openRepoManager = () => {
     uiAction("repo.manage_opened", "agentboard");

@@ -26,6 +26,7 @@ import { DevServersButton } from "@/components/dev-servers";
 import type { NewTaskRepo } from "@/components/inline-new-task";
 import {
   folderActionableItems,
+  folderIsHome,
   humanizeFolderName,
   pathScope,
   type ActionableItem,
@@ -76,6 +77,8 @@ export function WorkingContext({
   const scope = pathScope(folder.dir);
   // No session/task actions on a ghost checkout whose directory is gone.
   const missing = folder.dirMissing;
+  // `~` is no repo: no tasks, no repo menu, and no git line to read.
+  const home = folderIsHome(folder);
   // Unlike the rail, this never drops a branch that restates the title: the
   // fallback title *is* the humanized folder name, so a branch slugged from it
   // would leave no actual branch on screen.
@@ -84,7 +87,7 @@ export function WorkingContext({
     humanTitle || (folder.isWorktree ? humanizeFolderName(folder.name) : folder.name);
   // A lone clone's folder name *is* the repo name: let the plate be the title
   // rather than printing the same word twice.
-  const titled = displayTitle !== repo.name;
+  const titled = !home && displayTitle !== repo.name;
   const band = repoBandStyle(repo, "var(--card)");
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   return (
@@ -95,7 +98,7 @@ export function WorkingContext({
       className="flex flex-col gap-1.5 border-b border-l-[3px] border-l-transparent bg-card px-4 py-2"
     >
       <div className="flex items-stretch gap-3">
-        <RepoPlate name={repo.name} scope={scope} inkStyle={band?.ink} />
+        <RepoPlate name={home ? "~" : repo.name} scope={scope} inkStyle={band?.ink} />
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
           {/* Two clusters, not one run of icons: pane openers beside the title,
             checkout-level actions at the right edge, where a destructive-ish
@@ -137,7 +140,7 @@ export function WorkingContext({
                   <PlusIcon className="size-3.5" />
                 </IconBtn>
               )}
-              {!missing && (
+              {!missing && !home && (
                 <IconBtn
                   title="New task — goal, issues, branch"
                   shortcut="ab-new-task"
@@ -149,44 +152,48 @@ export function WorkingContext({
                   <FolderPlusIcon className="size-3.5" />
                 </IconBtn>
               )}
-              <RepoMenu
-                path={folder.dir}
-                dir={folder.dir}
-                isWorktree={folder.isWorktree}
-                quiet={folder.quiet}
-                onNewTask={!missing ? newTask : undefined}
-                onDeleteWorktree={
-                  !missing && folder.isWorktree
-                    ? () => onDeleteWorktree(folder.dir, folder.name)
-                    : undefined
-                }
-                onRemove={() => onRemoveRepo([folder.dir], folder.name)}
-                taskId={!missing ? task?.id : undefined}
-                dirMissing={missing}
-              />
+              {!home && (
+                <RepoMenu
+                  path={folder.dir}
+                  dir={folder.dir}
+                  isWorktree={folder.isWorktree}
+                  quiet={folder.quiet}
+                  onNewTask={!missing ? newTask : undefined}
+                  onDeleteWorktree={
+                    !missing && folder.isWorktree
+                      ? () => onDeleteWorktree(folder.dir, folder.name)
+                      : undefined
+                  }
+                  onRemove={() => onRemoveRepo([folder.dir], folder.name)}
+                  taskId={!missing ? task?.id : undefined}
+                  dirMissing={missing}
+                />
+              )}
             </div>
           </div>
           {/* Port drift and safe-to-delete get a callout below, not a chip
             here — a chip duplicating its own callout is noise. */}
-          <div className="flex min-w-0 items-center gap-x-2 text-sm text-muted-foreground">
-            <div className="flex min-w-0 items-center gap-x-1.5 overflow-hidden">
-              {folder.branch && (
-                <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} />
-              )}
-              {deleting && <DeletingBadge />}
-              <ComparedBaseBadge folder={folder} />
-              <BaseMovedChip stats={folder} />
-              {pr && <PrChip pr={pr} stats={folder} />}
-              {task?.issues.map((issue) => (
-                <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
-              ))}
-              <FolderLandedBadge folder={folder} pr={pr} />
+          {!home && (
+            <div className="flex min-w-0 items-center gap-x-2 text-sm text-muted-foreground">
+              <div className="flex min-w-0 items-center gap-x-1.5 overflow-hidden">
+                {folder.branch && (
+                  <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} />
+                )}
+                {deleting && <DeletingBadge />}
+                <ComparedBaseBadge folder={folder} />
+                <BaseMovedChip stats={folder} />
+                {pr && <PrChip pr={pr} stats={folder} />}
+                {task?.issues.map((issue) => (
+                  <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
+                ))}
+                <FolderLandedBadge folder={folder} pr={pr} />
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <UncommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
+                <CommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <UncommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
-              <CommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
-            </div>
-          </div>
+          )}
         </div>
       </div>
       {!missing && (
