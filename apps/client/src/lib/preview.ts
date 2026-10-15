@@ -47,7 +47,7 @@ export const previewCapture = (rect: CaptureRect) =>
 export type FeedbackImage = { mime: string; dataBase64: string };
 
 /** Stage the annotated capture as files under the pasted-images dir (outside
- * any repo), returning absolute paths for `feedbackPrompt`. */
+ * any repo), returning absolute paths for the note or the launch. */
 export const previewWriteFeedback = (repo: string, images: FeedbackImage[]) =>
   invoke<string[]>("preview_write_feedback", { repo, images });
 
@@ -138,21 +138,22 @@ export function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation, sca
 
 // Feedback composition + delivery
 
-/** Newline-free like every PTY-typed prompt: a literal newline inside the
- * quoted argv drops zsh to a PS2 continuation prompt. */
-export function feedbackPrompt(comment: string, url: string, paths: string[]): string {
-  const flat = comment.replaceAll(/\s*\n\s*/g, " ").trim();
-  const goal = `${
-    flat || "Please address the annotated feedback"
-  } (annotated screenshot of the app preview at ${url})`;
-  return promptWithImages(goal, paths);
+/** The note a running agent gets; the screenshot rides as the note's image. */
+export function feedbackNote(comment: string, url: string): string {
+  return `${comment.trim() || "Please address the annotated feedback"} (annotated screenshot of the app preview at ${url})`;
 }
 
-/** Claude already running → the bare prompt into its TUI input; plain shell →
- * a `claude '<prompt>'` launch. Both end in `\r` to submit. */
-export function feedbackPtyData(prompt: string, agentRunning: boolean): string {
-  return agentRunning ? `${prompt}\r` : claudeCommand(prompt);
+/** A plain shell gets a `claude '<prompt>'` launch, newline-free: a literal newline
+ * inside the quoted argv drops zsh to a PS2 continuation prompt. */
+export function feedbackLaunch(comment: string, url: string, paths: string[]): string {
+  const flat = feedbackNote(comment.replaceAll(/\s*\n\s*/g, " "), url);
+  return claudeCommand(promptWithImages(flat, paths));
 }
+
+/** How feedback reaches a session: a note to an agent whose tt mod is listening, a
+ * `claude` launch in a plain shell, or nothing — an agent without the mod is never
+ * typed into, since its input box may hold a half-written prompt. */
+export type SendMode = "note" | "launch" | "unreachable";
 
 /** Only `live` sessions qualify — a session never started has no PTY to reach
  * ("A pane has no PTY until it is rendered", apps/client/CLAUDE.md). */
@@ -160,14 +161,22 @@ export type SendTarget = {
   sessionId: string;
   label: string;
   agentRunning: boolean;
+  mode: SendMode;
 };
 
 /** Scoped to one folder: the preview belongs to a task, so its feedback goes
  * to that task's session. Claude sessions first — usually the intended one. */
-export function folderSendTargets(folder: Pick<FolderData, "sessions"> | undefined): SendTarget[] {
+export function folderSendTargets(
+  folder: Pick<FolderData, "sessions"> | undefined,
+  listening: readonly string[],
+): SendTarget[] {
   if (!folder) return [];
   return folder.sessions
     .filter((s) => s.live)
-    .map((s) => ({ sessionId: s.id, label: s.name, agentRunning: isAgent(s) }))
+    .map((s): SendTarget => {
+      const agentRunning = isAgent(s);
+      const mode = !agentRunning ? "launch" : listening.includes(s.id) ? "note" : "unreachable";
+      return { sessionId: s.id, label: s.name, agentRunning, mode };
+    })
     .toSorted((a, b) => Number(b.agentRunning) - Number(a.agentRunning));
 }

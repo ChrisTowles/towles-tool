@@ -3,8 +3,8 @@ import type { FolderData, SessionData } from "@/lib/agentboard";
 import type { LaunchConfigStatus } from "@/lib/launch";
 import {
   devServersOf,
-  feedbackPrompt,
-  feedbackPtyData,
+  feedbackLaunch,
+  feedbackNote,
   folderSendTargets,
   normRect,
 } from "@/lib/preview";
@@ -43,35 +43,16 @@ describe("normRect", () => {
   });
 });
 
-describe("feedbackPrompt", () => {
-  it("names the preview URL and the image path, read-first phrased", () => {
-    const p = feedbackPrompt("the header overlaps", "http://localhost:1425/", ["/tmp/a.png"]);
-    expect(p).toBe(
-      "the header overlaps (annotated screenshot of the app preview at http://localhost:1425/)" +
-        " — Attached image — read it first, before anything else: /tmp/a.png",
-    );
-  });
-
-  it("stays newline-free even when the comment has newlines (PTY-typed)", () => {
-    const p = feedbackPrompt("line one\n  line two", "http://localhost:1/", ["/tmp/a.png"]);
-    expect(p).not.toContain("\n");
-    expect(p).toContain("line one line two");
-  });
-
-  it("falls back to a stock ask when the comment is empty", () => {
-    expect(feedbackPrompt("  ", "http://localhost:1/", ["/x.png"])).toContain(
-      "Please address the annotated feedback",
-    );
+describe("feedbackLaunch", () => {
+  it("launches claude in a plain shell with the note and image paths, newline-free", () => {
+    const launch = feedbackLaunch("fix\nit", "http://x", []);
+    expect(launch).toBe("claude 'fix it (annotated screenshot of the app preview at http://x)'\r");
   });
 });
 
-describe("feedbackPtyData", () => {
-  it("types the bare prompt into a running Claude TUI", () => {
-    expect(feedbackPtyData("fix it", true)).toBe("fix it\r");
-  });
-
-  it("launches claude with the quoted prompt in a plain shell", () => {
-    expect(feedbackPtyData("fix it", false)).toBe("claude 'fix it'\r");
+describe("feedbackNote", () => {
+  it("keeps the comment's lines, since a note is never typed into a shell", () => {
+    expect(feedbackNote("a\nb", "u")).toBe("a\nb (annotated screenshot of the app preview at u)");
   });
 });
 
@@ -110,14 +91,29 @@ describe("folderSendTargets", () => {
           agentState: { status: "busy" } as SessionData["agentState"],
         }),
       ]),
+      [],
     );
     expect(targets.map((t) => t.sessionId)).toEqual(["agent", "shell"]);
     expect(targets[0].agentRunning).toBe(true);
     expect(targets[0].label).toBe("claude");
   });
 
+  it("notes an agent whose mod listens, launches in a shell, never types into another agent", () => {
+    const agent = (id: string) =>
+      session({ id, live: true, agentState: { status: "busy" } as SessionData["agentState"] });
+    const targets = folderSendTargets(
+      folder([agent("modded"), agent("bare"), session({ id: "shell", live: true })]),
+      ["modded"],
+    );
+    expect(Object.fromEntries(targets.map((t) => [t.sessionId, t.mode]))).toEqual({
+      modded: "note",
+      bare: "unreachable",
+      shell: "launch",
+    });
+  });
+
   it("is empty for an undefined or session-less folder", () => {
-    expect(folderSendTargets(undefined)).toEqual([]);
-    expect(folderSendTargets(folder([]))).toEqual([]);
+    expect(folderSendTargets(undefined, [])).toEqual([]);
+    expect(folderSendTargets(folder([]), [])).toEqual([]);
   });
 });

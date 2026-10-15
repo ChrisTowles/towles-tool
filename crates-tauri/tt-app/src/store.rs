@@ -204,7 +204,7 @@ impl Drop for ReleaseOnDrop {
 }
 
 /// Maps an unavailable store to the stable error string the frontend keys on.
-fn with_store<T>(
+pub(crate) fn with_store<T>(
     state: &StoreState,
     f: impl FnOnce(&Store) -> Result<T, String>,
 ) -> Result<T, String> {

@@ -112,6 +112,7 @@ import {
 } from "@/lib/queue";
 import type { Lane, QueueItem } from "@/lib/schemas/queue";
 import { mouseAction } from "@/lib/shortcut-coach";
+import { openNoteDialog } from "@/lib/inbox";
 import { focusTargetStore, useFocusTarget } from "@/lib/focus-target";
 import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
@@ -1261,6 +1262,10 @@ export function AgentBoardScreen() {
       toast(`⤿ compacting ${s.name} — summarize & drop stale turns`);
       void withLiveSession(s.id, () => termWriteRetry(s.id, "/compact\r"));
     },
+    noteAgent: (s) => {
+      mouseAction("ab-note-agent", "agentboard");
+      openNoteDialog({ sessionId: s.id, label: s.name });
+    },
     restartClaude: (folderDir, s) => {
       selectSession(folderDir, s.id);
       setStartClaudeTarget({ folderDir, sessionId: s.id, sessionName: s.name, restart: true });
@@ -1353,6 +1358,14 @@ export function AgentBoardScreen() {
             }),
         "ab-focus-terminal": focusActiveTerminal,
         "ab-split-session": splitIntoWindow,
+        "ab-note-agent": () => {
+          const id =
+            (selected?.folderDir === activeFolderDir ? selected?.sessionId : undefined) ??
+            activeWin?.panes.find((p) => sessionById.has(p));
+          const s = id ? sessionById.get(id) : undefined;
+          if (!s || !isAgent(s)) return false;
+          openNoteDialog({ sessionId: s.id, label: s.name });
+        },
         "ab-new-terminal-right": () => {
           if (activeFolderDir) void newSession(activeFolderDir);
         },

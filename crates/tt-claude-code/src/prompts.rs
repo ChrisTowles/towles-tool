@@ -9,7 +9,7 @@
 use crate::types::TranscriptEntry;
 
 /// Machine-generated user-line texts, excluded from the prompt corpus.
-fn is_noise(text: &str) -> bool {
+pub fn is_noise(text: &str) -> bool {
     let t = text.trim_start();
     t.is_empty()
         || t.starts_with('<') // <command-name>, <system-reminder>, <local-command-stdout>, …

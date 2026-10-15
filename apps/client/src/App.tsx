@@ -17,6 +17,7 @@ import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard-st
 import { subscribeEditorOpenFile } from "@/lib/editor-open";
 import { subscribePreviewShow } from "@/lib/preview-artifact";
 import { subscribeSummon } from "@/lib/summon";
+import { NoteDialog } from "@/components/note-dialog";
 import { subscribeTaskStart } from "@/lib/task-start";
 import { NowProvider } from "@/lib/now";
 import { TaskQueueProvider } from "@/lib/queue";
@@ -235,6 +236,7 @@ function Workspace() {
       <CommandPalette />
       <QuickLog />
       <ResumePicker />
+      <NoteDialog />
     </div>
   );
 }

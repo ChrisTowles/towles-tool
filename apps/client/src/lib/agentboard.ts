@@ -1559,6 +1559,7 @@ export type SessionActions = {
   startClaude: (folderDir: string, s: SessionData) => void;
   stopClaude: (s: SessionData) => void;
   compactClaude: (s: SessionData) => void;
+  noteAgent: (s: SessionData) => void;
   restartClaude: (folderDir: string, s: SessionData) => void;
   close: (sessionId: string) => void;
   renameStart: (sessionId: string) => void;

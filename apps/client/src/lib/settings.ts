@@ -245,6 +245,9 @@ export type UserSettings = {
   savedQueries: SavedQuery[];
   telemetryRules: TelemetryRule[];
   collectors: CollectorsSettings;
+  /** The tt Claude mod's `/next`: one bare model question per keystroke, capped per day.
+   * Rust reads it (`tt_config::NextPromptSettings`); unset keys take its defaults. */
+  nextPrompt?: { question?: string; model?: string; dailyBudgetUsd?: number };
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through
    * `ab_set_show_unmanaged_worktrees`, not by saving here. */

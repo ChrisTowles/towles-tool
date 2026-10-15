@@ -129,6 +129,13 @@ impl TermState {
         Ok(())
     }
 
+    /// A note the Claude mod delivered answers the session as typing into it would.
+    pub fn stamp_input(&self, term_id: &str) {
+        if let Some(session) = self.sessions.lock().unwrap().get(term_id) {
+            PtyActivity::stamp(&session.activity.input_at_ms, crate::agentboard::now_ms());
+        }
+    }
+
     pub(super) fn stamp_and_send(&self, term_id: &str, input: VtInput) -> Result<(), String> {
         let guard = self.sessions.lock().unwrap();
         let session = guard.get(term_id).ok_or(NO_SHELL)?;

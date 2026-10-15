@@ -1,7 +1,7 @@
 // One PTY session in the rail — the row that has to hold the most status in
 // the least width, since a folder can have several.
 import { useState } from "react";
-import { DotsThreeVerticalIcon } from "@phosphor-icons/react";
+import { DotsThreeVerticalIcon, EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import {
   CacheBadge,
@@ -14,6 +14,7 @@ import {
 } from "@/components/agentboard-bits";
 import { Button, DropdownMenu } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
+import { noteChip, useInbox } from "@/lib/inbox";
 import {
   claudeTitleName,
   fmtElapsed,
@@ -66,6 +67,7 @@ export function SessionRow({
     .filter(Boolean)
     .join(" · ");
   const age = fmtWaitingAge(session.needsSinceMs, now);
+  const chip = noteChip(useInbox(), session.id);
   // JS state, not CSS `:hover` — WebKitGTK doesn't reliably update `:hover` on
   // real pointer movement, so `group-hover` never fires.
   const [hovered, setHovered] = useState(false);
@@ -139,6 +141,24 @@ export function SessionRow({
                   compactPct={compactPct}
                   onCompact={() => actions.compactClaude(session)}
                 />
+                {chip && (
+                  <Hint
+                    label={
+                      chip.kind === "pending"
+                        ? "a note is waiting for the agent's next step"
+                        : chip.how === "midTurn"
+                          ? "your note was read mid-turn"
+                          : "your note was sent as a prompt"
+                    }
+                  >
+                    <EnvelopeSimpleIcon
+                      className={cn(
+                        "size-3",
+                        chip.kind === "pending" ? "text-violet-500" : "text-kumo-subtle",
+                      )}
+                    />
+                  </Hint>
+                )}
                 {age && (
                   <Hint label="how long this has been needing you">
                     <span className="text-amber-500/80">{age}</span>
@@ -212,6 +232,11 @@ function RowControls({
       glyph: "■",
       label: "Stop Claude (shell survives)",
       onSelect: () => actions.stopClaude(session),
+    });
+    items.push({
+      glyph: "✉",
+      label: "Note to agent…",
+      onSelect: () => actions.noteAgent(session),
     });
     if (atPrompt) {
       items.push({

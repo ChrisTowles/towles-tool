@@ -39,7 +39,9 @@ the CLI and the app can consume it.
   linked-worktree add/remove/prune, and `fetch`. A third git subprocess anywhere
   else is a regression; extend `tt_git::repo`, and read its module docs first.
 - `tt-claude-sessions` — session-JSONL token accounting, the ledger
-  scan/search path, ranked waste insights, per-session drill-down.
+  scan/search path, ranked waste insights, per-session drill-down, and
+  `next_prompt`: the prompts typed after similar turns, as the context of the
+  Claude mod's `/next` question.
 - `tt-tasks` — the worktree-task convention: env-template renderer with port
   claims, task naming/layout, removal guards, `ops`. **`landed` is the one
   answer to "has this work reached the base branch"** — everything goes through
@@ -62,7 +64,8 @@ the CLI and the app can consume it.
   contract, and `execute` (memory, resume, reminders, audit row). The app's
   `agents.rs` is only the I/O shell. Trust model: **[AGENTS.md](AGENTS.md)**.
 - `tt-mcp` — the transport-free MCP server: the task family, `preview_file`,
-  `file_open`, `needs_you`, and the calendar family. Served one per app instance over
+  `file_open`, `needs_you`, the calendar family, and the Claude mod's inbox and
+  `next_prompt` tools. Served one per app instance over
   loopback HTTP on its own `${tt:port 47870-48069}` claim (`TT_MCP_PORT`) — app
   closed means that checkout's MCP is down, and there is no headless fallback.
   **There is no bearer token and no mutation gate**: request admission (no

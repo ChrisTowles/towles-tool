@@ -26,11 +26,13 @@ mod collect;
 mod events;
 mod github;
 mod model;
+mod notes;
 mod schema;
 mod tasks;
 
 pub use agents::{AgentReminder, AgentSession, TurnOutcome};
 pub use model::*;
+pub use notes::{AgentNote, NoteDelivery, NoteSource};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -696,6 +698,20 @@ mod tests {
         assert_eq!(root_of("o/a"), None);
         assert_eq!(root_of("o/a-renamed").as_deref(), Some("/repo/a"));
         assert_eq!(root_of("o/b"), None);
+    }
+
+    #[test]
+    fn a_dir_resolves_to_the_deepest_tracked_root_holding_it() {
+        let s = Store::open_in_memory().unwrap();
+        let repos = [
+            ("/c/app".to_string(), "o/app".to_string()),
+            ("/c/app/vendor/x".to_string(), "o/x".to_string()),
+        ];
+        s.reconcile_repos(&repos, 1).unwrap();
+        let slug = |dir: &str| s.tracked_repo_for_dir(dir).unwrap().map(|(_, slug)| slug);
+        assert_eq!(slug("/c/app/.claude/worktrees/feat").as_deref(), Some("o/app"));
+        assert_eq!(slug("/c/app/vendor/x/src").as_deref(), Some("o/x"));
+        assert_eq!(slug("/c/app2"), None);
     }
 
     /// GitHub slugs are case-preserving but not case-sensitive, and this repo

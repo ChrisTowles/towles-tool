@@ -43,7 +43,9 @@ worktree's branch onto its row after a `git switch`), `task_start`, `task_delete
 `preview_file`, `file_open`, `needs_you` (the other sessions waiting on
 the user, read from the rail's PTY-stamped state through `AttentionHost`),
 `summon` (the agent→human interrupt, below), plus the calendar family `calendar_today`, `calendar_next` and the
-push-model write `calendar_set`.
+push-model write `calendar_set`, and the Claude mod's own `inbox_take`, `inbox_ack`, `next_prompt`
+and `next_prompt_taken` (below). `task_create` takes `dir` in place of `repo` for a caller
+that knows its checkout but not its slug, as `/park` does.
 `task_summary` is how a finished agent leaves a record: it writes the
 wrap-up onto the task's row (`summary`/`summary_at`, schema v17) instead of
 into a PTY scrollback that dies with the worktree. It is a *separate column
@@ -109,8 +111,28 @@ documented at `tt-mcp`'s `PreviewHost` and
 dashboard-read tools (`day_brief`, `snapshot`, PR/issue/DM/collector
 reads) were pruned in the 2026-07 tool-surface review and have not
 returned. `needs_you` was pruned with them for having no caller, and came
-back when the plugin's mod gave it one: the band's count of other sessions
-waiting on you.
+back when the plugin's mod gave it one. The mod no longer shows that count; the
+tool stays for an agent that wants to know what else is waiting on the user.
+
+**The inbox is the app→agent channel**, `summon`'s opposite. Only the app
+writes a note (`inbox_send`, a user gesture); the mod in the addressed session
+takes it with `inbox_take`, routed by the caller's `X-TT-Session` and never an
+argument, and confirms with `inbox_ack {ids, how}`. A take leases its notes for
+30 s, so a mod that dies mid-delivery has them offered again; an empty take
+writes no call-log row, since the mod polls every 3 s. A take is also how the
+app knows a session can take notes at all: a session whose mod polled in the
+last 15 s is *listening*, and the UI offers notes only there. An ack stamps the
+PTY's `input_at_ms` through `InboxHost`, as a keystroke would.
+
+**`next_prompt` spends money, so the dispatcher holds its budget**: it reads
+`nextPrompt.dailyBudgetUsd` and the day's `suggest_spend` row before calling
+`SuggestHost`, and records the call's cost after. The host
+(`crates-tauri/tt-app/src/next_prompt.rs`) runs one bare `claude -p`
+(`tt_exec::claude::Ask::bare`: no tools, MCP, setting sources or session
+persistence) with the question from settings, the session's work profile and
+the prompts typed after similar turns in the last 30 days of transcripts
+(`tt_claude_sessions::next_prompt`, rebuilt hourly off the call path). The
+mod denies the model all four of these tools.
 
 **`summon` is the one tool that interrupts**: one desktop notification, then
 a chime every 4 s until the user types into the *caller's* terminal, its PTY
