@@ -34,6 +34,26 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// A parsed answer plus what it cost to get, read off the same envelope.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Answered<T> {
+    pub answer: T,
+    pub stats: Stats,
+}
+
+/// The envelope's accounting. Every field is optional: an older CLI or an
+/// error envelope may omit any of them, and none is worth failing the answer.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Stats {
+    /// Comma-joined `modelUsage` keys — the model(s) that actually answered.
+    pub model: String,
+    pub num_turns: Option<u64>,
+    /// The CLI's own run time, excluding its startup before the first turn.
+    pub duration_ms: Option<u64>,
+    pub duration_api_ms: Option<u64>,
+    pub cost_usd: Option<f64>,
+}
+
 impl Error {
     /// One short line, for a UI note or a collector summary. [`Error::Failed`]
     /// carries raw multi-line stderr, so only its first non-empty line
@@ -57,6 +77,7 @@ pub struct Ask<'a> {
     prompt: &'a str,
     schema: &'a str,
     model: Option<&'a str>,
+    no_mcp: bool,
     cwd: Option<&'a Path>,
     timeout: Duration,
 }
@@ -66,12 +87,19 @@ impl<'a> Ask<'a> {
     /// blocks its caller forever, and how long *this* caller can afford to wait
     /// is the caller's own knowledge.
     pub fn new(prompt: &'a str, schema: &'a str, timeout: Duration) -> Self {
-        Self { prompt, schema, model: None, cwd: None, timeout }
+        Self { prompt, schema, model: None, no_mcp: false, cwd: None, timeout }
     }
 
     /// Worth pinning for cheap one-shot calls the user isn't directing.
     pub fn model(mut self, model: &'a str) -> Self {
         self.model = Some(model);
+        self
+    }
+
+    /// Skip connecting the user's MCP servers — seconds of startup per call
+    /// for an answer that needs no tool beyond the structured-output one.
+    pub fn no_mcp(mut self) -> Self {
+        self.no_mcp = true;
         self
     }
 
@@ -82,8 +110,8 @@ impl<'a> Ask<'a> {
     }
 
     /// Deserializes the envelope's validated `structured_output` into `T`.
-    pub fn run<T: DeserializeOwned>(&self) -> Result<T> {
-        let args = claude_args(self.prompt, self.schema, self.model);
+    pub fn run<T: DeserializeOwned>(&self) -> Result<Answered<T>> {
+        let args = claude_args(self.prompt, self.schema, self.model, self.no_mcp);
         let out = match self.cwd {
             Some(dir) => crate::run_in_dir_with_timeout("claude", &args, dir, self.timeout),
             None => crate::run_with_timeout("claude", &args, self.timeout),
@@ -104,7 +132,12 @@ impl<'a> Ask<'a> {
 /// The argv that makes the answer's shape the CLI's problem. Split out so a
 /// test can assert the flags themselves — asserting against a caller's schema
 /// constant alone would still pass with `--json-schema` dropped.
-pub fn claude_args<'a>(prompt: &'a str, schema: &'a str, model: Option<&'a str>) -> Vec<&'a str> {
+pub fn claude_args<'a>(
+    prompt: &'a str,
+    schema: &'a str,
+    model: Option<&'a str>,
+    no_mcp: bool,
+) -> Vec<&'a str> {
     let mut args = vec![
         "-p",
         prompt,
@@ -115,6 +148,14 @@ pub fn claude_args<'a>(prompt: &'a str, schema: &'a str, model: Option<&'a str>)
     ];
     if let Some(model) = model {
         args.extend(["--model", model]);
+    }
+    if no_mcp {
+        // An empty config plus strict mode: none of the user's servers load.
+        args.extend([
+            "--strict-mcp-config",
+            "--mcp-config",
+            r#"{"mcpServers":{}}"#,
+        ]);
     }
     args
 }
@@ -131,12 +172,22 @@ struct Envelope {
     /// Only read for its error message, when `is_error`.
     #[serde(default)]
     result: Option<String>,
+    #[serde(default)]
+    num_turns: Option<u64>,
+    #[serde(default)]
+    duration_ms: Option<u64>,
+    #[serde(default)]
+    duration_api_ms: Option<u64>,
+    #[serde(default)]
+    total_cost_usd: Option<f64>,
+    #[serde(default, rename = "modelUsage")]
+    model_usage: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// Reads the envelope, and nothing else: a schema regression should surface as
 /// an error the user can see, not be rescued by re-reading the prose in
 /// `result`.
-pub fn parse_response<T: DeserializeOwned>(stdout: &str) -> Result<T> {
+pub fn parse_response<T: DeserializeOwned>(stdout: &str) -> Result<Answered<T>> {
     let env: Envelope = serde_json::from_str(stdout.trim())
         .map_err(|e| Error::Unparseable(format!("not a claude -p JSON envelope ({e})")))?;
     if env.is_error {
@@ -145,7 +196,15 @@ pub fn parse_response<T: DeserializeOwned>(stdout: &str) -> Result<T> {
     let value = env
         .structured_output
         .ok_or_else(|| Error::Unparseable("the envelope carried no structured output".into()))?;
-    serde_json::from_value(value).map_err(|e| Error::Unparseable(e.to_string()))
+    let answer = serde_json::from_value(value).map_err(|e| Error::Unparseable(e.to_string()))?;
+    let stats = Stats {
+        model: env.model_usage.into_keys().collect::<Vec<_>>().join(","),
+        num_turns: env.num_turns,
+        duration_ms: env.duration_ms,
+        duration_api_ms: env.duration_api_ms,
+        cost_usd: env.total_cost_usd,
+    };
+    Ok(Answered { answer, stats })
 }
 
 #[cfg(test)]
@@ -159,17 +218,24 @@ mod tests {
 
     #[test]
     fn the_call_makes_the_cli_enforce_the_schema() {
-        let args = claude_args("the prompt", "{\"type\":\"object\"}", None);
+        let args = claude_args("the prompt", "{\"type\":\"object\"}", None, false);
         assert_eq!(args[0..2], ["-p", "the prompt"]);
         assert_eq!(args[2..4], ["--output-format", "json"]);
         assert_eq!(args[4..6], ["--json-schema", "{\"type\":\"object\"}"]);
-        assert_eq!(args.len(), 6, "no model pin unless asked for");
+        assert_eq!(args.len(), 6, "no model pin or MCP opt-out unless asked for");
     }
 
     #[test]
     fn a_pinned_model_is_appended() {
-        let args = claude_args("p", "{}", Some("sonnet"));
+        let args = claude_args("p", "{}", Some("sonnet"), false);
         assert_eq!(args[6..8], ["--model", "sonnet"]);
+    }
+
+    #[test]
+    fn no_mcp_loads_no_servers() {
+        let args = claude_args("p", "{}", None, true);
+        assert_eq!(args[6], "--strict-mcp-config");
+        assert_eq!(args[7..9], ["--mcp-config", r#"{"mcpServers":{}}"#]);
     }
 
     #[test]
@@ -178,8 +244,26 @@ mod tests {
             "result":"{\"branch\":\"ignored\"}",
             "structured_output":{"branch":"feat/a"},
             "total_cost_usd":0.28}"#;
-        let answer: Answer = parse_response(raw).unwrap();
-        assert_eq!(answer, Answer { branch: "feat/a".into() });
+        let answered = parse_response::<Answer>(raw).unwrap();
+        assert_eq!(answered.answer, Answer { branch: "feat/a".into() });
+    }
+
+    #[test]
+    fn reads_the_envelopes_accounting() {
+        let raw = r#"{"is_error":false,"structured_output":{"branch":"feat/a"},
+            "num_turns":2,"duration_ms":3934,"duration_api_ms":3086,
+            "total_cost_usd":0.14,"modelUsage":{"claude-sonnet-5-5":{"outputTokens":285}}}"#;
+        let stats = parse_response::<Answer>(raw).unwrap().stats;
+        assert_eq!(
+            stats,
+            Stats {
+                model: "claude-sonnet-5-5".into(),
+                num_turns: Some(2),
+                duration_ms: Some(3934),
+                duration_api_ms: Some(3086),
+                cost_usd: Some(0.14),
+            }
+        );
     }
 
     #[test]

@@ -49,11 +49,14 @@ pub struct Suggestion {
 /// derived locally instead; the dialog shows that as a note, not an error, since the
 /// fields still got filled with something sane. Serializes flat so the Tauri command
 /// hands it straight to the dialog rather than restating the fields in a parallel type.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// `stats` is for the command's telemetry only, `None` on a fallback.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Suggested {
     #[serde(flatten)]
     pub suggestion: Suggestion,
     pub fallback: Option<String>,
+    #[serde(skip)]
+    pub stats: Option<tt_exec::claude::Stats>,
 }
 
 /// Never ran / ran and errored / answered in the wrong shape, kept apart so a
@@ -69,23 +72,30 @@ pub type Result<T> = std::result::Result<T, SuggestError>;
 /// Empty means [`DEFAULT_SUGGEST_INSTRUCTION`]. Never fails while there is a slug to make.
 pub fn suggest(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggested> {
     match ask_claude(cwd, goal, images, instruction) {
-        Ok(suggestion) => Ok(Suggested { suggestion, fallback: None }),
+        Ok((suggestion, stats)) => Ok(Suggested { suggestion, fallback: None, stats: Some(stats) }),
         Err(e) => local_fallback(goal)
-            .map(|suggestion| Suggested { suggestion, fallback: Some(e.brief()) })
+            .map(|suggestion| Suggested { suggestion, fallback: Some(e.brief()), stats: None })
             .ok_or(e),
     }
 }
 
 /// Ask, then hold the answer to the one rule the schema can't state: a required string
 /// may still be blank. `--model sonnet` is pinned rather than left to the user's `claude`
-/// config, so this cheap one-shot call can't silently ride a heavier default.
-fn ask_claude(cwd: &Path, goal: &str, images: &[String], instruction: &str) -> Result<Suggestion> {
+/// config, so this cheap one-shot call can't silently ride a heavier default; MCP is off
+/// because connecting the user's servers cost more wall time than the model did.
+fn ask_claude(
+    cwd: &Path,
+    goal: &str,
+    images: &[String],
+    instruction: &str,
+) -> Result<(Suggestion, tt_exec::claude::Stats)> {
     let prompt = prompt_for(goal, images, instruction);
-    let answer: Suggestion = tt_exec::claude::Ask::new(&prompt, SUGGESTION_SCHEMA, CLAUDE_TIMEOUT)
+    let answered = tt_exec::claude::Ask::new(&prompt, SUGGESTION_SCHEMA, CLAUDE_TIMEOUT)
         .model("sonnet")
+        .no_mcp()
         .cwd(cwd)
-        .run()?;
-    usable(answer)
+        .run::<Suggestion>()?;
+    Ok((usable(answered.answer)?, answered.stats))
 }
 
 /// Trim the answer's fields and reject a blank one.
@@ -257,6 +267,7 @@ mod tests {
                 goal: "do a".into(),
             },
             fallback: None,
+            stats: Some(tt_exec::claude::Stats::default()),
         };
         let json: serde_json::Value = serde_json::to_value(&s).unwrap();
         assert_eq!(
