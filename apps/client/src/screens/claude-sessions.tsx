@@ -108,8 +108,22 @@ const INSIGHT_META: Record<InsightKind, { label: string; icon: Icon; color: stri
   marathon: { label: "Marathon session", icon: ChatsCircleIcon, color: PALETTE[0] },
 };
 
+/** A theme color as a concrete `rgba()` echarts can parse. The tokens are Kumo's
+ * `light-dark(…)` over `oklch(…)`, which `getPropertyValue` returns unresolved
+ * and echarts paints black — so resolve it on a probe, then rasterize one pixel. */
 function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const probe = document.createElement("span");
+  probe.style.color = `var(${name})`;
+  probe.style.display = "none";
+  document.body.append(probe);
+  const resolved = getComputedStyle(probe).color;
+  probe.remove();
+  const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  if (!ctx) return resolved;
+  ctx.fillStyle = resolved;
+  ctx.fillRect(0, 0, 1, 1);
+  const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+  return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
 }
 
 function formatTokens(n: number): string {
