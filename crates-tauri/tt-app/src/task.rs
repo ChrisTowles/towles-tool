@@ -121,24 +121,36 @@ pub async fn task_suggest(
 ) -> Result<Suggested, String> {
     let images = image_paths.len();
     let instruction = instruction.unwrap_or_default();
+    let started = std::time::Instant::now();
     let result = tauri::async_runtime::spawn_blocking(move || {
         tt_tasks::suggest(&PathBuf::from(dir), &goal, &image_paths, &instruction)
     })
     .await
     .map_err(|e| format!("worktree task failed: {e}"))?
     .map_err(|e| e.to_string());
+    // Click-to-answer, so `wall_ms - duration_ms` is the CLI's startup.
+    let wall_ms = started.elapsed().as_millis() as u64;
     // A hard failure stays at `warn` — one log site must not cost the severity.
     match &result {
         Ok(s) => {
             let outcome = if s.fallback.is_some() { "fallback" } else { "ok" };
+            let stats = s.stats.clone().unwrap_or_default();
             tracing::info!(
                 images,
                 outcome,
                 reason = s.fallback.as_deref().unwrap_or(""),
+                wall_ms,
+                model = stats.model.as_str(),
+                num_turns = stats.num_turns,
+                duration_ms = stats.duration_ms,
+                duration_api_ms = stats.duration_api_ms,
+                cost_usd = stats.cost_usd,
                 "task_suggest"
             );
         }
-        Err(e) => tracing::warn!(images, outcome = "error", reason = e.as_str(), "task_suggest"),
+        Err(e) => {
+            tracing::warn!(images, outcome = "error", reason = e.as_str(), wall_ms, "task_suggest")
+        }
     }
     result
 }
