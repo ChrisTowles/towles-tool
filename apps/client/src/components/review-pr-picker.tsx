@@ -105,7 +105,7 @@ export function ReviewPrPicker({
           <Combobox.Input
             aria-label="Search pull requests"
             placeholder="Search open PRs, or type a number…"
-            className="text-xs"
+            className="text-xs caret-kumo-brand"
           />
           <Combobox.Empty>
             {prs === null && !listError ? "Loading pull requests…" : "No open pull requests."}

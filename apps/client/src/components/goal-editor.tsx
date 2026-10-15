@@ -136,7 +136,7 @@ export function GoalEditor({
           value={value}
           // Transparent text, visible caret: the mirror underneath has the glyphs.
           className={cn(
-            "relative w-full !bg-transparent !text-transparent caret-kumo-default",
+            "relative w-full !bg-transparent !text-transparent caret-kumo-brand",
             SHARED_BOX,
             className,
           )}
