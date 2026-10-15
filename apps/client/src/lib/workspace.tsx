@@ -2,13 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { RailView, ScreenId } from "@/lib/screens";
 import { focusTargetStore, type FocusTarget } from "@/lib/focus-target";
 import { settingsTargetStore, type SettingsTarget } from "@/lib/settings-target";
-import {
-  ACTIVE_TAB_KEY,
-  loadRailView,
-  loadWorkspaceTabs,
-  OPEN_TABS_KEY,
-  RAIL_VIEW_KEY,
-} from "@/lib/workspace-persistence";
+import { ACTIVE_TAB_KEY, loadWorkspaceTabs, OPEN_TABS_KEY } from "@/lib/workspace-persistence";
 
 type WorkspaceState = {
   openTabs: ScreenId[];
@@ -57,9 +51,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "false",
   );
-  const [railView, setRailViewState] = useState<RailView>(() =>
-    loadRailView(localStorage.getItem(RAIL_VIEW_KEY)),
-  );
+  // Every launch opens on the tree; a switch to the queue lasts the session.
+  const [railView, setRailView] = useState<RailView>("tree");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [zen, setZen] = useState(false);
 
@@ -73,11 +66,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));
     setRecent((prev) => [id, ...prev.filter((x) => x !== id)]);
     setActiveTab(id);
-  }, []);
-
-  const setRailView = useCallback((view: RailView) => {
-    localStorage.setItem(RAIL_VIEW_KEY, view);
-    setRailViewState(view);
   }, []);
 
   const openTabWithFocus = useCallback(
