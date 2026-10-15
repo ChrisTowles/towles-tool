@@ -870,7 +870,8 @@ fn run_claude_calendar(prompt: &str) -> Result<Vec<EventInput>, String> {
     log::debug!("claude -p ({} byte prompt)", prompt.len());
     let answer: CalendarAnswer = tt_exec::claude::Ask::new(prompt, CALENDAR_SCHEMA, CLAUDE_TIMEOUT)
         .run()
-        .map_err(|e| e.brief())?;
+        .map_err(|e| e.brief())?
+        .answer;
     Ok(answer.events)
 }
 
@@ -938,7 +939,7 @@ mod tests {
         let raw = r#"{"type":"result","is_error":false,"structured_output":{"events":[
             {"externalId":"e1","title":"standup","start":"2026-07-20T15:00:00-05:00",
              "end":"2026-07-20T15:15:00-05:00","attendees":["Chris"],"location":"zoom"}]}}"#;
-        let answer: CalendarAnswer = tt_exec::claude::parse_response(raw).unwrap();
+        let answer: CalendarAnswer = tt_exec::claude::parse_response(raw).unwrap().answer;
         assert_eq!(answer.events.len(), 1);
         assert_eq!(answer.events[0].external_id, "e1");
         // The reported offset survives — normalizing to UTC on the way in would
@@ -952,7 +953,8 @@ mod tests {
         let answer: CalendarAnswer = tt_exec::claude::parse_response(
             r#"{"is_error":false,"structured_output":{"events":[]}}"#,
         )
-        .unwrap();
+        .unwrap()
+        .answer;
         assert!(answer.events.is_empty());
     }
 
