@@ -154,7 +154,7 @@ export function SessionRow({
                     <EnvelopeSimpleIcon
                       className={cn(
                         "size-3",
-                        chip.kind === "pending" ? "text-violet-500" : "text-kumo-subtle",
+                        chip.kind === "pending" ? "text-agent" : "text-kumo-subtle",
                       )}
                     />
                   </Hint>
