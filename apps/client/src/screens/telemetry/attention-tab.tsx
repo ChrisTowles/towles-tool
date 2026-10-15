@@ -3,10 +3,15 @@ import { WarningCircleIcon } from "@phosphor-icons/react";
 import { BarRow, Card, Empty, maxCount, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
 import { fmtDuration, focusShare, type AttentionSummary, type FocusSession } from "@/lib/telemetry";
+import { PALETTE } from "@/lib/colors";
 
 /** Attention — where the day went. Presentation only: every number is computed in
  * `crates/tt-telemetry/src/attention.rs`, along with the two counting rules that surprise
  * people (event identity from `message`, not `name`; local hour buckets over a UTC day). */
+
+/** Data series, so the shared palette — never violet (agents) or sky (status). */
+const FOCUSED = PALETTE[0];
+const GESTURES = PALETTE[5];
 
 /** Below this, a stretch or two is a quiet day rather than thrash. */
 const FRAGMENT_CALLOUT_MIN_SESSIONS = 4;
@@ -74,7 +79,7 @@ export function AttentionTab({
       </div>
 
       {fragmented && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+        <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
           <WarningCircleIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>
             {focus.fragmentCount} of {focus.sessionCount} focus stretches were under two minutes —
@@ -167,7 +172,7 @@ export function AttentionTab({
                 />
               ))}
             </div>
-            <p className="mt-2.5 text-[11px] text-muted-foreground">
+            <p className="mt-2.5 text-mini text-muted-foreground">
               Ranked by time, not call count — spans overlap, so the total can exceed the day's
               elapsed time.
               {machine.failures > 0 && ` ${machine.failures} did not exit cleanly.`}
@@ -194,36 +199,42 @@ function HourChart({ hours }: { hours: AttentionSummary["hours"] }) {
             title={`${String(h.hour).padStart(2, "0")}:00 — ${fmtDuration(h.focusedMs)} focused, ${h.actions} gestures, ${h.spawns} spawns`}
           >
             <div
-              className="w-full rounded-t-sm bg-violet-500/70 group-hover:bg-violet-500"
-              style={{ height: `${Math.min(100, (h.focusedMs / 3_600_000) * 100)}%` }}
+              className="w-full rounded-t-sm opacity-80 group-hover:opacity-100"
+              style={{
+                height: `${Math.min(100, (h.focusedMs / 3_600_000) * 100)}%`,
+                backgroundColor: FOCUSED,
+              }}
             />
             <div
-              className="w-full shrink-0 rounded-sm bg-sky-500/70"
-              style={{ height: `${h.actions > 0 ? Math.max(2, (h.actions / busiest) * 18) : 0}px` }}
+              className="w-full shrink-0 rounded-sm"
+              style={{
+                height: `${h.actions > 0 ? Math.max(2, (h.actions / busiest) * 18) : 0}px`,
+                backgroundColor: GESTURES,
+              }}
             />
           </div>
         ))}
       </div>
-      <div className="mt-1 flex gap-[3px] font-mono text-[9.5px] text-muted-foreground/70">
+      <div className="mt-1 flex gap-[3px] font-mono text-micro text-muted-foreground/70">
         {hours.map((h) => (
           <span key={h.hour} className="flex-1 text-center">
             {h.hour % 3 === 0 ? h.hour : ""}
           </span>
         ))}
       </div>
-      <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
-        <Legend className="bg-violet-500/70" label="focused time" />
-        <Legend className="bg-sky-500/70" label="gestures" />
+      <div className="mt-2 flex items-center gap-3 text-mini text-muted-foreground">
+        <Legend color={FOCUSED} label="focused time" />
+        <Legend color={GESTURES} label="gestures" />
         <span className="ml-auto">local hours</span>
       </div>
     </div>
   );
 }
 
-function Legend({ className, label }: { className: string; label: string }) {
+function Legend({ color, label }: { color: string; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      <span className={cn("size-2 rounded-sm", className)} />
+      <span className="size-2 rounded-sm" style={{ backgroundColor: color }} />
       {label}
     </span>
   );
@@ -254,11 +265,8 @@ function FocusTimeline({ sessions }: { sessions: FocusSession[] }) {
       {placed.map((p) => (
         <div
           key={p.key}
-          className={cn(
-            "absolute inset-y-0 rounded-sm bg-violet-500/80",
-            p.session.openEnded && "bg-violet-500/40",
-          )}
-          style={{ left: `${p.leftPct}%`, width: `${p.widthPct}%` }}
+          className={cn("absolute inset-y-0 rounded-sm", p.session.openEnded && "opacity-50")}
+          style={{ left: `${p.leftPct}%`, width: `${p.widthPct}%`, backgroundColor: FOCUSED }}
           title={`${timeOf(p.session.start)} – ${timeOf(p.session.end)} · ${fmtDuration(p.session.durationMs)}${p.session.openEnded ? " (still focused at the last record)" : ""}`}
         />
       ))}
@@ -286,8 +294,11 @@ function MeterRow({
       </span>
       <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-violet-500"
-          style={{ width: `${Math.max(2, (value / Math.max(1, max)) * 100)}%` }}
+          className="h-full rounded-full"
+          style={{
+            width: `${Math.max(2, (value / Math.max(1, max)) * 100)}%`,
+            backgroundColor: FOCUSED,
+          }}
         />
       </div>
       <span className="w-32 shrink-0 whitespace-nowrap text-right font-mono text-xs text-muted-foreground">
@@ -300,7 +311,7 @@ function MeterRow({
 function Figure({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="text-mini font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
       <div className="mt-0.5 font-mono text-sm text-foreground">{value}</div>

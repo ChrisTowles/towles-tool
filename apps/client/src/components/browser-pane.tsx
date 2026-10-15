@@ -48,9 +48,9 @@ const lastUrlByDir = new Map<string, string>();
 const HINT_KEY = "tt:browser-pane-hint-dismissed";
 
 const CHIP = {
-  live: "border-emerald-500/50 bg-emerald-500/10 text-emerald-500",
+  live: "border-ok/50 bg-ok/10 text-ok",
   starting: "border-kumo-line bg-kumo-recessed text-kumo-subtle",
-  failed: "border-red-500/50 bg-red-500/10 text-red-500",
+  failed: "border-danger/50 bg-danger/10 text-danger",
 } as const;
 
 export function BrowserPane({
@@ -213,7 +213,7 @@ export function BrowserPane({
     <div
       className={cn(
         "flex h-full min-h-0 flex-col overflow-hidden rounded-lg border",
-        focused ? "border-violet-500/60" : "border-kumo-hairline",
+        focused ? "border-agent/60" : "border-kumo-hairline",
       )}
     >
       <PaneChrome
@@ -222,7 +222,7 @@ export function BrowserPane({
           <>
             <span
               className={cn(
-                "flex h-4 shrink-0 items-center gap-1 rounded-full border px-1.5 font-mono text-[9.5px]",
+                "flex h-4 shrink-0 items-center gap-1 rounded-full border px-1.5 font-mono text-micro",
                 chip,
               )}
             >
@@ -240,7 +240,7 @@ export function BrowserPane({
               }}
               placeholder="https://…  (sign-ins made here stick)"
               size="xs"
-              className="min-w-0 flex-1 font-mono text-[11px]"
+              className="min-w-0 flex-1 font-mono text-mini"
             />
           </>
         }
@@ -269,7 +269,7 @@ export function BrowserPane({
             <IconBtn
               title="reload"
               disabled={phase !== "live"}
-              className="hover:text-sky-500"
+              className="hover:text-info"
               onClick={() => {
                 uiAction("browser.reload", "agentboard");
                 void browserNavigate(paneId, { action: "reload" });
@@ -280,7 +280,7 @@ export function BrowserPane({
             <IconBtn
               title="open in a Chrome window (same profile; reattach restarts the embedded view)"
               disabled={phase !== "live"}
-              className="hover:text-sky-500"
+              className="hover:text-info"
               onClick={() => {
                 uiAction("browser.popout", "agentboard");
                 void browserPopout(paneId);
@@ -291,7 +291,7 @@ export function BrowserPane({
             <IconBtn
               title="close pane"
               shortcut={focused ? "ab-close-pane" : undefined}
-              className="hover:text-sky-500"
+              className="hover:text-info"
               onClick={() => {
                 if (!focused) uiAction("browser.close", "agentboard");
                 onClose();
@@ -303,7 +303,7 @@ export function BrowserPane({
         }
       />
       {showHint && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-kumo-recessed px-2 py-1 text-[11px] text-kumo-subtle">
+        <div className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-kumo-recessed px-2 py-1 text-mini text-kumo-subtle">
           <span className="min-w-0 flex-1">
             Sign-ins made here stick — this pane keeps its own browser profile, separate from your
             personal Chrome.

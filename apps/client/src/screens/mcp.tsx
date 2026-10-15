@@ -14,6 +14,7 @@ import { toast } from "@/lib/toast";
 import { Button, Checkbox, Dialog, Input, InputArea, Select, Tabs } from "@cloudflare/kumo";
 import { Card, Empty, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
+import { PALETTE } from "@/lib/colors";
 import { fmtAge, useStoreSnapshot, type McpCall } from "@/lib/data";
 import { useNow } from "@/lib/now";
 import { errorMessage, NotInTauri } from "@/lib/errors";
@@ -131,7 +132,7 @@ export function McpScreen() {
       </header>
 
       {!live && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-amber-500/10 px-4 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+        <div className="flex shrink-0 items-center gap-2 border-b border-kumo-hairline bg-warn/10 px-4 py-1.5 text-xs text-warn">
           <WarningCircleIcon className="size-3.5 shrink-0" />
           Not connected to the store — open this window in the Towles Tool app to see live calls.
         </div>
@@ -302,16 +303,16 @@ function OverviewTab({
                 </span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                   <div
-                    className={cn(
-                      "h-full rounded-full",
-                      u.failed > 0 ? "bg-amber-500" : "bg-violet-500",
-                    )}
-                    style={{ width: `${Math.max(2, (u.total / max) * 100)}%` }}
+                    className={cn("h-full rounded-full", u.failed > 0 && "bg-warn")}
+                    style={{
+                      width: `${Math.max(2, (u.total / max) * 100)}%`,
+                      backgroundColor: u.failed > 0 ? undefined : PALETTE[0],
+                    }}
                   />
                 </div>
                 <span className="w-14 shrink-0 text-right font-mono text-xs text-kumo-subtle">
                   {u.total}
-                  {u.failed > 0 && <span className="text-red-500"> ·{u.failed}</span>}
+                  {u.failed > 0 && <span className="text-danger"> ·{u.failed}</span>}
                 </span>
               </div>
             ))}
@@ -338,13 +339,10 @@ function OverviewTab({
           {recent.map((call) => (
             <div key={call.id} className="flex items-center gap-2.5 px-1 py-1">
               <span
-                className={cn(
-                  "size-2 shrink-0 rounded-full",
-                  call.ok ? "bg-green-500" : "bg-red-500",
-                )}
+                className={cn("size-2 shrink-0 rounded-full", call.ok ? "bg-ok" : "bg-danger")}
               />
               <span className="font-mono text-xs text-foreground">{call.tool ?? call.method}</span>
-              <span className="ml-auto font-mono text-[11px] text-kumo-subtle">
+              <span className="ml-auto font-mono text-mini text-kumo-subtle">
                 {fmtAge(call.ts, now)}
               </span>
             </div>
@@ -481,29 +479,27 @@ const CallRow = memo(function CallRow({
       onClick={() => onSelect(call)}
       className={cn(
         "flex w-full flex-col gap-0.5 rounded-md border-l-2 border-transparent px-3 py-2 text-left hover:bg-accent/50",
-        !call.ok && "border-l-red-500 bg-red-500/5",
+        !call.ok && "border-l-danger bg-danger/5",
       )}
     >
       <div className="flex w-full items-center gap-2.5">
-        <span
-          className={cn("size-2 shrink-0 rounded-full", call.ok ? "bg-green-500" : "bg-red-500")}
-        />
+        <span className={cn("size-2 shrink-0 rounded-full", call.ok ? "bg-ok" : "bg-danger")} />
         <span className="font-mono text-xs text-foreground">{call.tool ?? call.method}</span>
         {call.tool && (
-          <span className="font-mono text-[11px] text-kumo-subtle/60">{call.method}</span>
+          <span className="font-mono text-mini text-kumo-subtle/60">{call.method}</span>
         )}
-        <div className="ml-auto flex shrink-0 items-center gap-3 font-mono text-[11px] text-kumo-subtle">
+        <div className="ml-auto flex shrink-0 items-center gap-3 font-mono text-mini text-kumo-subtle">
           {call.durationMs !== undefined && <span>{call.durationMs}ms</span>}
           <span>{age}</span>
         </div>
       </div>
       {call.args && call.args !== "{}" && (
-        <span className="w-full truncate pl-[18px] font-mono text-[11px] text-kumo-subtle/70">
+        <span className="w-full truncate pl-[18px] font-mono text-mini text-kumo-subtle/70">
           {call.args}
         </span>
       )}
       {!call.ok && call.error && (
-        <span className="w-full truncate pl-[18px] font-mono text-[11px] text-red-600 dark:text-red-400">
+        <span className="w-full truncate pl-[18px] font-mono text-mini text-danger">
           {call.error}
         </span>
       )}
@@ -538,27 +534,24 @@ function CallDialog({
         {call && (
           <div className="flex flex-col gap-4">
             <section>
-              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-kumo-subtle">
+              <h4 className="mb-2 text-mini font-medium uppercase tracking-wider text-kumo-subtle">
                 Result
               </h4>
               <div className="flex items-center gap-2 text-sm">
                 <span
-                  className={cn(
-                    "size-2 shrink-0 rounded-full",
-                    call.ok ? "bg-green-500" : "bg-red-500",
-                  )}
+                  className={cn("size-2 shrink-0 rounded-full", call.ok ? "bg-ok" : "bg-danger")}
                 />
                 <span className="text-foreground">{call.ok ? "Succeeded" : "Failed"}</span>
               </div>
               {!call.ok && call.error && (
-                <pre className="mt-2 overflow-x-auto rounded-md border border-kumo-hairline bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-red-600 dark:text-red-400">
+                <pre className="mt-2 overflow-x-auto rounded-md border border-kumo-hairline bg-muted/40 p-2.5 font-mono text-xs whitespace-pre-wrap text-danger">
                   {call.error}
                 </pre>
               )}
             </section>
 
             <section>
-              <h4 className="mb-2 text-[10.5px] font-medium uppercase tracking-wider text-kumo-subtle">
+              <h4 className="mb-2 text-mini font-medium uppercase tracking-wider text-kumo-subtle">
                 Arguments
               </h4>
               {call.args && call.args !== "{}" ? (
@@ -788,7 +781,7 @@ function ToolTesterDialog({
         </div>
 
         {mutating && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+          <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
             <WarningCircleIcon className="mt-0.5 size-3.5 shrink-0" />
             <span>
               {destructive
@@ -856,9 +849,7 @@ function ToolTesterDialog({
             <div
               className={cn(
                 "flex items-center gap-2 rounded-md px-3 py-2 text-xs",
-                result.status === 200
-                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                  : "bg-red-500/10 text-red-700 dark:text-red-400",
+                result.status === 200 ? "bg-ok/10 text-ok" : "bg-danger/10 text-danger",
               )}
             >
               {result.status === 200
@@ -867,7 +858,7 @@ function ToolTesterDialog({
                   ? "Refused, as it should be: an Origin header means a web page sent it."
                   : "Refused before reaching the dispatcher."}
             </div>
-            <pre className="max-h-64 overflow-auto rounded-md border border-kumo-hairline bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap">
+            <pre className="max-h-64 overflow-auto rounded-md border border-kumo-hairline bg-muted/40 p-2 font-mono text-mini whitespace-pre-wrap">
               {prettyJson(result.body)}
             </pre>
           </div>
@@ -959,7 +950,7 @@ function ToolRow({ tool, actions }: { tool: McpToolDoc; actions?: React.ReactNod
               return (
                 <span
                   key={name}
-                  className="font-mono text-[11px] text-kumo-subtle/80"
+                  className="font-mono text-mini text-kumo-subtle/80"
                   title={schema.description}
                 >
                   {name}
@@ -996,7 +987,7 @@ function SetupTab({ endpoint, port }: { endpoint: string; port: number }) {
           listener is bound to 127.0.0.1.
         </p>
         <CopyBlock value={endpoint} />
-        <p className="mt-2 text-[11px] text-kumo-subtle">
+        <p className="mt-2 text-mini text-kumo-subtle">
           Port defaults to {port}; set <span className="font-mono">mcp.port</span> in the settings
           file to change it.
         </p>
@@ -1043,7 +1034,7 @@ function SetupStep({
     <div className="flex flex-col gap-1.5 px-3 py-2.5">
       <div className="flex items-baseline gap-2">
         <span className="text-sm text-foreground">{title}</span>
-        <span className="text-[11px] text-kumo-subtle">{detail}</span>
+        <span className="text-mini text-kumo-subtle">{detail}</span>
       </div>
       <CopyBlock value={command} block={block} />
     </div>

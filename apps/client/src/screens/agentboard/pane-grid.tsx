@@ -149,11 +149,11 @@ export function PaneGrid(props: {
                 "flex h-full flex-col overflow-hidden rounded-lg border bg-card",
                 // Amber (needs-you) beats violet (focus) — the visual-design
                 // rule; order matters, tailwind-merge keeps the last border-color.
-                focusedPaneId === id && "border-violet-500/60",
-                termAttention[id] && "border-amber-500/70",
+                focusedPaneId === id && "border-agent/60",
+                termAttention[id] && "border-warn/70",
                 // Same trade as the rail row: amber keeps the border, so focus
                 // becomes a ring rather than disappearing under it.
-                focusedPaneId === id && termAttention[id] && "ring-1 ring-inset ring-violet-500/70",
+                focusedPaneId === id && termAttention[id] && "ring-1 ring-inset ring-agent/70",
               )}
             >
               {s && (
@@ -280,7 +280,7 @@ export function PaneGrid(props: {
             title="Drag to resize (snaps to thirds and fifths) — double-click for equal columns"
             onPointerDown={(e) => startColDrag(e, activeWin, i)}
             onDoubleClick={() => resetCols(activeWin)}
-            className="absolute top-0 z-10 h-full w-2 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-violet-500/40 active:bg-violet-500/60"
+            className="absolute top-0 z-10 h-full w-2 -translate-x-1/2 cursor-col-resize transition-colors hover:bg-agent/40 active:bg-agent/60"
             style={{ left: `${x}%` }}
           />
         ))}

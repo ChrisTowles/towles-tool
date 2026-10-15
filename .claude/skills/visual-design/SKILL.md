@@ -23,20 +23,20 @@ specimens, token/recipe tables, the ΔE rationale — is
   OKLab ΔE by hand against every color it can sit next to; under ~15 between
   co-occurring colors is a real risk, not a nitpick.
 - **Amber = needs-you, violet = agent-ness/focus.** A needs-you row gets the
-  full treatment — `border-l-2 border-l-amber-500`, row-wide `bg-amber-500/10`
+  full treatment — `border-l-2 border-l-warn`, row-wide `bg-warn/10`
   (`/15` hover), flag dot beside the status dot; a thin border alone was
   tested and rejected. When a row is both active and needs-you, amber wins the
   border and fill; violet stays on the glyph.
 - **Identity wash**: a surface that *is* one repo/checkout wears its accent as
   a /10 wash. **Every repo has a color** (`RepoData.color`, `lib/repo-identity.ts`):
   its pin, else one the backend deals like a chart series, so no two clash —
-  never hash a repo's color client-side. **Identity whispers**: the palette
-  (`AUTO_PALETTE` = `REPO_PALETTE`) is muted blues, slates and grayed
-  plums only (12) —
-  no red, pink, orange, **green (success)**, teal (reads as success), brown or
-  saturated hue, nor a
-  status hue — and a pin from
-  outside it is ignored; the checkout accents (`identity-color.ts`) follow the
+  never hash a repo's color client-side. **Identity whispers**: there is **one
+  palette, `lib/colors.ts`** — repo colors, every chart series and legend
+  swatch pull from it (Rust's `AUTO_PALETTE` is test-checked against it), and a
+  data series never borrows a status hue. It is muted blues, slates and grayed
+  plums only (12) — no red, pink, orange, **green (success)**, teal (reads as
+  success), brown or saturated hue, nor a status hue — and a pin from outside
+  it is ignored; the checkout accents (`identity-color.ts`) follow the
   same rule. A *checkout* (the app header) still
   takes its hashed `identityColor()`. Never mix keys on one surface. Absence is
   a state: an unwashed header *means* main checkout. Status and attention
@@ -53,17 +53,26 @@ specimens, token/recipe tables, the ΔE rationale — is
 - **Hierarchy:** repo → folder → session (`✦` agent / `❯` shell); attention
   bubbles up, and a deeper level never outranks its parent.
 - **Type:** sans (Geist, 13px base) for chrome; `font-mono` for everything
-  git/shell-owned — branches, ±diff stats, timestamps, counts, glyphs.
+  git/shell-owned — branches, ±diff stats, timestamps, counts, glyphs. Sizes
+  come from the scale in `index.css` — `text-micro` (10px), `text-mini` (11px),
+  `text-xs`, `text-caption` (13px) — never `text-[Npx]`; faces from
+  `--font-sans`/`--font-mono`/`--font-terminal`.
 - **Don't animate resting UI** — `animate-pulse` is only a live,
   currently-true nudge (the busy dot), never a passive fact or rollup.
-- **Tailwind + Kumo semantic tokens only** (`bg-kumo-*`, `text-kumo-*`,
-  `border-kumo-hairline`) — no raw neutrals, no hand-written CSS, so light and
-  dark both work. The status/attention/identity hues below are the exception.
+- **Tokens only, one place to change them.** Neutrals are Kumo's
+  (`bg-kumo-*`, `text-kumo-*`, `border-kumo-hairline`); every hue that means
+  something is a signal token in `index.css`, named for its meaning —
+  `danger`, `warn` (needs-you), `ok`, `agent` (violet), `merged`, `info`,
+  `busy`/`busy-deep`/`busy-ink`, `waiting`, `paused`, `alert`, `spark`,
+  `ident-a`/`ident-b`, `window-1…5` — each with its light and dark value. A
+  component writes `text-danger`, `bg-warn/10`, never `text-red-600
+  dark:text-red-400`; `lib/design-tokens.test.ts` fails on a raw Tailwind hue,
+  a `text-[Npx]`, or a hex outside `lib/colors.ts`.
 
 ## Source of truth
 
 `lib/agentboard.ts` (`statusColor()`) · `lib/identity-color.ts` (identity
 wash) · `components/app-header.tsx` · the `agentboard-*` row files ·
-`components/header-status.tsx` (needs-you math) · `src/index.css` (tokens).
+`components/header-status.tsx` (needs-you math) · `src/index.css` (signal tokens, type scale, fonts) · `lib/colors.ts` (palette).
 Behavior/flow rules (confirmations, error copy, settings) are the `ui-rules`
 skill, not here.

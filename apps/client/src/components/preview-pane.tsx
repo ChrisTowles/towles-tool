@@ -169,7 +169,7 @@ export function PreviewPane({
     <div
       className={cn(
         "flex h-full flex-col overflow-hidden rounded-lg border border-kumo-hairline bg-kumo-base",
-        focused && "border-violet-500/60",
+        focused && "border-agent/60",
       )}
     >
       {/* Header: title + URL/server + reload/external + close */}
@@ -180,8 +180,8 @@ export function PreviewPane({
             <>
               {/* Identity + an address bar for it; the way back to the dev
                   server is a click, not a retyped URL. */}
-              <FileCodeIcon className="size-3 shrink-0 text-violet-500" />
-              <span className="shrink-0 truncate text-[11px] font-medium">{file.title}</span>
+              <FileCodeIcon className="size-3 shrink-0 text-agent" />
+              <span className="shrink-0 truncate text-mini font-medium">{file.title}</span>
               <Input
                 value={pathInput}
                 onChange={(e) => setPathInput(e.target.value)}
@@ -200,7 +200,7 @@ export function PreviewPane({
                 title="show another file — absolute path, Enter to open"
                 aria-label="File path"
                 size="xs"
-                className="min-w-0 flex-1 font-mono text-[10px]"
+                className="min-w-0 flex-1 font-mono text-micro"
               />
               {url && (
                 <Button
@@ -222,7 +222,7 @@ export function PreviewPane({
                 <Select
                   aria-label="Dev server"
                   size="xs"
-                  className="w-40 text-[11px]"
+                  className="w-40 text-mini"
                   placeholder="Dev server"
                   value={servers.find((s) => s.url === url)?.key ?? null}
                   onValueChange={(key) => {
@@ -236,7 +236,7 @@ export function PreviewPane({
                         <span
                           className={cn(
                             "size-2 rounded-full",
-                            s.listening ? "bg-green-500" : "bg-kumo-line",
+                            s.listening ? "bg-ok" : "bg-kumo-line",
                           )}
                         />
                         {s.label}
@@ -254,7 +254,7 @@ export function PreviewPane({
                 placeholder="http://localhost:<port>/"
                 aria-label="URL"
                 size="xs"
-                className="min-w-0 flex-1 font-mono text-[11px]"
+                className="min-w-0 flex-1 font-mono text-mini"
               />
             </>
           )
@@ -264,7 +264,7 @@ export function PreviewPane({
             <IconBtn
               title={onFile ? "re-read the file from disk" : "reload preview"}
               disabled={!canReload}
-              className="hover:text-sky-500"
+              className="hover:text-info"
               onClick={() => {
                 if (onFile) void reloadFile();
                 else setFrameKey((k) => k + 1);
@@ -276,7 +276,7 @@ export function PreviewPane({
             <IconBtn
               title="open in browser"
               disabled={!hasSurface}
-              className="hover:text-sky-500"
+              className="hover:text-info"
               onClick={() => {
                 uiAction("preview.open_external", "agentboard");
                 void openExternalUrl(onFile ? fileUrl(sourceLabel) : url);
@@ -287,7 +287,7 @@ export function PreviewPane({
             <IconBtn
               title="close pane (preview stays a click away on the folder)"
               shortcut={focused ? "ab-close-pane" : undefined}
-              className="hover:text-sky-500"
+              className="hover:text-info"
               onClick={() => {
                 if (!focused) uiAction("preview.close", "agentboard");
                 onClose();

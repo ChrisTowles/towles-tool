@@ -53,10 +53,10 @@ export function DmBanner() {
   return (
     <div
       className={cn(
-        "relative isolate flex shrink-0 items-center gap-1 border-b border-l-4 border-l-red-500",
-        "bg-red-500/15 py-1.5 pr-2 pl-2 text-sm",
-        warn && "bg-red-500/25",
-        alarm && "bg-red-500/35",
+        "relative isolate flex shrink-0 items-center gap-1 border-b border-l-4 border-l-danger",
+        "bg-danger/15 py-1.5 pr-2 pl-2 text-sm",
+        warn && "bg-danger/25",
+        alarm && "bg-danger/35",
       )}
     >
       {/* The pulse is a fill layer behind the content, so the words you most
@@ -64,7 +64,7 @@ export function DmBanner() {
       {alarm && (
         <motion.span
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 bg-red-500"
+          className="pointer-events-none absolute inset-0 -z-10 bg-danger"
           initial={{ opacity: 0 }}
           animate={{ opacity: [0, 0.45, 0] }}
           transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
@@ -75,12 +75,12 @@ export function DmBanner() {
       <button
         type="button"
         onClick={() => reply("banner")}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-red-500/25 focus-visible:ring-2 focus-visible:ring-red-500/60 focus-visible:outline-none"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-danger/25 focus-visible:ring-2 focus-visible:ring-danger/60 focus-visible:outline-none"
       >
         <span
           className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded-full bg-red-500/30 text-red-700 dark:text-red-300",
-            alarm && "bg-red-500 text-white dark:text-white",
+            "flex size-6 shrink-0 items-center justify-center rounded-full bg-danger/30 text-danger",
+            alarm && "bg-danger text-white",
           )}
         >
           <ChatCircleDotsIcon className="size-4" />
@@ -89,15 +89,15 @@ export function DmBanner() {
         <span className="min-w-0 truncate text-kumo-default/75">{dm.text}</span>
         <span
           className={cn(
-            "shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[11px] text-kumo-default/60",
-            warn && "bg-red-500/30 font-medium text-red-700 dark:text-red-300",
-            alarm && "bg-red-500 text-white",
+            "shrink-0 rounded-full px-1.5 py-0.5 font-mono text-mini text-kumo-default/60",
+            warn && "bg-danger/30 font-medium text-danger",
+            alarm && "bg-danger text-white",
           )}
         >
           {fmtAge(dm.ts, now)}
         </span>
         {pending.length > 1 && (
-          <span className="shrink-0 font-mono text-[11px] text-kumo-default/60">
+          <span className="shrink-0 font-mono text-mini text-kumo-default/60">
             +{pending.length - 1} more
           </span>
         )}
@@ -106,7 +106,7 @@ export function DmBanner() {
       <Button
         variant="primary"
         size="xs"
-        className="shrink-0 bg-red-500 font-semibold text-white hover:bg-red-600"
+        className="shrink-0 bg-danger font-semibold text-white hover:bg-danger"
         onClick={() => reply("button")}
       >
         Reply

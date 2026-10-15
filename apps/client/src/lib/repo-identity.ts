@@ -37,6 +37,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import type { CSSProperties } from "react";
+import { PALETTE } from "@/lib/colors";
 
 export type RepoMeta = {
   icon?: string;
@@ -86,29 +87,32 @@ export const REPO_ICONS: Record<string, Icon> = {
 
 export const DEFAULT_REPO_ICON: Icon = GitBranchIcon;
 
-/** The only colors a repo can be pinned to — and dealt from: Rust's
- * `repo_meta::AUTO_PALETTE`, in the same order. Identity is not a signal, so it
- * whispers: muted blues, slates and grayed plums only — nothing red, pink, orange, green
- * or teal (both read as success), brown or saturated, and no status hue (amber, violet, cyan, sky). */
-export const REPO_PALETTE: readonly string[] = [
-  "#718dba",
-  "#818e9b",
-  "#536992",
-  "#787ca7",
-  "#567786",
-  "#8a697b",
-  "#b08c9f",
-  "#9d7a8d",
-  "#6f7192",
-  "#9b95a2",
-  "#8d7f9f",
-  "#78717d",
-];
+/** Chart series colors by label, so a repo looks the same in a chart as on the
+ * rail: a label naming a tracked repo takes that repo's color, and the rest
+ * deal the palette swatches no tracked repo holds, in order (cycling when
+ * there are more labels than swatches). */
+export function seriesColors(
+  labels: readonly string[],
+  repos: readonly { name: string; color: string }[],
+): Map<string, string> {
+  const byName = new Map(repos.map((r) => [r.name, normalizeHex(r.color)]));
+  const held = new Set(byName.values());
+  const free = PALETTE.filter((c) => !held.has(c));
+  const deck = free.length > 0 ? free : PALETTE;
+  const out = new Map<string, string>();
+  let next = 0;
+  for (const label of labels) {
+    if (out.has(label)) continue;
+    const own = byName.get(label);
+    out.set(label, own ?? deck[next++ % deck.length]);
+  }
+  return out;
+}
 
 /** `color` when it is a palette swatch; a pin from anywhere else isn't kept. */
 export function paletteColor(color: string | undefined): string | undefined {
   const hex = color ? normalizeHex(color) : null;
-  return hex && REPO_PALETTE.includes(hex) ? hex : undefined;
+  return hex && PALETTE.includes(hex) ? hex : undefined;
 }
 
 export function repoIcon(meta: RepoMeta | null | undefined): Icon {
@@ -174,20 +178,23 @@ export function repoAccentStyles(
 
 /** A repo color as text: muted, so lifted toward the foreground to read on
  * either surface. */
-function repoInk(hex: string): string {
+export function repoInk(hex: string): string {
   return `color-mix(in oklab, ${hex} 88%, var(--foreground))`;
 }
 
-/** A button that stands for one repo and is picked: its color as text and
- * border, washed through. */
-export function repoChipStyle(repo: RepoIdentity | undefined): CSSProperties | undefined {
+/** A button that stands for one repo, in the rail header's treatment: its
+ * color as text, a solid left edge (the caller sets its width) and a 6% wash.
+ * Picked, the wash deepens and the whole border takes the color. */
+export function repoChipStyle(
+  repo: RepoIdentity | undefined,
+  picked: boolean,
+): CSSProperties | undefined {
   const hex = repo ? normalizeHex(repo.color) : null;
   if (!hex) return undefined;
-  return {
-    color: repoInk(hex),
-    backgroundColor: `color-mix(in srgb, ${hex} 14%, transparent)`,
-    borderColor: hex,
-  };
+  const wash = `color-mix(in srgb, ${hex} ${picked ? 14 : 6}%, transparent)`;
+  return picked
+    ? { color: repoInk(hex), backgroundColor: wash, borderColor: hex }
+    : { color: repoInk(hex), backgroundColor: wash, borderLeftColor: hex };
 }
 
 /** A surface that *is* one repo wears the rail header's treatment: a solid

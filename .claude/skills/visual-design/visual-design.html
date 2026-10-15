@@ -312,17 +312,17 @@
     <div class="tablewrap"><table>
       <tr><th>state</th><th>dot</th><th>class</th><th>why this hue</th></tr>
       <tr><td class="mono">busy</td><td><span class="dot" style="background:var(--cyan)"></span></td>
-        <td><code>bg-cyan-500</code></td><td>deliberately not amber/yellow — that's the needs-you accent. <code>animate-pulse</code> only while live.</td></tr>
+        <td><code>bg-busy</code></td><td>deliberately not amber/yellow — that's the needs-you accent. <code>animate-pulse</code> only while live.</td></tr>
       <tr><td class="mono">background agents (count, not a status)</td><td><span class="dot" style="background:#0e7490"></span></td>
-        <td><code>bg-cyan-700</code></td><td>A tiny dot + count beside the normal status dot while background agents are still out — not waiting on you. Busy's hue, dimmed and never pulsed: work is happening, just not in this turn. ΔE 19.8 to cyan-500, 16.3 to blue-500, 15.4 to dark-theme idle. Also the rollup bucket for a session working at its prompt.</td></tr>
+        <td><code>bg-busy-deep</code></td><td>A tiny dot + count beside the normal status dot while background agents are still out — not waiting on you. Busy's hue, dimmed and never pulsed: work is happening, just not in this turn. ΔE 19.8 to cyan-500, 16.3 to blue-500, 15.4 to dark-theme idle. Also the rollup bucket for a session working at its prompt.</td></tr>
       <tr><td class="mono">waiting</td><td><span class="dot" style="background:var(--blue)"></span></td>
-        <td><code>bg-blue-500</code></td><td></td></tr>
+        <td><code>bg-waiting</code></td><td></td></tr>
       <tr><td class="mono">error</td><td><span class="dot" style="background:var(--red)"></span></td>
-        <td><code>bg-red-500</code></td><td></td></tr>
+        <td><code>bg-danger</code></td><td></td></tr>
       <tr><td class="mono">complete</td><td><span class="dot" style="background:var(--green)"></span></td>
-        <td><code>bg-green-500</code></td><td></td></tr>
+        <td><code>bg-ok</code></td><td></td></tr>
       <tr><td class="mono">interrupted</td><td><span class="dot" style="background:var(--orange8)"></span></td>
-        <td><code>bg-orange-800</code></td><td>orange-500 sits inside both amber's and red's confusion radius (OKLab ΔE ≈ 10); this one reads clearly not-amber inside an amber-washed row.</td></tr>
+        <td><code>bg-paused</code></td><td>orange-500 sits inside both amber's and red's confusion radius (OKLab ΔE ≈ 10); this one reads clearly not-amber inside an amber-washed row.</td></tr>
       <tr><td class="mono">idle</td><td><span class="dot" style="background:var(--faint)"></span></td>
         <td><code>bg-muted-foreground/40</code></td><td></td></tr>
     </table></div>
@@ -353,8 +353,8 @@
       </div>
     </div>
     <ul>
-      <li>A needs-you <em>row</em> gets the full treatment: <code>border-l-2 border-l-amber-500</code>,
-        a row-wide <code>bg-amber-500/10</code> wash, and a flag dot beside the status dot — in the
+      <li>A needs-you <em>row</em> gets the full treatment: <code>border-l-2 border-l-warn</code>,
+        a row-wide <code>bg-warn/10</code> wash, and a flag dot beside the status dot — in the
         same glance as the name, never stranded at the row's far edge. A thin border alone was tested
         and rejected: it reads as decoration, not an alert.</li>
       <li>Violet marks agent-ness and the focused row (<code>✦</code>, active border, prompt caret).
@@ -474,7 +474,7 @@
       <tr><td>Divider</td><td><code>border-border</code></td></tr>
       <tr><td>Primary / secondary / faint text</td><td><code>text-foreground</code> / <code>text-muted-foreground</code> / <code>text-muted-foreground/60</code></td></tr>
       <tr><td>Radius</td><td>cards/panels <code>rounded-lg</code> · chips/badges/tabs <code>rounded-md</code> · dots circular</td></tr>
-      <tr><td>Needs-you badge (aggregate chip)</td><td><code>text-amber-500 border border-amber-500/50 bg-amber-500/10</code></td></tr>
+      <tr><td>Needs-you badge (aggregate chip)</td><td><code>text-warn border border-warn/50 bg-warn/10</code></td></tr>
     </table></div>
     <pre><code>// status dot — mirror statusColor() exactly
 &lt;span className={cn("size-2 rounded-full", statusColor(status), live &amp;&amp; "animate-pulse")} /&gt;
@@ -487,19 +487,19 @@
   className={cn(
     "flex items-center gap-2.5 py-1.5 pr-3 pl-9 cursor-pointer border-l-2 border-transparent",
     hovered &amp;&amp; !needsYou &amp;&amp; "bg-accent",
-    active &amp;&amp; !needsYou &amp;&amp; "bg-accent border-l-violet-500",
-    needsYou &amp;&amp; "border-l-amber-500 bg-amber-500/10",   // amber wins edge AND fill
-    needsYou &amp;&amp; hovered &amp;&amp; "bg-amber-500/15",
+    active &amp;&amp; !needsYou &amp;&amp; "bg-accent border-l-agent",
+    needsYou &amp;&amp; "border-l-warn bg-warn/10",   // amber wins edge AND fill
+    needsYou &amp;&amp; hovered &amp;&amp; "bg-warn/15",
   )}&gt;
 
 // folder needs-you count badge
-&lt;span className="rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5
-  font-mono text-[10.5px] text-amber-500"&gt;{n} ⚑&lt;/span&gt;
+&lt;span className="rounded-md border border-warn/50 bg-warn/10 px-1.5
+  font-mono text-mini text-warn"&gt;{n} ⚑&lt;/span&gt;
 
 // branch + diff stats — bare mono facts, no box
-&lt;span className="font-mono text-[11px] text-muted-foreground"&gt;⎇ {branch}&lt;/span&gt;
-&lt;span className="font-mono text-[11px] text-green-500"&gt;+{add}&lt;/span&gt;
-&lt;span className="font-mono text-[11px] text-red-500"&gt;−{del}&lt;/span&gt;</code></pre>
+&lt;span className="font-mono text-mini text-muted-foreground"&gt;⎇ {branch}&lt;/span&gt;
+&lt;span className="font-mono text-mini text-ok"&gt;+{add}&lt;/span&gt;
+&lt;span className="font-mono text-mini text-danger"&gt;−{del}&lt;/span&gt;</code></pre>
   </section>
 
   <section>

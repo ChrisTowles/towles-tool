@@ -158,7 +158,7 @@ function ViewChip({
                   onClick={() => onSelectView(v)}
                 >
                   <span className="truncate">{v.label}</span>
-                  <span className="ml-auto pl-3 font-mono text-[10.5px] text-kumo-subtle">
+                  <span className="ml-auto pl-3 font-mono text-mini text-kumo-subtle">
                     {v.filters.length} · {v.days}d
                   </span>
                 </DropdownMenu.Item>

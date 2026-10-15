@@ -16,9 +16,9 @@ export const KNOWN_COLLECTORS: readonly CollectorKey[] = [
  * must not diverge. `never-ran` is grey, not amber: the status bar dots every
  * {@link KNOWN_COLLECTORS} entry, and two of them are off unless asked for. */
 export const COLLECTOR_STATE_DOT: Record<CollectorState, string> = {
-  fresh: "bg-green-500/70 dark:bg-green-400/70",
-  stale: "bg-amber-500/80 dark:bg-amber-400/80",
-  failing: "bg-red-500 dark:bg-red-400",
+  fresh: "bg-ok/70",
+  stale: "bg-warn/80",
+  failing: "bg-danger",
   "never-ran": "bg-muted-foreground/30 dark:bg-muted-foreground/30",
 };
 

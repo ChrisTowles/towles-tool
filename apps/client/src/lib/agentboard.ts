@@ -299,13 +299,7 @@ export type StatePayload = {
 };
 
 /** Window identity colors for the rail group tags + window-strip squares. */
-const WINDOW_COLORS = [
-  "bg-teal-500",
-  "bg-fuchsia-500",
-  "bg-lime-500",
-  "bg-rose-400",
-  "bg-indigo-400",
-];
+const WINDOW_COLORS = ["bg-window-1", "bg-window-2", "bg-window-3", "bg-window-4", "bg-window-5"];
 
 export function windowColor(wins: AgWindow[], windowId: string): string {
   const i = wins.findIndex((w) => w.id === windowId);
@@ -1223,7 +1217,7 @@ export function agentRollup(
 export const ALERT_ORDER = ["error", "waiting", "busy", "background"] as const;
 export type AlertStatus = (typeof ALERT_ORDER)[number];
 
-const BACKGROUND_COLOR = "bg-cyan-700";
+const BACKGROUND_COLOR = "bg-busy-deep";
 
 export function alertColor(alert: AlertStatus): string {
   return alert === "background" ? BACKGROUND_COLOR : statusColor(alert);
@@ -1245,12 +1239,12 @@ function alertStatus(s: SessionData): AlertStatus | null {
 export function rollupAlertColor(r: AgentRollup): string | null {
   const top = ALERT_ORDER.find((st) => r[st] > 0);
   if (top) return alertColor(top);
-  return r.total > 0 ? "bg-emerald-500" : null;
+  return r.total > 0 ? "bg-ok" : null;
 }
 
-/** White reads fine on every fill but cyan-500, where it's nearly illegible. */
+/** White reads fine on every fill but the busy one, where it's nearly illegible. */
 export function rollupAlertTextColor(bg: string | null): string {
-  return bg === "bg-cyan-500" ? "text-cyan-950" : "text-white";
+  return bg === "bg-busy" ? "text-busy-ink" : "text-white";
 }
 
 /** The live agentboard state, shared across the app from a single subscription. */
@@ -1258,11 +1252,11 @@ export { useAgentboardState, useSetAgentOverlay } from "./agentboard-state";
 
 const STATUS: Record<AgentStatus, { label: string; color: string }> = {
   idle: { label: "Idle", color: "bg-muted-foreground/40" },
-  busy: { label: "Working", color: "bg-cyan-500" },
-  waiting: { label: "Waiting", color: "bg-blue-500" },
-  error: { label: "Error", color: "bg-red-500" },
-  complete: { label: "Done", color: "bg-green-500" },
-  interrupted: { label: "Paused", color: "bg-orange-800" },
+  busy: { label: "Working", color: "bg-busy" },
+  waiting: { label: "Waiting", color: "bg-waiting" },
+  error: { label: "Error", color: "bg-danger" },
+  complete: { label: "Done", color: "bg-ok" },
+  interrupted: { label: "Paused", color: "bg-paused" },
 };
 
 export function statusColor(status: AgentStatus): string {
@@ -1275,7 +1269,7 @@ export function collapsedLiveColor(sessions: SessionData[]): string | null {
   if (live.length === 0) return null;
   const present = new Set(live.map(alertStatus));
   const top = ALERT_ORDER.find((st) => present.has(st));
-  return top ? alertColor(top) : "bg-emerald-500";
+  return top ? alertColor(top) : "bg-ok";
 }
 
 // Session PTY writes

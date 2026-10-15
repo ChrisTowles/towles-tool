@@ -187,7 +187,7 @@ function IssueList({
             />
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="w-full truncate text-xs">{issue.title}</span>
-              <span className="text-[10.5px] text-kumo-subtle">
+              <span className="text-mini text-kumo-subtle">
                 #{issue.number}
                 {issue.labels.length > 0 ? ` · ${issue.labels.slice(0, 2).join(", ")}` : ""}
               </span>
@@ -623,7 +623,7 @@ export function InlineNewTask({
   return (
     <div className="mx-3 my-1.5 flex flex-col gap-2 rounded-lg border border-kumo-hairline bg-card p-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium text-kumo-subtle">✦ New task — {repo.name}</span>
+        <span className="text-mini font-medium text-kumo-subtle">✦ New task — {repo.name}</span>
         <div className="flex rounded-md border border-kumo-hairline p-px" role="group">
           {(
             [
@@ -637,7 +637,7 @@ export function InlineNewTask({
               aria-pressed={mode === value}
               onClick={() => switchMode(value)}
               className={cn(
-                "rounded-[5px] px-1.5 py-0.5 text-[10.5px] text-kumo-subtle hover:text-kumo-default",
+                "rounded-[5px] px-1.5 py-0.5 text-mini text-kumo-subtle hover:text-kumo-default",
                 mode === value && "bg-accent text-kumo-default",
               )}
             >
@@ -707,7 +707,7 @@ export function InlineNewTask({
             <span
               key={`${issue.repo}#${issue.number}`}
               title={issue.title}
-              className="flex items-center gap-1 rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 font-mono text-[10.5px] text-kumo-subtle"
+              className="flex items-center gap-1 rounded border border-kumo-hairline bg-kumo-base px-1.5 py-0.5 font-mono text-mini text-kumo-subtle"
             >
               #{issue.number}
               <button
@@ -787,19 +787,19 @@ export function InlineNewTask({
             />
             <Popover.Content className="w-80 p-0" align="start">
               <div className="flex items-center justify-between gap-2 border-b border-kumo-hairline px-2 py-1.5">
-                <span className="text-[10.5px] text-kumo-subtle">GitHub issues — {repo.name}</span>
+                <span className="text-mini text-kumo-subtle">GitHub issues — {repo.name}</span>
                 <button
                   type="button"
                   onClick={() => setIssueAssignedToMe(!issueAssignedToMe)}
-                  className="text-[10.5px] font-medium text-primary hover:underline"
+                  className="text-mini font-medium text-primary hover:underline"
                 >
                   {issueAssignedToMe ? "Show all open issues" : "Show only mine"}
                 </button>
               </div>
               {issuesError ? (
-                <p className="p-3 text-[11px] text-red-500">{issuesError}</p>
+                <p className="p-3 text-mini text-danger">{issuesError}</p>
               ) : issues === null ? (
-                <p className="p-3 text-[11px] text-kumo-subtle">Loading issues…</p>
+                <p className="p-3 text-mini text-kumo-subtle">Loading issues…</p>
               ) : (
                 <IssueList
                   issues={issues}
@@ -881,7 +881,7 @@ export function InlineNewTask({
       {!reviewing && (
         <>
           <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] text-kumo-subtle">title</span>
+            <span className="text-mini text-kumo-subtle">title</span>
             <Input
               aria-label="Task title"
               value={title}
@@ -892,7 +892,7 @@ export function InlineNewTask({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] text-kumo-subtle">branch</span>
+            <span className="text-mini text-kumo-subtle">branch</span>
             <Input
               aria-label="Branch name"
               value={branch}
@@ -902,10 +902,10 @@ export function InlineNewTask({
               placeholder="auto-generated from your goal"
               className="min-w-0 font-mono"
             />
-            {branchProblem && <p className="text-[10.5px] text-red-500">{branchProblem}</p>}
+            {branchProblem && <p className="text-mini text-danger">{branchProblem}</p>}
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-[10.5px] text-kumo-subtle">base</span>
+            <span className="text-mini text-kumo-subtle">base</span>
             {quickBases.length > 1 && (
               <div role="group" aria-label="Recent bases" className="flex flex-wrap gap-1">
                 {quickBases.map((b) => (
@@ -986,16 +986,13 @@ export function InlineNewTask({
           onCheckedChange={(v) => setLaunchClaude(v)}
           className="mt-0.5"
         />
-        <span className="text-[11px] leading-snug text-kumo-subtle">
+        <span className="text-mini leading-snug text-kumo-subtle">
           Start Claude on the goal — off leaves the new task at a bare shell
         </span>
       </label>
       {notice && (
         <p
-          className={cn(
-            "text-[11px]",
-            notice.kind === "error" ? "text-red-500" : "text-kumo-subtle",
-          )}
+          className={cn("text-mini", notice.kind === "error" ? "text-danger" : "text-kumo-subtle")}
         >
           {notice.text}
         </p>

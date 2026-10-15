@@ -44,12 +44,8 @@ function PaneCacheInfo({ session, now }: { session: SessionData; now: number }) 
     >
       <span
         className={cn(
-          "shrink-0 font-mono text-[10.5px]",
-          expiring
-            ? "text-amber-500"
-            : cold
-              ? "font-medium text-sky-500"
-              : "text-muted-foreground/70",
+          "shrink-0 font-mono text-mini",
+          expiring ? "text-warn" : cold ? "font-medium text-info" : "text-muted-foreground/70",
         )}
       >
         {cold
@@ -66,16 +62,16 @@ const BAND_TEXT: Record<ContextBand, string> = {
   calm: "text-muted-foreground/60",
   noted: "text-muted-foreground/80",
   half: "text-foreground/80",
-  heavy: "text-sky-500",
-  critical: "font-medium text-sky-500",
+  heavy: "text-info",
+  critical: "font-medium text-info",
 };
 
 const BAND_FILL: Record<ContextBand, string> = {
   calm: "bg-muted-foreground/40",
   noted: "bg-muted-foreground/60",
   half: "bg-foreground/60",
-  heavy: "bg-sky-500/70",
-  critical: "bg-sky-500",
+  heavy: "bg-info/70",
+  critical: "bg-info",
 };
 
 /** How full the window is, escalating from a resting fact to a nudge. Nothing
@@ -87,9 +83,7 @@ function PaneContextMeter({ session }: { session: SessionData }) {
   const band = contextBand(pct);
   return (
     <Hint label={`${modelContextLabel(d)} — ${CONTEXT_BAND_ADVICE[band]}`}>
-      <span
-        className={cn("flex shrink-0 items-center gap-1 font-mono text-[10.5px]", BAND_TEXT[band])}
-      >
+      <span className={cn("flex shrink-0 items-center gap-1 font-mono text-mini", BAND_TEXT[band])}>
         <span className="inline-block w-[4ch] text-right">{pct}%</span>
         <span className="h-1 w-8 overflow-hidden rounded-full bg-muted-foreground/20">
           <span
@@ -114,24 +108,22 @@ function PaneSubagentTotal({ session }: { session: SessionData }) {
     <HoverCard>
       <HoverCardTrigger
         delay={200}
-        render={
-          <span className="shrink-0 cursor-default font-mono text-[10.5px] text-violet-500" />
-        }
+        render={<span className="shrink-0 cursor-default font-mono text-mini text-agent" />}
       >
         Σ {fmtTokens(sessionTotalTokens(d))} (+{count})
       </HoverCardTrigger>
       <HoverCardContent side="bottom" align="end" className="w-64">
-        <p className="mb-1.5 text-[11px] leading-snug text-muted-foreground">
+        <p className="mb-1.5 text-mini leading-snug text-muted-foreground">
           This session and every sub-agent it spawned. Each sub-agent runs its own requests.
         </p>
-        <ul className="flex flex-col gap-0.5 font-mono text-[10.5px]">
+        <ul className="flex flex-col gap-0.5 font-mono text-mini">
           <li className="flex justify-between gap-3">
             <span className="text-foreground">main</span>
             <span className="text-muted-foreground">{fmtContext(d)}</span>
           </li>
           {active.map((s, i) => (
             <li key={`${subagentLabel(s, i)}-${i}`} className="flex justify-between gap-3">
-              <span className="truncate text-violet-500">{subagentLabel(s, i)}</span>
+              <span className="truncate text-agent">{subagentLabel(s, i)}</span>
               <span className="text-muted-foreground">{fmtTokens(s.contextUsed ?? 0)}</span>
             </li>
           ))}
@@ -165,8 +157,8 @@ export function ColdCacheOverlay({
   if (!cold || ackedFor === d!.cacheExpiresAt) return null;
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/90 p-4">
-      <div className="flex max-w-64 flex-col items-center gap-3 rounded-lg border-2 border-sky-500 bg-card px-5 py-4 text-center shadow-lg">
-        <span className="animate-pulse text-2xl text-sky-500">❄</span>
+      <div className="flex max-w-64 flex-col items-center gap-3 rounded-lg border-2 border-info bg-card px-5 py-4 text-center shadow-lg">
+        <span className="animate-pulse text-2xl text-info">❄</span>
         <div className="flex flex-col gap-1">
           <span className="text-sm font-medium text-foreground">prompt cache is cold</span>
           <span className="text-xs text-muted-foreground">
@@ -176,7 +168,7 @@ export function ColdCacheOverlay({
               context it would re-send — the two facts the compact-or-continue
               decision below turns on. */}
           {modelContextLabel(d) && (
-            <span className="mt-0.5 font-mono text-[10.5px] text-muted-foreground/70">
+            <span className="mt-0.5 font-mono text-mini text-muted-foreground/70">
               {modelContextLabel(d)}
             </span>
           )}
@@ -185,7 +177,7 @@ export function ColdCacheOverlay({
           <button
             type="button"
             onClick={onCompact}
-            className="rounded-md border border-sky-500/50 bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-500 hover:bg-sky-500/20"
+            className="rounded-md border border-info/50 bg-info/10 px-2.5 py-1 text-xs font-medium text-info hover:bg-info/20"
           >
             /compact instead
           </button>
@@ -240,16 +232,14 @@ export function PaneHeader({
         <>
           {session.live && (
             <Hint label="running for">
-              <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
+              <span className="shrink-0 font-mono text-mini text-muted-foreground/70">
                 {fmtElapsed(now - session.createdAt)}
               </span>
             </Hint>
           )}
           {waitingAge && (
             <Hint label="how long this has been needing you">
-              <span className="shrink-0 font-mono text-[10.5px] text-amber-500/80">
-                {waitingAge}
-              </span>
+              <span className="shrink-0 font-mono text-mini text-warn/80">{waitingAge}</span>
             </Hint>
           )}
           <PaneContextMeter session={session} />
@@ -259,7 +249,7 @@ export function PaneHeader({
             <IconBtn
               title="stop Claude (shell survives)"
               onClick={() => actions.stopClaude(session)}
-              className="hover:text-red-500"
+              className="hover:text-danger"
             >
               ■
             </IconBtn>
@@ -268,7 +258,7 @@ export function PaneHeader({
             title="close session (kills the PTY, drops the record)"
             shortcut={focused ? "ab-close-pane" : undefined}
             onClick={() => actions.close(session.id)}
-            className="hover:text-red-500"
+            className="hover:text-danger"
           >
             <XIcon className="size-3" />
           </IconBtn>

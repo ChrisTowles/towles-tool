@@ -200,10 +200,10 @@ export function FolderHeader({
               accent.headerStyle && needs === 0 && !missing ? "bg-(--repo-wash)" : "bg-card",
             )
           : cn("bg-card pl-6 hover:bg-accent/50", active && "bg-accent/60"),
-        active && "border-l-violet-500",
+        active && "border-l-agent",
         // The cursor is the one ring on the rail: exactly one row wears it, so
         // "where am I" never has to be inferred from a fill or an edge.
-        cursor && "ring-1 ring-inset ring-violet-500",
+        cursor && "ring-1 ring-inset ring-agent",
       )}
     >
       {/* Three blocks: who this is (title), what git and GitHub say (branch,
@@ -294,7 +294,7 @@ export function FolderHeader({
             gaps); inline it sits wherever the title leaves it. */}
         {missing ? (
           <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-2 pl-11 @[26rem]/row:order-2 @[26rem]/row:basis-auto @[26rem]/row:pl-0">
-            <span className="mr-auto min-w-0 truncate text-[11px] text-muted-foreground/70 italic">
+            <span className="mr-auto min-w-0 truncate text-mini text-muted-foreground/70 italic">
               directory missing — moved or deleted
             </span>
             {links}
@@ -310,7 +310,7 @@ export function FolderHeader({
                         e.stopPropagation();
                         onRemoveRepo();
                       }}
-                      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+                      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-mini text-muted-foreground transition-colors hover:border-danger/50 hover:bg-danger/10 hover:text-danger"
                     >
                       <TrashIcon className="size-3" /> Untrack
                     </button>
@@ -403,7 +403,7 @@ export function FolderHeader({
               onClick={() => {
                 onNewSession();
               }}
-              className="hover:text-violet-500"
+              className="hover:text-agent"
             >
               <PlusIcon className="size-3.5" />
             </IconBtn>
@@ -416,7 +416,7 @@ export function FolderHeader({
               onClick={() => {
                 onNewTask();
               }}
-              className="hover:text-violet-500"
+              className="hover:text-agent"
             >
               <FolderPlusIcon className="size-3.5" />
             </IconBtn>

@@ -259,12 +259,12 @@ export function RepoGroup({
     return (
       <div className={pad}>
         {empty && (
-          <div className="flex items-center gap-2.5 py-1 pr-3 pl-9 text-[11px] italic text-muted-foreground/60">
+          <div className="flex items-center gap-2.5 py-1 pr-3 pl-9 text-mini italic text-muted-foreground/60">
             no sessions
             <button
               type="button"
               onClick={() => onNewSession(folder.dir, true)}
-              className="not-italic text-violet-500 hover:underline"
+              className="not-italic text-kumo-subtle hover:text-agent"
             >
               ✦ start Claude
             </button>
@@ -272,7 +272,7 @@ export function RepoGroup({
             <button
               type="button"
               onClick={() => onNewSession(folder.dir, false)}
-              className="not-italic text-violet-500 hover:underline"
+              className="not-italic text-kumo-subtle hover:text-kumo-default"
             >
               + shell
             </button>
@@ -414,8 +414,8 @@ export function RepoGroup({
         className={cn(
           "sticky top-0 z-10 flex w-full items-center gap-2 border-b border-l-[3px] border-border border-l-transparent px-3 py-2 hover:bg-accent",
           accent.headerStyle && !statusOwnsRow ? "bg-(--repo-wash)" : "bg-card",
-          repoActive && "border-l-violet-500",
-          cursorKey === repo.key && "ring-1 ring-inset ring-violet-500",
+          repoActive && "border-l-agent",
+          cursorKey === repo.key && "ring-1 ring-inset ring-agent",
         )}
       >
         <button
@@ -447,7 +447,7 @@ export function RepoGroup({
             onClick={() => {
               onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
             }}
-            className="hover:text-violet-500"
+            className="hover:text-agent"
           >
             <FolderPlusIcon className="size-3.5" />
           </IconBtn>

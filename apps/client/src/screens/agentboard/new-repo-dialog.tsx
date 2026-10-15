@@ -141,7 +141,7 @@ function NewRepoForm({
           ))}
         </datalist>
       </Field>
-      <p className="truncate font-mono text-[11px] text-kumo-subtle">→ {target}</p>
+      <p className="truncate font-mono text-mini text-kumo-subtle">→ {target}</p>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
           Cancel

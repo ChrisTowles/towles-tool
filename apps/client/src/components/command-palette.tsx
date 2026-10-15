@@ -166,7 +166,7 @@ export function CommandPalette() {
             <GitBranchIcon className="size-4 shrink-0 text-kumo-subtle" />
             <span className="truncate">{entry.repoName}</span>
             <span className="ml-1 truncate text-kumo-subtle">{entry.folderName}</span>
-            {entry.needs > 0 && <Hint className="text-blue-500">{entry.needs} need you</Hint>}
+            {entry.needs > 0 && <Hint className="text-waiting">{entry.needs} need you</Hint>}
           </>
         ),
         select: () => jumpToFolder(entry),
@@ -186,7 +186,7 @@ export function CommandPalette() {
             <TerminalWindowIcon className="size-4 shrink-0 text-kumo-subtle" />
             <span className="truncate">{entry.label}</span>
             <span className="ml-1 truncate text-kumo-subtle">{entry.repoName}</span>
-            {entry.needs && <Hint className="text-blue-500">needs you</Hint>}
+            {entry.needs && <Hint className="text-waiting">needs you</Hint>}
           </>
         ),
         select: () => jumpToSession(entry),

@@ -88,11 +88,11 @@ export function NeedsYouChip() {
           <button className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs font-medium text-kumo-default hover:bg-kumo-tint data-[popup-open]:bg-kumo-tint" />
         }
       >
-        <WarningCircleIcon className="size-3.5 text-amber-500" />
+        <WarningCircleIcon className="size-3.5 text-warn" />
         {feed.length} need you
       </Popover.Trigger>
       <Popover.Content align="end" className="w-80 gap-0 p-1.5">
-        <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-kumo-subtle">
+        <div className="px-2 pb-1 pt-0.5 text-mini font-medium uppercase tracking-wide text-kumo-subtle">
           Needs you
         </div>
         <div className="flex max-h-80 flex-col overflow-y-auto">
@@ -137,10 +137,10 @@ export function CollectorDot() {
 
 /** Icon + accent (paired dark variant) per attention kind. */
 const KIND_META: Record<AttentionKind, { icon: Icon; tone: string }> = {
-  dm: { icon: ChatCircleDotsIcon, tone: "text-rose-500 dark:text-rose-400" },
+  dm: { icon: ChatCircleDotsIcon, tone: "text-alert" },
   "pr-ci": { icon: XCircleIcon, tone: PR_TONE.failed.text },
   "pr-review": { icon: GitPullRequestIcon, tone: PR_TONE.review.text },
-  agent: { icon: WarningCircleIcon, tone: "text-amber-500 dark:text-amber-400" },
+  agent: { icon: WarningCircleIcon, tone: "text-warn" },
 };
 
 function AttentionRow({
@@ -161,10 +161,10 @@ function AttentionRow({
       <Icon className={cn("mt-0.5 size-3.5 shrink-0", tone)} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-xs font-medium text-kumo-default">{item.title}</span>
-        <span className="block truncate text-[11px] text-kumo-subtle">{item.subtitle}</span>
+        <span className="block truncate text-mini text-kumo-subtle">{item.subtitle}</span>
       </span>
       {item.kind === "dm" && (
-        <span className="mt-0.5 shrink-0 font-mono text-[10px] text-kumo-subtle/60">
+        <span className="mt-0.5 shrink-0 font-mono text-micro text-kumo-subtle/60">
           {fmtAge(item.sortTs, now)}
         </span>
       )}

@@ -13,9 +13,9 @@ import { cn } from "@/lib/utils";
 const MAX_FILES = 40;
 
 const STATUS_TONE: Record<string, string> = {
-  A: "text-emerald-600 dark:text-emerald-400",
-  D: "text-red-600 dark:text-red-400",
-  "?": "text-amber-600 dark:text-amber-400",
+  A: "text-ok",
+  D: "text-danger",
+  "?": "text-warn",
 };
 
 /** `git diff --stat` of a checkout against its base, fetched when shown —
@@ -58,7 +58,7 @@ export function BranchDiffSummary({
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-kumo-hairline bg-kumo-recessed p-3">
-      <div className="flex flex-wrap items-baseline gap-x-2 font-mono text-[11px]">
+      <div className="flex flex-wrap items-baseline gap-x-2 font-mono text-mini">
         <span className="min-w-0 truncate font-semibold text-kumo-default">
           {diff.branch || "detached HEAD"} → {base}
         </span>
@@ -66,11 +66,9 @@ export function BranchDiffSummary({
           {diff.commits.length} commit{diff.commits.length === 1 ? "" : "s"} · {diff.files.length}
           {diff.capped ? "+" : ""} file{diff.files.length === 1 ? "" : "s"}
         </span>
-        <span className="text-emerald-600 dark:text-emerald-400">+{fmtDiffLines(added)}</span>
-        <span className="text-red-600 dark:text-red-400">−{fmtDiffLines(removed)}</span>
-        {uncommitted > 0 && (
-          <span className="text-amber-600 dark:text-amber-400">{uncommitted} uncommitted</span>
-        )}
+        <span className="text-ok">+{fmtDiffLines(added)}</span>
+        <span className="text-danger">−{fmtDiffLines(removed)}</span>
+        {uncommitted > 0 && <span className="text-warn">{uncommitted} uncommitted</span>}
       </div>
       {diff.files.length === 0 ? (
         <p className="text-xs text-kumo-subtle">Nothing differs from {base}.</p>
@@ -88,7 +86,7 @@ export function BranchDiffSummary({
               <FileRow key={f.path} file={f} />
             ))}
             {diff.files.length > shown.length && (
-              <span className="font-mono text-[10.5px] text-kumo-subtle">
+              <span className="font-mono text-mini text-kumo-subtle">
                 …and {diff.files.length - shown.length} more
               </span>
             )}
@@ -101,27 +99,21 @@ export function BranchDiffSummary({
 
 function FileRow({ file }: { file: BranchDiffFile }) {
   return (
-    <div className="flex items-center gap-2 font-mono text-[10.5px] leading-tight">
+    <div className="flex items-center gap-2 font-mono text-mini leading-tight">
       <span className={cn("w-3 shrink-0", STATUS_TONE[file.status] ?? "text-kumo-subtle")}>
         {file.status}
       </span>
       <span className="min-w-0 flex-1 truncate text-kumo-default" title={file.path}>
         {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
       </span>
-      {file.uncommitted && (
-        <span className="shrink-0 text-amber-600 dark:text-amber-400">uncommitted</span>
-      )}
+      {file.uncommitted && <span className="shrink-0 text-warn">uncommitted</span>}
       {file.binary ? (
         <span className="shrink-0 text-kumo-subtle">bin</span>
       ) : (
         file.status !== "?" && (
           <>
-            <span className="shrink-0 text-emerald-600 dark:text-emerald-400">
-              +{fmtDiffLines(file.linesAdded)}
-            </span>
-            <span className="shrink-0 text-red-600 dark:text-red-400">
-              −{fmtDiffLines(file.linesRemoved)}
-            </span>
+            <span className="shrink-0 text-ok">+{fmtDiffLines(file.linesAdded)}</span>
+            <span className="shrink-0 text-danger">−{fmtDiffLines(file.linesRemoved)}</span>
           </>
         )
       )}

@@ -106,9 +106,9 @@ export function CodeServerPane({
         <div className="text-xs text-kumo-subtle">code-server needs the Tauri shell.</div>
       ) : (
         <>
-          <WarningIcon className="size-5 text-amber-500/80" />
+          <WarningIcon className="size-5 text-warn/80" />
           <div className="text-xs text-kumo-subtle">{phase.detail}</div>
-          <div className="text-[11px] text-kumo-subtle/70">
+          <div className="text-mini text-kumo-subtle/70">
             The app installs its own copy — a failure here is usually the network. Point{" "}
             <span className="font-mono">TT_CODE_SERVER_BIN</span> at one to skip it.
           </div>
@@ -135,11 +135,11 @@ function InstallProgress({ install }: { install: CodeServerInstall }) {
       </div>
       <div className="h-1 w-full overflow-hidden rounded-full bg-kumo-recessed">
         <div
-          className="h-full rounded-full bg-sky-500/70 transition-[width] duration-200"
+          className="h-full rounded-full bg-info/70 transition-[width] duration-200"
           style={{ width: `${install.phase === "downloading" ? percent : 100}%` }}
         />
       </div>
-      <div className="text-[11px] text-kumo-subtle/70">One time, for every checkout.</div>
+      <div className="text-mini text-kumo-subtle/70">One time, for every checkout.</div>
     </div>
   );
 }

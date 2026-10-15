@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PALETTE } from "./colors";
 import {
   DEFAULT_REPO_ICON,
   isHexColor,
@@ -7,7 +8,7 @@ import {
   repoIcon,
   REPO_ICONS,
   paletteColor,
-  REPO_PALETTE,
+  seriesColors,
 } from "./repo-identity";
 
 describe("normalizeHex", () => {
@@ -74,18 +75,33 @@ describe("repoAccentStyles", () => {
   });
 });
 
-describe("REPO_PALETTE", () => {
+describe("PALETTE", () => {
   it("is all canonical hex", () => {
-    for (const swatch of REPO_PALETTE) expect(normalizeHex(swatch)).toBe(swatch);
+    for (const swatch of PALETTE) expect(normalizeHex(swatch)).toBe(swatch);
   });
 });
 
 describe("paletteColor", () => {
   it("keeps a swatch, however it is written", () => {
-    expect(paletteColor(REPO_PALETTE[0].toUpperCase())).toBe(REPO_PALETTE[0]);
+    expect(paletteColor(PALETTE[0].toUpperCase())).toBe(PALETTE[0]);
   });
   it("drops a pin from outside the palette, and nothing", () => {
     expect(paletteColor("#e11d48")).toBeUndefined();
     expect(paletteColor(undefined)).toBeUndefined();
+  });
+});
+
+describe("seriesColors", () => {
+  const repos = [{ name: "towles-tool", color: PALETTE[2] }];
+  it("gives a tracked repo its own color and deals the rest from what is free", () => {
+    const got = seriesColors(["learn-app", "towles-tool", "blog"], repos);
+    expect(got.get("towles-tool")).toBe(PALETTE[2]);
+    expect(got.get("learn-app")).toBe(PALETTE[0]);
+    expect(got.get("blog")).toBe(PALETTE[1]);
+  });
+  it("never deals a tracked repo's color to another label", () => {
+    const labels = Array.from({ length: 20 }, (_, i) => `r${i}`);
+    const got = seriesColors(labels, repos);
+    expect([...got.values()]).not.toContain(PALETTE[2]);
   });
 });

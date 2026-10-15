@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import type { RepoData } from "@/lib/agentboard";
 import { NotInTauri } from "@/lib/errors";
-import { repoAccentStyles, repoChipStyle, repoIcon } from "@/lib/repo-identity";
+import { repoChipStyle, repoIcon } from "@/lib/repo-identity";
 import { applyRepoOrder, orderSettled, reorderDirs, sameOrder } from "@/lib/repo-manager";
 import type { QueueItem } from "@/lib/schemas/queue";
 import { invoke } from "@/lib/tauri";
@@ -122,12 +122,12 @@ export function QueueRepoBar({
               e.stopPropagation();
               drop(repo.dir);
             }}
-            style={on ? repoChipStyle(repo) : undefined}
+            style={repoChipStyle(repo, on)}
             className={cn(
-              "flex items-center overflow-hidden rounded-md border text-xs active:cursor-grabbing",
+              "flex items-center overflow-hidden rounded-md border border-l-[3px] text-xs active:cursor-grabbing",
               !on && "border-kumo-line",
               dragDir === repo.dir && "opacity-40",
-              dropBefore === repo.dir && "ring-2 ring-violet-500",
+              dropBefore === repo.dir && "ring-2 ring-agent",
             )}
           >
             <button
@@ -138,15 +138,11 @@ export function QueueRepoBar({
               onClick={(e) => filter(repo.key, e.ctrlKey || e.metaKey || e.shiftKey)}
               className={cn(
                 "flex cursor-pointer items-center gap-1 py-0.5 pr-1.5 pl-2 font-semibold",
-                !on && (n ? "text-kumo-default hover:bg-kumo-tint" : "text-kumo-subtle"),
-                !on && !n && "hover:bg-kumo-tint hover:text-kumo-default",
+                !on && "hover:bg-kumo-tint",
+                !on && !n && "opacity-70 hover:opacity-100",
               )}
             >
-              <Icon
-                aria-hidden
-                style={on ? undefined : repoAccentStyles(repo).iconStyle}
-                className="size-3.5 shrink-0"
-              />
+              <Icon aria-hidden className="size-3.5 shrink-0" />
               {repo.name}
               {n !== undefined && <span className="tabular-nums opacity-70">{n}</span>}
             </button>

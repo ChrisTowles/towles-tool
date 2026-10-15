@@ -374,7 +374,7 @@ export function BoardScreen() {
               variant="ghost"
               size="sm"
               className={cn(
-                "px-2 font-mono text-[11px]",
+                "px-2 font-mono text-mini",
                 showArchived ? "text-kumo-default" : "text-kumo-subtle",
               )}
               title={
@@ -470,7 +470,7 @@ export function BoardScreen() {
                   <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {TASK_STATUS_LABEL[status]}
                   </span>
-                  <span className="rounded-full bg-muted px-1.5 font-mono text-[10px] text-muted-foreground">
+                  <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
                     {counts[status]}
                   </span>
                 </div>
@@ -506,7 +506,7 @@ export function BoardScreen() {
                         >
                           {lane.label}
                         </span>
-                        <span className="rounded-full bg-muted px-1.5 font-mono text-[10px] text-muted-foreground">
+                        <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
                           {lane.tasks.length}
                         </span>
                       </div>
@@ -639,11 +639,11 @@ function AgentStatusChip({ agent, onOpen }: { agent: BoardAgentStatus; onOpen: (
       title={`Open on Agentboard — ${sessionLabel(session)}${others}`}
       className={cn(
         "ml-auto flex shrink-0 items-center gap-1.5 rounded-sm px-1 font-sans not-italic hover:bg-accent hover:text-foreground",
-        needs && "border border-amber-500/50 bg-amber-500/10 text-amber-500",
+        needs && "border border-warn/50 bg-warn/10 text-warn",
       )}
     >
       <Dot session={session} />
-      {needs && <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />}
+      {needs && <span className="size-1.5 shrink-0 rounded-full bg-warn" />}
       {sessionStatusText(session)}
     </button>
   );
@@ -824,7 +824,7 @@ function Card({
                 <>
                   <DropdownMenu.Item onClick={() => onReopen(task)}>
                     Start task
-                    <span className="ml-auto text-[10px] text-kumo-subtle">new worktree</span>
+                    <span className="ml-auto text-micro text-kumo-subtle">new worktree</span>
                   </DropdownMenu.Item>
                   <DropdownMenu.Separator />
                 </>
@@ -848,7 +848,7 @@ function Card({
                 <DropdownMenu.Separator />
                 <DropdownMenu.Item onClick={() => onReopen(task)}>
                   Reopen
-                  <span className="ml-auto text-[10px] text-kumo-subtle">new worktree</span>
+                  <span className="ml-auto text-micro text-kumo-subtle">new worktree</span>
                 </DropdownMenu.Item>
               </>
             )}
@@ -978,7 +978,7 @@ function Card({
       {(repoLabel !== undefined || branch || agent) && (
         <div
           className={cn(
-            "mt-1.5 flex items-center gap-2 font-mono text-[11px] text-muted-foreground",
+            "mt-1.5 flex items-center gap-2 font-mono text-mini text-muted-foreground",
             detached && "italic text-muted-foreground/70",
           )}
         >
@@ -1026,15 +1026,15 @@ function Card({
             <Badge
               variant="outline"
               className={cn(
-                "gap-1 font-mono text-[10px]",
-                outcome === "done" ? "text-emerald-500" : "text-kumo-subtle",
+                "gap-1 font-mono text-micro",
+                outcome === "done" ? "text-ok" : "text-kumo-subtle",
               )}
             >
               {outcome === "done" ? "✓ done" : "⊘ abandoned"}
             </Badge>
           )}
           {archived && (
-            <Badge variant="outline" className="text-[10px] text-kumo-subtle">
+            <Badge variant="outline" className="text-micro text-kumo-subtle">
               archived
             </Badge>
           )}
@@ -1050,7 +1050,7 @@ function Card({
               }}
               title={`${link.repo}#${link.number} · ${link.state}`}
               className={cn(
-                "font-mono text-[11px] text-muted-foreground hover:text-foreground hover:underline",
+                "font-mono text-mini text-muted-foreground hover:text-foreground hover:underline",
                 link.state === "closed" && "line-through opacity-60",
               )}
             >
@@ -1073,7 +1073,7 @@ function Card({
                 }}
                 title={`${link.repo}#${link.number} · ${link.state}${link.checks !== "none" ? ` · checks ${link.checks}` : ""}`}
                 className={cn(
-                  "font-mono text-[11px] hover:underline",
+                  "font-mono text-mini hover:underline",
                   tone === "merged" || tone === "failed"
                     ? PR_TONE[tone].text
                     : "text-muted-foreground hover:text-foreground",
@@ -1086,7 +1086,7 @@ function Card({
           })}
           {hasNotes && (
             <span title={task.notes}>
-              <Badge variant="outline" className="gap-1 text-[10px] text-kumo-subtle">
+              <Badge variant="outline" className="gap-1 text-micro text-kumo-subtle">
                 <NoteIcon aria-hidden className="size-3" />
                 Notes
               </Badge>
@@ -1099,7 +1099,7 @@ function Card({
           cause, so an unexpectedly-finished card is self-explaining rather
           than something to go re-derive on GitHub. */}
       {rollup && (
-        <p className="mt-1 text-[11px] leading-tight text-muted-foreground" title={rollupTitle}>
+        <p className="mt-1 text-mini leading-tight text-muted-foreground" title={rollupTitle}>
           Rolled up — {rollup.summary}
         </p>
       )}
@@ -1115,7 +1115,7 @@ function Card({
           onClick={() => setSummaryOpen((open) => !open)}
           className="mt-2 block w-full rounded border border-dashed bg-muted/30 p-1.5 text-left"
         >
-          <span className="mb-0.5 flex items-baseline gap-1.5 text-[10px] text-muted-foreground">
+          <span className="mb-0.5 flex items-baseline gap-1.5 text-micro text-muted-foreground">
             <span className="font-medium uppercase tracking-wide">Summary</span>
             {task.summaryAt !== undefined && (
               <span className="opacity-70">
@@ -1127,7 +1127,7 @@ function Card({
           </span>
           <span
             className={cn(
-              "block whitespace-pre-wrap text-[11px] leading-snug text-foreground/80",
+              "block whitespace-pre-wrap text-mini leading-snug text-foreground/80",
               // Height, not `line-clamp-*`: WebKitGTK reports the clamp but
               // ignores it once `whitespace-pre-wrap` gives the text hard
               // newlines. A max-height crops with no engine dependency.

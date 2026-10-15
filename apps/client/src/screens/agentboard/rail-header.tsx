@@ -64,7 +64,7 @@ function RepoSearch({
       />
       {query !== "" && (
         <span className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1">
-          {hidden > 0 && <span className="font-mono text-[10px] text-kumo-subtle">−{hidden}</span>}
+          {hidden > 0 && <span className="font-mono text-micro text-kumo-subtle">−{hidden}</span>}
           <button
             type="button"
             onClick={() => onSet("")}
@@ -93,7 +93,7 @@ function AddRepoMenu({
           <button
             type="button"
             aria-label="Add a repo"
-            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-violet-500 hover:bg-kumo-tint"
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
           >
             <PlusIcon className="size-3.5" /> Repo
           </button>
@@ -147,7 +147,7 @@ function ViewMenu(props: {
                 "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs hover:bg-kumo-tint",
                 filter === "all"
                   ? "text-kumo-subtle hover:text-kumo-default"
-                  : "text-violet-500 hover:text-violet-400",
+                  : "text-agent hover:text-agent",
               )}
             >
               <SlidersHorizontalIcon className="size-3.5" />
@@ -193,9 +193,9 @@ function ViewMenu(props: {
                   props.onSetRecentHours(hours);
                 }}
                 className={cn(
-                  "flex-1 rounded-md border py-0.5 font-mono text-[11px] hover:bg-kumo-tint",
+                  "flex-1 rounded-md border py-0.5 font-mono text-mini hover:bg-kumo-tint",
                   hours === recentHours
-                    ? "border-violet-500/40 bg-violet-500/10 text-violet-500"
+                    ? "border-agent/40 bg-agent/10 text-agent"
                     : "border-transparent text-kumo-subtle hover:text-kumo-default",
                 )}
               >
@@ -217,7 +217,7 @@ function ViewMenu(props: {
               }}
             >
               <span className="flex-1">Checkouts marked quiet</span>
-              <span className="font-mono text-[11px] text-kumo-subtle">{quietCount}</span>
+              <span className="font-mono text-mini text-kumo-subtle">{quietCount}</span>
             </DropdownMenu.CheckboxItem>
           )}
           <DropdownMenu.CheckboxItem
@@ -239,7 +239,7 @@ function ViewMenu(props: {
             }}
           >
             <span className="flex-1">Jarvis pane</span>
-            <span className="text-[11px] text-kumo-subtle">experimental</span>
+            <span className="text-mini text-kumo-subtle">experimental</span>
           </DropdownMenu.CheckboxItem>
         </DropdownMenu.Group>
         {props.dismissedPrCount > 0 && (
@@ -305,7 +305,7 @@ export function RailHeader(props: {
               <span
                 role="status"
                 aria-label="Agent status unavailable"
-                className="rounded-md p-1 text-amber-500"
+                className="rounded-md p-1 text-warn"
               >
                 <BroadcastIcon className="size-3.5" />
               </span>
@@ -319,7 +319,7 @@ export function RailHeader(props: {
                 type="button"
                 onClick={props.onCleanupMissing}
                 aria-label={`Untrack ${plural(missingRepoCount, "missing repo")}`}
-                className="rounded-md p-1 text-amber-500 hover:bg-kumo-tint hover:text-amber-400"
+                className="rounded-md p-1 text-warn hover:bg-kumo-tint hover:text-warn"
               >
                 <FolderMinusIcon className="size-3.5" />
               </button>
@@ -386,7 +386,7 @@ export function RailHeader(props: {
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs font-medium">{a.title}</span>
-                  <span className="block truncate text-[11px] text-kumo-subtle">{a.sub}</span>
+                  <span className="block truncate text-mini text-kumo-subtle">{a.sub}</span>
                 </span>
               </button>
               {a.onDismiss && <DismissButton label="Dismiss" onDismiss={a.onDismiss} />}

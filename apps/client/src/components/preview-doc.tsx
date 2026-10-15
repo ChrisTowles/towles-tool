@@ -59,7 +59,7 @@ export function PreviewDocView({ doc, title }: { doc: PreviewDoc; title: string 
     );
   }
   return (
-    <pre className="absolute inset-0 overflow-auto px-3 py-2 font-mono text-[11px] whitespace-pre">
+    <pre className="absolute inset-0 overflow-auto px-3 py-2 font-mono text-mini whitespace-pre">
       {doc.content}
     </pre>
   );

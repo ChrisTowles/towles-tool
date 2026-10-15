@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * resting box (they are controls, but repeated ones, and the tabs beside them
  * are what this strip is *about*), muted word, violet glyph. */
 const ADD_CLASS =
-  "flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
+  "flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-mini text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
 
 /** One chip per window of the active folder, plus add-actions and the focused
  * pane's Close, split by a hairline. Only the add glyphs keep violet, so the
@@ -71,7 +71,7 @@ export function WindowStrip(props: {
               if (e.key === "Enter") (e.target as HTMLInputElement).blur();
               if (e.key === "Escape") setRenamingWin(null);
             }}
-            className="w-24 shrink-0 rounded-md border border-input bg-background px-2 py-1 text-[11px] outline-none"
+            className="w-24 shrink-0 rounded-md border border-input bg-background px-2 py-1 text-mini outline-none"
           />
         ) : (
           <Hint key={w.id} label="double-click to rename">
@@ -83,16 +83,16 @@ export function WindowStrip(props: {
               className={cn(
                 // border-b-2 mirrors the rail's border-l-2 active edge, rotated
                 // horizontal — transparent at rest so activation never resizes.
-                "group/tab flex shrink-0 items-center gap-1.5 rounded-md border-b-2 border-transparent px-2 py-1 text-[11px]",
+                "group/tab flex shrink-0 items-center gap-1.5 rounded-md border-b-2 border-transparent px-2 py-1 text-mini",
                 w.id === activeWinId
-                  ? "border-b-violet-500 bg-accent text-foreground"
+                  ? "border-b-agent bg-accent text-foreground"
                   : "text-muted-foreground hover:bg-accent/50",
-                keyboardFocused && w.id === activeWinId && "ring-2 ring-violet-500/60",
+                keyboardFocused && w.id === activeWinId && "ring-2 ring-agent/60",
               )}
             >
               <span className={cn("size-2 rounded-[3px]", windowColor(windows, w.id))} />
               {w.name}
-              <span className="font-mono text-[10px] text-muted-foreground/60">
+              <span className="font-mono text-micro text-muted-foreground/60">
                 {w.panes.length}⊞
               </span>
               {windows.length > 1 && (
@@ -114,7 +114,7 @@ export function WindowStrip(props: {
                     closeWindow(w);
                   }}
                   className={cn(
-                    "text-muted-foreground/50 transition-opacity hover:text-red-500 focus-visible:opacity-100",
+                    "text-muted-foreground/50 transition-opacity hover:text-danger focus-visible:opacity-100",
                     w.id === activeWinId
                       ? "opacity-100"
                       : "opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100",
@@ -132,7 +132,7 @@ export function WindowStrip(props: {
       <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
       <Hint label="New window around a fresh session">
         <button type="button" onClick={onNewWindow} className={ADD_CLASS}>
-          <PlusIcon className="size-3 text-violet-500" /> window
+          <PlusIcon className="size-3 text-agent" /> window
         </button>
       </Hint>
       <Hint
@@ -146,7 +146,7 @@ export function WindowStrip(props: {
           }}
           className={ADD_CLASS}
         >
-          <PlusIcon className="size-3 text-violet-500" /> session
+          <PlusIcon className="size-3 text-agent" /> session
         </button>
       </Hint>
       {hasFocusedPane && (
@@ -160,7 +160,7 @@ export function WindowStrip(props: {
               mouseAction("ab-close-pane", "agentboard");
               onClosePane();
             }}
-            className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="ml-auto shrink-0 rounded-md px-2 py-1 font-mono text-mini text-muted-foreground hover:bg-accent hover:text-foreground"
             aria-label="Close the focused pane"
           >
             {/* "Close pane", not "Close": this strip holds two different close

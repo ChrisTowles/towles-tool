@@ -71,10 +71,10 @@ const laneHeaderMotion = {
 /** A wait reason's word, tinted rather than filled: it says what kind of wait
  * this is, at the volume of the rest of the row. */
 const REASON_TONE: Record<Face["variant"], string> = {
-  red: "bg-red-500/10 text-red-600 dark:text-red-300",
-  orange: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  blue: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  green: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  red: "bg-danger/10 text-danger",
+  orange: "bg-warn/10 text-warn",
+  blue: "bg-info/10 text-info",
+  green: "bg-ok/10 text-ok",
   neutral: "bg-kumo-tint text-kumo-subtle",
 };
 

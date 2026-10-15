@@ -61,7 +61,7 @@ export function Composer({
       <Button
         variant="primary"
         size={compact ? "sm" : "lg"}
-        className={cn("bg-violet-600 text-white hover:bg-violet-600/90", compact && "h-9")}
+        className={cn("bg-agent text-white hover:bg-agent/90", compact && "h-9")}
         icon={<PaperPlaneTiltIcon className="size-3.5" />}
         onClick={() => void send()}
         disabled={sending || draft.trim().length === 0}

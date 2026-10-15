@@ -134,7 +134,7 @@ export function Glyph({ agent }: { agent: boolean }) {
     <span
       className={cn(
         "w-4 shrink-0 text-center font-mono text-xs",
-        agent ? "text-violet-500" : "text-kumo-subtle",
+        agent ? "text-agent" : "text-kumo-subtle",
       )}
     >
       {agent ? "✦" : "❯"}
@@ -149,7 +149,7 @@ export function HotkeyBadge({ n }: { n: number }) {
   return (
     <span
       aria-label={`jump key ${n}`}
-      className="w-4 shrink-0 rounded-[3px] border border-violet-500/60 bg-violet-500/10 text-center font-mono text-[10px] leading-4 text-violet-500"
+      className="w-4 shrink-0 rounded-[3px] border border-agent/60 bg-agent/10 text-center font-mono text-micro leading-4 text-agent"
     >
       {n}
     </span>
@@ -182,8 +182,8 @@ function StatusDot({ session }: { session: SessionData }) {
     return (
       <Hint label="agent waiting — needs your input">
         <span className="relative block size-2 shrink-0">
-          <span className="absolute inset-0 -m-1 animate-ping rounded-full bg-blue-500/40 motion-reduce:animate-none" />
-          <span className="absolute inset-0 -m-0.5 rounded-full border-2 border-blue-400 bg-blue-500/30 ring-2 ring-blue-500/25" />
+          <span className="absolute inset-0 -m-1 animate-ping rounded-full bg-waiting/40 motion-reduce:animate-none" />
+          <span className="absolute inset-0 -m-0.5 rounded-full border-2 border-waiting bg-waiting/30 ring-2 ring-waiting/25" />
         </span>
       </Hint>
     );
@@ -192,7 +192,7 @@ function StatusDot({ session }: { session: SessionData }) {
     return (
       <Hint label="agent busy">
         <span className="relative block size-2 shrink-0">
-          <span className="absolute inset-0 -m-0.5 animate-pulse rounded-full bg-cyan-400 ring-3 ring-cyan-500/30 motion-reduce:animate-none" />
+          <span className="absolute inset-0 -m-0.5 animate-pulse rounded-full bg-busy ring-3 ring-busy/30 motion-reduce:animate-none" />
         </span>
       </Hint>
     );
@@ -213,7 +213,7 @@ function StatusDot({ session }: { session: SessionData }) {
 function BackgroundAgentsBadge({ n }: { n: number }) {
   return (
     <Hint label={`${n} background agent${n > 1 ? "s" : ""} still running — not waiting on you`}>
-      <span className="flex shrink-0 items-center gap-0.5 font-mono text-[10px] leading-none text-kumo-subtle">
+      <span className="flex shrink-0 items-center gap-0.5 font-mono text-micro leading-none text-kumo-subtle">
         <span className={cn("size-1.5 rounded-full", alertColor("background"))} />
         {n}
       </span>
@@ -230,7 +230,7 @@ export function DotCount({ status, n }: { status: AlertStatus; n?: number }) {
         className={cn(
           "size-1.5 rounded-full",
           status === "waiting"
-            ? "border-[1.5px] border-blue-500 bg-transparent"
+            ? "border-[1.5px] border-waiting bg-transparent"
             : alertColor(status),
         )}
       />
@@ -261,7 +261,7 @@ export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
     <Hint label={`${n} running session${n > 1 ? "s" : ""} hidden — expand to see`}>
       <span className="flex shrink-0 items-center gap-1">
         <span className={cn("size-2 rounded-full", color)} />
-        <span className="font-mono text-[10px] text-kumo-subtle">{n}</span>
+        <span className="font-mono text-micro text-kumo-subtle">{n}</span>
       </span>
     </Hint>
   );
@@ -293,7 +293,7 @@ export function ClaudeBadge({
     <Hint label={title}>
       <span
         className={cn(
-          "flex shrink-0 items-center gap-1 rounded-md border border-violet-500/50 bg-violet-500/10 px-1.5 font-mono text-[10.5px] text-violet-500",
+          "flex shrink-0 items-center gap-1 rounded-md border border-agent/50 bg-agent/10 px-1.5 font-mono text-mini text-agent",
           className,
         )}
       >
@@ -307,7 +307,7 @@ export function NeedsBadge({ n, className }: { n: number; className?: string }) 
   return (
     <span
       className={cn(
-        "shrink-0 rounded-md border border-amber-500/50 bg-amber-500/10 px-1.5 font-mono text-[10.5px] text-amber-500",
+        "shrink-0 rounded-md border border-warn/50 bg-warn/10 px-1.5 font-mono text-mini text-warn",
         className,
       )}
     >
@@ -322,7 +322,7 @@ export function NeedsBadge({ n, className }: { n: number; className?: string }) 
 export function QuietBadge() {
   return (
     <Hint label="Marked quiet — normally hidden from the rail. Unmark it from this row's ⋮ menu.">
-      <span className="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-kumo-subtle">
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-micro text-kumo-subtle">
         <ArchiveIcon className="size-2.5" /> quiet
       </span>
     </Hint>
@@ -334,7 +334,7 @@ export function QuietBadge() {
 export function GhostBadge() {
   return (
     <Hint label="This checkout's directory is gone (moved or deleted). Untrack it, or restore the directory to bring it back.">
-      <span className="shrink-0 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-[10px] text-kumo-subtle">
+      <span className="shrink-0 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-micro text-kumo-subtle">
         ⚠ missing
       </span>
     </Hint>
@@ -362,13 +362,7 @@ export function BranchLabel({
           : `${branch} — primary checkout, the main clone; its .git is load-bearing for every worktree`
       }
     >
-      <span
-        className={cn(
-          "min-w-0 truncate font-mono text-[11px]",
-          isWorktree ? "text-kumo-subtle" : "text-sky-500",
-        )}
-        onClick={onClick}
-      >
+      <span className="min-w-0 truncate font-mono text-mini text-kumo-subtle" onClick={onClick}>
         ⎇ {branch}
       </span>
     </Hint>
@@ -384,7 +378,7 @@ export function DeletingBadge({ label }: { label?: string }) {
         label ? `Deleting this worktree from disk — ${label}…` : "Deleting this worktree from disk…"
       }
     >
-      <span className="flex shrink-0 items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-1 font-mono text-[10px] text-red-600 dark:text-red-400">
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-danger/40 bg-danger/10 px-1 font-mono text-micro text-danger">
         <CircleNotchIcon className="size-2.5 animate-spin" /> {label ? `${label}…` : "deleting…"}
       </span>
     </Hint>
@@ -396,7 +390,7 @@ export function DeletingBadge({ label }: { label?: string }) {
 export function CreatingBadge({ label }: { label?: string }) {
   return (
     <span
-      className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400"
+      className="flex shrink-0 items-center gap-1 rounded-md border border-info/40 bg-info/10 px-1 font-mono text-micro text-info"
       title={label ? `Creating this worktree — ${label}…` : "Creating this worktree…"}
     >
       <CircleNotchIcon className="size-2.5 animate-spin" /> {label ? `${label}…` : "creating…"}
@@ -409,7 +403,7 @@ export function CreatingBadge({ label }: { label?: string }) {
 export function DetachedBadge() {
   return (
     <span
-      className="shrink-0 rounded-md border border-amber-500/50 bg-amber-500/10 px-1 font-mono text-[10px] text-amber-500"
+      className="shrink-0 rounded-md border border-warn/50 bg-warn/10 px-1 font-mono text-micro text-warn"
       title="This task's worktree isn't on disk — start it again to recreate one, or delete the task to close it"
     >
       no worktree
@@ -437,7 +431,7 @@ export function DetachedActions({
               e.stopPropagation();
               onRecreate();
             }}
-            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline px-1.5 font-mono text-[10.5px] text-kumo-subtle transition-colors hover:border-sky-500/50 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400"
+            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline px-1.5 font-mono text-mini text-kumo-subtle transition-colors hover:border-info/50 hover:bg-info/10 hover:text-info"
           >
             <ArrowClockwiseIcon className="size-3" /> Recreate
           </button>
@@ -451,7 +445,7 @@ export function DetachedActions({
               e.stopPropagation();
               onClose();
             }}
-            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline px-1.5 font-mono text-[10.5px] text-kumo-subtle transition-colors hover:border-red-500/50 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+            className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline px-1.5 font-mono text-mini text-kumo-subtle transition-colors hover:border-danger/50 hover:bg-danger/10 hover:text-danger"
           >
             <ChecksIcon className="size-3" /> Close…
           </button>
@@ -467,7 +461,7 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
   return (
     <span className="flex shrink-0 items-center gap-1">
       <span
-        className="rounded-md border border-kumo-hairline bg-muted/40 px-1 font-mono text-[10px] text-kumo-subtle"
+        className="rounded-md border border-kumo-hairline bg-muted/40 px-1 font-mono text-micro text-kumo-subtle"
         title="A git worktree of this repo that no task claims — adopt it to track it as your own work"
       >
         no task
@@ -475,7 +469,7 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
       {onAdopt && (
         <button
           type="button"
-          className="rounded-md px-1 font-mono text-[10px] text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+          className="rounded-md px-1 font-mono text-micro text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
           title="Track this worktree as one of your tasks — the row keeps its place"
           onClick={(e) => {
             e.stopPropagation();
@@ -494,7 +488,7 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
 export function SettingUpBadge({ since, now }: { since: number; now: number }) {
   return (
     <Hint label="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while">
-      <span className="flex shrink-0 items-center gap-1 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 font-mono text-[10px] text-sky-600 dark:text-sky-400">
+      <span className="flex shrink-0 items-center gap-1 rounded-md border border-info/40 bg-info/10 px-1 font-mono text-micro text-info">
         <CircleNotchIcon className="size-2.5 animate-spin" /> setup {fmtElapsed(now - since)}
       </span>
     </Hint>
@@ -522,7 +516,7 @@ export function BranchDriftBadge({
           e.stopPropagation();
           onSync();
         }}
-        className="max-w-40 shrink-0 truncate rounded-md border border-amber-500/50 bg-amber-500/10 px-1 font-mono text-[10px] text-amber-500 hover:bg-amber-500/20"
+        className="max-w-40 shrink-0 truncate rounded-md border border-warn/50 bg-warn/10 px-1 font-mono text-micro text-warn hover:bg-warn/20"
       >
         ⎇ was {recorded}
       </button>
@@ -537,7 +531,7 @@ export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
       side="bottom"
       content={
         <>
-          <div className="flex flex-col gap-0.5 font-mono text-[11px]">
+          <div className="flex flex-col gap-0.5 font-mono text-mini">
             <span className="text-kumo-subtle">
               {drift.length === 1 ? "A pane" : "Panes"} started before{" "}
               {drift.length === 1 ? "this" : "these"} port{drift.length === 1 ? "" : "s"} last
@@ -552,7 +546,7 @@ export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
         </>
       }
       render={
-        <span className="shrink-0 rounded-md border border-amber-500/50 bg-amber-500/10 px-1 font-mono text-[10px] text-amber-500">
+        <span className="shrink-0 rounded-md border border-warn/50 bg-warn/10 px-1 font-mono text-micro text-warn">
           ⚡ port drift
         </span>
       }
@@ -606,7 +600,7 @@ export function ComparedBaseBadge({
           if (e.key === "Enter") void commit((e.target as HTMLInputElement).value);
           if (e.key === "Escape") setEditing(false);
         }}
-        className="w-56 shrink-0 rounded-sm border border-input bg-background px-1.5 py-0.5 font-mono text-[10px] outline-none"
+        className="w-56 shrink-0 rounded-sm border border-input bg-background px-1.5 py-0.5 font-mono text-micro outline-none"
       />
     );
   }
@@ -628,7 +622,7 @@ export function ComparedBaseBadge({
           e.stopPropagation();
           setEditing(true);
         }}
-        className="shrink-0 rounded-sm px-0.5 font-mono text-[10px] text-kumo-subtle hover:text-kumo-default"
+        className="shrink-0 rounded-sm px-0.5 font-mono text-micro text-kumo-subtle hover:text-kumo-default"
       >
         vs {label}
       </button>
@@ -660,11 +654,11 @@ export function BaseMovedChip({
 
 export function CommitStatRow({ commit }: { commit: CommitStat }) {
   return (
-    <div className="flex items-center gap-2 font-mono text-[10.5px] leading-tight">
+    <div className="flex items-center gap-2 font-mono text-mini leading-tight">
       <span className="shrink-0 text-kumo-subtle">{commit.sha.slice(0, 7)}</span>
       <span className="min-w-0 flex-1 truncate text-kumo-default">{commit.subject}</span>
-      <span className="shrink-0 text-emerald-600 dark:text-emerald-400">+{commit.linesAdded}</span>
-      <span className="shrink-0 text-red-600 dark:text-red-400">−{commit.linesRemoved}</span>
+      <span className="shrink-0 text-ok">+{commit.linesAdded}</span>
+      <span className="shrink-0 text-danger">−{commit.linesRemoved}</span>
     </div>
   );
 }
@@ -700,19 +694,17 @@ function CommitBreakdownPreview({
           commits.map((c) => <CommitStatRow key={c.sha} commit={c} />)
         )}
       </div>
-      <div className="mt-1.5 flex items-center gap-2 border-t border-kumo-hairline pt-1.5 font-mono text-[10.5px] font-semibold">
+      <div className="mt-1.5 flex items-center gap-2 border-t border-kumo-hairline pt-1.5 font-mono text-mini font-semibold">
         <span className="min-w-0 flex-1 text-kumo-default">
           Committed
           {commits.length > 0 && ` — ${commits.length} commit${commits.length === 1 ? "" : "s"}`}
           {stats.committedFiles > 0 &&
             `, ${stats.committedFiles} file${stats.committedFiles === 1 ? "" : "s"}`}
         </span>
-        <span className="shrink-0 text-emerald-600 dark:text-emerald-400">
-          +{stats.committedAdded}
-        </span>
-        <span className="shrink-0 text-red-600 dark:text-red-400">−{stats.committedRemoved}</span>
+        <span className="shrink-0 text-ok">+{stats.committedAdded}</span>
+        <span className="shrink-0 text-danger">−{stats.committedRemoved}</span>
       </div>
-      <div className="mt-1.5 flex items-center gap-2 border-t border-dashed border-kumo-hairline pt-1.5 font-mono text-[10.5px]">
+      <div className="mt-1.5 flex items-center gap-2 border-t border-dashed border-kumo-hairline pt-1.5 font-mono text-mini">
         <span className="min-w-0 flex-1 text-kumo-subtle">
           {stats.uncommittedFiles === 0
             ? "Uncommitted — nothing"
@@ -720,12 +712,8 @@ function CommitBreakdownPreview({
         </span>
         {stats.uncommittedFiles > 0 && (
           <>
-            <span className="shrink-0 text-emerald-600 dark:text-emerald-400">
-              +{stats.uncommittedAdded}
-            </span>
-            <span className="shrink-0 text-red-600 dark:text-red-400">
-              −{stats.uncommittedRemoved}
-            </span>
+            <span className="shrink-0 text-ok">+{stats.uncommittedAdded}</span>
+            <span className="shrink-0 text-danger">−{stats.uncommittedRemoved}</span>
           </>
         )}
       </div>
@@ -761,7 +749,7 @@ type DiffChipProps = {
 /** No resting border: a box means a control or an alert, plain type means a
  * fact, and diff stats are facts. The box returns on hover. */
 const CHIP_CLASS =
-  "flex h-5 shrink-0 items-center gap-1 rounded-md px-1 font-mono text-[10.5px] transition-colors";
+  "flex h-5 shrink-0 items-center gap-1 rounded-md px-1 font-mono text-mini transition-colors";
 
 /** Muted, so the *number* stays what the eye lands on. */
 function ChipLabel({ text, labeled }: { text: string; labeled: boolean }) {
@@ -842,12 +830,8 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
           ) : (
             <>
               <span>{filesLabel}</span>
-              <span className="text-emerald-600 dark:text-emerald-400">
-                +{fmtDiffLines(uncommittedAdded)}
-              </span>
-              <span className="text-red-600 dark:text-red-400">
-                −{fmtDiffLines(uncommittedRemoved)}
-              </span>
+              <span className="text-ok">+{fmtDiffLines(uncommittedAdded)}</span>
+              <span className="text-danger">−{fmtDiffLines(uncommittedRemoved)}</span>
             </>
           )}
         </button>
@@ -908,12 +892,8 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
         ) : (
           <>
             <span>{partly ? `${commitsUnlanded}/${commitsAhead}c` : `${commitsAhead}c`}</span>
-            <span className="text-emerald-600 dark:text-emerald-400">
-              +{fmtDiffLines(committedAdded)}
-            </span>
-            <span className="text-red-600 dark:text-red-400">
-              −{fmtDiffLines(committedRemoved)}
-            </span>
+            <span className="text-ok">+{fmtDiffLines(committedAdded)}</span>
+            <span className="text-danger">−{fmtDiffLines(committedRemoved)}</span>
           </>
         )}
       </HoverCardTrigger>
@@ -923,7 +903,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
         className="w-[28rem] max-w-[calc(100vw-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="mb-1.5 text-[11px] leading-snug text-kumo-subtle">
+        <p className="mb-1.5 text-mini leading-snug text-kumo-subtle">
           {commitsAhead === 0 ? (
             <>Nothing committed beyond {base}.</>
           ) : landedClean ? (
@@ -1076,7 +1056,7 @@ export function PrChip({
   const hasLocalWork = folderLandedButHasWork(stats, pr);
   const base = comparedBaseLabel(stats);
   const tone = hasLocalWork
-    ? "border-amber-500/50 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
+    ? "border-warn/50 bg-warn/10 text-warn hover:bg-warn/20"
     : PR_TONE[prTone(pr)].chip;
   // Checks are what an *open* PR is judged on; a settled one is judged on how it
   // settled, and a closed PR's last red run is history rather than a task.
@@ -1100,7 +1080,7 @@ export function PrChip({
           void openExternalUrl(pr.url);
         }}
         className={cn(
-          "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
+          "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-mini transition-colors",
           tone,
         )}
       >
@@ -1116,7 +1096,7 @@ export function PrChip({
 export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueLink }) {
   const closed = issue.state === "closed";
   const tone = closed
-    ? "border-purple-500/50 bg-purple-500/10 text-purple-600 hover:bg-purple-500/20 dark:text-purple-400"
+    ? "border-merged/50 bg-merged/10 text-merged hover:bg-merged/20"
     : "border-kumo-hairline text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default";
 
   async function detach() {
@@ -1136,7 +1116,7 @@ export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueL
               type="button"
               onClick={(e) => e.stopPropagation()}
               className={cn(
-                "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-[10.5px] transition-colors",
+                "flex h-5 shrink-0 items-center gap-1 rounded-md border px-1.5 font-mono text-mini transition-colors",
                 tone,
               )}
             >
@@ -1245,10 +1225,10 @@ function AttachIssueDialog({
                   <RecordIcon
                     className={cn(
                       "size-3.5 shrink-0",
-                      issue.state === "closed" ? "text-purple-500" : "text-emerald-500",
+                      issue.state === "closed" ? "text-merged" : "text-ok",
                     )}
                   />
-                  <span className="shrink-0 font-mono text-[11px] text-kumo-subtle">
+                  <span className="shrink-0 font-mono text-mini text-kumo-subtle">
                     #{issue.number}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{issue.title}</span>
@@ -1270,7 +1250,7 @@ export function LandedBadge({ landed, base }: { landed: LandedVia; base: string 
       side="bottom"
       content={`Git says this branch's work is already on ${base} (${landed}), with or without a PR.`}
       render={
-        <span className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-purple-500/50 bg-purple-500/10 px-1.5 font-mono text-[10.5px] text-purple-600 dark:text-purple-400">
+        <span className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-merged/50 bg-merged/10 px-1.5 font-mono text-mini text-merged">
           <GitMergeIcon className="size-3" />
           {landed}
         </span>
@@ -1321,7 +1301,7 @@ export function SafeToDeleteBadge({
             e.stopPropagation();
             onDeleteWorktree();
           }}
-          className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-1.5 font-mono text-[10.5px] text-emerald-600 transition-colors hover:bg-emerald-500/20 dark:text-emerald-400"
+          className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-ok/50 bg-ok/10 px-1.5 font-mono text-mini text-ok transition-colors hover:bg-ok/20"
         >
           <CheckIcon className="size-3" /> safe to delete
         </button>
@@ -1332,9 +1312,9 @@ export function SafeToDeleteBadge({
 
 /** Weight per model family. Never amber (needs-you), never animated. */
 const MODEL_TONE: Record<string, string> = {
-  O: "border-violet-500/50 bg-violet-500/10 text-violet-600 dark:text-violet-400",
-  F: "border-transparent bg-gradient-to-br from-fuchsia-500 to-violet-500 font-semibold text-white",
-  M: "border-transparent bg-gradient-to-br from-fuchsia-500 to-violet-500 font-semibold text-white",
+  O: "border-agent/50 bg-agent/10 text-agent",
+  F: "border-transparent bg-gradient-to-br from-spark to-agent font-semibold text-white",
+  M: "border-transparent bg-gradient-to-br from-spark to-agent font-semibold text-white",
 };
 
 /** Nothing when the family is unrecognized. */
@@ -1346,7 +1326,7 @@ export function ModelBadge({ session, className }: { session: SessionData; class
     <Hint label={modelContextLabel(d) ?? undefined}>
       <span
         className={cn(
-          "flex h-4 shrink-0 items-center rounded-md border px-1 font-mono text-[10px] font-medium",
+          "flex h-4 shrink-0 items-center rounded-md border px-1 font-mono text-micro font-medium",
           MODEL_TONE[letter] ?? "border-kumo-hairline bg-muted/30 text-kumo-subtle",
           className,
         )}
@@ -1384,7 +1364,7 @@ export function CacheBadge({
   if (needsCompact(d, now, compactPct)) {
     // Pulses like the busy dot: a live nudge, not a passive fact.
     const pill =
-      "shrink-0 animate-pulse rounded-md border border-sky-500/50 bg-sky-500/10 px-1.5 font-mono text-[10.5px] text-sky-500";
+      "shrink-0 animate-pulse rounded-md border border-info/50 bg-info/10 px-1.5 font-mono text-mini text-info";
     const hint = `${lead}${pct}% of context used and the prompt cache expired, so resuming re-reads everything.`;
     return onCompact ? (
       <Hint label={`${hint} Click to /compact.`}>
@@ -1394,7 +1374,7 @@ export function CacheBadge({
             e.stopPropagation();
             onCompact();
           }}
-          className={cn(pill, "hover:bg-sky-500/20")}
+          className={cn(pill, "hover:bg-info/20")}
         >
           ❄ {pct}%{long && " compact"}
         </button>
@@ -1424,8 +1404,8 @@ export function CacheBadge({
     >
       <span
         className={cn(
-          "shrink-0 font-mono text-[10.5px]",
-          expiring ? "text-amber-500" : cold ? "font-medium text-sky-500" : "text-kumo-subtle",
+          "shrink-0 font-mono text-mini",
+          expiring ? "text-warn" : cold ? "font-medium text-info" : "text-kumo-subtle",
         )}
       >
         {/* Fixed 4ch slot: the percent is 1–3 digits, and without a reserved
@@ -1535,7 +1515,7 @@ export function RepoMenu({
           {path && (
             <>
               <DropdownMenu.Group>
-                <DropdownMenu.Label className="font-mono text-[11px] font-normal whitespace-nowrap text-kumo-subtle">
+                <DropdownMenu.Label className="font-mono text-mini font-normal whitespace-nowrap text-kumo-subtle">
                   {path}
                 </DropdownMenu.Label>
               </DropdownMenu.Group>
@@ -1654,7 +1634,7 @@ export function PanePlaceholder({
     <div
       className={cn(
         "flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-kumo-subtle",
-        focused && "border-violet-500/60",
+        focused && "border-agent/60",
       )}
     >
       <span className="text-sm">{label}</span>
@@ -1665,7 +1645,7 @@ export function PanePlaceholder({
           if (focused) mouseAction("ab-close-pane", "agentboard");
           onRemove();
         }}
-        className="flex items-center gap-1 font-mono text-xs hover:text-sky-500"
+        className="flex items-center gap-1 font-mono text-xs hover:text-info"
       >
         <XIcon className="size-3" /> close pane {focused && shortcutHint("ab-close-pane")}
       </button>

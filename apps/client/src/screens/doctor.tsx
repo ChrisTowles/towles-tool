@@ -81,13 +81,7 @@ export function DoctorScreen() {
         </h2>
         <div className="flex items-center gap-3">
           {report && !running && (
-            <span
-              className={
-                allOk
-                  ? "text-xs text-green-600 dark:text-green-500"
-                  : "text-xs text-amber-600 dark:text-amber-500"
-              }
-            >
+            <span className={allOk ? "text-xs text-ok" : "text-xs text-warn"}>
               {allOk ? "All checks passed" : "Some checks need attention"}
             </span>
           )}
@@ -249,9 +243,9 @@ function CheckRow({
   return (
     <div className="flex items-start gap-3 px-3 py-2 text-sm">
       {ok && !warned ? (
-        <CheckCircleIcon className="mt-0.5 size-4 shrink-0 text-green-600 dark:text-green-500" />
+        <CheckCircleIcon className="mt-0.5 size-4 shrink-0 text-ok" />
       ) : ok || warned ? (
-        <WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+        <WarningCircleIcon className="mt-0.5 size-4 shrink-0 text-warn" />
       ) : (
         <XCircleIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
       )}

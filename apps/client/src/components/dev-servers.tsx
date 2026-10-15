@@ -83,10 +83,7 @@ export function DevServersButton({
               shape="square"
               size="sm"
               aria-label="Dev servers"
-              className={cn(
-                "hover:text-violet-500",
-                !folder.hasLaunchConfig && "text-kumo-subtle/50",
-              )}
+              className={cn("hover:text-agent", !folder.hasLaunchConfig && "text-kumo-subtle/50")}
               onClick={(e) => e.stopPropagation()}
               icon={<HardDrivesIcon className="size-3.5" />}
             />
@@ -95,11 +92,11 @@ export function DevServersButton({
       </Hint>
       <Popover.Content align="end" className="w-96 p-2">
         <div className="flex items-baseline justify-between px-1 pb-1.5">
-          <span className="text-[13px] font-medium">Dev servers</span>
+          <span className="text-caption font-medium">Dev servers</span>
           <Hint label="Open Anthropic's launch.json reference (Configure preview servers)">
             <button
               type="button"
-              className="font-mono text-[10.5px] text-kumo-subtle/60 underline-offset-2 hover:text-violet-500 hover:underline"
+              className="font-mono text-mini text-kumo-subtle/60 underline-offset-2 hover:text-agent hover:underline"
               onClick={() => {
                 uiAction("dev_servers.docs_opened", "agentboard");
                 void openExternalUrl(LAUNCH_JSON_DOCS_URL);
@@ -109,12 +106,12 @@ export function DevServersButton({
             </button>
           </Hint>
         </div>
-        {error && <p className="px-1 pb-1 text-[12px] text-red-500">{error}</p>}
+        {error && <p className="px-1 pb-1 text-xs text-danger">{error}</p>}
         {!error &&
           rows &&
           rows.length === 0 &&
           (folder.hasLaunchConfig ? (
-            <p className="px-1 pb-1 text-[12px] text-kumo-subtle">no launchable configurations</p>
+            <p className="px-1 pb-1 text-xs text-kumo-subtle">no launchable configurations</p>
           ) : (
             <LaunchFileHowTo />
           ))}
@@ -158,21 +155,21 @@ const EXAMPLE_LAUNCH_JSON = `{
 function LaunchFileHowTo() {
   return (
     <div className="px-1 pb-1">
-      <p className="text-[12px] text-kumo-subtle">
-        This repo has no <span className="font-mono text-[11px]">.claude/launch.json</span>. Add one
+      <p className="text-xs text-kumo-subtle">
+        This repo has no <span className="font-mono text-mini">.claude/launch.json</span>. Add one
         to start dev servers from here — each configuration becomes a one-click launch into its own
         terminal pane, with a running dot from its port.
       </p>
-      <pre className="mt-1.5 overflow-x-auto rounded-md bg-kumo-recessed p-2 font-mono text-[11px] leading-snug text-kumo-subtle">
+      <pre className="mt-1.5 overflow-x-auto rounded-md bg-kumo-recessed p-2 font-mono text-mini leading-snug text-kumo-subtle">
         {EXAMPLE_LAUNCH_JSON}
       </pre>
-      <p className="mt-1.5 text-[11px] text-kumo-subtle/70">
+      <p className="mt-1.5 text-mini text-kumo-subtle/70">
         Configs also take <span className="font-mono">cwd</span>,{" "}
         <span className="font-mono">env</span>, <span className="font-mono">autoPort</span>, or{" "}
         <span className="font-mono">program</span> for a bare Node script — see{" "}
         <button
           type="button"
-          className="underline underline-offset-2 hover:text-violet-500"
+          className="underline underline-offset-2 hover:text-agent"
           onClick={() => {
             uiAction("dev_servers.docs_opened", "agentboard");
             void openExternalUrl(LAUNCH_JSON_DOCS_URL);
@@ -211,19 +208,19 @@ function ConfigRow({
         <span
           className={cn(
             "size-2 shrink-0 rounded-full",
-            cfg.port == null ? "bg-kumo-fill" : cfg.portListening ? "bg-green-500" : "bg-kumo-line",
+            cfg.port == null ? "bg-kumo-fill" : cfg.portListening ? "bg-ok" : "bg-kumo-line",
           )}
         />
       </Hint>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
-          <span className="truncate text-[13px]">{cfg.name}</span>
+          <span className="truncate text-caption">{cfg.name}</span>
           {cfg.port != null && (
-            <span className="font-mono text-[11px] text-kumo-subtle">:{cfg.port}</span>
+            <span className="font-mono text-mini text-kumo-subtle">:{cfg.port}</span>
           )}
         </div>
         <Hint label={command}>
-          <div className="truncate font-mono text-[11px] text-kumo-subtle/60">{command}</div>
+          <div className="truncate font-mono text-mini text-kumo-subtle/60">{command}</div>
         </Hint>
       </div>
       {cfg.portListening && cfg.port != null && (
@@ -249,7 +246,7 @@ function ConfigRow({
             shape="square"
             size="sm"
             aria-label={`Start ${cfg.name}`}
-            className="hover:text-violet-500"
+            className="hover:text-agent"
             onClick={onLaunch}
             icon={<PlayIcon className="size-3.5" />}
           />
@@ -262,7 +259,7 @@ function ConfigRow({
             shape="square"
             size="sm"
             aria-label={`Focus ${cfg.name}'s terminal`}
-            className="hover:text-violet-500"
+            className="hover:text-agent"
             onClick={() => cfg.sessionId && onFocus(cfg.sessionId)}
             icon={<TerminalWindowIcon className="size-3.5" />}
           />
@@ -270,7 +267,7 @@ function ConfigRow({
       )}
       {action === "external" && (
         <Hint label="Something outside the app is listening on this port — nothing to focus, and a second launch would collide">
-          <span className="shrink-0 rounded-md border border-kumo-hairline px-1.5 font-mono text-[10.5px] text-kumo-subtle">
+          <span className="shrink-0 rounded-md border border-kumo-hairline px-1.5 font-mono text-mini text-kumo-subtle">
             external
           </span>
         </Hint>

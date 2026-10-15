@@ -102,7 +102,7 @@ over — nothing slides across the list for the eye to chase; the head is just
 the first row of On you, with no hero treatment. The tree rail is the
 repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
 cursor, the digits, the fold chords); the queue never moves it. Exactly one row
-wears `ring-violet-500`; the violet *edge* answers which checkout you're in.
+wears `ring-agent`; the `agent` *edge* answers which checkout you're in.
 
 ## A pane has no PTY until it is rendered
 

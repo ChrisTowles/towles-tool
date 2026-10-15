@@ -79,7 +79,7 @@ export function ReviewPrPicker({
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10.5px] text-kumo-subtle">pull request</span>
+      <span className="text-mini text-kumo-subtle">pull request</span>
       <Combobox
         items={options}
         value={null}
@@ -101,7 +101,7 @@ export function ReviewPrPicker({
               : "Pick a pull request to review"}
         </Combobox.TriggerValue>
         <Combobox.Content className="w-80">
-          {listError && <p className="p-3 text-[11px] text-red-500">{listError}</p>}
+          {listError && <p className="p-3 text-mini text-danger">{listError}</p>}
           <Combobox.Input
             aria-label="Search pull requests"
             placeholder="Search open PRs, or type a number…"
@@ -119,7 +119,7 @@ export function ReviewPrPicker({
               ) : (
                 <Combobox.Item key={option.pr.number} value={option}>
                   <span className="block w-full truncate text-xs">{option.pr.title}</span>
-                  <span className="block text-[10.5px] text-kumo-subtle">
+                  <span className="block text-mini text-kumo-subtle">
                     #{option.pr.number} · {option.pr.author}
                     {option.pr.isDraft ? " · draft" : ""}
                     {option.pr.crossRepository ? " · fork" : ""}
@@ -131,11 +131,11 @@ export function ReviewPrPicker({
         </Combobox.Content>
       </Combobox>
       {check && !problem && (
-        <p className="truncate font-mono text-[10.5px] text-kumo-subtle">
+        <p className="truncate font-mono text-mini text-kumo-subtle">
           {check.branch} → {check.pr.baseBranch}
         </p>
       )}
-      {problem && <p className="text-[10.5px] text-red-500">{problem}</p>}
+      {problem && <p className="text-mini text-danger">{problem}</p>}
     </div>
   );
 }

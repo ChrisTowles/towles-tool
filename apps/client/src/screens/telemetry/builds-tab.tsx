@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
 import { Button } from "@cloudflare/kumo";
@@ -32,6 +32,7 @@ import {
   type BuildPair,
   type Verdict,
 } from "@/lib/telemetry-builds";
+import { PALETTE } from "@/lib/colors";
 import { ChipMenu, ChipSegments, ChipToggle } from "@/screens/telemetry/chips";
 
 /** Builds — Braintrust's Experiments over `tt.build_sha`: a build × day is a
@@ -43,8 +44,8 @@ const restoredPair = loadBuildsPair(localStorage.getItem(TELEMETRY_BUILDS_KEY));
 type Normalize = "raw" | "hour";
 
 const VERDICT_TONE: Record<Verdict, string> = {
-  better: "text-green-600 dark:text-green-500",
-  worse: "text-red-600 dark:text-red-400",
+  better: "text-ok",
+  worse: "text-danger",
   same: "text-muted-foreground/60",
   neutral: "text-foreground",
   none: "text-muted-foreground/60",
@@ -201,7 +202,7 @@ export function BuildsTab({
               <>
                 <DeltaTable deltas={deltas} normalized={normalized} diffOnly={diffOnly} />
                 {normalized && lowFocus.length > 0 && (
-                  <p className="mt-2 text-[11px] text-muted-foreground">
+                  <p className="mt-2 text-mini text-muted-foreground">
                     Per-hour figures withheld where focused time is under 10 minutes:{" "}
                     {lowFocus
                       .map((s) => `${snapshotLabel(s)} (${fmtDuration(s.measures.focusedMs)})`)
@@ -242,9 +243,10 @@ function SnapshotList({
               aria-current={isOther ? "true" : undefined}
               onClick={() => onPick(s)}
               title={`${s.sha} · ${s.day}`}
+              style={{ "--base": PALETTE[0] } as CSSProperties}
               className={cn(
                 "flex w-full flex-col gap-1 rounded-md border-l-2 border-transparent px-2 py-1.5 text-left hover:bg-accent/50",
-                isBase && "border-l-violet-500",
+                isBase && "border-l-(--base)",
                 isOther && "bg-accent/50",
               )}
             >
@@ -253,16 +255,19 @@ function SnapshotList({
                   {shortSha(s.sha)}
                 </span>
                 <span className="text-muted-foreground">{shortDay(s.day)}</span>
-                {isBase && <span className="text-violet-700 dark:text-violet-300">baseline</span>}
+                {isBase && <span style={{ color: PALETTE[0] }}>baseline</span>}
                 {isOther && <span className="text-muted-foreground">candidate</span>}
-                <span className="ml-auto text-[11px] text-muted-foreground [font-variant-numeric:tabular-nums]">
+                <span className="ml-auto text-mini text-muted-foreground [font-variant-numeric:tabular-nums]">
                   {s.recordCount.toLocaleString()}
                 </span>
               </div>
               <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-violet-500/60"
-                  style={{ width: `${Math.max(1, (s.recordCount / max) * 100)}%` }}
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max(1, (s.recordCount / max) * 100)}%`,
+                    backgroundColor: PALETTE[0],
+                  }}
                 />
               </div>
             </button>
@@ -295,7 +300,7 @@ function DeltaTable({
     <div className="overflow-x-auto">
       <table className="w-full text-xs [font-variant-numeric:tabular-nums]">
         <thead>
-          <tr className="text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">
+          <tr className="text-mini font-medium uppercase tracking-wider text-muted-foreground">
             <th className="pb-1.5 text-left font-medium">Measure</th>
             <th className="pb-1.5 text-right font-medium">baseline</th>
             <th className="pb-1.5 text-right font-medium">candidate</th>

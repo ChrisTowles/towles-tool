@@ -108,8 +108,8 @@ export function PaneLens({
     <span
       title={title}
       className={cn(
-        "flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-px font-mono text-[10.5px]",
-        kind === "agent" ? "text-violet-500" : "text-muted-foreground",
+        "flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 py-px font-mono text-mini",
+        kind === "agent" ? "text-agent" : "text-muted-foreground",
       )}
     >
       {lens.glyph ? (

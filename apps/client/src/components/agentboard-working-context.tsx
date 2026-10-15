@@ -132,7 +132,7 @@ export function WorkingContext({
                   onClick={() => {
                     onNewSession(folder.dir);
                   }}
-                  className="hover:text-violet-500"
+                  className="hover:text-agent"
                 >
                   <PlusIcon className="size-3.5" />
                 </IconBtn>
@@ -144,7 +144,7 @@ export function WorkingContext({
                   onClick={() => {
                     newTask();
                   }}
-                  className="hover:text-violet-500"
+                  className="hover:text-agent"
                 >
                   <FolderPlusIcon className="size-3.5" />
                 </IconBtn>
@@ -216,7 +216,7 @@ function RepoPlate({
   return (
     <div className="flex shrink-0 flex-col justify-center gap-0.5 border-r border-border/60 pr-3">
       {scope && (
-        <span className="font-mono text-[10px] leading-none tracking-widest text-muted-foreground/70">
+        <span className="font-mono text-micro leading-none tracking-widest text-muted-foreground/70">
           {scope}
         </span>
       )}
@@ -239,20 +239,20 @@ const ACTIONABLE_META: Record<
   "safe-to-delete": {
     heading: "Safe to delete",
     glyph: "✓",
-    textClass: "text-emerald-600 dark:text-emerald-400",
-    borderClass: "border-emerald-500/40",
+    textClass: "text-ok",
+    borderClass: "border-ok/40",
   },
   "needs-you": {
     heading: "Needs you",
     glyph: "⚑",
-    textClass: "text-amber-500",
-    borderClass: "border-amber-500/40",
+    textClass: "text-warn",
+    borderClass: "border-warn/40",
   },
   "port-drift": {
     heading: "Port drift",
     glyph: "⚡",
-    textClass: "text-amber-500",
-    borderClass: "border-amber-500/40",
+    textClass: "text-warn",
+    borderClass: "border-warn/40",
   },
 };
 
@@ -290,7 +290,7 @@ function ActionableCallouts({
                 <button
                   type="button"
                   onClick={() => void openExternalUrl(item.pr!.url)}
-                  className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-[10.5px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                  className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border/70 px-1.5 font-mono text-mini text-muted-foreground hover:bg-accent hover:text-foreground"
                 >
                   <GitPullRequestIcon className="size-3" />#{item.pr.number}
                 </button>
@@ -301,7 +301,7 @@ function ActionableCallouts({
                 <button
                   type="button"
                   onClick={() => onDeleteWorktree(folderDir, folderLabel)}
-                  className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-1.5 font-mono text-[10.5px] text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
+                  className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-ok/50 bg-ok/10 px-1.5 font-mono text-mini text-ok hover:bg-ok/20"
                 >
                   <TrashIcon className="size-3" /> delete
                 </button>

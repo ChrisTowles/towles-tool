@@ -649,7 +649,7 @@ export function ShortcutHelp({
 function UsageTally({ used }: { used: number }) {
   return (
     <span
-      className={`w-20 shrink-0 text-right font-mono text-[11px] tabular-nums ${
+      className={`w-20 shrink-0 text-right font-mono text-mini tabular-nums ${
         used > 0 ? "text-kumo-subtle" : "text-kumo-subtle/50"
       }`}
     >

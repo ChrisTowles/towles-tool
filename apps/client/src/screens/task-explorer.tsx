@@ -124,7 +124,7 @@ function ProcessGroupCard({ group }: { group: ProcessGroup }) {
       note={`${group.rows.length} process${group.rows.length === 1 ? "" : "es"} · ${group.totalCpuPercent.toFixed(0)}% CPU · ${formatMemory(group.totalMemoryBytes)}`}
     >
       <div className="-mx-1.5 flex flex-col">
-        <div className="flex items-center gap-2.5 px-1.5 py-1 font-mono text-[10.5px] uppercase tracking-wider text-kumo-subtle">
+        <div className="flex items-center gap-2.5 px-1.5 py-1 font-mono text-mini uppercase tracking-wider text-kumo-subtle">
           <span className="w-16 shrink-0">PID</span>
           <span className="flex-1">Name</span>
           <span className="w-24 shrink-0 text-right">Status</span>
@@ -146,7 +146,7 @@ function ProcessRowLine({ row }: { row: ProcessRow }) {
       <span className="flex-1 truncate font-mono text-xs text-foreground" title={row.name}>
         {row.name}
       </span>
-      <span className="w-24 shrink-0 text-right font-mono text-[11px] text-kumo-subtle">
+      <span className="w-24 shrink-0 text-right font-mono text-mini text-kumo-subtle">
         {row.status}
       </span>
       <span className="w-16 shrink-0 text-right font-mono text-xs tabular-nums text-foreground">

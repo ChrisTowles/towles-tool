@@ -55,8 +55,8 @@ export function SimBar() {
   if (sim === null) return null;
   const elapsedMin = Math.round((sim.nowMs - sim.startMs) / 60_000);
   return (
-    <div className="flex items-center gap-2 border-b border-kumo-hairline bg-amber-500/10 px-3 py-1.5 text-xs">
-      <span className="font-medium text-amber-600 dark:text-amber-400">SIM</span>
+    <div className="flex items-center gap-2 border-b border-kumo-hairline bg-warn/10 px-3 py-1.5 text-xs">
+      <span className="font-medium text-warn">SIM</span>
       <Button
         size="xs"
         variant="ghost"
@@ -78,7 +78,7 @@ export function SimBar() {
       <input
         type="range"
         aria-label="Scenario time"
-        className="min-w-0 flex-1 accent-amber-500"
+        className="min-w-0 flex-1 accent-warn"
         min={sim.startMs}
         max={sim.endMs}
         step={1000}

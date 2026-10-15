@@ -18,7 +18,6 @@ import {
   repoAccentStyles,
   repoIcon,
   REPO_ICONS,
-  REPO_PALETTE,
   type RepoMeta,
 } from "@/lib/repo-identity";
 import { liveSessionIds, trackRepo, untrackRepo } from "@/lib/repo-actions";
@@ -34,6 +33,7 @@ import {
 } from "@/lib/settings";
 import { DEFAULT_BROWSER_PANE, DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
+import { PALETTE } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { PromptImproversEditor } from "./collectors";
 import {
@@ -727,7 +727,7 @@ function RepoIdentityRow({
         // shift width — the same idiom the rail header uses.
         "flex items-center gap-2 border-t border-l-2 border-kumo-hairline border-l-transparent px-2 py-2 first:border-t-transparent",
         dragging && "opacity-50",
-        dropTarget && "border-t-violet-500",
+        dropTarget && "border-t-agent",
       )}
     >
       <span
@@ -809,7 +809,7 @@ function RepoIdentityRow({
             }}
             className="grid grid-cols-6 gap-1.5"
           >
-            {REPO_PALETTE.map((swatch) => (
+            {PALETTE.map((swatch) => (
               <Toggle
                 key={swatch}
                 value={swatch}

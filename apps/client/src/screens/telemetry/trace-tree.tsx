@@ -75,7 +75,7 @@ export function TraceTree({
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between">
         <h4 className="text-sm font-medium text-foreground">Trace</h4>
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="font-mono text-mini text-muted-foreground">
           {rows.length} {rows.length === 1 ? "child" : "children"} · {fmtMs(childrenMs)} of{" "}
           {fmtMs(total)}
         </span>
@@ -138,9 +138,9 @@ function TraceRow({
     <>
       <span
         className={cn(
-          "w-48 shrink-0 truncate font-mono text-[11px]",
+          "w-48 shrink-0 truncate font-mono text-mini",
           isParent ? "text-foreground" : "text-muted-foreground",
-          isError && "text-red-600 dark:text-red-400",
+          isError && "text-danger",
         )}
         style={{ paddingLeft: `${depth * 12}px` }}
         title={label}
@@ -152,12 +152,12 @@ function TraceRow({
           className={cn(
             "absolute top-0 h-full rounded-sm",
             isParent ? "bg-foreground/15" : isEvent ? "bg-foreground/70" : "bg-foreground/35",
-            isError && "bg-red-500/60",
+            isError && "bg-danger/60",
           )}
           style={{ left: `${barLeft}%`, width: `${barWidth}%` }}
         />
       </span>
-      <span className="w-16 shrink-0 text-right font-mono text-[11px] text-muted-foreground">
+      <span className="w-16 shrink-0 text-right font-mono text-mini text-muted-foreground">
         {isEvent ? "·" : fmtMs(duration)}
       </span>
     </>

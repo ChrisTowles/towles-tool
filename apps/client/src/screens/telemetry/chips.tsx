@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
  * chip that is off its default — the app's "focus" accent, never status. */
 
 const CHIP =
-  "inline-flex h-6 items-center gap-1 rounded-full border border-kumo-hairline bg-kumo-base px-2.5 font-mono text-[11px] text-kumo-subtle";
+  "inline-flex h-6 items-center gap-1 rounded-full border border-kumo-hairline bg-kumo-base px-2.5 font-mono text-mini text-kumo-subtle";
 
-const ACTIVE = "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300";
+const ACTIVE = "border-agent/40 bg-agent/10 text-agent";
 
 export function Chip({ children }: { children: React.ReactNode }) {
   return <span className={CHIP}>{children}</span>;
@@ -31,7 +31,7 @@ export function ChipMenu({
         aria-label={ariaLabel}
         className={cn(
           CHIP,
-          "hover:bg-kumo-tint data-[popup-open]:border-violet-500/40 data-[popup-open]:bg-violet-500/10 data-[popup-open]:text-violet-700 dark:data-[popup-open]:text-violet-300",
+          "hover:bg-kumo-tint data-[popup-open]:border-agent/40 data-[popup-open]:bg-agent/10 data-[popup-open]:text-agent",
           active && ACTIVE,
         )}
       >
@@ -94,7 +94,7 @@ export function ChipSegments<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             "h-full px-2 last:rounded-r-full hover:bg-kumo-tint",
-            o.value === value && "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+            o.value === value && "bg-agent/10 text-agent",
           )}
         >
           {o.label}

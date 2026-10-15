@@ -17,8 +17,8 @@ export function UpdateBanner() {
   if (!update || dismissed) return null;
 
   return (
-    <div className="flex shrink-0 items-center gap-2.5 border-b border-l-2 border-l-sky-500 bg-sky-500/5 px-3 py-1.5 text-xs">
-      <SparkleIcon className="size-4 shrink-0 text-sky-500" />
+    <div className="flex shrink-0 items-center gap-2.5 border-b border-l-2 border-l-info bg-info/5 px-3 py-1.5 text-xs">
+      <SparkleIcon className="size-4 shrink-0 text-info" />
       <span className="text-kumo-default">
         Towles Tool <span className="font-medium">{update.latestVersion}</span> is available —
         you're on {update.currentVersion}
@@ -29,7 +29,7 @@ export function UpdateBanner() {
       <Button
         variant="outline"
         size="xs"
-        className="border-sky-500/40 text-sky-600 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-400"
+        className="border-info/40 text-info hover:text-info"
         onClick={() => {
           uiAction("update_banner.open_release", activeTab);
           void openExternalUrl(update.releaseUrl);

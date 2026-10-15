@@ -60,13 +60,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       size="sm"
       variant="outline"
       className="px-2 text-xs"
-      icon={
-        copied ? (
-          <CheckIcon className="size-3.5 text-emerald-500" />
-        ) : (
-          <CopyIcon className="size-3.5" />
-        )
-      }
+      icon={copied ? <CheckIcon className="size-3.5 text-ok" /> : <CopyIcon className="size-3.5" />}
       onClick={() => void copy()}
     >
       {copied ? "Copied" : label}
@@ -78,10 +72,10 @@ export function ManifestBlock() {
   return (
     <div className="overflow-hidden rounded-md border border-kumo-hairline bg-muted/40">
       <div className="flex items-center justify-between border-b border-kumo-hairline bg-muted/60 px-2.5 py-1.5">
-        <span className="font-mono text-[11px] text-kumo-subtle">app manifest</span>
+        <span className="font-mono text-mini text-kumo-subtle">app manifest</span>
         <CopyButton text={APP_MANIFEST} label="Copy manifest" />
       </div>
-      <pre className="max-h-52 overflow-auto p-3 font-mono text-[11px] leading-relaxed text-foreground">
+      <pre className="max-h-52 overflow-auto p-3 font-mono text-mini leading-relaxed text-foreground">
         {APP_MANIFEST}
       </pre>
     </div>
@@ -97,7 +91,7 @@ function ExternalLinkText({ url, children }: { url: string; children: React.Reac
         uiAction("slack.open_external", "slack");
         void openExternalUrl(url);
       }}
-      className="inline-flex items-center gap-0.5 font-medium text-violet-600 underline underline-offset-2 hover:text-violet-500 dark:text-violet-300"
+      className="inline-flex items-center gap-0.5 font-medium text-agent underline underline-offset-2 hover:text-agent"
     >
       {children}
       <ArrowSquareOutIcon className="size-3" />
@@ -108,10 +102,10 @@ function ExternalLinkText({ url, children }: { url: string; children: React.Reac
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <li className="flex gap-3">
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-xs font-semibold text-violet-600 dark:text-violet-300">
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-agent/15 text-xs font-semibold text-agent">
         {n}
       </span>
-      <div className="flex-1 text-[13px] leading-relaxed">
+      <div className="flex-1 text-caption leading-relaxed">
         <div className="mb-1 font-medium text-foreground">{title}</div>
         {children}
       </div>
@@ -163,10 +157,10 @@ export function SetupGuide() {
     <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto w-full max-w-xl px-6 py-8">
         <div className="mb-4 flex items-center gap-2.5">
-          <ChatCircleIcon className="size-5 text-violet-500" />
+          <ChatCircleIcon className="size-5 text-agent" />
           <h2 className="text-base font-semibold text-foreground">Connect a Slack DM</h2>
         </div>
-        <p className="mb-5 text-[13px] leading-relaxed text-kumo-subtle">
+        <p className="mb-5 text-caption leading-relaxed text-kumo-subtle">
           Watch one direct message (e.g. your partner) and reply without leaving the app. A one-time
           Slack setup:
         </p>
@@ -236,14 +230,14 @@ function ReauthNotice({ onRetry }: { onRetry: () => void }) {
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
       <div className="max-w-md rounded-lg border border-kumo-hairline bg-kumo-base p-6">
         <div className="mb-2 flex items-center gap-2">
-          <KeyIcon className="size-5 text-amber-500" />
+          <KeyIcon className="size-5 text-warn" />
           <h2 className="text-sm font-semibold text-foreground">Your Slack token expired</h2>
         </div>
-        <p className="mb-3 text-[13px] leading-relaxed text-kumo-subtle">
+        <p className="mb-3 text-caption leading-relaxed text-kumo-subtle">
           Slack rejected the token (<span className="font-mono">invalid_auth</span>). Re-issue it
           and paste the fresh one:
         </p>
-        <ol className="mb-4 flex flex-col gap-1.5 text-[13px] text-kumo-subtle">
+        <ol className="mb-4 flex flex-col gap-1.5 text-caption text-kumo-subtle">
           <li>
             1. Open your app at{" "}
             <ExternalLinkText url={SLACK_APPS_URL}>api.slack.com/apps</ExternalLinkText> → OAuth
@@ -292,14 +286,14 @@ export function FetchError({ error, onRetry }: { error: string; onRetry: () => v
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
       <div className="max-w-sm rounded-lg border border-kumo-hairline bg-kumo-base p-6 text-center">
         {scope ? (
-          <KeyIcon className="mx-auto mb-3 size-6 text-amber-500" />
+          <KeyIcon className="mx-auto mb-3 size-6 text-warn" />
         ) : (
-          <WarningIcon className="mx-auto mb-3 size-6 text-red-500" />
+          <WarningIcon className="mx-auto mb-3 size-6 text-danger" />
         )}
         <h2 className="mb-1 text-sm font-semibold text-foreground">
           {scope ? "Token needs more access" : "Couldn't load the conversation"}
         </h2>
-        <p className="mb-4 text-[13px] leading-relaxed break-words text-kumo-subtle">
+        <p className="mb-4 text-caption leading-relaxed break-words text-kumo-subtle">
           {scope
             ? "Re-authorize your Slack token with the chat:write and reactions:write scopes, then retry."
             : error}

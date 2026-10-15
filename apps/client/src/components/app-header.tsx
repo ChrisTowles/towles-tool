@@ -35,7 +35,7 @@ function TaskBadge() {
         <Badge
           variant="outline"
           className="text-kumo-subtle"
-          icon={<GitBranchIcon className="size-3 text-sky-500" />}
+          icon={<GitBranchIcon className="size-3 text-info" />}
         >
           {task.label}
         </Badge>
@@ -62,7 +62,7 @@ function CheckoutKindChip() {
   if (!task) return null;
   if (!task.isWorktree) {
     return (
-      <span className="flex items-center gap-1.5 font-mono text-xs font-semibold text-sky-500">
+      <span className="flex items-center gap-1.5 font-mono text-xs font-semibold text-info">
         <GitBranchIcon className="size-3.5" />
         MAIN CHECKOUT
       </span>
@@ -111,7 +111,7 @@ function ClockCluster() {
           <button
             className={cn(
               "max-w-72 truncate rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint",
-              eventSoon && "text-amber-600 dark:text-amber-500",
+              eventSoon && "text-warn",
             )}
             onClick={() => {
               uiAction("header.open_agentboard", activeTab, "meeting");

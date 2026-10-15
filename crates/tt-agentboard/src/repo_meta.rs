@@ -52,12 +52,10 @@ impl Default for HexColor {
     }
 }
 
-/// The only colors a repo can be dealt or pinned — the client picker's
-/// `REPO_PALETTE`. Identity is not a signal, so it whispers: muted, low-chroma
-/// blues, slates and grayed plums that read on both surfaces, and nothing an alert or a state
-/// would use: no red, pink, orange, green or teal (both read as success), brown
-/// or saturated hue, nor a reserved status hue (amber, violet, cyan, sky).
-/// The name and icon tell repos apart; the color only has to agree with them. The order breaks ties: earlier is preferred.
+/// The only colors a repo can be dealt or pinned: the app's one palette, owned
+/// by the client's `lib/colors.ts` (every chart pulls from it too) and checked
+/// against it by a test here. Why these colors is written down there. The order
+/// breaks ties: earlier is preferred.
 pub const AUTO_PALETTE: [&str; 12] = [
     "#718dba", "#818e9b", "#536992", "#787ca7", "#567786", "#8a697b", "#b08c9f", "#9d7a8d",
     "#6f7192", "#9b95a2", "#8d7f9f", "#78717d",
@@ -283,6 +281,15 @@ mod tests {
         assert_eq!(got[0], pin, "a pin is kept as is");
         assert!(!got[1..].contains(&pin), "nothing dealt shares the pinned color");
         assert_ne!(got[1], got[2], "two dealt repos never share a color");
+    }
+
+    #[test]
+    fn the_palette_is_the_clients() {
+        let ts = include_str!("../../../apps/client/src/lib/colors.ts");
+        let list = &ts[ts.find("PALETTE").unwrap()..];
+        let list = &list[..list.find("];").unwrap()];
+        let hexes: Vec<&str> = list.split('"').filter(|s| s.starts_with('#')).collect();
+        assert_eq!(hexes, AUTO_PALETTE, "AUTO_PALETTE has drifted from lib/colors.ts");
     }
 
     #[test]

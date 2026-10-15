@@ -63,13 +63,13 @@ function StandbyRowView({ row, onSelect }: { row: StandbyRow; onSelect: () => vo
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex items-baseline gap-3">
           <span className="min-w-0 flex-1 truncate text-sm">
-            <span className="font-mono text-[11px] text-muted-foreground/60">{row.repo} / </span>
+            <span className="font-mono text-mini text-muted-foreground/60">{row.repo} / </span>
             <span className="font-medium text-foreground">{row.title}</span>
           </span>
           <span
             className={cn(
-              "shrink-0 font-mono text-[11px]",
-              row.errored ? "text-red-500" : "text-blue-600 dark:text-blue-400",
+              "shrink-0 font-mono text-mini",
+              row.errored ? "text-danger" : "text-waiting",
             )}
           >
             {row.note}
