@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 24;
+pub(crate) const SCHEMA_VERSION: i64 = 25;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -292,6 +292,7 @@ impl Store {
         self.conn.execute_batch(SCHEMA_AGENTS_V21)?;
         self.migrate_ci_runs_branch_v23()?;
         self.migrate_queue_snoozes_v24()?;
+        self.migrate_pr_status_base_branch_v25()?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -500,6 +501,22 @@ impl Store {
         if !has_branch {
             self.conn
                 .execute_batch("ALTER TABLE ci_runs ADD COLUMN branch TEXT NOT NULL DEFAULT '';")?;
+        }
+        Ok(())
+    }
+
+    /// v25: the branch a PR merges into, so the rail compares a checkout against
+    /// where its work actually lands rather than where the task was cut from.
+    fn migrate_pr_status_base_branch_v25(&self) -> Result<()> {
+        let has_base: bool = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('pr_status') WHERE name = 'base_branch'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if !has_base {
+            self.conn.execute_batch(
+                "ALTER TABLE pr_status ADD COLUMN base_branch TEXT NOT NULL DEFAULT '';",
+            )?;
         }
         Ok(())
     }

@@ -59,6 +59,7 @@ pub enum GitInvalidation {
     TurnEnd,
     FolderFocus,
     BaseBranch,
+    PrBase,
     WorktreeRemoved,
     WorktreeCreated,
     WindowFocus,
@@ -71,6 +72,7 @@ impl GitInvalidation {
             Self::TurnEnd => "turn_end",
             Self::FolderFocus => "folder_focus",
             Self::BaseBranch => "base_branch",
+            Self::PrBase => "pr_base",
             Self::WorktreeRemoved => "worktree_removed",
             Self::WorktreeCreated => "worktree_created",
             Self::WindowFocus => "window_focus",
@@ -137,6 +139,9 @@ pub struct Engine {
     /// store-free. **Records, not directories**: an entry puts a row on the rail
     /// whether or not anything exists at its `dir`.
     task_worktrees: Vec<tt_store::RailWorktree>,
+    /// The store's PR rows, pushed in by the host like `task_worktrees`, so a
+    /// folder compares against where its PR merges — see [`crate::pr_base`].
+    prs: Vec<tt_store::PrItem>,
     /// Sticky agent→PTY attribution, kept while the tracker holds the thread, so
     /// an exited agent stays on the pane it ran in rather than drifting.
     thread_sessions: HashMap<String, String>,
@@ -282,6 +287,7 @@ impl Engine {
             compact_recommend_percent,
             show_unmanaged_worktrees,
             task_worktrees: Vec::new(),
+            prs: Vec::new(),
             thread_sessions: HashMap::new(),
             agent_snapshot: AgentSnapshot::default(),
             prior_run,
@@ -508,11 +514,22 @@ impl Engine {
     ) -> Vec<(String, Option<String>, crate::git_info::GitInfo)> {
         dirs.into_iter()
             .map(|d| {
-                let base = self.folder_meta.base_branch_for(&d).map(str::to_string);
+                let base = self.effective_base(&d);
                 let previous = self.git_cache.get(&d);
                 (d, base, previous)
             })
             .collect()
+    }
+
+    /// The user's per-folder override, else the base of the folder's PR; `None`
+    /// leaves [`crate::git_info`] to the `.tt-task` marker, then origin/main.
+    fn effective_base(&self, dir: &str) -> Option<String> {
+        if let Some(base) = self.folder_meta.base_branch_for(dir) {
+            return Some(base.to_string());
+        }
+        let info = self.git_cache.get(dir);
+        crate::pr_base::pr_base_for(&self.prs, info.origin_url.as_deref(), &info.branch)
+            .map(str::to_string)
     }
 
     pub fn warm_git_cache(
@@ -755,6 +772,22 @@ impl Engine {
         true
     }
 
+    /// Replace the PR rows, re-probing each folder whose base they move: a merge
+    /// into a branch other than the task's own base lands the work right here.
+    pub fn set_prs(&mut self, prs: Vec<tt_store::PrItem>) {
+        if prs == self.prs {
+            return;
+        }
+        let dirs = self.rail_dirs();
+        let before: Vec<_> = dirs.iter().map(|d| self.effective_base(d)).collect();
+        self.prs = prs;
+        for (dir, before) in dirs.iter().zip(before) {
+            if self.effective_base(dir) != before {
+                self.invalidate_git(dir, GitInvalidation::PrBase);
+            }
+        }
+    }
+
     /// pid-liveness pin → prune schedule → assemble snapshot.
     fn compute_payload_for_entries(
         &mut self,
@@ -821,6 +854,14 @@ impl Engine {
 
         for repo in &mut payload.repos {
             repo.meta = self.repo_meta.meta_for(&repo.dir).cloned();
+            for folder in &mut repo.folders {
+                folder.pr_base_branch = crate::pr_base::pr_base_for(
+                    &self.prs,
+                    repo.origin_url.as_deref(),
+                    &folder.branch,
+                )
+                .map(str::to_string);
+            }
         }
         let pins: Vec<_> =
             payload.repos.iter().map(|r| r.meta.as_ref().and_then(|m| m.color.as_ref())).collect();
@@ -1028,6 +1069,7 @@ impl Engine {
             compact_recommend_percent: 80,
             show_unmanaged_worktrees: tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES,
             task_worktrees: Vec::new(),
+            prs: Vec::new(),
             thread_sessions: HashMap::new(),
             agent_snapshot: AgentSnapshot::default(),
             prior_run: HashSet::new(),
@@ -1654,6 +1696,42 @@ mod engine_tests {
 
         assert!(!e.set_folder_base_branch("/repo/x", Some("develop")));
         assert!(e.set_folder_base_branch("/repo/x", None));
+    }
+
+    #[test]
+    fn a_pr_merging_elsewhere_retargets_the_folder_until_the_user_overrides_it() {
+        let (_tmp, mut e) = engine();
+        let now = 10_000_000;
+        assert!(e.add_repo("/repo/x"));
+        let info = crate::git_info::GitInfo {
+            origin_url: Some("git@github.com:o/repo.git".to_string()),
+            ..git_info("feat/wow")
+        };
+        e.store_git_info("/repo/x", info, now);
+        let merged = tt_store::PrItem {
+            repo: "o/repo".to_string(),
+            number: 83,
+            title: String::new(),
+            branch: "feat/wow".to_string(),
+            state: "merged".to_string(),
+            checks: String::new(),
+            review_state: String::new(),
+            url: String::new(),
+            updated_ts: 0,
+            dismissed_ts: 0,
+            base_branch: "main".to_string(),
+        };
+
+        e.set_prs(vec![merged.clone()]);
+        assert!(!e.git_cache.is_fresh("/repo/x", now));
+        assert_eq!(e.effective_base("/repo/x").as_deref(), Some("main"));
+
+        e.store_git_info("/repo/x", e.git_cache.get("/repo/x"), now);
+        e.set_prs(vec![merged]);
+        assert!(e.git_cache.is_fresh("/repo/x", now), "an unchanged PR list re-probes nothing");
+
+        e.set_folder_base_branch("/repo/x", Some("develop"));
+        assert_eq!(e.effective_base("/repo/x").as_deref(), Some("develop"));
     }
 
     #[test]

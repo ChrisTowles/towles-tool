@@ -1330,6 +1330,7 @@ mod tests {
             review_state: String::new(),
             url: format!("https://github.com/{repo}/pull/{number}"),
             updated_ts: 1,
+            base_branch: "main".to_string(),
         }
     }
 

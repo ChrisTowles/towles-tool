@@ -26,6 +26,7 @@ pub mod git_meter;
 pub mod launch;
 pub mod notify;
 pub mod persist;
+pub mod pr_base;
 pub mod procenv;
 pub mod pty_status;
 pub mod queue;

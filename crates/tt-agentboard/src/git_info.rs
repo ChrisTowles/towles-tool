@@ -655,8 +655,8 @@ fn resolve_origin_main(repo: &tt_git::repo::Repo) -> String {
 
 /// The ref every "vs main" comparison uses: [`compute_git_info`]'s stats and the
 /// committed chip's per-commit list, so every number in a rail row shares one
-/// baseline. Priority: the per-folder `base_branch` override, the `.tt-task`
-/// marker's `base=`, then origin/main-or-master. The winner resolves to
+/// baseline. Priority: `base_branch` (the engine's per-folder override, else its
+/// PR's base), the `.tt-task` marker's `base=`, then origin/main-or-master. The winner resolves to
 /// `origin/<name>` — the pushed baseline — and to the local branch only when no
 /// remote exists.
 fn resolve_base_ref(repo: &tt_git::repo::Repo, dir: &str, base_branch: Option<&str>) -> String {

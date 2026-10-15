@@ -251,6 +251,7 @@ fn build_folder(
         needs,
         base_branch: folder_meta.base_branch_for(&entry.dir).map(str::to_string),
         task_base_branch: git.task_base_branch.clone(),
+        pr_base_branch: None,
         compared_base: git.compared_base.clone(),
         has_port_drift: false, // stamped by the app from its terminal registry
         has_launch_config: git.has_launch_config,

@@ -276,6 +276,10 @@ pub struct FolderData {
     /// absent an override, instead of always claiming "vs main".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_base_branch: Option<String>,
+    /// The branch this folder's PR merges into, which outranks `task_base_branch`:
+    /// it is where the work actually lands. Stamped by the engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_base_branch: Option<String>,
     /// What `committed*`/`commits*` were measured against. Empty until computed.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub compared_base: String,

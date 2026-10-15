@@ -455,11 +455,15 @@ pub fn run() {
                             };
                             state.reconcile_detected_worktrees(&found, &vanished, now);
                         }
+                        let prs = store_state.as_ref().and_then(|s| s.prs());
                         let rows = store_state.and_then(|s| s.rail_worktrees());
                         let mut job = {
                             let mut e = engine.lock().unwrap();
                             if let Some(rows) = rows {
                                 e.set_task_worktrees(rows);
+                            }
+                            if let Some(prs) = prs {
+                                e.set_prs(prs);
                             }
                             e.begin_agent_scan()
                         };

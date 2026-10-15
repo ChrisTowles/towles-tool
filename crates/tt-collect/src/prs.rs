@@ -14,7 +14,7 @@ use crate::gh;
 
 /// The `--json` field set requested from `gh pr list`.
 const PR_LIST_FIELDS: &str =
-    "number,title,headRefName,state,statusCheckRollup,reviewDecision,url,updatedAt";
+    "number,title,headRefName,baseRefName,state,statusCheckRollup,reviewDecision,url,updatedAt";
 
 /// Page cap for the recently-merged authored PRs fetch — just enough to catch
 /// a just-merged branch before its worktree is removed, without pulling a
@@ -175,6 +175,7 @@ pub(crate) fn map_pr_list(
                 updated_ts: parse_iso_ms(
                     item.get("updatedAt").and_then(|v| v.as_str()).unwrap_or_default(),
                 ),
+                base_branch: str_field(item, "baseRefName"),
             })
         })
         .collect()
@@ -271,6 +272,7 @@ mod tests {
             "number": 42,
             "title": "Fix the thing",
             "headRefName": "feat/thing",
+            "baseRefName": "release/2.0",
             "state": "OPEN",
             "statusCheckRollup": [{"conclusion": "SUCCESS"}],
             "reviewDecision": "",
@@ -284,6 +286,7 @@ mod tests {
         assert_eq!(pr.number, 42);
         assert_eq!(pr.title, "Fix the thing");
         assert_eq!(pr.branch, "feat/thing");
+        assert_eq!(pr.base_branch, "release/2.0");
         assert_eq!(pr.state, "open");
         assert_eq!(pr.checks, "passing");
         assert_eq!(pr.review_state, "");
