@@ -40,6 +40,21 @@ target as an argument.
 | `/tt:memories`   | Review your memory files and recommend which to commit into CLAUDE.md. |
 | `/tt:handoff`    | Write a short restart prompt for a fresh agent, copied to your clipboard. |
 
+### Landing the work
+
+A ladder: each command is the one before it plus one step. The git and `gh`
+mechanics are `scripts/pr.sh`, which either finishes or stops with one `STOP:`
+reason and one `FIX:`; the agent only writes the words and picks which files
+belong.
+
+| Command    | Description                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
+| `/tt:pr`   | Branch off the default branch if needed, commit, push, open the PR (or update the open one). Targets a stacked parent branch's PR when there is one. |
+| `/tt:prm`  | `/tt:pr`, then wait for checks and merge with the method the repo allows. Running it permits an admin merge: one `--admin` retry when branch protection refuses. Checks must still pass. |
+
+`/towles-tool-app:done` (the app plugin) is the third rung: `/tt:prm`, then
+delete the task from towles-tool.
+
 ## Installation
 
 In Claude Code 2.1.275 or later, one step:

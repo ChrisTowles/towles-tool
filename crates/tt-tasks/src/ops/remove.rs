@@ -345,7 +345,7 @@ fn foreign_owned(_dir: &Path) -> Option<(PathBuf, u32)> {
 }
 
 /// The ports a checkout claims, from its rendered `.env`.
-fn claimed_ports(dir: &Path) -> BTreeSet<u16> {
+pub(super) fn claimed_ports(dir: &Path) -> BTreeSet<u16> {
     envfile::port_claims(&fs::read_to_string(dir.join(".env")).unwrap_or_default())
 }
 
@@ -632,7 +632,7 @@ pub fn clean_tasks(
 }
 
 /// Whether a docker container owned by this task publishes `port`.
-fn docker_owns_port(task_name: &str, port: u16) -> bool {
+pub(super) fn docker_owns_port(task_name: &str, port: u16) -> bool {
     let publish = format!("publish={port}");
     tt_exec::run("docker", &["ps", "--filter", &publish, "--format", "{{.Names}}"])
         .map(|out| {

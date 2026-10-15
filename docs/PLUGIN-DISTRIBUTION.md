@@ -67,7 +67,10 @@ rewrite takes over. **This is an options analysis, not a decision — Chris deci
 The repo root doubles as a plugin marketplace (`.claude-plugin/marketplace.json`);
 each plugin lives in `packages/<name>/` with its own manifest. Two ship today.
 
-**`tt`** (`packages/core`) is the map-vs-territory workflow commands and skills.
+**`tt`** (`packages/core`) is the map-vs-territory workflow commands and skills,
+plus `/pr` and `/prm`, whose git and `gh` mechanics are `scripts/pr.sh`. They
+must work in any repo with the app closed, so they can't lean on the MCP
+server; the app plugin's `/done` invokes `tt:prm`, then `task_done`.
 **`towles-tool-app`** (`packages/app`) bridges Claude Code to the desktop app
 itself: the MCP server via a static checked-in `.mcp.json`, the `towles-tool` and
 `task-onboarding` skills, and a `PostToolUse` hook that nudges a running instance

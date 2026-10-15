@@ -14,6 +14,7 @@
 //! to `127.0.0.1` — belongs to the transport's admission checks.
 
 use std::borrow::Cow;
+use std::path::Path;
 use std::time::Instant;
 
 use chrono::{Local, NaiveDate, TimeZone};
@@ -315,6 +316,7 @@ const WRITING_TOOLS: &[&str] = &[
     "task_summary",
     "task_sync",
     "task_delete",
+    "task_done",
     "calendar_set",
 ];
 
@@ -325,7 +327,7 @@ pub fn tool_writes(name: &str) -> bool {
 /// Writing tools that repaint the UI themselves, so the transport must not. `task_delete` runs
 /// the app's own delete path, which emits a snapshot as the row goes; a second rebuild would
 /// take the `StoreState` mutex even for a refused delete. Still a [`WRITING_TOOLS`] entry.
-const SELF_REFRESHING_TOOLS: &[&str] = &["task_delete"];
+const SELF_REFRESHING_TOOLS: &[&str] = &["task_delete", "task_done"];
 
 /// What a tool does to the world, as the four `annotations` hints a client reads before
 /// calling. 2026-07-28 reads an omitted hint as the risky answer (`destructiveHint` and
@@ -371,6 +373,7 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("task_summary", "Record task summary", Effect::Replace),
     ("task_sync", "Sync task branch", Effect::Replace),
     ("task_delete", "Delete task", Effect::Destroy),
+    ("task_done", "Finish task", Effect::Destroy),
     ("task_start", "Start task", Effect::Write),
     ("preview_file", "Preview file", Effect::Read),
     ("file_open", "Open file", Effect::Read),
@@ -616,6 +619,7 @@ impl Dispatcher {
             "task_summary" => self.task_summary(args, now_ms),
             "task_sync" => self.task_sync(args),
             "task_delete" => self.task_delete(args),
+            "task_done" => self.task_done(args, now_ms),
             "task_start" => self.task_start(args),
             "preview_file" => self.preview_file(args, ctx),
             "file_open" => self.file_open(args, ctx),
@@ -1030,6 +1034,93 @@ impl Dispatcher {
             })),
         }
     }
+
+    /// `/done` as one call, so finishing a task is code rather than an agent's reading of a
+    /// procedure: the task comes from the caller's checkout (closed rows included — a merge
+    /// closes the card while the worktree lives on), the gate reads git and `gh` live, and
+    /// the summary lands before the delete removes the caller's own pane.
+    fn task_done(&mut self, args: &Value, now_ms: i64) -> Result<Value, String> {
+        let dir = args
+            .get("dir")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+            .ok_or_else(|| "missing required argument: dir".to_string())?;
+        let summary = args
+            .get("summary")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "missing required argument: summary".to_string())?;
+        if self.task_host.is_none() {
+            return Err("task_done is unavailable: no task host is attached".to_string());
+        }
+        let task = self.task_for_checkout(dir)?;
+        let id = task.id;
+
+        let worktree = task.worktree.as_ref().and_then(|w| w.dir.as_deref()).map(Path::new);
+        let mut messages = Vec::new();
+        if let Some(worktree) = worktree.filter(|w| w.is_dir()) {
+            let branch = tt_tasks::ops::head_branch(worktree)
+                .ok_or_else(|| format!("{} is on no branch", worktree.display()))?;
+            let (blockers, notes) = tt_tasks::ops::finish_blockers(worktree, &branch);
+            messages.extend(notes);
+            if !blockers.is_empty() {
+                return Ok(json!({
+                    "status": "refused",
+                    "id": id,
+                    "text": task.text,
+                    "blockers": blockers,
+                    "messages": messages,
+                }));
+            }
+            messages.extend(tt_tasks::ops::stop_own_listeners(worktree)?);
+        }
+
+        self.store.set_task_summary(id, summary, now_ms).map_err(|e| e.to_string())?;
+        let host = self.task_host.as_ref().expect("checked above, before the task was resolved");
+        let deletion = host.delete_task(id, false, Some(tt_store::TaskOutcome::Done))?;
+        Ok(match deletion {
+            TaskDeletion::Deleted { name, messages: more } => {
+                messages.extend(more);
+                json!({ "status": "deleted", "id": id, "text": name, "messages": messages })
+            }
+            TaskDeletion::Refused { name, blockers, messages: more } => {
+                messages.extend(more);
+                json!({
+                    "status": "refused",
+                    "id": id,
+                    "text": name,
+                    "blockers": blockers,
+                    "messages": messages,
+                })
+            }
+        })
+    }
+
+    /// The board task bound to the checkout containing `dir`. Walks up, since a session's cwd
+    /// can sit below its worktree root; a main checkout matches nothing, which is the answer.
+    fn task_for_checkout(&self, dir: &str) -> Result<tt_store::TaskItem, String> {
+        let given = Path::new(dir);
+        if !given.is_absolute() {
+            return Err(format!("dir must be an absolute path, got {dir:?}"));
+        }
+        let canonical = std::fs::canonicalize(given).ok();
+        for start in std::iter::once(given).chain(canonical.as_deref()) {
+            for candidate in start.ancestors() {
+                let key = candidate.to_string_lossy();
+                if let Some(task) =
+                    self.store.task_for_worktree_dir(&key).map_err(|e| e.to_string())?
+                {
+                    return Ok(task);
+                }
+            }
+        }
+        Err(format!(
+            "no board task is bound to {dir} — this is a main checkout or a worktree the board \
+             never tracked, so there is no task to finish here"
+        ))
+    }
 }
 
 // JSON-RPC / MCP response builders
@@ -1399,6 +1490,18 @@ pub fn tool_definitions() -> Value {
             },
         },
         {
+            "name": "task_done",
+            "description": "Finish the task whose worktree you are in, as one call: the user has confirmed the work, so record your summary on its card and delete it as done — terminal panes and worktree — keeping the closed row. Finds the task from `dir`, closed cards included (a merged PR closes the card while the worktree lives on). Refuses with `status: \"refused\"` and typed `blockers`, deleting nothing, while a PR from the task's branch is still open, the worktree has uncommitted changes, or the branch has commits that reached the base through no PR. Stops the task's own dev server on its claimed ports first. It removes your own pane, so say everything before calling it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "dir": { "type": "string", "description": "Absolute path of your checkout — `git rev-parse --show-toplevel`." },
+                    "summary": { "type": "string", "description": "What shipped, for the card that outlives the worktree: the PR number and merge commit, what CI said, anything still open. A few short lines." },
+                },
+                "required": ["dir", "summary"],
+            },
+        },
+        {
             "name": "task_start",
             "description": "Start a board task that has no worktree yet: mint its git worktree on a fresh branch and launch a Claude session in it, working on the task's goal and notes. This is how a task goes from a card on the board to actual work in progress. Returns `status: \"starting\"` — the worktree and agent come up asynchronously in the app, so confirm with task_list rather than assuming. Refuses a task that already has a worktree (starting again would abandon the running one) or one that is closed.",
             "inputSchema": {
@@ -1735,6 +1838,7 @@ mod tests {
                 "task_summary",
                 "task_sync",
                 "task_delete",
+                "task_done",
                 "task_start",
                 "preview_file",
                 "file_open",
@@ -2807,6 +2911,88 @@ mod tests {
         let result = call_tool(&mut dispatcher, "task_delete", json!({ "id": 1 }));
         assert_eq!(result["status"], "deleted");
         assert_eq!(*calls.lock().unwrap(), vec![(1, false, None)]);
+    }
+
+    // task_done
+
+    /// A task bound to `/w/feat-x` — gone from disk, so the git/gh gate has nothing to read.
+    fn task_in_worktree(dispatcher: &mut Dispatcher) -> i64 {
+        let created =
+            call_tool(dispatcher, "task_create", json!({ "repo": REPO_SLUG, "title": "x" }));
+        let id = created["task"]["id"].as_i64().unwrap();
+        dispatcher
+            .store
+            .set_task_worktree(id, REPO_DIR, None, Some("feat/x"), Some("/w/feat-x"))
+            .unwrap();
+        id
+    }
+
+    /// A merge moves the card to done while the worktree lives on: `task_list` no longer shows
+    /// it, which is how `/done` used to lose the task.
+    #[test]
+    fn task_done_finds_a_closed_task_from_below_its_worktree_and_deletes_it_as_done() {
+        let (mut dispatcher, calls) = with_host(deleted("x", vec!["removed".to_string()]));
+        let id = task_in_worktree(&mut dispatcher);
+        dispatcher.store.set_task_status(id, "done", NOW).unwrap();
+        assert!(
+            call_tool(&mut dispatcher, "task_list", json!({}))["tasks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|t| t["id"] != id)
+        );
+
+        let result = call_tool(
+            &mut dispatcher,
+            "task_done",
+            json!({ "dir": "/w/feat-x/crates", "summary": "shipped #1" }),
+        );
+        assert_eq!(result["status"], "deleted");
+        assert_eq!(result["messages"], json!(["removed"]));
+        assert_eq!(*calls.lock().unwrap(), vec![(id, false, Some(tt_store::TaskOutcome::Done))]);
+        let row = dispatcher.store.task_by_id(id).unwrap();
+        assert_eq!(row.summary.as_deref(), Some("shipped #1"), "summary lands before the delete");
+    }
+
+    #[test]
+    fn task_done_refuses_a_checkout_no_task_is_bound_to() {
+        let (mut dispatcher, calls) = with_host(deleted("unused", vec![]));
+        task_in_worktree(&mut dispatcher);
+        let message = call_tool_err(
+            &mut dispatcher,
+            "task_done",
+            json!({ "dir": "/home/me/toolbox", "summary": "s" }),
+        );
+        assert!(message.contains("no board task is bound to /home/me/toolbox"), "{message}");
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn task_done_needs_an_absolute_dir_and_a_summary() {
+        let (mut dispatcher, calls) = with_host(deleted("unused", vec![]));
+        task_in_worktree(&mut dispatcher);
+        let no_summary = json!({ "dir": "/w/feat-x" });
+        let message = call_tool_err(&mut dispatcher, "task_done", no_summary);
+        assert!(message.contains("missing required argument: summary"), "{message}");
+        let relative = json!({ "dir": "feat-x", "summary": "s" });
+        let message = call_tool_err(&mut dispatcher, "task_done", relative);
+        assert!(message.contains("absolute"), "{message}");
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    /// The removal guard's refusal passes through, under the same shape as the gate's own.
+    #[test]
+    fn task_done_reports_the_hosts_refusal() {
+        let (mut dispatcher, _) = with_host(Ok(TaskDeletion::Refused {
+            name: "x".to_string(),
+            blockers: vec![json!({ "kind": "dirtyTree", "losesWork": true })],
+            messages: vec![],
+        }));
+        task_in_worktree(&mut dispatcher);
+        let args = json!({ "dir": "/w/feat-x", "summary": "s" });
+        let result = call_tool(&mut dispatcher, "task_done", args);
+        assert_eq!(result["status"], "refused");
+        assert_eq!(result["blockers"][0]["kind"], "dirtyTree");
     }
 
     /// A guarded refusal is a result, not an error — an error would invite a retry with force.

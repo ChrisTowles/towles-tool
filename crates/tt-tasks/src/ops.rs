@@ -507,6 +507,7 @@ pub fn run_teardown(dir: &Path) -> Result<Option<String>> {
 mod branch;
 mod claims;
 mod create;
+mod finish;
 mod init;
 mod remove;
 mod render;
@@ -516,6 +517,9 @@ pub use claims::{PortClaim, PortRegistry, PortStatus, port_occupied, port_report
 pub use create::{
     CreateOpts, CreatePhase, CreatedTask, IssueTask, PrCheck, TaskSource, check_pr, create_task,
     issue_task,
+};
+pub use finish::{
+    FinishBlocker, classify_finish, finish_blockers, head_branch, stop_own_listeners,
 };
 pub use init::{InitReport, init_repo};
 pub use remove::{

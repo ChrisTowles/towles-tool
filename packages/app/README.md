@@ -10,8 +10,7 @@ loopback HTTP by `tt-app`), so any session with this plugin enabled gets these
 tools without manual `claude mcp add` setup:
 
 - **Board** — `task_list`, `task_status` (reads), `task_create`, `task_summary`,
-  `task_sync`, `task_start` and
-  `task_delete` (writes). `task_create` adds a board card only; `task_start` is
+  `task_sync`, `task_start`, `task_delete` and `task_done` (writes). `task_create` adds a board card only; `task_start` is
   what turns one into work in progress — it mints the task's git worktree and
   launches a Claude session in it on the task's goal and notes. It answers
   `status: "starting"` because the worktree and agent come up asynchronously in
@@ -103,10 +102,12 @@ guard.
 
 ## Commands
 
-- **`/towles-tool-app:done`**: run once you've confirmed a task works. It
-  rewrites the PR description to what shipped, merges it, checks nothing is
-  left unlanded, writes `task_summary`, then calls `task_delete` so the task's
-  worktree and pane go too, not just the board status.
+- **`/towles-tool-app:done`**: run once you've confirmed the work. It runs
+  `/tt:prm` (open and merge the PR, admin merge allowed), then calls
+  `task_done`, which finds the task from the checkout, refuses while a PR is
+  open or work is unlanded or uncommitted, stops the task's own dev server,
+  writes the summary and deletes the worktree and pane. Outside a task it lands
+  the work and reports there was no task to delete. Needs the `tt` plugin.
 
 ## Mod: the app's band above the prompt
 

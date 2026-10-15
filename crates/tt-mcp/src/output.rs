@@ -169,7 +169,7 @@ pub fn schema_for(name: &str) -> Option<Value> {
         "task_list" => schema::<TaskList>(),
         "task_status" | "task_create" | "task_summary" => schema::<OneTask>(),
         "task_sync" => schema::<TaskSynced>(),
-        "task_delete" => schema::<TaskDeleted>(),
+        "task_delete" | "task_done" => schema::<TaskDeleted>(),
         "task_start" => schema::<TaskStarting>(),
         "preview_file" => schema::<PreviewShowing>(),
         "file_open" => schema::<FileOpening>(),
