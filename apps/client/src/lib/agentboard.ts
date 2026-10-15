@@ -960,6 +960,47 @@ export function folderLandedButHasWork(
   return folderLanded(folder, pr) && !folderHoldsNoWork(folder);
 }
 
+/** Where a checkout's branch stands against its base, in one line. */
+export type LandingSummary = {
+  /** Same gate as {@link folderLanded}: only then is the full diff worth reading. */
+  landed: boolean;
+  text: string;
+};
+
+/** The "Safe to delete" callout's lead, and what every close dialog leads with. */
+export function folderLandingSummary(
+  folder: Pick<FolderData, "landed" | "comparedBase">,
+  pr: Pick<PrItem, "state" | "number"> | undefined,
+): LandingSummary {
+  const base = comparedBaseLabel(folder);
+  const via = folder.landed ? `${folder.landed} into ${base}` : null;
+  const landed = folderLanded(folder, pr);
+  if (!pr) return { landed, text: via ?? `Not merged into ${base}` };
+  if (pr.state === "merged") {
+    return { landed, text: via ? `PR #${pr.number} merged, ${via}` : `PR #${pr.number} merged` };
+  }
+  const state = pr.state === "open" ? "open" : `${pr.state}, unmerged`;
+  return {
+    landed,
+    text: via ? `PR #${pr.number} ${state}, ${via}` : `PR #${pr.number} ${state}, not in ${base}`,
+  };
+}
+
+/** {@link folderLandingSummary} for a checkout found by dir, `undefined` when
+ * the rail doesn't track it. */
+export function landingSummaryForDir(
+  repos: RepoData[],
+  prs: PrItem[],
+  dir: string,
+): LandingSummary | undefined {
+  for (const repo of repos) {
+    const folder = repo.folders.find((f) => f.dir === dir);
+    if (folder)
+      return folderLandingSummary(folder, prForFolder(prs, repo.originUrl, folder.branch));
+  }
+  return undefined;
+}
+
 /** A per-folder actionable signal. */
 export type ActionableKind = "safe-to-delete" | "needs-you" | "port-drift";
 
@@ -981,12 +1022,9 @@ export function folderActionableItems(
 
   const merged = pr?.state === "merged" ? pr : undefined;
   if (merged && folder.isWorktree && folderSafeToDelete(folder, pr)) {
-    const how = folder.landed
-      ? `PR #${merged.number} merged, ${folder.landed} into ${comparedBaseLabel(folder)}`
-      : `PR #${merged.number} merged`;
     items.push({
       kind: "safe-to-delete",
-      subtitle: `${how}, no uncommitted changes, every commit landed`,
+      subtitle: `${folderLandingSummary(folder, pr).text}, no uncommitted changes, every commit landed`,
       pr: { number: merged.number, url: merged.url },
     });
   }
@@ -1724,6 +1762,8 @@ export type RemoveTarget = {
   dirMissing?: boolean;
   /** The folder's base override, so the dialog's diff matches the rail's. */
   baseBranch?: string | null;
+  /** Carried into the blocked dialog too, so a refusal keeps the context. */
+  landing?: LandingSummary;
 };
 
 export type BlockedDelete = {

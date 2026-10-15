@@ -19,13 +19,17 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 /** `git diff --stat` of a checkout against its base, fetched when shown —
- * the last look at what a delete would leave behind on the branch or destroy. */
+ * the last look at what a delete would leave behind on the branch or destroy.
+ * Commits and files are listed only for a landed branch; otherwise the
+ * one-line difference from the base is the whole story. */
 export function BranchDiffSummary({
   dir,
   baseBranch,
+  full,
 }: {
   dir: string;
   baseBranch?: string | null;
+  full: boolean;
 }) {
   // Keyed by dir so a reopen for another worktree never flashes the last one's diff.
   const [loaded, setLoaded] = useState<{ dir: string; diff: BranchDiff | null } | null>(null);
@@ -70,9 +74,10 @@ export function BranchDiffSummary({
         <span className="text-danger">−{fmtDiffLines(removed)}</span>
         {uncommitted > 0 && <span className="text-warn">{uncommitted} uncommitted</span>}
       </div>
-      {diff.files.length === 0 ? (
+      {diff.files.length === 0 && (
         <p className="text-xs text-kumo-subtle">Nothing differs from {base}.</p>
-      ) : (
+      )}
+      {full && diff.files.length > 0 && (
         <div className="flex max-h-56 flex-col gap-2 overflow-auto">
           {diff.commits.length > 0 && (
             <div className="flex flex-col gap-1">

@@ -411,6 +411,7 @@ export function AgentBoardScreen() {
 
   const worktreeDelete = useWorktreeDelete({
     repos,
+    prs: snapshot.prs,
     tasks: snapshot.tasks,
     expectedKills,
     onSessionRemoved: (id) => {
@@ -1813,6 +1814,7 @@ export function AgentBoardScreen() {
             worktreeDelete.endDeleteFlow(worktreeDelete.blockedDeleteDir);
         })}
         name={worktreeDelete.blockedDelete?.name}
+        landing={worktreeDelete.blockedDelete?.target.landing}
         description="The worktree is still on disk. Clear what’s below and it’ll delete cleanly, or delete anyway."
         cancelLabel="Keep the worktree"
         blockers={worktreeDelete.blockedDelete?.blockers ?? []}

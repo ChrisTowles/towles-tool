@@ -2,6 +2,7 @@ import { useState } from "react";
 import { TerminalWindowIcon } from "@phosphor-icons/react";
 import { Button, Checkbox, CommandPalette, Dialog, Input } from "@cloudflare/kumo";
 import { BranchDiffSummary } from "@/components/branch-diff-summary";
+import { LandingLine } from "@/components/task-blockers";
 import {
   sessionLabel,
   type RemoveTarget,
@@ -180,8 +181,13 @@ export function DeleteWorktreeDialog({
             )}
           </Dialog.Description>
         </div>
+        {target?.landing && <LandingLine landing={target.landing} />}
         {target && !target.dirMissing && target.dirs[0] && (
-          <BranchDiffSummary dir={target.dirs[0]} baseBranch={target.baseBranch} />
+          <BranchDiffSummary
+            dir={target.dirs[0]}
+            baseBranch={target.baseBranch}
+            full={target.landing?.landed === true}
+          />
         )}
         {/* How the task ended, defaulted to `done` — the common case — with
             one underlined link to flip it to `abandoned`. Only rendered
