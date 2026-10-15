@@ -9,7 +9,7 @@ pays for, and which keeps the conventions that apply everywhere.
 `screens/agentboard.tsx` is one screen with two rails, picked by the Queue/Tree
 tabs atop it (`railView` in `useWorkspace`, persisted; `Mod+Shift+T` flips it);
 only the rail's contents swap, so the panes never remount. On Queue,
-`components/queue-rail.tsx` is the rail: Next up, then the queue's lanes. Every
+`components/queue-rail.tsx` is the rail: one strip of repo pills (filter, `+` new task), then the queue's lanes. Every
 row is a board task that owns one of the board's checkouts; a checkout no task
 owns is on the tree only, until its "adopt" chip makes it a task. On Tree the
 checkout tree below *is* the rail, and `lib/rail-nodes.ts` is the one walk its

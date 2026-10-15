@@ -354,7 +354,6 @@ export function AgentBoardScreen() {
   // Every row is a checkout, so the ring follows the one on screen, however it got there.
   const ringItem = rowForFolder(shownQueue, activeFolderDir);
   const ringId = ringItem?.folderDir ?? null;
-  const head = nextItem(shownQueue);
   // The collapsed strip has no rows to badge, so it offers no numbers. Keyed by
   // session on the tree, by checkout on the queue.
   const showHotkeys = hotkeysHeld && !railCollapsed;
@@ -1638,7 +1637,6 @@ export function AgentBoardScreen() {
                             onOpenFiles={openFiles}
                             live={queueLive}
                             now={now}
-                            head={head}
                             selectedId={ringId}
                             folded={foldedLanes}
                             hotkeys={queueHotkeys}
@@ -1646,10 +1644,6 @@ export function AgentBoardScreen() {
                             onSnoozeIdChange={setSnoozeId}
                             onToggleLane={toggleLane}
                             onSelect={pickQueueItem}
-                            onOpenHead={() => {
-                              mouseAction("queue-next", "agentboard");
-                              openNextUp();
-                            }}
                             repos={repos}
                             newTaskRepoKey={railTaskRepoKey}
                             onPickRepo={(repo) => {

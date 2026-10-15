@@ -137,9 +137,8 @@ export function FolderHeader({
   onOpenBrowser?: () => void;
 }) {
   const scopePrefix = pathScope(folder.dir);
-  // A repo-scope header is sticky, so its tint mixes into an opaque base.
   const HeaderIcon = repoIcon(identity?.meta);
-  const accent = repoAccentStyles(identity, "var(--card)");
+  const accent = repoAccentStyles(identity);
   const missing = folder.dirMissing;
   // A task's human-authored title applies to worktree rows only — on the
   // primary checkout it would misname the repo itself (see `taskForFolder`).
@@ -188,10 +187,8 @@ export function FolderHeader({
     <div
       style={
         // Identity never outranks true status: needs-you or missing keep the
-        // row to themselves; active is a ring on top, not a fill.
-        scope === "repo" && needs === 0 && !missing
-          ? { ...accent.edgeStyle, ...accent.surfaceStyle }
-          : undefined
+        // row to themselves. An edge, not a wash, the same as the queue's rows.
+        scope === "repo" && needs === 0 && !missing ? accent.edgeStyle : undefined
       }
       className={cn(
         // pr-3: the rail's trailing controls all land on one right edge.
@@ -263,6 +260,7 @@ export function FolderHeader({
             ) : (
               <Hint label={titleHint} side="right">
                 <span
+                  style={scope === "repo" && !missing ? accent.iconStyle : undefined}
                   onClick={onToggle}
                   onDoubleClick={
                     task && !missing

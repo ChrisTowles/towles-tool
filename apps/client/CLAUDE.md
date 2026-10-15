@@ -96,7 +96,7 @@ and the ring follows the checkout on screen however it got there
 when nothing is open, else announces it — what you have open is never swapped
 out, since opening a finished agent drops its row from On you on its own. Rows
 and lane headers are one flat `AnimatePresence` list, so a row changing lane
-slides there; the head is that row expanded in place, never a second copy. The tree rail is the
+slides there; the head is just the first row of On you, with no hero treatment. The tree rail is the
 repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the
 cursor, the digits, the fold chords); the queue never moves it. Exactly one row
 wears `ring-violet-500`; the violet *edge* answers which checkout you're in.

@@ -221,8 +221,9 @@ function BackgroundAgentsBadge({ n }: { n: number }) {
   );
 }
 
-/** Shape and color derive from `Dot`, so the buckets can't drift from it. */
-export function DotCount({ status, n }: { status: AlertStatus; n: number }) {
+/** Shape and color derive from `Dot`, so the buckets can't drift from it. No
+ * `n` is a bare dot, for a count something beside it already says. */
+export function DotCount({ status, n }: { status: AlertStatus; n?: number }) {
   return (
     <span className="flex items-center gap-1 text-kumo-subtle">
       <span
@@ -238,11 +239,17 @@ export function DotCount({ status, n }: { status: AlertStatus; n: number }) {
   );
 }
 
-/** A rollup's per-status counts, in the order both the rail and sidebar show. */
-export function RollupDots({ r }: { r: AgentRollup }) {
-  return (["busy", "background", "waiting", "error"] as const).map(
-    (status) => r[status] > 0 && <DotCount key={status} status={status} n={r[status]} />,
-  );
+const ROLLUP_STATUSES = ["busy", "background", "waiting", "error"] as const;
+
+/** A rollup's per-status counts, in the order both the rail and sidebar show.
+ * `bare` drops the number when one status holds every agent, so a total shown
+ * beside it isn't said twice. */
+export function RollupDots({ r, bare = false }: { r: AgentRollup; bare?: boolean }) {
+  const shown = ROLLUP_STATUSES.filter((status) => r[status] > 0);
+  const whole = bare && shown.length === 1 && r[shown[0]] === r.total;
+  return shown.map((status) => (
+    <DotCount key={status} status={status} n={whole ? undefined : r[status]} />
+  ));
 }
 
 /** So a collapsed header with running sessions inside doesn't look asleep. */
@@ -775,11 +782,14 @@ function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
   return <>{gitCheckedLabel(computedAtMs, now) ?? "not checked yet"}</>;
 }
 
-/** First of the two chips because its contents die with the checkout. Always
- * rendered, `clean` at zero: an absent chip and one you missed look identical. */
+/** First of the two chips because its contents die with the checkout. A rail
+ * row drops it at zero — a resting "clean" reads as a button to clean up — but
+ * the `labeled` pane header keeps it, where an absent chip and one you missed
+ * would look identical. */
 export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
   const { uncommittedFiles, uncommittedAdded, uncommittedRemoved, uncommittedCapped } = stats;
   const clean = uncommittedFiles === 0;
+  if (clean && !labeled) return null;
   // A `+` because the count is a floor: an untracked directory was too large to list.
   const filesLabel = `${uncommittedFiles}${uncommittedCapped ? "+" : ""}f`;
   return (

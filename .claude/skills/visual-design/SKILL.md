@@ -33,7 +33,10 @@ specimens, token/recipe tables, the ΔE rationale — is
   never hash a repo's color client-side. A *checkout* (the app header) still
   takes its hashed `identityColor()`. Never mix keys on one surface. Absence is
   a state: an unwashed header *means* main checkout. Status and attention
-  always render unchanged on top.
+  always render unchanged on top. **The rails don't wash**: a repo row (queue
+  or tree) wears its color on icon, name and left edge only, and a repo pill
+  is neutral until picked — with every repo washed, color stops meaning
+  anything and drowns the status it must never outrank.
 - **A box is a control or an alert, never a fact.** Rail facts (diff counts,
   branch, base-moved) are bare `font-mono`; the box arrives on hover. Only
   needs-you, port drift, safe-to-delete and deleting keep a resting box. A

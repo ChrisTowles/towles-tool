@@ -185,7 +185,7 @@ export function RollupChip({
           <span className="text-kumo-default">
             {r.total} agent{r.total !== 1 && "s"}
           </span>
-          <RollupDots r={r} />
+          <RollupDots r={r} bare />
           {r.expiring > 0 && (
             <Hint label="warm prompt caches about to expire — nudge them">
               <span className="text-amber-500">◔{r.expiring}</span>
