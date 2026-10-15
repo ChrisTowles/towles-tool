@@ -2,7 +2,7 @@
  * `FolderHeader`, `SessionRow` and `ViewPaneRow`. */
 import { type ReactElement } from "react";
 import { toast } from "@/lib/toast";
-import { FolderPlusIcon } from "@phosphor-icons/react";
+import { FolderPlusIcon, PlusIcon } from "@phosphor-icons/react";
 import {
   Chevron,
   CollapsedLive,
@@ -101,6 +101,7 @@ export function RepoGroup({
   onSelectFolder,
   onSelect,
   onNewSession,
+  onNewRootShell,
   onNewTask,
   onRemoveRepo,
   onDeleteWorktree,
@@ -146,6 +147,8 @@ export function RepoGroup({
   onSelectFolder: (folderDir: string) => void;
   onSelect: (folderDir: string, sessionId: string) => void;
   onNewSession: (folderDir: string, launchClaude?: boolean) => void;
+  /** A shell in the root checkout, focused — the repo header's "+". */
+  onNewRootShell: () => void;
   onNewTask: (repo: NewTaskRepo) => void;
   onRemoveRepo: (dirs: string[], label: string) => void;
   onDeleteWorktree: (dir: string, label: string) => void;
@@ -450,6 +453,14 @@ export function RepoGroup({
             className="hover:text-agent"
           >
             <FolderPlusIcon className="size-3.5" />
+          </IconBtn>
+          <IconBtn
+            ghost
+            title="New shell in the root checkout"
+            onClick={onNewRootShell}
+            className="hover:text-agent"
+          >
+            <PlusIcon className="size-3.5" />
           </IconBtn>
           <RepoMenu
             ghost
