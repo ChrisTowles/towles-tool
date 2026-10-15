@@ -322,6 +322,7 @@ mod tests {
             url: format!("https://github.com/{repo}/pull/{number}"),
             updated_ts: 0,
             dismissed_ts: 0,
+            base_branch: String::new(),
         }
     }
 

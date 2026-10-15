@@ -187,6 +187,8 @@ export type FolderData = {
   needs: number;
   baseBranch?: string | null;
   taskBaseBranch?: string | null;
+  /** Where this folder's PR merges — outranks `taskBaseBranch` as the baseline. */
+  prBaseBranch?: string | null;
   comparedBase?: string;
   computedAtMs?: number;
   /** Newest of `HEAD`'s commit time, the changed paths' mtimes (the only signal

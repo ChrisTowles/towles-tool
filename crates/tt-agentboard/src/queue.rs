@@ -521,6 +521,7 @@ mod tests {
             url: "u".to_string(),
             updated_ts: 0,
             dismissed_ts: 0,
+            base_branch: "main".to_string(),
         }
     }
 

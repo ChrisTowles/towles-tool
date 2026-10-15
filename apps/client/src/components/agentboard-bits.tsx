@@ -574,7 +574,10 @@ export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
 export function ComparedBaseBadge({
   folder,
 }: {
-  folder: Pick<FolderData, "dir" | "comparedBase" | "baseBranch" | "taskBaseBranch">;
+  folder: Pick<
+    FolderData,
+    "dir" | "comparedBase" | "baseBranch" | "taskBaseBranch" | "prBaseBranch"
+  >;
 }) {
   const [editing, setEditing] = useState(false);
   const label = comparedBaseLabel(folder);
@@ -600,9 +603,11 @@ export function ComparedBaseBadge({
         autoFocus
         defaultValue={folder.baseBranch ?? ""}
         placeholder={
-          folder.taskBaseBranch
-            ? `compare against (blank = this task's base, "${folder.taskBaseBranch}")`
-            : "compare against (blank = auto-detect main)"
+          folder.prBaseBranch
+            ? `compare against (blank = its PR's base, "${folder.prBaseBranch}")`
+            : folder.taskBaseBranch
+              ? `compare against (blank = this task's base, "${folder.taskBaseBranch}")`
+              : "compare against (blank = auto-detect main)"
         }
         onBlur={(e) => void commit(e.target.value)}
         onKeyDown={(e) => {
@@ -618,9 +623,11 @@ export function ComparedBaseBadge({
       label={
         manual
           ? `Diffs against "${label}" — your override for this folder. Click to change.`
-          : folder.taskBaseBranch
-            ? `Diffs against "${label}" — the ref this task was created from. Click to override.`
-            : `Diffs against "${label}" (origin/main-or-master auto-detect). Click to override.`
+          : folder.prBaseBranch
+            ? `Diffs against "${label}" — the branch its PR merges into. Click to override.`
+            : folder.taskBaseBranch
+              ? `Diffs against "${label}" — the ref this task was created from. Click to override.`
+              : `Diffs against "${label}" (origin/main-or-master auto-detect). Click to override.`
       }
     >
       <button
@@ -748,7 +755,6 @@ type DiffChipStats = Pick<
   | "commitsUnlanded"
   | "landed"
   | "comparedBase"
-  | "baseBranch"
   | "computedAtMs"
 >;
 
@@ -861,7 +867,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
 /** Shows `commitsUnlanded`, not `commitsAhead`, whenever they disagree: the
  * latter is SHA reachability, which a squash merge pins at 15 forever. */
 export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps) {
-  const { dir, committedAdded, committedRemoved, commitsAhead, commitsUnlanded, baseBranch } =
+  const { dir, committedAdded, committedRemoved, commitsAhead, commitsUnlanded, comparedBase } =
     stats;
   const base = comparedBaseLabel(stats);
   const [commits, setCommits] = useState<CommitStat[] | null>(null);
@@ -878,7 +884,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
         if (open && commits == null) {
           void invoke<CommitStat[]>("ab_get_commit_stats", {
             dir,
-            baseBranch: baseBranch?.trim() || null,
+            baseBranch: comparedBase || null,
           }).then((c) => setCommits(c.unwrapOr([])));
         }
       }}

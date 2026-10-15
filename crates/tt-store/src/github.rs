@@ -18,8 +18,8 @@ const KEEP_LINKED_TERMINAL: &str = "NOT (state <> 'open' AND EXISTS (SELECT 1 FR
 fn insert_prs(tx: &rusqlite::Transaction<'_>, prs: &[PrInput]) -> Result<()> {
     let mut stmt = tx.prepare(
         "INSERT OR REPLACE INTO pr_status
-           (repo, number, title, branch, state, checks, review_state, url, updated_ts)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+           (repo, number, title, branch, state, checks, review_state, url, updated_ts, base_branch)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
     )?;
     for p in prs {
         stmt.execute(params![
@@ -32,6 +32,7 @@ fn insert_prs(tx: &rusqlite::Transaction<'_>, prs: &[PrInput]) -> Result<()> {
             p.review_state,
             p.url,
             p.updated_ts,
+            p.base_branch,
         ])?;
     }
     Ok(())
@@ -196,26 +197,7 @@ impl Store {
     /// point is a PR the sweeps' bounded lists never carried.
     pub fn upsert_prs(&self, prs: &[PrInput]) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
-        {
-            let mut stmt = tx.prepare(
-                "INSERT OR REPLACE INTO pr_status
-                   (repo, number, title, branch, state, checks, review_state, url, updated_ts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?;
-            for p in prs {
-                stmt.execute(params![
-                    p.repo,
-                    p.number,
-                    p.title,
-                    p.branch,
-                    p.state,
-                    p.checks,
-                    p.review_state,
-                    p.url,
-                    p.updated_ts,
-                ])?;
-            }
-        }
+        insert_prs(&tx, prs)?;
         tx.commit()?;
         Ok(prs.len())
     }
@@ -437,6 +419,7 @@ impl Store {
                 url: r.get(7)?,
                 updated_ts: r.get(8)?,
                 dismissed_ts: r.get(9)?,
+                base_branch: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

@@ -1,10 +1,9 @@
-import { SCREENS, type RailView, type ScreenId } from "@/lib/screens";
+import { SCREENS, type ScreenId } from "@/lib/screens";
 
 /** localStorage keys for the persisted tab state. Mirrors SIDEBAR_COLLAPSED_KEY
  * in workspace.tsx. */
 export const ACTIVE_TAB_KEY = "tt-active-tab";
 export const OPEN_TABS_KEY = "tt-open-tabs";
-export const RAIL_VIEW_KEY = "tt-rail-view";
 
 /** The screen shown on a cold start (no valid persisted state). */
 export const COLD_START_TAB: ScreenId = "agentboard";
@@ -42,9 +41,4 @@ function parseOpenTabs(rawOpenTabs: string | null): ScreenId[] {
   }
   const openTabs = [...seen];
   return openTabs.length > 0 ? openTabs : [COLD_START_TAB];
-}
-
-/** The queue unless the tree was the last one picked — it is how the work gets done. */
-export function loadRailView(raw: string | null): RailView {
-  return raw === "tree" ? "tree" : "queue";
 }

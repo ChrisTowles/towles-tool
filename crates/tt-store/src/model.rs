@@ -162,7 +162,7 @@ pub(crate) const TASK_COLS: &str = "id, text, status, rank, created_at, complete
 pub(crate) const TASK_KIND_FILTER: &str = "kind = 'task'";
 pub(crate) const ISSUE_COLS: &str = "i.repo, i.number, i.title, i.labels, i.state, i.url, i.updated_ts, COALESCE(d.dismissed_ts, 0)";
 pub(crate) const PR_COLS: &str = "p.repo, p.number, p.title, p.branch, p.state, p.checks, p.review_state, \
-     p.url, p.updated_ts, COALESCE(d.dismissed_ts, 0)";
+     p.url, p.updated_ts, COALESCE(d.dismissed_ts, 0), p.base_branch";
 pub(crate) const RUN_COLS: &str = "collector, ran_at, ok, message";
 // No dismissed_ts: DM handled state lives in the shared ledger, not this db.
 pub(crate) const DM_COLS: &str = "channel, from_name, text, ts, from_me, url, fetched_at";
@@ -354,6 +354,9 @@ pub struct PrItem {
     pub url: String,
     pub updated_ts: i64,
     pub dismissed_ts: i64,
+    /// Where the PR merges — the branch its work lands on, which can differ from
+    /// the task's own base. `''` for a row swept before v25.
+    pub base_branch: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -519,4 +522,5 @@ pub struct PrInput {
     pub review_state: String,
     pub url: String,
     pub updated_ts: i64,
+    pub base_branch: String,
 }

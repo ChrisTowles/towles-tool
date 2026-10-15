@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COLD_START_TAB, loadRailView, loadWorkspaceTabs } from "@/lib/workspace-persistence";
+import { COLD_START_TAB, loadWorkspaceTabs } from "@/lib/workspace-persistence";
 
 describe("loadWorkspaceTabs", () => {
   it("cold start (nothing stored) falls back to the cold-start tab", () => {
@@ -64,13 +64,5 @@ describe("loadWorkspaceTabs", () => {
     // Empty → cold-start seed, then active tab appended.
     expect(result.openTabs).toEqual([COLD_START_TAB, "board"]);
     expect(result.activeTab).toBe("board");
-  });
-});
-
-describe("loadRailView", () => {
-  it("opens on the queue unless the tree was picked last", () => {
-    expect(loadRailView(null)).toBe("queue");
-    expect(loadRailView("tree")).toBe("tree");
-    expect(loadRailView("cockpit")).toBe("queue");
   });
 });

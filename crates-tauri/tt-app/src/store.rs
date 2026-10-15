@@ -81,6 +81,11 @@ impl StoreState {
         guard.as_ref()?.rail_worktrees().ok()
     }
 
+    pub fn prs(&self) -> Option<Vec<tt_store::PrItem>> {
+        let guard = self.store.lock().unwrap();
+        guard.as_ref()?.prs().ok()
+    }
+
     /// Both halves are diff-driven by the engine, so the steady state passes two
     /// empty lists and touches the database not at all — this runs on the 2s
     /// scan tick against a file three other processes have open.

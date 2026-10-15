@@ -338,6 +338,7 @@ mod tests {
             review_state: String::new(),
             url: "https://x".to_string(),
             updated_ts: 1,
+            base_branch: String::new(),
         }
     }
 
@@ -1043,6 +1044,7 @@ mod tests {
             review_state: String::new(),
             url: format!("https://github.com/o/x/pull/{number}"),
             updated_ts: 1,
+            base_branch: String::new(),
         };
         let s = Store::open_in_memory().unwrap();
         let t = s.add_task("worktree task", "doing", None, None, 1).unwrap();
@@ -1089,6 +1091,7 @@ mod tests {
             review_state: String::new(),
             url: "https://github.com/o/x/pull/83".to_string(),
             updated_ts: 1,
+            base_branch: String::new(),
         }])
         .unwrap();
         s.mark_pr_probe(&[t.id], 2).unwrap();
@@ -1239,6 +1242,7 @@ mod tests {
             review_state: String::new(),
             url: "https://x".to_string(),
             updated_ts: number,
+            base_branch: String::new(),
         };
         let s = Store::open_in_memory().unwrap();
         s.replace_prs(&[
@@ -1428,6 +1432,7 @@ mod tests {
             review_state: String::new(),
             url: "https://x".to_string(),
             updated_ts: number,
+            base_branch: String::new(),
         };
         s.replace_prs(&[pr(1, "feat/a"), pr(2, "feat/b")]).unwrap();
 
@@ -1906,6 +1911,7 @@ mod tests {
             review_state: "review_requested".to_string(),
             url: "https://github.com/octo/widgets/pull/42".to_string(),
             updated_ts,
+            base_branch: String::new(),
         };
 
         s.replace_prs(&[pr(100)]).unwrap();
@@ -1949,6 +1955,7 @@ mod tests {
             review_state: "review_requested".to_string(),
             url: "https://github.com/octo/widgets/pull/42".to_string(),
             updated_ts: 100,
+            base_branch: String::new(),
         }])
         .unwrap();
 
@@ -1992,6 +1999,7 @@ mod tests {
             review_state: "approved".to_string(),
             url: "https://x".to_string(),
             updated_ts: 3,
+            base_branch: String::new(),
         }])
         .unwrap();
         s.record_run("gcal", true, None, 4).unwrap();
@@ -2351,6 +2359,7 @@ mod tests {
             review_state: String::new(),
             url: "https://x".to_string(),
             updated_ts: 1,
+            base_branch: String::new(),
         }])
         .unwrap();
         assert_eq!(s.replace_issues(&[]).unwrap(), 0);
