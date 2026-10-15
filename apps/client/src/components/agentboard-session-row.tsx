@@ -199,14 +199,6 @@ function RowControls({
     onSelect: () => void;
     className?: string;
   }[] = [];
-  if (!session.live) {
-    items.push({
-      glyph: "▶",
-      label: "Start shell",
-      onSelect: () => actions.start(folderDir, session),
-      className: "text-green-500",
-    });
-  }
   if (!session.live || !agent) {
     items.push({
       glyph: "✦",

@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   changedFolderDirs,
   dropPane,
-  exitPaneId,
   hydrateWins,
   normalizeWins,
   nextWindowId,
   placePane,
   pruneWins,
-  replacePane,
   type RepoData,
   type StatePayload,
   type WindowsPayload,
@@ -20,8 +18,6 @@ export type WindowLayout = {
   updateWins: (folderDirs: string[], fn: (w: WindowsPayload) => WindowsPayload) => void;
   addPaneToActive: (folderDir: string, paneId: string) => void;
   removePane: (paneId: string) => void;
-  replacePaneInPlace: (from: string, to: string) => void;
-  removeSessionPane: (sessionId: string) => void;
 };
 
 // Hydrated once from the backend, then frontend-owned and saved back debounced.
@@ -92,12 +88,8 @@ export function useWindowLayout(args: {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- updateWins is stable within a render; the reactive inputs are all listed
   }, [wins, repos, open]);
 
-  // A session reclaims its own tombstone first, so reopening fills the crashed
-  // pane in place instead of appending a second pane beside the corpse.
   function addPaneToActive(folderDir: string, paneId: string) {
-    updateWins([folderDir], (w) =>
-      placePane(replacePane(w, exitPaneId(paneId), paneId), folderDir, paneId, nextWindowId),
-    );
+    updateWins([folderDir], (w) => placePane(w, folderDir, paneId, nextWindowId));
   }
 
   function removePane(paneId: string) {
@@ -105,20 +97,5 @@ export function useWindowLayout(args: {
     updateWins(folderDir ? [folderDir] : [], (w) => dropPane(w, paneId));
   }
 
-  function replacePaneInPlace(from: string, to: string) {
-    const folderDir = wins?.windows.find((win) => win.panes.includes(from))?.folderDir;
-    updateWins(folderDir ? [folderDir] : [], (w) => replacePane(w, from, to));
-  }
-
-  // Terminal or the tombstone that replaced it — every session-keyed removal
-  // comes through here, so no caller has to know which of the two it sees.
-  function removeSessionPane(sessionId: string) {
-    const ids = [sessionId, exitPaneId(sessionId)];
-    const folderDir = wins?.windows.find((win) =>
-      ids.some((id) => win.panes.includes(id)),
-    )?.folderDir;
-    updateWins(folderDir ? [folderDir] : [], (w) => ids.reduce((acc, id) => dropPane(acc, id), w));
-  }
-
-  return { wins, updateWins, addPaneToActive, removePane, replacePaneInPlace, removeSessionPane };
+  return { wins, updateWins, addPaneToActive, removePane };
 }

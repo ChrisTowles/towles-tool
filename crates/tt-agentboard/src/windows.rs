@@ -160,18 +160,9 @@ impl WindowsStore {
 /// `apps/client/src/lib/agentboard.ts`.
 const FOLDER_PANE_PREFIXES: [&str; 4] = ["~files:", "~preview:", "~jarvis:", "~browser:"];
 
-/// A tombstone pane reporting on a session that has exited; it dies with the
-/// session it names. Must match `EXIT_PANE_PREFIX` in the client.
-const EXIT_PANE_PREFIX: &str = "~exit:";
-
 /// The folder dir a folder-pane id points at (`None` for session panes).
 fn folder_pane_dir(pane_id: &str) -> Option<&str> {
     FOLDER_PANE_PREFIXES.iter().find_map(|p| pane_id.strip_prefix(p))
-}
-
-/// The session a pane reports on: its own id, or the one a tombstone names.
-fn pane_session(pane_id: &str) -> &str {
-    pane_id.strip_prefix(EXIT_PANE_PREFIX).unwrap_or(pane_id)
 }
 
 /// Headless port of the client's `pruneWins` + active-window normalization
@@ -196,7 +187,7 @@ pub fn prune_dead(
             .iter()
             .filter(|p| match folder_pane_dir(p) {
                 Some(dir) => folder_valid(dir),
-                None => valid_sessions.contains(pane_session(p)),
+                None => valid_sessions.contains(p.as_str()),
             })
             .cloned()
             .collect();
@@ -392,19 +383,12 @@ mod tests {
             windows: vec![win(
                 "w1",
                 "/live",
-                &[
-                    "s1",
-                    "s-gone",
-                    "~exit:s1",
-                    "~exit:s-gone",
-                    "~files:/live",
-                    "~preview:/dead",
-                ],
+                &["s1", "s-gone", "~files:/live", "~preview:/dead"],
             )],
             active_windows: BTreeMap::from([("/live".into(), "w1".into())]),
         };
         let (next, touched) = prune_dead(&payload, &ids(&["s1"]), |d| d == "/live").unwrap();
-        assert_eq!(next.windows, vec![win("w1", "/live", &["s1", "~exit:s1", "~files:/live"])]);
+        assert_eq!(next.windows, vec![win("w1", "/live", &["s1", "~files:/live"])]);
         assert_eq!(touched, vec!["/live".to_string()]);
     }
 

@@ -4,6 +4,7 @@
 //! derived by scanning `~/.claude` (see `lib.rs`), not pushed over HTTP.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -24,9 +25,11 @@ pub struct Ab {
     /// First-entered "needs you" timestamps, carried across recomputes so a
     /// session's waiting-age is stable. Every payload the app stamps threads here.
     pub needs_since: Mutex<tt_agentboard::bridge::NeedsSince>,
-    /// Session ids seen with a live PTY at least once, so [`prune_dead_shells`]
-    /// can tell "just exited" from "hasn't started yet".
+    /// Session ids seen with a live PTY at least once, so [`prune_ended_sessions`]
+    /// can tell "just ended" from "hasn't started yet".
     pub ever_live: Mutex<HashSet<String>>,
+    /// Set as the app goes down; see [`stop_pruning_for_shutdown`].
+    pub shutting_down: AtomicBool,
     /// Needs-you edges waiting out the notification coalescing window.
     pub coalescer: Mutex<tt_agentboard::Coalescer>,
 }
@@ -90,16 +93,16 @@ pub fn stamp_pty_state(
     tt_agentboard::bridge::recompute_needs(payload, since, now);
 }
 
-/// Delete a plain shell's session record the moment its PTY exits (an agent pane
-/// keeps its last-known status). Must run after [`stamp_pty_state`]; `ever_live`
-/// keeps a session that hasn't spawned its PTY yet from being deleted.
-fn prune_dead_shells(
-    payload: &mut StatePayload,
-    engine: &Mutex<Engine>,
-    ever_live: &Mutex<HashSet<String>>,
-) {
-    let mut engine = engine.lock().unwrap();
-    let mut ever_live = ever_live.lock().unwrap();
+/// Delete a session's record the moment its PTY ends — exit, crash or kill,
+/// agent pane or plain shell — so a shell that is gone never lingers as a row.
+/// Must run after [`stamp_pty_state`]; `ever_live` keeps a session that hasn't
+/// spawned its PTY yet from being deleted.
+fn prune_ended_sessions(payload: &mut StatePayload, ab: &Ab) {
+    if ab.shutting_down.load(Ordering::SeqCst) {
+        return;
+    }
+    let mut engine = ab.engine.lock().unwrap();
+    let mut ever_live = ab.ever_live.lock().unwrap();
     for repo in &mut payload.repos {
         for folder in &mut repo.folders {
             folder.sessions.retain(|session| {
@@ -107,28 +110,23 @@ fn prune_dead_shells(
                     ever_live.insert(session.id.clone());
                     return true;
                 }
-                let was_live = ever_live.remove(&session.id);
-                let dead_shell = was_live && session.agent_state.is_none();
-                if dead_shell {
-                    tracing::info!(session_id = %session.id, "session.pruned_exited_shell");
-                    engine.close_session(&session.id, now_ms());
+                if !ever_live.remove(&session.id) {
+                    return true;
                 }
-                !dead_shell
+                tracing::info!(session_id = %session.id, "session.pruned_ended");
+                engine.close_session(&session.id, now_ms());
+                false
             });
         }
     }
 }
 
-/// A shell that ended itself cleanly (`exit`, Ctrl-D) is done, agent or not;
-/// [`prune_dead_shells`] alone would keep any pane an agent is attributed to.
-/// A kill never reaches here, and a crash keeps its record for the tombstone.
-pub fn close_exited_session(app: &AppHandle, id: &str) {
-    let Some(ab) = app.try_state::<Ab>() else {
-        return;
-    };
-    ab.ever_live.lock().unwrap().remove(id);
-    if ab.engine.lock().unwrap().close_session(id, now_ms()) {
-        tracing::info!(session_id = %id, "session.closed_on_exit");
+/// App shutdown kills every PTY, and those records must outlive it — restart
+/// respawns their panes and the resume picker reads them — so pruning stops
+/// before the kill can read as every session ending.
+pub fn stop_pruning_for_shutdown(app: &AppHandle) {
+    if let Some(ab) = app.try_state::<Ab>() {
+        ab.shutting_down.store(true, Ordering::SeqCst);
     }
 }
 
@@ -144,7 +142,7 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
         &mut ab.needs_since.lock().unwrap(),
         now_ms(),
     );
-    prune_dead_shells(&mut payload, &ab.engine, &ab.ever_live);
+    prune_ended_sessions(&mut payload, &ab);
     payload
 }
 
@@ -221,7 +219,7 @@ pub fn ab_mark_seen(state: State<Ab>, app: AppHandle, name: String) {
             &mut state.needs_since.lock().unwrap(),
             now_ms(),
         );
-        prune_dead_shells(&mut payload, &state.engine, &state.ever_live);
+        prune_ended_sessions(&mut payload, &state);
         let _ = app.emit(STATE_EVENT, payload);
     }
 }

@@ -1,4 +1,3 @@
-import { PanePlaceholder } from "@/components/agentboard-bits";
 import { AgentboardStandby, Centered } from "@/components/agentboard-standby";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
 import { JumpRecallCard } from "@/components/agentboard-jump-recall";
@@ -8,9 +7,7 @@ import { JarvisPane } from "@/components/jarvis-pane";
 import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
 import {
-  exitPaneSession,
   filesPaneDir,
-  isExitPane,
   isFilesPane,
   isJarvisPane,
   isPreviewPane,
@@ -54,8 +51,6 @@ export function PaneGrid(props: {
   onFocusPane: (paneId: string) => void;
   /** Sessions whose program raised attention (BEL / OSC 9) since last looked at. */
   termAttention: Record<string, true>;
-  /** How a *crashed* session's shell died, by session id (tombstone detail). */
-  exitLabels: Record<string, string>;
   filesOpenRequests: Record<string, FilesOpenRequest>;
   /** Files an agent asked to show, by folder dir — see the MCP
    * `preview_file` tool (`lib/preview-artifact.ts`). */
@@ -97,7 +92,6 @@ export function PaneGrid(props: {
     focusedPaneId,
     onFocusPane,
     termAttention,
-    exitLabels,
     filesOpenRequests,
     previewRequests,
     nativeVisible,
@@ -272,25 +266,6 @@ export function PaneGrid(props: {
             />,
           ),
         )}
-      {/* Tombstones: a shell that died on its own, holding the task it died in.
-          The pane id says which kind this is, so this pass can't overlap the
-          terminal pass above — a session is either its own id or its `~exit:`
-          one, never both. Dismissal is the only affordance; reopening from the
-          rail reclaims the task. */}
-      {panes.filter(isExitPane).map((id) => {
-        const sessionId = exitPaneSession(id) ?? "";
-        const s = sessionById.get(sessionId);
-        return paneBox(
-          id,
-          <PanePlaceholder
-            label={s ? labelFor(s) : "shell"}
-            detail={exitLabels[sessionId]}
-            tone="alert"
-            focused={focusedPaneId === id}
-            onRemove={() => onRemovePane(id)}
-          />,
-        );
-      })}
       {/* Column dividers: drag to resize (snaps to thirds and fifths),
           double-click for equal columns. Row layout (≤3) has one per boundary;
           the ≥4 grid shares one column boundary across rows. */}

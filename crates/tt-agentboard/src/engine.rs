@@ -143,6 +143,10 @@ pub struct Engine {
     /// The host's last [`collect_agent_snapshot`], so a payload rebuild does no
     /// `/proc` or transcript I/O of its own.
     agent_snapshot: AgentSnapshot,
+    /// Session records loaded from the previous run. Their shells died with it,
+    /// so each is kept only until the resume picker has had its say — see
+    /// [`Self::retire_prior_run`].
+    prior_run: HashSet<String>,
 }
 
 /// What a payload rebuild needs from the system rather than engine state.
@@ -247,6 +251,8 @@ impl Engine {
         if sessions.drop_never_used() {
             persisted(sessions.save(), "sessions");
         }
+        let prior_run =
+            sessions.iter().flat_map(|(_, list)| list.iter().map(|r| r.id.clone())).collect();
 
         Self {
             projects_dir: projects_dir.clone(),
@@ -278,6 +284,7 @@ impl Engine {
             task_worktrees: Vec::new(),
             thread_sessions: HashMap::new(),
             agent_snapshot: AgentSnapshot::default(),
+            prior_run,
         }
     }
 
@@ -925,6 +932,19 @@ impl Engine {
         changed
     }
 
+    /// Close every previous-run record except `keep` (the resume candidates),
+    /// returning the closed ids. A dead shell is not a state the rail shows, so
+    /// only what the picker may still relaunch survives the run that killed it.
+    /// Once per run: later calls find nothing left to retire.
+    pub fn retire_prior_run(&mut self, keep: &HashSet<String>, now: i64) -> Vec<String> {
+        let mut closed: Vec<String> = std::mem::take(&mut self.prior_run)
+            .into_iter()
+            .filter(|id| !keep.contains(id) && self.close_session(id, now))
+            .collect();
+        closed.sort();
+        closed
+    }
+
     pub fn close_session(&mut self, id: &str, now: i64) -> bool {
         let dir = self.folder_dir_of_session(id);
         let removed = self.sessions.remove(id);
@@ -1010,6 +1030,7 @@ impl Engine {
             task_worktrees: Vec::new(),
             thread_sessions: HashMap::new(),
             agent_snapshot: AgentSnapshot::default(),
+            prior_run: HashSet::new(),
         }
     }
 }
@@ -1042,6 +1063,21 @@ mod engine_tests {
         assert_eq!(e.session_ids_for("/repo/x"), vec![b.id]);
 
         assert_eq!(e.folder_meta.last_worked_at_for("/repo/x"), Some(1002));
+    }
+
+    #[test]
+    fn retire_prior_run_closes_all_but_the_kept_records_once() {
+        let (_tmp, mut e) = engine();
+        let stale = e.add_session("/repo/x", None, 1000);
+        let candidate = e.add_session("/repo/x", None, 1001);
+        let this_run = e.add_session("/repo/x", None, 1002);
+        e.prior_run = [&stale, &candidate].iter().map(|r| r.id.clone()).collect();
+
+        let keep = HashSet::from([candidate.id.clone()]);
+        assert_eq!(e.retire_prior_run(&keep, 2000), vec![stale.id.clone()]);
+        let left: Vec<String> = e.session_ids_for("/repo/x");
+        assert_eq!(left, vec![candidate.id.clone(), this_run.id.clone()]);
+        assert!(e.retire_prior_run(&HashSet::new(), 3000).is_empty());
     }
 
     #[test]

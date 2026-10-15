@@ -293,9 +293,10 @@ fn term_start_blocking(
             let status = session.child.wait().ok();
             let code = status.as_ref().map(|s| s.exit_code() as i32).unwrap_or(0);
             let signal = status.as_ref().and_then(|s| s.signal().map(str::to_string));
-            if code == 0 && signal.is_none() {
-                crate::agentboard::close_exited_session(&app, &term_id);
-            }
+            // The session goes with its shell, so this is the only lasting
+            // record of how it died — the crash toast is gone once dismissed.
+            let outcome = if code == 0 && signal.is_none() { "clean" } else { "crash" };
+            tracing::info!(%term_id, code, signal = signal.as_deref(), outcome, "terminal.exited");
             let _ = app.emit_to(MAIN_WINDOW_LABEL, EXIT_EVENT, TermExit { term_id, code, signal });
             notify_agentboard(&app); // shell exited — session no longer live
         }
@@ -321,6 +322,7 @@ pub fn term_kill(app: AppHandle, term_id: String) {
 
 pub fn on_window_destroyed(app: &AppHandle, label: &str) {
     if label == MAIN_WINDOW_LABEL {
+        crate::agentboard::stop_pruning_for_shutdown(app);
         app.state::<TermState>().kill_all();
     }
 }
