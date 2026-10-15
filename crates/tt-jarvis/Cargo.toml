@@ -40,12 +40,13 @@ features = [
   "bevy_winit",
   "multi_threaded",
   # Without this the tonemapping shader samples a missing LUT and the whole
-  # scene renders magenta — Bevy's missing-texture fallback. `zstd_rust` is its
-  # transitive requirement (the LUTs ship compressed) and keeping it on the pure
-  # Rust backend avoids putting a C toolchain in the build, matching the
-  # workspace's existing no-C-toolchain stance for gix.
+  # scene renders magenta — Bevy's missing-texture fallback. A zstd backend is
+  # its transitive requirement (the LUTs ship compressed). `zstd_c`, not the
+  # pure-Rust `zstd_rust`: the fork pins `ruzstd` 0.8, which RUSTSEC-2026-0344
+  # (decompression bomb) fixes only in 0.9, so the C backend is the one with
+  # no open advisory. Back to `zstd_rust` once the fork takes ruzstd 0.9.
   "tonemapping_luts",
-  "zstd_rust",
+  "zstd_c",
   # Bloom, which lives in `bevy_post_process` as of 0.19+. The Jarvis scene is
   # emissive geometry on near-black — without bloom the rings are flat lines
   # rather than glowing ones, so this is load-bearing for the look, not polish.
