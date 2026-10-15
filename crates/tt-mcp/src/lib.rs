@@ -19,8 +19,13 @@ use std::time::Instant;
 
 use chrono::{Local, NaiveDate, TimeZone};
 
+mod inbox;
 mod output;
 pub mod port;
+mod suggest;
+
+pub use inbox::InboxHost;
+pub use suggest::{SuggestAnswer, SuggestHost, SuggestRequest};
 
 use serde_json::{Value, json};
 use tt_store::{EventInput, McpCallInput, Store};
@@ -245,8 +250,14 @@ pub struct Dispatcher {
     editor_host: Option<Box<dyn EditorHost>>,
     /// Injected by the transport; `None` in tests, where `needs_you` refuses.
     attention_host: Option<Box<dyn AttentionHost>>,
+    /// Injected by the transport; `None` in tests, where notes are still leased and acked.
+    inbox_host: Option<Box<dyn InboxHost>>,
+    /// Injected by the transport; `None` in tests, where `next_prompt` refuses.
+    suggest_host: Option<Box<dyn SuggestHost>>,
     /// Test hook: fixed lane ids, keeping `calendar_set` off the real settings file.
     calendar_sources: Option<Vec<String>>,
+    /// Test hook: keeps `next_prompt` off the real settings file.
+    next_prompt_settings: Option<tt_config::NextPromptSettings>,
 }
 
 /// What the transport knows that the body cannot say: which app terminal the agent sits in
@@ -382,6 +393,10 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("calendar_today", "Today's meetings", Effect::Read),
     ("calendar_next", "Next meeting", Effect::Read),
     ("calendar_set", "Set a calendar day", Effect::Replace),
+    ("inbox_take", "Take notes for this session", Effect::Write),
+    ("inbox_ack", "Acknowledge delivered notes", Effect::Replace),
+    ("next_prompt", "Suggest the next prompt", Effect::Read),
+    ("next_prompt_taken", "Record a taken suggestion", Effect::Write),
 ];
 
 /// Why a tool call produced no result — [`Dispatcher::tools_call`] says what each becomes.
@@ -399,19 +414,29 @@ struct Outcome {
     error: Option<String>,
     /// Set only for a JSON-RPC-level refusal — see [`Handled::error_code`].
     code: Option<i64>,
+    /// An `inbox_take` that found nothing: the mod polls every few seconds, so logging each
+    /// empty poll would fill the call log with nothing.
+    quiet: bool,
 }
 
 impl Outcome {
     fn ok(response: String) -> Outcome {
-        Outcome { response, tool: None, args: None, error: None, code: None }
+        Outcome { response, tool: None, args: None, error: None, code: None, quiet: false }
     }
 
     fn err(response: String, error: String) -> Outcome {
-        Outcome { response, tool: None, args: None, error: Some(error), code: None }
+        Outcome { response, tool: None, args: None, error: Some(error), code: None, quiet: false }
     }
 
     fn refused(response: String, code: i64, error: String) -> Outcome {
-        Outcome { response, tool: None, args: None, error: Some(error), code: Some(code) }
+        Outcome {
+            response,
+            tool: None,
+            args: None,
+            error: Some(error),
+            code: Some(code),
+            quiet: false,
+        }
     }
 
     fn with_tool(mut self, tool: String, args: String) -> Outcome {
@@ -431,7 +456,10 @@ impl Dispatcher {
             preview_host: None,
             editor_host: None,
             attention_host: None,
+            inbox_host: None,
+            suggest_host: None,
             calendar_sources: None,
+            next_prompt_settings: None,
         }
     }
 
@@ -456,6 +484,25 @@ impl Dispatcher {
     /// Injected by the serving transport — see [`AttentionHost`].
     pub fn with_attention_host(mut self, host: Box<dyn AttentionHost>) -> Dispatcher {
         self.attention_host = Some(host);
+        self
+    }
+
+    /// Injected by the serving transport — see [`InboxHost`].
+    pub fn with_inbox_host(mut self, host: Box<dyn InboxHost>) -> Dispatcher {
+        self.inbox_host = Some(host);
+        self
+    }
+
+    /// Injected by the serving transport — see [`SuggestHost`].
+    pub fn with_suggest_host(mut self, host: Box<dyn SuggestHost>) -> Dispatcher {
+        self.suggest_host = Some(host);
+        self
+    }
+
+    /// Test hook — see [`Dispatcher::next_prompt_settings`].
+    #[cfg(test)]
+    fn with_next_prompt_settings(mut self, settings: tt_config::NextPromptSettings) -> Dispatcher {
+        self.next_prompt_settings = Some(settings);
         self
     }
 
@@ -550,6 +597,9 @@ impl Dispatcher {
             },
         };
 
+        if outcome.quiet {
+            return Handled { response: Some(outcome.response), wrote: false, error_code: None };
+        }
         let call = McpCallInput {
             method: method.to_string(),
             tool: outcome.tool,
@@ -593,7 +643,11 @@ impl Dispatcher {
         let args = params.and_then(|p| p.get("arguments")).cloned().unwrap_or_else(|| json!({}));
         let logged_args = compact_args(&args);
         let outcome = match self.call_tool(&name, &args, now_ms, ctx) {
-            Ok(value) => Outcome::ok(self.tool_result_response(id, &value)),
+            Ok(value) => {
+                let mut ok = Outcome::ok(self.tool_result_response(id, &value));
+                ok.quiet = name == "inbox_take" && inbox::is_empty_take(&value);
+                ok
+            }
             Err(ToolError::Failed(message)) => {
                 Outcome::err(self.tool_error_response(id, &message), message)
             }
@@ -628,6 +682,10 @@ impl Dispatcher {
             "calendar_today" => self.calendar_today(now_ms),
             "calendar_next" => self.calendar_next(now_ms),
             "calendar_set" => self.calendar_set(args, now_ms),
+            "inbox_take" => self.inbox_take(now_ms, ctx),
+            "inbox_ack" => self.inbox_ack(args, now_ms, ctx),
+            "next_prompt" => self.next_prompt(args, now_ms, ctx),
+            "next_prompt_taken" => self.next_prompt_taken(args),
             _ => return Err(ToolError::Unknown),
         };
         result.map_err(ToolError::Failed)
@@ -817,26 +875,36 @@ impl Dispatcher {
             .map(str::trim)
             .filter(|title| !title.is_empty())
             .ok_or_else(|| "missing required argument: title".to_string())?;
-        let repo_arg = args
-            .get("repo")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|repo| !repo.is_empty())
-            .ok_or_else(|| "missing required argument: repo".to_string())?;
+        let text_arg = |key: &str| {
+            args.get(key).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())
+        };
         let status = args.get("status").and_then(Value::as_str).unwrap_or("backlog");
         let notes = args.get("notes").and_then(Value::as_str);
         let goal = args.get("goal").and_then(Value::as_str);
+        let origin = match text_arg("origin") {
+            None => "agent",
+            Some("park") => "park",
+            Some(other) => return Err(format!("unknown origin: {other} (only \"park\")")),
+        };
 
         // Case-insensitive, stamped with the tracked repo's own spelling: `christowles/x` must not
         // mint a second identity beside `ChrisTowles/x` and split one repo across two lanes.
-        let (repo_root, repo) = self
-            .store
-            .tracked_repo_for_owner_repo(repo_arg)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                let slugs = self.store.repo_slugs().unwrap_or_default();
-                unknown_repo_message(repo_arg, &slugs)
-            })?;
+        let (repo_root, repo) = match (text_arg("repo"), text_arg("dir")) {
+            (Some(repo_arg), _) => self
+                .store
+                .tracked_repo_for_owner_repo(repo_arg)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    let slugs = self.store.repo_slugs().unwrap_or_default();
+                    unknown_repo_message(repo_arg, &slugs)
+                })?,
+            (None, Some(dir)) => self
+                .store
+                .tracked_repo_for_dir(dir)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("{dir} is in no tracked repo"))?,
+            (None, None) => return Err("missing required argument: repo (or dir)".to_string()),
+        };
 
         let task =
             self.store.add_task(title, status, notes, goal, now_ms).map_err(|e| e.to_string())?;
@@ -844,7 +912,7 @@ impl Dispatcher {
             .set_task_worktree(task.id, &repo_root, Some(&repo), None, None)
             .map_err(|e| e.to_string())?;
         let task = self.store.task_by_id(task.id).map_err(|e| e.to_string())?;
-        tracing::info!(task_id = task.id, %repo, %status, "task.created");
+        tracing::info!(task_id = task.id, %repo, %status, origin, "task.created");
         Ok(json!({ "task": task }))
     }
 
@@ -1445,12 +1513,14 @@ pub fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "repo": { "type": "string", "description": "The tracked repo's GitHub `owner/repo` slug." },
+                    "dir": { "type": "string", "description": "Instead of `repo`: an absolute directory inside a tracked checkout (a task worktree counts), resolving to that checkout's repo." },
+                    "origin": { "type": "string", "enum": ["park"], "description": "Set only by the tt mod's /park command. Leave it out." },
                     "title": { "type": "string", "description": "The task's title." },
                     "goal": { "type": "string", "description": "Optional objective the task is meant to accomplish, shown on the board card under the title." },
                     "notes": { "type": "string", "description": "Optional free-form context." },
                     "status": { "type": "string", "enum": ["backlog", "doing", "done"], "description": "Column to land in (default backlog)." },
                 },
-                "required": ["repo", "title"],
+                "required": ["title"],
             },
         },
         {
@@ -1594,6 +1664,48 @@ pub fn tool_definitions() -> Value {
                 "required": ["source", "events"],
             },
         },
+        {
+            "name": "inbox_take",
+            "description": "For the towles-tool Claude mod only; agents never call it. Leases the notes the user sent this session from the app, so the mod can hand them to the model. Answers `pollMs: 0` outside an app terminal.",
+            "inputSchema": no_args(),
+        },
+        {
+            "name": "inbox_ack",
+            "description": "For the towles-tool Claude mod only; agents never call it. Marks leased notes delivered and how.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "ids": { "type": "array", "items": { "type": "integer" }, "description": "The delivered notes' ids, at most 50." },
+                    "how": { "type": "string", "enum": ["midTurn", "prompt"], "description": "Read at the agent's next step, or submitted as a prompt." },
+                },
+                "required": ["ids", "how"],
+            },
+        },
+        {
+            "name": "next_prompt",
+            "description": "For the towles-tool Claude mod only; agents never call it. Asks one context-free model question for what the user will type next, within their daily budget.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tools": { "type": "array", "items": { "type": "string" }, "description": "Tools the last turn used." },
+                    "commands": { "type": "array", "items": { "type": "string" }, "description": "Bash commands the last turn ran." },
+                    "answer": { "type": "string", "description": "The agent's last message." },
+                    "taskId": { "type": "integer", "description": "The session's board task, for its goal." },
+                },
+                "required": ["tools", "commands", "answer"],
+            },
+        },
+        {
+            "name": "next_prompt_taken",
+            "description": "For the towles-tool Claude mod only; agents never call it. Records that the user submitted the suggested prompt.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "edited": { "type": "boolean", "description": "Whether they changed it before sending." },
+                },
+                "required": ["edited"],
+            },
+        },
     ]);
 
     if let Some(entries) = tools.as_array_mut() {
@@ -1616,6 +1728,7 @@ pub fn tool_definitions() -> Value {
 mod tests {
     use super::*;
     use chrono::Duration;
+    use tt_store::{NoteDelivery, NoteSource};
 
     const NOW: i64 = 1_700_000_000_000; // fixed epoch ms for deterministic tests
     const TEST_VERSION: &str = "0.0.0-test";
@@ -1820,7 +1933,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_is_exactly_the_task_pane_attention_and_calendar_families() {
+    fn tools_list_is_exactly_the_task_pane_attention_calendar_and_mod_families() {
         let mut dispatcher = dispatcher();
         let response = parsed(&mut dispatcher, &request(1, "tools/list", json!({})));
         let names: Vec<&str> = response["result"]["tools"]
@@ -1847,6 +1960,10 @@ mod tests {
                 "calendar_today",
                 "calendar_next",
                 "calendar_set",
+                "inbox_take",
+                "inbox_ack",
+                "next_prompt",
+                "next_prompt_taken",
             ]
         );
     }
@@ -3328,5 +3445,149 @@ mod tests {
         let out = compact_args(&big);
         assert!(out.ends_with('…'), "oversized args end with an ellipsis: {out}");
         assert_eq!(out.chars().count(), CALL_LOG_ARGS_MAX + 1);
+    }
+
+    fn session(id: &str) -> RequestContext {
+        RequestContext::for_session(Some(id))
+    }
+
+    #[test]
+    fn inbox_take_leases_the_callers_notes_and_ack_marks_them_delivered() {
+        let mut dispatcher = dispatcher();
+        let id = dispatcher.store.add_note("me", "band only", NoteSource::Note, &[], NOW).unwrap();
+        dispatcher.store.add_note("other", "not yours", NoteSource::Note, &[], NOW).unwrap();
+
+        let taken = call_tool_as(&mut dispatcher, "inbox_take", json!({}), &session("me"));
+        assert_eq!(taken["pollMs"], inbox::POLL_MS);
+        assert_eq!(taken["notes"].as_array().unwrap().len(), 1);
+        assert_eq!(taken["notes"][0]["body"], "band only");
+        let again = call_tool_as(&mut dispatcher, "inbox_take", json!({}), &session("me"));
+        assert_eq!(again["notes"], json!([]), "a leased note is not offered twice");
+
+        let acked = call_tool_as(
+            &mut dispatcher,
+            "inbox_ack",
+            json!({ "ids": [id], "how": "midTurn" }),
+            &session("me"),
+        );
+        assert_eq!(acked["acked"], 1);
+        let twice = call_tool_as(
+            &mut dispatcher,
+            "inbox_ack",
+            json!({ "ids": [id], "how": "midTurn" }),
+            &session("me"),
+        );
+        assert_eq!(twice["acked"], 0, "acking is idempotent");
+    }
+
+    #[test]
+    fn inbox_take_without_a_session_tells_the_mod_to_stop_polling() {
+        let mut dispatcher = dispatcher();
+        let taken = call_tool(&mut dispatcher, "inbox_take", json!({}));
+        assert_eq!(taken, json!({ "notes": [], "pollMs": 0 }));
+        let err =
+            call_tool_err(&mut dispatcher, "inbox_ack", json!({ "ids": [1], "how": "prompt" }));
+        assert!(err.contains("session"), "{err}");
+    }
+
+    #[test]
+    fn an_empty_inbox_poll_leaves_no_call_log_row() {
+        let mut dispatcher = dispatcher();
+        call_tool_as(&mut dispatcher, "inbox_take", json!({}), &session("me"));
+        assert!(dispatcher.store.mcp_calls(10).unwrap().is_empty());
+        dispatcher.store.add_note("me", "x", NoteSource::Note, &[], NOW).unwrap();
+        call_tool_as(&mut dispatcher, "inbox_take", json!({}), &session("me"));
+        assert_eq!(dispatcher.store.mcp_calls(10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn delivery_reaches_the_host_once() {
+        use std::sync::{Arc, Mutex};
+        type Seen = Arc<Mutex<Vec<(String, usize)>>>;
+        struct FakeInbox(Seen);
+        impl InboxHost for FakeInbox {
+            fn took(&self, _: &str, _: i64) {}
+            fn delivered(
+                &self,
+                session: &str,
+                notes: &[tt_store::AgentNote],
+                _: NoteDelivery,
+                _: i64,
+            ) {
+                self.0.lock().unwrap().push((session.to_string(), notes.len()));
+            }
+        }
+        let seen: Seen = Arc::default();
+        let mut dispatcher = dispatcher().with_inbox_host(Box::new(FakeInbox(seen.clone())));
+        let id = dispatcher.store.add_note("me", "x", NoteSource::Note, &[], NOW).unwrap();
+        for _ in 0..2 {
+            call_tool_as(
+                &mut dispatcher,
+                "inbox_ack",
+                json!({ "ids": [id], "how": "prompt" }),
+                &session("me"),
+            );
+        }
+        assert_eq!(*seen.lock().unwrap(), [("me".to_string(), 1)]);
+    }
+
+    struct FakeSuggest(f64);
+    impl SuggestHost for FakeSuggest {
+        fn suggest(&self, request: SuggestRequest) -> Result<SuggestAnswer, String> {
+            Ok(SuggestAnswer {
+                prompt: Some(format!("{} / {}", request.answer, request.goal.unwrap_or_default())),
+                confidence: 0.5,
+                cost_usd: Some(self.0),
+            })
+        }
+    }
+
+    fn budgeted(cost: f64, budget: f64) -> Dispatcher {
+        dispatcher().with_suggest_host(Box::new(FakeSuggest(cost))).with_next_prompt_settings(
+            tt_config::NextPromptSettings { daily_budget_usd: budget, ..Default::default() },
+        )
+    }
+
+    #[test]
+    fn next_prompt_asks_with_the_tasks_goal_and_counts_the_spend() {
+        let mut dispatcher = budgeted(0.25, 1.0);
+        let task = dispatcher.store.add_task("t", "doing", None, Some("ship it"), NOW).unwrap();
+        let args = json!({ "tools": [], "commands": [], "answer": "done", "taskId": task.id });
+        let first = call_tool(&mut dispatcher, "next_prompt", args.clone());
+        assert_eq!(first["prompt"], "done / ship it");
+        assert_eq!(first["budgetLeftUsd"], 0.75);
+        call_tool(&mut dispatcher, "next_prompt", args.clone());
+        call_tool(&mut dispatcher, "next_prompt", args.clone());
+        call_tool(&mut dispatcher, "next_prompt", args.clone());
+        let over = call_tool(&mut dispatcher, "next_prompt", args);
+        assert_eq!(over["prompt"], Value::Null, "today's budget is spent");
+        assert_eq!(over["budgetLeftUsd"], 0.0);
+    }
+
+    #[test]
+    fn next_prompt_without_a_host_refuses() {
+        let mut dispatcher = dispatcher();
+        let args = json!({ "tools": [], "commands": [], "answer": "" });
+        assert!(call_tool_err(&mut dispatcher, "next_prompt", args).contains("unavailable"));
+    }
+
+    #[test]
+    fn task_create_resolves_a_dir_to_its_tracked_repo() {
+        let mut dispatcher = dispatcher();
+        let dir = format!("{REPO_DIR}/.claude/worktrees/feat");
+        let created = call_tool(
+            &mut dispatcher,
+            "task_create",
+            json!({ "dir": dir, "title": "cap the inbox", "origin": "park" }),
+        );
+        assert_eq!(created["task"]["worktree"]["repo"], REPO_SLUG);
+        let err = call_tool_err(&mut dispatcher, "task_create", json!({ "title": "x" }));
+        assert!(err.contains("repo (or dir)"), "{err}");
+        let err = call_tool_err(
+            &mut dispatcher,
+            "task_create",
+            json!({ "repo": REPO_SLUG, "title": "x", "origin": "model" }),
+        );
+        assert!(err.contains("unknown origin"), "{err}");
     }
 }

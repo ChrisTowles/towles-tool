@@ -47,6 +47,9 @@ tools without manual `claude mcp add` setup:
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.
+- **The mod's own** — `inbox_take`, `inbox_ack`, `next_prompt` and
+  `next_prompt_taken` serve the mod below. The mod denies the model any call to
+  them, so an agent never reads another's notes or spends the suggestion budget.
 
 The broader dashboard-read tools were pruned in the 2026-07 tool-surface review.
 
@@ -109,14 +112,16 @@ guard.
   writes the summary and deletes the worktree and pane. Outside a task it lands
   the work and reports there was no task to delete. Needs the `tt` plugin.
 
-## Mod: the app's band above the prompt
+## Mod: the app inside Claude Code
 
 `hooks/register.tsx` is a Claude Code mod (a function-hooks module, named under
-`modules` in `hooks/hooks.json`). It shows the app's view of the session inside
-Claude Code itself, as one row above the prompt:
+`modules` in `hooks/hooks.json`). It carries the app's view of the session, and
+the user's words from the app, into Claude Code itself.
+
+### The band above the prompt
 
 ```
-✦ tt  #7 Claude mods (doing)  PR #42 open · checks passing  ready for /done  2 need you  4m to Standup
+✦ tt  #7 Claude mods (doing)  PR #42 open · checks passing  ready for /done  4m to Standup  n: next prompt
 ```
 
 - **Task.** This is the open board task whose worktree holds the session's cwd,
@@ -126,21 +131,50 @@ Claude Code itself, as one row above the prompt:
   its checks settle to passing or failing, a toast says so once.
 - **Ready for /done.** Shown when that PR is open with passing checks: what
   `/towles-tool-app:done` needs to land it.
-- **Needs you.** How many of the app's other sessions are waiting on you
-  (`needs_you`), so a blocked agent elsewhere is visible from this one.
 - **Next meeting.** Time until the next meeting, the only calendar fact the app
   surfaces. It turns yellow inside 15 minutes, and a toast fires once per
   meeting at 5 minutes.
 
 The same facts go on the status line too, in short form
-(`tt #7 · PR #42 passing · ready for /done · 2 need you · 4m to Standup`),
+(`tt #7 · PR #42 passing · ready for /done · 4m to Standup`),
 alongside the band.
 
 The data comes from this plugin's own MCP server (`task_list`,
-`calendar_next`, `needs_you`) via `$.mcp.call`. It refreshes at session
+`calendar_next`) via `$.mcp.call`. It refreshes at session
 start, after every turn, and every 60s. App closed means MCP down, so the
-band and status line hide instead of showing stale state. The `$.state` contract is `types/index.d.ts`, and the
-pure logic in `hooks/band.ts` is what `tests/` covers:
+band and status line hide instead of showing stale state.
+
+### Notes from the app
+
+A note sent from the app (a session row's **Note to agent…**, `Mod+Shift+M`, or
+annotated feedback from the Preview or Chrome pane) reaches the agent without
+being typed into its terminal. The mod polls `inbox_take` every 3 s and after
+each model step:
+
+- **While the agent works**, the note joins the conversation as a user row the
+  model reads at its *next step*. A note that lands during the turn's last step
+  has no next step to read it, so it goes again as a prompt when the turn ends.
+- **While it is idle**, the note is submitted as your own prompt.
+
+Either way a dim transcript line says so, and `inbox_ack` tells the app, which
+marks the session answered as typing into it would. A session without this mod
+cannot take a note; the app says so rather than type into its prompt box.
+
+### `/park` and `/next`
+
+- **`/park [idea]`** files the idea (or, with no argument, the text you
+  selected) as a backlog task on this checkout's board, through `task_create`.
+  The session never leaves what it is doing.
+- **`/next`**, or `n` on the band, asks what you will type next: one
+  `claude -p` call with no tools, MCP, settings or CLAUDE.md, given the last
+  turn's tools and commands, its answer, the task's goal and the prompts you
+  typed after similar turns. The answer is shown as the dim suggestion, Tab to
+  take. It never runs on its own, and the app holds it to a daily budget
+  (Settings → Agent Board → Next-prompt suggestion).
+
+The `$.state` contract is `types/index.d.ts`, and the pure logic in
+`hooks/band.ts`, `hooks/inbox.ts`, `hooks/park.ts` and `hooks/suggest.ts` is
+what `tests/` covers:
 
 ```sh
 claude plugin validate packages/app

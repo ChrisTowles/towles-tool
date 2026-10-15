@@ -333,6 +333,14 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
+    id: "ab-note-agent",
+    scope: "agentboard",
+    keys: "mod+shift+m",
+    description: "Send the selected agent a note, read at its next step",
+    when: "the session runs the tt Claude mod",
+    allowInEditable: true,
+  },
+  {
     id: "tq-run",
     scope: "telemetry",
     keys: "mod+enter",

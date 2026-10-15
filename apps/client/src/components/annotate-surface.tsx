@@ -22,11 +22,12 @@ import {
   type Annotation,
   type AnnotationTool,
   drawAnnotation,
-  feedbackPrompt,
-  feedbackPtyData,
+  feedbackLaunch,
+  feedbackNote,
   folderSendTargets,
   previewWriteFeedback,
 } from "@/lib/preview";
+import { NOT_LISTENING_HINT, inboxSend, useInbox } from "@/lib/inbox";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import type { Result } from "better-result";
@@ -81,7 +82,9 @@ export function AnnotateSurface({
   const draftRef = useRef<Annotation | null>(null);
   const redrawRef = useRef<() => void>(() => {});
 
-  const targets = useMemo(() => folderSendTargets(folder), [folder]);
+  const { listening } = useInbox();
+  const targets = useMemo(() => folderSendTargets(folder, listening), [folder, listening]);
+  const target = targets.find((t) => t.sessionId === targetId);
 
   // The in-progress stroke lives only in `draftRef`, painted imperatively: a
   // `setDraft` per pointermove would re-render every move and drop points.
@@ -208,14 +211,14 @@ export function AnnotateSurface({
     const rect = surface.getBoundingClientRect();
     setCaptured(compositeInk ? await withInk(shot, annotations, rect.width) : shot);
     setComment("");
-    setTargetId(targets.at(0)?.sessionId ?? null);
+    const first = targets.find((t) => t.mode !== "unreachable") ?? targets.at(0);
+    setTargetId(first?.sessionId ?? null);
   }
 
   async function sendFeedback() {
     if (!captured || !folder) return;
-    const target = targets.find((t) => t.sessionId === targetId);
-    if (!target) {
-      toast.error("That session is no longer running — pick another.");
+    if (!target || target.mode === "unreachable") {
+      toast.error("That session can't take feedback — pick another.");
       return;
     }
     setSending(true);
@@ -228,11 +231,20 @@ export function AnnotateSurface({
       toast.error(`Send failed: ${errorMessage(written.error)}`);
       return;
     }
-    const prompt = feedbackPrompt(comment, sourceLabel, written.value);
-    const sent = await termWriteRetry(
-      target.sessionId,
-      feedbackPtyData(prompt, target.agentRunning),
-    );
+    const sent =
+      target.mode === "note"
+        ? (
+            await inboxSend(
+              target.sessionId,
+              feedbackNote(comment, sourceLabel),
+              written.value,
+              true,
+            )
+          ).map(() => undefined)
+        : await termWriteRetry(
+            target.sessionId,
+            feedbackLaunch(comment, sourceLabel, written.value),
+          );
     setSending(false);
     sent.match({
       ok: () => {
@@ -338,8 +350,8 @@ export function AnnotateSurface({
           <div className="flex flex-col gap-1.5">
             <Dialog.Title className="text-lg font-semibold">Send annotated feedback</Dialog.Title>
             <Dialog.Description className="text-sm text-kumo-subtle">
-              The screenshot below (with your markup) is staged as a file and its path typed into
-              the session&apos;s prompt.
+              The screenshot below (with your markup) is staged as a file and sent to the agent as a
+              note, read at its next step.
             </Dialog.Description>
           </div>
           {captured && (
@@ -378,13 +390,16 @@ export function AnnotateSurface({
               No live session in this checkout — start one in the rail first.
             </div>
           ) : null}
+          {target?.mode === "unreachable" && (
+            <div className="text-xs text-kumo-subtle">{NOT_LISTENING_HINT}</div>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setCaptured(null)}>
               Cancel
             </Button>
             <Button
               variant="primary"
-              disabled={sending || !targetId}
+              disabled={sending || !target || target.mode === "unreachable"}
               onClick={() => void sendFeedback()}
             >
               {sending ? "Sending…" : "Send"}

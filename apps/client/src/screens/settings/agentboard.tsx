@@ -100,6 +100,17 @@ export function agentboardSections(
         ),
       },
       {
+        label: "Next-prompt suggestion",
+        keywords: ["next", "prompt", "suggest", "haiku", "budget", "mod", "claude", "/next"],
+        node: (
+          <NextPromptEditor
+            value={settings.nextPrompt ?? {}}
+            onChange={(nextPrompt) => update((s) => ({ ...s, nextPrompt }))}
+            onCommit={() => void flush()}
+          />
+        ),
+      },
+      {
         label: "Desktop notifications",
         keywords: [
           "notification",
@@ -894,6 +905,63 @@ function RepoIdentityRow({
       >
         Untrack
       </Button>
+    </div>
+  );
+}
+
+type NextPrompt = NonNullable<UserSettings["nextPrompt"]>;
+
+/** Rust holds the defaults, so a blank field here means "use them". */
+function NextPromptEditor({
+  value,
+  onChange,
+  onCommit,
+}: {
+  value: NextPrompt;
+  onChange: (next: NextPrompt) => void;
+  onCommit: () => void;
+}) {
+  const [spent, setSpent] = useState<number | null>(null);
+  useEffect(() => {
+    void invoke<number>("next_prompt_spend_today").then((r) => setSpent(r.unwrapOr(null)));
+  }, []);
+  const budget = value.dailyBudgetUsd ?? 0.2;
+  return (
+    <div className="flex flex-col gap-2">
+      <SettingRow
+        label="Next-prompt suggestion"
+        description="The tt Claude mod's /next (or n on its band) asks one model call, with no tools, MCP or CLAUDE.md, what you'll type next. Never automatic."
+        extra={
+          spent != null && (
+            <span className="font-mono text-xs text-kumo-subtle">
+              ${spent.toFixed(4)} of ${budget.toFixed(2)} today
+            </span>
+          )
+        }
+      >
+        <Input
+          aria-label="Daily budget in US dollars"
+          type="number"
+          step="0.05"
+          min="0"
+          className="w-24"
+          value={value.dailyBudgetUsd ?? ""}
+          placeholder="0.20"
+          onChange={(e) => {
+            const n = Number.parseFloat(e.target.value);
+            onChange({ ...value, dailyBudgetUsd: Number.isFinite(n) ? n : undefined });
+          }}
+          onBlur={onCommit}
+        />
+      </SettingRow>
+      <InputArea
+        aria-label="Next-prompt question"
+        rows={3}
+        value={value.question ?? ""}
+        placeholder="Default: what is the person most likely to type as their next prompt…"
+        onChange={(e) => onChange({ ...value, question: e.target.value || undefined })}
+        onBlur={onCommit}
+      />
     </div>
   );
 }

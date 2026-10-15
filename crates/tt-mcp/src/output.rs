@@ -10,7 +10,7 @@
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use serde_json::Value;
-use tt_store::{BranchResync, CalEvent, TaskItem};
+use tt_store::{AgentNote, BranchResync, CalEvent, TaskItem};
 
 #[derive(JsonSchema)]
 #[schemars(rename_all = "camelCase")]
@@ -163,6 +163,51 @@ struct CalendarWritten {
     day_end: String,
 }
 
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+struct InboxTaken {
+    notes: Vec<AgentNote>,
+    /// How long to wait before polling again; `0` means stop.
+    poll_ms: i64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+struct InboxAcked {
+    acked: i64,
+}
+
+/// A plain `number`: schemars stamps `f64` as `format: "double"`, which a client warns on.
+fn number(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    use schemars::schema::{InstanceType, SchemaObject};
+    SchemaObject { instance_type: Some(InstanceType::Number.into()), ..Default::default() }.into()
+}
+
+fn number_or_null(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    use schemars::schema::{InstanceType, SchemaObject};
+    let types = vec![InstanceType::Number, InstanceType::Null];
+    SchemaObject { instance_type: Some(types.into()), ..Default::default() }.into()
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+struct NextPrompt {
+    /// `null` when the model could not tell, or today's budget is spent.
+    prompt: Option<String>,
+    #[schemars(schema_with = "number")]
+    confidence: f64,
+    #[schemars(schema_with = "number_or_null")]
+    cost_usd: Option<f64>,
+    #[schemars(schema_with = "number")]
+    budget_left_usd: f64,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+struct Recorded {
+    recorded: bool,
+}
+
 /// The schema for `name`'s result, or `None` for a tool with no declared output.
 pub fn schema_for(name: &str) -> Option<Value> {
     Some(match name {
@@ -178,6 +223,10 @@ pub fn schema_for(name: &str) -> Option<Value> {
         "calendar_today" => schema::<CalendarToday>(),
         "calendar_next" => schema::<CalendarNext>(),
         "calendar_set" => schema::<CalendarWritten>(),
+        "inbox_take" => schema::<InboxTaken>(),
+        "inbox_ack" => schema::<InboxAcked>(),
+        "next_prompt" => schema::<NextPrompt>(),
+        "next_prompt_taken" => schema::<Recorded>(),
         _ => return None,
     })
 }

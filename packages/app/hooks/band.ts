@@ -72,19 +72,14 @@ export function readyForDone(task: BandTask | null): boolean {
   return task?.pr?.state === 'open' && task.pr.checks === 'passing'
 }
 
-export function needsLabel(count: number): string | null {
-  return count > 0 ? `${count} need${count === 1 ? 's' : ''} you` : null
-}
-
 /** The band's facts on one short line, for the status line. */
 export function statusLine(snap: Snapshot | null): string | undefined {
   if (!snap) return undefined
-  const { task, meeting, needsYou } = snap
+  const { task, meeting } = snap
   const parts = [
     task && `#${task.id}`,
     task?.pr && `PR #${task.pr.number} ${task.pr.checks}`,
     readyForDone(task) && 'ready for /done',
-    needsLabel(needsYou),
     meeting && untilLabel(meeting),
   ].filter(Boolean)
   return parts.length ? `tt ${parts.join(' · ')}` : undefined

@@ -13,6 +13,7 @@ mod diagnostics;
 mod doctor;
 mod gh_actions;
 mod ide;
+mod inbox;
 mod instance_lock;
 mod launch;
 #[cfg(target_os = "linux")]
@@ -20,6 +21,7 @@ mod linux_desktop;
 mod macos_keys;
 mod mcp;
 mod mcp_http;
+mod next_prompt;
 mod preview;
 mod queue;
 mod resume;
@@ -763,6 +765,9 @@ pub fn run() {
             preview::preview_watch_file,
             preview::preview_unwatch_file,
             preview::preview_write_feedback,
+            inbox::inbox_send,
+            inbox::inbox_state,
+            next_prompt::next_prompt_spend_today,
             task::task_base_branches,
             task::task_check_branch,
             task::task_create,

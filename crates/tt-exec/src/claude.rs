@@ -78,6 +78,7 @@ pub struct Ask<'a> {
     schema: &'a str,
     model: Option<&'a str>,
     no_mcp: bool,
+    bare: bool,
     cwd: Option<&'a Path>,
     timeout: Duration,
 }
@@ -87,7 +88,7 @@ impl<'a> Ask<'a> {
     /// blocks its caller forever, and how long *this* caller can afford to wait
     /// is the caller's own knowledge.
     pub fn new(prompt: &'a str, schema: &'a str, timeout: Duration) -> Self {
-        Self { prompt, schema, model: None, no_mcp: false, cwd: None, timeout }
+        Self { prompt, schema, model: None, no_mcp: false, bare: false, cwd: None, timeout }
     }
 
     /// Worth pinning for cheap one-shot calls the user isn't directing.
@@ -103,6 +104,14 @@ impl<'a> Ask<'a> {
         self
     }
 
+    /// A context-free single answer: no built-in tools, no settings sources (so no
+    /// `CLAUDE.md`, user or project) and no transcript left behind. Implies [`Ask::no_mcp`].
+    pub fn bare(mut self) -> Self {
+        self.no_mcp = true;
+        self.bare = true;
+        self
+    }
+
     /// So the session picks up that checkout's `CLAUDE.md` and conventions.
     pub fn cwd(mut self, cwd: &'a Path) -> Self {
         self.cwd = Some(cwd);
@@ -111,7 +120,7 @@ impl<'a> Ask<'a> {
 
     /// Deserializes the envelope's validated `structured_output` into `T`.
     pub fn run<T: DeserializeOwned>(&self) -> Result<Answered<T>> {
-        let args = claude_args(self.prompt, self.schema, self.model, self.no_mcp);
+        let args = claude_args(self.prompt, self.schema, self.model, self.no_mcp, self.bare);
         let out = match self.cwd {
             Some(dir) => crate::run_in_dir_with_timeout("claude", &args, dir, self.timeout),
             None => crate::run_with_timeout("claude", &args, self.timeout),
@@ -137,6 +146,7 @@ pub fn claude_args<'a>(
     schema: &'a str,
     model: Option<&'a str>,
     no_mcp: bool,
+    bare: bool,
 ) -> Vec<&'a str> {
     let mut args = vec![
         "-p",
@@ -155,6 +165,15 @@ pub fn claude_args<'a>(
             "--strict-mcp-config",
             "--mcp-config",
             r#"{"mcpServers":{}}"#,
+        ]);
+    }
+    if bare {
+        args.extend([
+            "--tools",
+            "",
+            "--setting-sources",
+            "",
+            "--no-session-persistence",
         ]);
     }
     args
@@ -218,7 +237,7 @@ mod tests {
 
     #[test]
     fn the_call_makes_the_cli_enforce_the_schema() {
-        let args = claude_args("the prompt", "{\"type\":\"object\"}", None, false);
+        let args = claude_args("the prompt", "{\"type\":\"object\"}", None, false, false);
         assert_eq!(args[0..2], ["-p", "the prompt"]);
         assert_eq!(args[2..4], ["--output-format", "json"]);
         assert_eq!(args[4..6], ["--json-schema", "{\"type\":\"object\"}"]);
@@ -227,15 +246,30 @@ mod tests {
 
     #[test]
     fn a_pinned_model_is_appended() {
-        let args = claude_args("p", "{}", Some("sonnet"), false);
+        let args = claude_args("p", "{}", Some("sonnet"), false, false);
         assert_eq!(args[6..8], ["--model", "sonnet"]);
     }
 
     #[test]
     fn no_mcp_loads_no_servers() {
-        let args = claude_args("p", "{}", None, true);
+        let args = claude_args("p", "{}", None, true, false);
         assert_eq!(args[6], "--strict-mcp-config");
         assert_eq!(args[7..9], ["--mcp-config", r#"{"mcpServers":{}}"#]);
+    }
+
+    #[test]
+    fn bare_drops_tools_settings_and_the_transcript() {
+        let args = claude_args("p", "{}", None, true, true);
+        assert_eq!(
+            args[9..],
+            [
+                "--tools",
+                "",
+                "--setting-sources",
+                "",
+                "--no-session-persistence"
+            ]
+        );
     }
 
     #[test]

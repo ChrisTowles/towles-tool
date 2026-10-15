@@ -20,6 +20,7 @@ pub mod breakdown;
 pub mod cadence;
 pub mod insights;
 pub mod ledger;
+pub mod next_prompt;
 pub mod parser;
 pub mod pricing;
 #[cfg(test)]

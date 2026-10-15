@@ -3,7 +3,6 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import {
   checksToast,
   meetingFrom,
-  needsLabel,
   prLabel,
   readyForDone,
   shouldWarn,
@@ -54,9 +53,9 @@ describe('band', () => {
 
   test('the heads-up fires once per meeting, never while it runs', async () => {
     const soon = { id: 3, title: 'Standup', minutesUntil: 4, live: false }
-    expect(shouldWarn({ task: null, meeting: soon, needsYou: 0 }, null)).toBe(true)
-    expect(shouldWarn({ task: null, meeting: soon, needsYou: 0 }, 3)).toBe(false)
-    expect(shouldWarn({ task: null, meeting: { ...soon, live: true }, needsYou: 0 }, null)).toBe(
+    expect(shouldWarn({ task: null, meeting: soon }, null)).toBe(true)
+    expect(shouldWarn({ task: null, meeting: soon }, 3)).toBe(false)
+    expect(shouldWarn({ task: null, meeting: { ...soon, live: true } }, null)).toBe(
       false,
     )
   })
@@ -84,17 +83,14 @@ describe('band', () => {
   })
 
   test('the status line', async () => {
-    expect(needsLabel(0)).toBe(null)
-    expect(needsLabel(1)).toBe('1 needs you')
     expect(statusLine(null)).toBe(undefined)
-    expect(statusLine({ task: null, meeting: null, needsYou: 0 })).toBe(undefined)
+    expect(statusLine({ task: null, meeting: null })).toBe(undefined)
     expect(
       statusLine({
         task: { id: 7, text: 't', status: 'doing', pr: { number: 42, state: 'open', checks: 'passing' } },
         meeting: { id: 3, title: 'Standup', minutesUntil: 4, live: false },
-        needsYou: 2,
       }),
-    ).toBe('tt #7 · PR #42 passing · ready for /done · 2 need you · 4m to Standup')
+    ).toBe('tt #7 · PR #42 passing · ready for /done · 4m to Standup')
   })
 
   test('the band shows the task, its PR and the next meeting', async ($, on) => {
@@ -115,8 +111,8 @@ describe('band', () => {
       const body =
         e.tool === 'task_list'
           ? { tasks: TASKS }
-          : e.tool === 'needs_you'
-            ? { sessions: [{ session: 'a' }, { session: 'b' }] }
+          : e.tool === 'inbox_take'
+            ? { notes: [], pollMs: 3000 }
             : { event: { id: 3, title: 'Standup' }, minutesUntil: 4, live: false }
       return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
     })
@@ -126,9 +122,9 @@ describe('band', () => {
     expect(await ui.find({ type: 'Text', text: 'PR #42 open · checks passing' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '4m to Standup' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'ready for /done' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '2 need you' })).toBeDefined()
+    expect(await ui.find({ text: '2 need you' })).toBe(undefined)
     expect(toasts).toEqual(['Standup in 4m. Time to wrap up.'])
-    expect(status.at(-1)).toBe('tt #7 · PR #42 passing · ready for /done · 2 need you · 4m to Standup')
+    expect(status.at(-1)).toBe('tt #7 · PR #42 passing · ready for /done · 4m to Standup')
     await ui.unmount()
   })
 

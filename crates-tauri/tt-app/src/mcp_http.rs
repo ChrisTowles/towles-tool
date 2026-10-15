@@ -252,7 +252,9 @@ pub fn spawn(app: AppHandle, bind: tt_mcp::port::BindPort) {
             .with_task_host(Box::new(AppTaskHost { app: app.clone() }))
             .with_preview_host(Box::new(AppPreviewHost { app: app.clone() }))
             .with_editor_host(Box::new(AppEditorHost { app: app.clone() }))
-            .with_attention_host(Box::new(AppAttentionHost { app: app.clone() })),
+            .with_attention_host(Box::new(AppAttentionHost { app: app.clone() }))
+            .with_inbox_host(Box::new(crate::inbox::AppInboxHost { app: app.clone() }))
+            .with_suggest_host(Box::new(crate::next_prompt::AppSuggestHost)),
     ));
 
     SERVING.store(true, Ordering::Relaxed);

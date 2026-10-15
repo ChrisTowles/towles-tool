@@ -115,15 +115,19 @@ pub fn scan_sessions_detailed(
 }
 
 /// Everything knowable about a transcript without opening it.
-struct Candidate {
-    mtime: i64,
+pub(crate) struct Candidate {
+    pub(crate) mtime: i64,
     session_id: String,
     /// The project directory's own encoded name, for [`normalize_repo_name`].
     encoded: String,
-    path: PathBuf,
+    pub(crate) path: PathBuf,
 }
 
-fn collect_candidates(project_path: &Path, cutoff_ms: i64, out: &mut Vec<Candidate>) -> Result<()> {
+pub(crate) fn collect_candidates(
+    project_path: &Path,
+    cutoff_ms: i64,
+    out: &mut Vec<Candidate>,
+) -> Result<()> {
     let encoded = project_path.file_name().unwrap_or_default().to_string_lossy().to_string();
     for file_entry in std::fs::read_dir(project_path)? {
         let file_entry = file_entry?;

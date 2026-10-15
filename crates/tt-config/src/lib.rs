@@ -296,6 +296,33 @@ pub const DEFAULT_IMPROVER_INTERVIEW: &str = "Rewrite the task as a request to r
 codebase first and then interview me one question at a time about what is still ambiguous, \
 prioritizing questions where my answer would change the architecture.";
 
+/// The Claude mod's next-prompt suggestion: one context-free `claude -p` question per
+/// keystroke, never automatic. `question` is the instruction; the context goes after it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct NextPromptSettings {
+    pub question: String,
+    pub model: String,
+    /// Spend past this in a local day refuses further calls until tomorrow.
+    pub daily_budget_usd: f64,
+}
+
+pub const DEFAULT_NEXT_PROMPT_QUESTION: &str = "What is the person most likely to type as \
+their next prompt to this coding agent? Answer with the prompt exactly as they would type it, \
+in their own style and length, and how confident you are from 0 to 1. Answer an empty prompt if \
+you cannot tell.";
+
+impl Default for NextPromptSettings {
+    fn default() -> Self {
+        Self {
+            question: DEFAULT_NEXT_PROMPT_QUESTION.to_string(),
+            model: "haiku".to_string(),
+            daily_budget_usd: 0.20,
+        }
+    }
+}
+
 /// How a [`TelemetryFilter`] compares a record's value with its own.
 /// `Gt`/`Lt` compare numerically when both sides parse as numbers and
 /// lexically otherwise; `Contains` is a case-insensitive substring.
@@ -827,6 +854,17 @@ pub struct UserSettings {
     /// Lenient for the same reason as `mcp`: a hand-edit slip must not brick every command.
     #[serde(default, deserialize_with = "lenient_agents")]
     pub agents: AgentsSettings,
+
+    /// Lenient for the same reason as `mcp`.
+    #[serde(default, deserialize_with = "lenient_next_prompt")]
+    pub next_prompt: NextPromptSettings,
+}
+
+fn lenient_next_prompt<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<NextPromptSettings, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 fn lenient_agents<'de, D: serde::Deserializer<'de>>(
@@ -861,6 +899,7 @@ impl Default for UserSettings {
             collectors: CollectorsSettings::default(),
             mcp: McpSettings::default(),
             agents: AgentsSettings::default(),
+            next_prompt: NextPromptSettings::default(),
         }
     }
 }

@@ -150,6 +150,19 @@ impl Store {
             .map_err(Error::from)
     }
 
+    /// The tracked `(repo_root, owner_repo)` whose root holds `dir`; the deepest wins. A task
+    /// worktree sits inside its checkout, so it resolves to that checkout's repo.
+    pub fn tracked_repo_for_dir(&self, dir: &str) -> Result<Option<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT repo_root, owner_repo FROM repos")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let holds = |root: &str| dir == root || dir.starts_with(&format!("{root}/"));
+        Ok(rows
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|(root, _)| holds(root))
+            .max_by_key(|(root, _)| root.len()))
+    }
+
     /// Every tracked repo's `owner/repo` slug, sorted for a stable error
     /// message when `task_create` rejects an unknown `repo` argument.
     pub fn repo_slugs(&self) -> Result<Vec<String>> {

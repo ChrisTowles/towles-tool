@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 25;
+pub(crate) const SCHEMA_VERSION: i64 = 26;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -189,6 +189,28 @@ CREATE TABLE IF NOT EXISTS queue_snoozes (
 );
 ";
 
+/// v26: notes the user sent an agent from the app, delivered by the Claude mod, and the
+/// next-prompt suggester's daily spend.
+const SCHEMA_NOTES_V26: &str = "\
+CREATE TABLE IF NOT EXISTS agent_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session TEXT NOT NULL,
+    body TEXT NOT NULL,
+    source TEXT NOT NULL,
+    images TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    leased_until INTEGER,
+    delivered_at INTEGER,
+    delivered_how TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agent_notes_session ON agent_notes(session, delivered_at);
+CREATE TABLE IF NOT EXISTS suggest_spend (
+    day TEXT PRIMARY KEY,
+    calls INTEGER NOT NULL,
+    cost_usd REAL NOT NULL
+);
+";
+
 const SCHEMA_AGENTS_V21: &str = "\
 CREATE TABLE IF NOT EXISTS agent_sessions (
     agent TEXT PRIMARY KEY,
@@ -293,6 +315,7 @@ impl Store {
         self.migrate_ci_runs_branch_v23()?;
         self.migrate_queue_snoozes_v24()?;
         self.migrate_pr_status_base_branch_v25()?;
+        self.conn.execute_batch(SCHEMA_NOTES_V26)?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
