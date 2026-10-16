@@ -22,7 +22,7 @@ rollup tally) — not the tree, which is `agentboard-repo-group` (a repo) →
 `agentboard-folder-header` (a checkout), or `agentboard-home-header` (`~`) → `agentboard-session-row` (a PTY) /
 `agentboard-pane-rows`, plus `agentboard-fold-rows` for the rows that stand for
 rows *not* shown ("N idle", "N unmanaged"), with shared atoms in
-`agentboard-bits` and pure logic in `lib/agentboard.ts`. A new row kind gets an
+`components/agentboard-bits/` and pure logic in `lib/agentboard/`. A new row kind gets an
 eighth file, not a grown one.
 
 **`~` is always the first group.** The engine appends one `home`-origin row

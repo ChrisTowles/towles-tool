@@ -1,7 +1,7 @@
 import { railNodes, type RailVisibility } from "@/lib/rail-nodes";
 
 /** Digits 1–9; a tenth visible session simply wears no badge. */
-export const RAIL_HOTKEY_MAX = 9;
+const RAIL_HOTKEY_MAX = 9;
 
 export type RailHotkeyTarget = { sessionId: string; folderDir: string };
 

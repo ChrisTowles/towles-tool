@@ -68,7 +68,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-export function ManifestBlock() {
+function ManifestBlock() {
   return (
     <div className="overflow-hidden rounded-md border border-kumo-hairline bg-muted/40">
       <div className="flex items-center justify-between border-b border-kumo-hairline bg-muted/60 px-2.5 py-1.5">

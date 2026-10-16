@@ -1,11 +1,5 @@
-import {
-  isSoloRepo,
-  withoutFolded,
-  type FolderData,
-  type RepoData,
-  type SessionData,
-  type WindowsPayload,
-} from "@/lib/agentboard";
+import { isSoloRepo, withoutFolded } from "@/lib/agentboard/folder";
+import type { FolderData, RepoData, SessionData, WindowsPayload } from "@/lib/agentboard/types";
 
 /** One row of the rail, in render order. `key` is the cursor's identity and,
  * for a row that folds, the collapse-map key it already answers to. */

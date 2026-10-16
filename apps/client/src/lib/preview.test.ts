@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FolderData, SessionData } from "@/lib/agentboard";
+import type { FolderData, SessionData } from "@/lib/agentboard/types";
 import type { LaunchConfigStatus } from "@/lib/launch";
 import {
   devServersOf,

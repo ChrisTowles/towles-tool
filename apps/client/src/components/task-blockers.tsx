@@ -13,7 +13,7 @@ import {
   type TaskBlocker,
   type TaskBlockerKind,
   stoppablePort,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/landing";
 import { cn } from "@/lib/utils";
 
 /** Exhaustive over `TaskBlockerKind`, so a guard added in Rust fails the build

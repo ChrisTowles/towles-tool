@@ -6,22 +6,19 @@ import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane"
 import { JarvisPane } from "@/components/jarvis-pane";
 import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
+import type { SessionActions } from "@/lib/agentboard/actions";
+import { paneRects } from "@/lib/agentboard/layout";
 import {
   filesPaneDir,
   isFilesPane,
   isJarvisPane,
   isPreviewPane,
   jarvisPaneDir,
-  paneRects,
   previewPaneDir,
-  type AgWindow,
-  type FolderData,
-  type RepoData,
-  type SessionActions,
-  type SessionData,
   browserPaneDir,
   isBrowserPane,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/pane-ids";
+import type { AgWindow, FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
 import type { JumpRecall } from "@/lib/jump-recall";
 import type { PreviewRequest } from "@/lib/preview-artifact";
 import type { TermExit } from "@/lib/term-protocol";

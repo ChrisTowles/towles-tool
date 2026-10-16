@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { nextOpenFileNonce, requestAgentboardNav, type RepoData } from "@/lib/agentboard";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import type { RepoData } from "@/lib/agentboard/types";
+import { nextOpenFileNonce } from "@/lib/agentboard/windows";
 import { invoke, isTauri } from "@/lib/tauri";
 
 // Delivery for the MCP `preview_file` tool: `preview://show` → the Preview pane

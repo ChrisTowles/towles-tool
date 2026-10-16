@@ -3,7 +3,7 @@ import { invoke } from "@/lib/tauri";
 import { NotInTauri } from "@/lib/errors";
 import { storeAddTask, storeAttachTaskIssue, storeItemDismiss } from "@/lib/data";
 import { uiAction } from "@/lib/ui-action";
-import type { PaneRect } from "@/lib/agentboard";
+import type { PaneRect } from "@/lib/agentboard/layout";
 import type { NewTaskSubmit } from "@/components/inline-new-task";
 
 /** Sentinel key in the persisted collapse map for "the whole rail is collapsed
@@ -66,4 +66,11 @@ export async function createTaskForSubmit(input: NewTaskSubmit): Promise<number 
     void storeAttachTaskIssue(created.value, issue.repo, issue.number, issue.url);
   }
   return created.value;
+}
+
+/** A copy of `set` with `value` flipped in or out. */
+export function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
+  const next = new Set(set);
+  if (!next.delete(value)) next.add(value);
+  return next;
 }

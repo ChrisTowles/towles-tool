@@ -15,7 +15,8 @@ import {
 } from "@phosphor-icons/react";
 import { CommandPalette as Palette } from "@cloudflare/kumo";
 import { useTheme } from "@/components/theme-provider";
-import { requestAgentboardNav, useAgentboardState } from "@/lib/agentboard";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import { useAgentboardState } from "@/lib/agentboard/state";
 import { storeAddTask, useStoreSnapshot } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import {

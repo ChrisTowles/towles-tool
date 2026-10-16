@@ -6,13 +6,10 @@ import type {
   NewTaskSubmit,
   TaskCreated,
 } from "@/components/inline-new-task";
-import {
-  abSetSessionPurpose,
-  ownerRepoFromOrigin,
-  promptWithImages,
-  type ClaudeLaunchOptions,
-  type StartClaudeTarget,
-} from "@/lib/agentboard";
+import type { StartClaudeTarget } from "@/lib/agentboard/actions";
+import { promptWithImages, type ClaudeLaunchOptions } from "@/lib/agentboard/claude-command";
+import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
+import { abSetSessionPurpose } from "@/lib/agentboard/ipc";
 import { storeAttachTaskPr, storeSetTaskStatus, storeTaskSetWorktree } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
 import { TaskCreatedSchema } from "@/lib/schemas/task";

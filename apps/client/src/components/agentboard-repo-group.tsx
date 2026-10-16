@@ -3,13 +3,10 @@
 import { type ReactElement } from "react";
 import { toast } from "@/lib/toast";
 import { FolderPlusIcon, PlusIcon } from "@phosphor-icons/react";
-import {
-  Chevron,
-  CollapsedLive,
-  IconBtn,
-  NeedsBadge,
-  RepoMenu,
-} from "@/components/agentboard-bits";
+import { NeedsBadge } from "@/components/agentboard-bits/badges";
+import { IconBtn } from "@/components/agentboard-bits/primitives";
+import { RepoMenu } from "@/components/agentboard-bits/repo-menu";
+import { Chevron, CollapsedLive } from "@/components/agentboard-bits/status-dots";
 import { FoldToggleRow, FoldedRepoStub } from "@/components/agentboard-fold-rows";
 import { FolderHeader } from "@/components/agentboard-folder-header";
 import { HomeHeader } from "@/components/agentboard-home-header";
@@ -23,6 +20,7 @@ import { SessionRow } from "@/components/agentboard-session-row";
 import { InlineNewTask, type NewTaskRepo, type NewTaskSubmit } from "@/components/inline-new-task";
 import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
+import type { SessionActions } from "@/lib/agentboard/actions";
 import {
   folderBusy,
   folderDetached,
@@ -30,19 +28,15 @@ import {
   folderIsUnclaimed,
   folderRecreateBranch,
   folderPhaseLabel,
-  folderRemovableTask,
   folderTask,
   isSoloRepo,
   pathScope,
   prForFolder,
   taskForFolder,
   withoutFolded,
-  type FolderData,
-  type RepoData,
-  type SessionActions,
-  type SessionData,
-  type WindowsPayload,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/folder";
+import { folderRemovableTask } from "@/lib/agentboard/landing";
+import type { FolderData, RepoData, SessionData, WindowsPayload } from "@/lib/agentboard/types";
 import { taskAdoptWorktree, taskSyncBranch, type PrItem, type TaskItem } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";

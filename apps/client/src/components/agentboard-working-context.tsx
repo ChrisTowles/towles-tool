@@ -4,37 +4,34 @@
 import { FolderPlusIcon, GitPullRequestIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import type { CSSProperties } from "react";
 import { Hint } from "@/components/hint";
+import { DeletingBadge, GhostBadge, BranchLabel } from "@/components/agentboard-bits/badges";
 import {
   BaseMovedChip,
   ComparedBaseBadge,
-  DeletingBadge,
   CommittedChip,
   UncommittedChip,
+} from "@/components/agentboard-bits/diff-chips";
+import { FolderLandedBadge } from "@/components/agentboard-bits/landed-badges";
+import {
   FilesButton,
   BrowserButton,
   JarvisButton,
-  FolderLandedBadge,
-  GhostBadge,
-  IconBtn,
-  IssueChip,
   PreviewButton,
-  PrChip,
-  RepoMenu,
-  BranchLabel,
-} from "@/components/agentboard-bits";
+} from "@/components/agentboard-bits/pane-buttons";
+import { IssueChip, PrChip } from "@/components/agentboard-bits/pr-issue-chips";
+import { IconBtn } from "@/components/agentboard-bits/primitives";
+import { RepoMenu } from "@/components/agentboard-bits/repo-menu";
 import { DevServersButton } from "@/components/dev-servers";
 import type { NewTaskRepo } from "@/components/inline-new-task";
+import type { SessionActions } from "@/lib/agentboard/actions";
+import { folderIsHome, pathScope } from "@/lib/agentboard/folder";
+import { humanizeFolderName } from "@/lib/agentboard/folder-name";
 import {
   folderActionableItems,
-  folderIsHome,
-  humanizeFolderName,
-  pathScope,
   type ActionableItem,
   type ActionableKind,
-  type FolderData,
-  type RepoData,
-  type SessionActions,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/landing";
+import type { FolderData, RepoData } from "@/lib/agentboard/types";
 import type { PrItem, TaskItem } from "@/lib/data";
 import { repoBandStyle } from "@/lib/repo-identity";
 import { openExternalUrl } from "@/lib/open-url";

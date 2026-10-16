@@ -1,7 +1,6 @@
-import { Badge, Button, LayerCard, Tooltip } from "@cloudflare/kumo";
-import { ArrowSquareOutIcon, RecordIcon, EyeSlashIcon } from "@phosphor-icons/react";
-import { fmtAge, type CollectRun, type IssueItem } from "@/lib/data";
-import { openExternalUrl } from "@/lib/open-url";
+import { Button, LayerCard, Tooltip } from "@cloudflare/kumo";
+import { EyeSlashIcon } from "@phosphor-icons/react";
+import { fmtAge, type CollectRun } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { PALETTE } from "@/lib/colors";
 
@@ -160,54 +159,6 @@ export function DismissButton({ onDismiss, label }: { onDismiss: () => void; lab
         />
       }
     />
-  );
-}
-
-/** One issue row. `actions` renders a trailing control *outside* the anchor, so
- * nested interactive elements stay valid; without it, a glyph. */
-export function IssueRow({
-  issue,
-  now,
-  actions,
-}: {
-  issue: IssueItem;
-  now: number;
-  actions?: React.ReactNode;
-}) {
-  return (
-    <div className="group flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-kumo-tint">
-      <a
-        href={issue.url}
-        target="_blank"
-        rel="noreferrer"
-        onClick={(e) => {
-          e.preventDefault();
-          void openExternalUrl(issue.url);
-        }}
-        className="flex min-w-0 flex-1 items-center gap-3"
-      >
-        <RecordIcon size={16} weight="bold" className="shrink-0 text-kumo-success" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate">{issue.title}</div>
-          <div className="truncate font-mono text-xs text-kumo-subtle">
-            {issue.repo} #{issue.number} · {fmtAge(issue.updatedTs, now)}
-          </div>
-        </div>
-      </a>
-      <div className="flex shrink-0 items-center gap-1">
-        {issue.labels.slice(0, 2).map((l) => (
-          <Badge key={l} variant="outline">
-            {l}
-          </Badge>
-        ))}
-      </div>
-      {actions ?? (
-        <ArrowSquareOutIcon
-          size={14}
-          className="shrink-0 text-kumo-subtle opacity-0 group-hover:opacity-100"
-        />
-      )}
-    </div>
   );
 }
 

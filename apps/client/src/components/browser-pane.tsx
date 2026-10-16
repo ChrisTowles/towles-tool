@@ -12,10 +12,11 @@ import {
   CircleNotchIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
+import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits/primitives";
 import { AnnotateSurface } from "@/components/annotate-surface";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
-import { browserPaneId, type FolderData } from "@/lib/agentboard";
+import { browserPaneId } from "@/lib/agentboard/pane-ids";
+import type { FolderData } from "@/lib/agentboard/types";
 import {
   type BrowserState,
   browserCapture,

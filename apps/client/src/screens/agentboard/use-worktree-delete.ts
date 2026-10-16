@@ -1,12 +1,9 @@
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
-import {
-  landingSummaryForDir,
-  liveSessions,
-  type BlockedDelete,
-  type RemoveTarget,
-  type RepoData,
-} from "@/lib/agentboard";
+import type { BlockedDelete, RemoveTarget } from "@/lib/agentboard/actions";
+import { landingSummaryForDir } from "@/lib/agentboard/landing";
+import { liveSessions } from "@/lib/agentboard/session";
+import type { RepoData } from "@/lib/agentboard/types";
 import { taskDelete, type PrItem, type TaskItem, type TaskOutcome } from "@/lib/data";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";

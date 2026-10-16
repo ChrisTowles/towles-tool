@@ -4,10 +4,10 @@ import { invoke } from "./tauri";
 
 /** Everything, so a fresh install never wonders where a checkout went.
  * Mirrors `tt_config::DEFAULT_RAIL_FILTER`. */
-export const DEFAULT_RAIL_FILTER: RailFilter = "all";
+const DEFAULT_RAIL_FILTER: RailFilter = "all";
 
 /** Mirrors `tt_config::DEFAULT_RAIL_RECENT_HOURS`. */
-export const DEFAULT_RAIL_RECENT_HOURS = 4;
+const DEFAULT_RAIL_RECENT_HOURS = 4;
 
 /** The hour spans the rail's filter menu offers for `"recent"`. */
 export const RAIL_RECENT_HOUR_CHOICES = [2, 4, 8, 24, 48, 96, 24 * 7];
@@ -47,7 +47,7 @@ export function useRailFilter(): {
 }
 
 /** Off: a hand-marked quiet checkout is hidden until you say otherwise. */
-export const DEFAULT_SHOW_QUIET = false;
+const DEFAULT_SHOW_QUIET = false;
 
 /** The one switch that brings quiet checkouts back — hence the rail header,
  * where it is found without knowing to look. Rust never reads it. */
@@ -65,7 +65,7 @@ export function useShowQuiet(): [boolean, (on: boolean) => void] {
 
 /** Off, so only the main checkout and worktrees you asked for become rail
  * folders. Mirrors `tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES`. */
-export const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
+const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
 
 /** Not a view filter the client can apply: it decides which checkouts the
  * *engine* discovers, so the setter goes through

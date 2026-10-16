@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentStatus, SessionData } from "@/lib/agentboard";
+import type { AgentStatus, SessionData } from "@/lib/agentboard/types";
 import { boardAgentStatus, mostUrgentSession } from "@/lib/board-agent-status";
 
 function session(id: string, overrides: Partial<SessionData> = {}): SessionData {

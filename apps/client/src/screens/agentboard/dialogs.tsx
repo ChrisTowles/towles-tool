@@ -3,12 +3,9 @@ import { TerminalWindowIcon } from "@phosphor-icons/react";
 import { Button, Checkbox, CommandPalette, Dialog, Input } from "@cloudflare/kumo";
 import { BranchDiffSummary } from "@/components/branch-diff-summary";
 import { LandingLine } from "@/components/task-blockers";
-import {
-  sessionLabel,
-  type RemoveTarget,
-  type SessionData,
-  type StartClaudeTarget,
-} from "@/lib/agentboard";
+import type { RemoveTarget, StartClaudeTarget } from "@/lib/agentboard/actions";
+import { sessionLabel } from "@/lib/agentboard/session";
+import type { SessionData } from "@/lib/agentboard/types";
 import type { TaskItem, TaskOutcome } from "@/lib/data";
 import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";

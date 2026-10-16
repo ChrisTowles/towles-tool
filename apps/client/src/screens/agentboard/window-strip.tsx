@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { PlusIcon } from "@phosphor-icons/react";
-import { windowColor, type AgWindow, type WindowsPayload } from "@/lib/agentboard";
+import type { AgWindow, WindowsPayload } from "@/lib/agentboard/types";
+import { windowColor } from "@/lib/agentboard/windows";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 import { Hint } from "@/components/hint";

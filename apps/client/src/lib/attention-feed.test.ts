@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildAttentionFeed } from "./attention-feed";
 import { EMPTY_SNAPSHOT, type DmItem, type PrItem, type StoreSnapshot } from "./data";
-import type { RepoData, StatePayload } from "./agentboard";
+import type { RepoData, StatePayload } from "@/lib/agentboard/types";
 
 function pr(over: Partial<PrItem>): PrItem {
   return {

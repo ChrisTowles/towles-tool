@@ -1,4 +1,5 @@
-import { isSoloRepo, type RepoData } from "@/lib/agentboard";
+import { isSoloRepo } from "@/lib/agentboard/folder";
+import type { RepoData } from "@/lib/agentboard/types";
 import { folderNodeKey } from "@/lib/rail-nodes";
 
 /** One entry of the persisted collapse map, already resolved to its new value. */

@@ -4,13 +4,13 @@ import { invoke } from "@/lib/tauri";
  * backend caches the scan, so search stays in-memory. Every `costUsd` is an
  * estimate priced per model. */
 
-export type ProjectBar = {
+type ProjectBar = {
   project: string;
   totalTokens: number;
   costUsd: number;
 };
 
-export type ModelBar = {
+type ModelBar = {
   model: string;
   totalTokens: number;
   costUsd: number;
@@ -22,7 +22,7 @@ export type LedgerDay = {
   costUsd: number;
 };
 
-export type LedgerTotals = {
+type LedgerTotals = {
   sessions: number;
   inputTokens: number;
   outputTokens: number;
@@ -95,7 +95,7 @@ export type ClaudeSessionInsight = {
 export const claudeSessionsInsights = (days: number) =>
   invoke<ClaudeSessionInsight[]>("claude_sessions_insights", { days });
 
-export type ToolTotal = {
+type ToolTotal = {
   name: string;
   /** Call count as "Nx". */
   detail?: string;
@@ -103,7 +103,7 @@ export type ToolTotal = {
   outputTokens: number;
 };
 
-export type TurnBreakdown = {
+type TurnBreakdown = {
   name: string;
   inputTokens: number;
   outputTokens: number;
@@ -123,13 +123,13 @@ export type SessionBreakdown = {
 export const claudeSessionsBreakdown = (sessionId: string) =>
   invoke<SessionBreakdown>("claude_sessions_breakdown", { sessionId });
 
-export type DayBucket = {
+type DayBucket = {
   /** `YYYY-MM-DD`, local. */
   date: string;
   count: number;
 };
 
-export type DayHourCell = {
+type DayHourCell = {
   date: string;
   /** Local hour of day, 0-23. */
   hour: number;

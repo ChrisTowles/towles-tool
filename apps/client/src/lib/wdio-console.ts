@@ -4,7 +4,7 @@
 
 /** Cross-process contract with `scripts/drive.mjs`'s `CONSOLE_KEY`; renaming
  * one side silently disables the check rather than failing. */
-export const WDIO_CONSOLE_KEY = "__ttConsoleErrors";
+const WDIO_CONSOLE_KEY = "__ttConsoleErrors";
 
 const MAX_ENTRIES = 200;
 

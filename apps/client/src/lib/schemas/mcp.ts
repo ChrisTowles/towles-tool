@@ -10,7 +10,7 @@ const McpToolParamSchema = z.object({
   enum: z.array(z.string()).optional(),
 });
 
-export const McpToolDocSchema = z.object({
+const McpToolDocSchema = z.object({
   name: z.string(),
   description: z.string(),
   inputSchema: z.object({

@@ -1,4 +1,5 @@
-import { sessionLabel, type RepoData } from "./agentboard";
+import { sessionLabel } from "@/lib/agentboard/session";
+import type { RepoData } from "@/lib/agentboard/types";
 import type { IssueItem, PrItem } from "./data";
 import { SCREENS, type ScreenId } from "./screens";
 

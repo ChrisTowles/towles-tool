@@ -1,5 +1,5 @@
 import { InlineNewTask, type NewTaskSubmit } from "@/components/inline-new-task";
-import type { RepoData } from "@/lib/agentboard";
+import type { RepoData } from "@/lib/agentboard/types";
 
 /** The repo a new task starts in: the selected row's, else the last used, else the first. */
 export function defaultTaskRepo(

@@ -3,7 +3,7 @@ import { isEmptyQuery, matchesFilter } from "@/lib/settings-filter";
 import { NoMatches } from "./common";
 
 /** Real, known location of the settings file (shared with the TypeScript CLI). */
-export const SETTINGS_PATH = "~/.config/towles-tool/towles-tool.settings.json";
+const SETTINGS_PATH = "~/.config/towles-tool/towles-tool.settings.json";
 
 /** About tab: static facts, filtered so the whole screen stays consistent. */
 export function AboutInfo({ query, version }: { query: string; version: string }) {

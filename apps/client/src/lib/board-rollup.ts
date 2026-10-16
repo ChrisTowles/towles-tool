@@ -6,7 +6,7 @@ import type { TaskItem } from "@/lib/data";
  */
 
 /** One resolved link that counts as evidence the task is finished. */
-export type RollupEvidence = {
+type RollupEvidence = {
   kind: "issue" | "pr";
   ref: string;
   qualified: string;

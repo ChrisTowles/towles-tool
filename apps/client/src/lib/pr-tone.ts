@@ -16,9 +16,9 @@ export function prChecksFailing(pr: Pick<PrItem, "state" | "checks">): boolean {
   return pr.state === "open" && pr.checks === "failing";
 }
 
-export type ChecksTone = Extract<PrTone, "failed" | "passing" | "plain" | "running">;
+type ChecksTone = Extract<PrTone, "failed" | "passing" | "plain" | "running">;
 
-export function checksTone(checks: string): ChecksTone {
+function checksTone(checks: string): ChecksTone {
   if (checks === "failing") return "failed";
   if (checks === "passing") return "passing";
   if (checks === "none") return "plain";

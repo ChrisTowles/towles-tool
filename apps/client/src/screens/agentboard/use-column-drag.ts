@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { COL_TOTAL, dragCol, type AgWindow, type WindowsPayload } from "@/lib/agentboard";
+import { COL_TOTAL, dragCol } from "@/lib/agentboard/layout";
+import type { AgWindow, WindowsPayload } from "@/lib/agentboard/types";
 
 export type ColumnDrag = {
   paneAreaRef: React.RefObject<HTMLDivElement | null>;

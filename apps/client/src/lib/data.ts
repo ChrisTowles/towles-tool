@@ -83,7 +83,7 @@ export type TaskPrLink = {
 };
 
 /** A closed task keeps all but `dir` as historical fact. */
-export type TaskWorktree = {
+type TaskWorktree = {
   repoRoot: string;
   repo?: string;
   branch?: string;
@@ -188,7 +188,7 @@ export type McpCall = {
 
 /** The latest default-branch Actions run of one workflow (the `ci` collector).
  * `conclusion` is empty until `status` is `completed`. */
-export type CiRun = {
+type CiRun = {
   repo: string;
   workflow: string;
   status: string;
@@ -466,7 +466,7 @@ export function fmtDate(ms: number): string {
 
 /** Below this the countdown switches to `m:ss` and ticks every second, instead
  * of a coarse "1m" the 15s shared clock can leave stale 20s out. */
-export const COUNTDOWN_SECONDS_THRESHOLD = 2 * MINUTE;
+const COUNTDOWN_SECONDS_THRESHOLD = 2 * MINUTE;
 
 /** `0:59` / `1:30` (under {@link COUNTDOWN_SECONDS_THRESHOLD}) / `22m` /
  * `1h 05m` — a positive duration; `now` for anything non-positive. */

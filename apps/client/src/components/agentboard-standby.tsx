@@ -1,7 +1,8 @@
 // Agentboard's front page: what is stopped and waiting on you, longest wait
 // first. Ranking lives in `lib/fleet-standby.ts`; this file is only how it
 // reads — rows when something is blocked, display scale when nothing is.
-import { statusColor, type RepoData } from "@/lib/agentboard";
+import { statusColor } from "@/lib/agentboard/status";
+import type { RepoData } from "@/lib/agentboard/types";
 import { buildStandby, type Standby, type StandbyRow } from "@/lib/fleet-standby";
 import { fmtAge } from "@/lib/data";
 import { cn } from "@/lib/utils";

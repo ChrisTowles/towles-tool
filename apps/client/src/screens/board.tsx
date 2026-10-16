@@ -8,17 +8,12 @@ import {
 } from "@phosphor-icons/react";
 import { Badge, Button, Dialog, DropdownMenu, Input, InputArea, Switch } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  landingSummaryForDir,
-  ownerRepoFromOrigin,
-  requestAgentboardNav,
-  sessionCatchesEye,
-  sessionLabel,
-  sessionStatusText,
-  type TaskBlocker,
-  useAgentboardState,
-} from "@/lib/agentboard";
-import { Dot } from "@/components/agentboard-bits";
+import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
+import { landingSummaryForDir, type TaskBlocker } from "@/lib/agentboard/landing";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import { sessionCatchesEye, sessionLabel, sessionStatusText } from "@/lib/agentboard/session";
+import { useAgentboardState } from "@/lib/agentboard/state";
+import { Dot } from "@/components/agentboard-bits/status-dots";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import { boardAgentStatus, type BoardAgentStatus } from "@/lib/board-agent-status";
 import { repoAccentStyles, repoIcon, type RepoIdentity } from "@/lib/repo-identity";

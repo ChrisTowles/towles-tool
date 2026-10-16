@@ -1,7 +1,7 @@
 /** Rows that stand for rows the rail isn't showing. Each one is a count and a
  * way back: nothing the rail folds may become unreachable. */
 import { GitBranchIcon } from "@phosphor-icons/react";
-import { Chevron } from "@/components/agentboard-bits";
+import { Chevron } from "@/components/agentboard-bits/status-dots";
 import { Hint } from "@/components/hint";
 
 /** A repo with nothing left to show, demoted to one dim row rather than removed

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RepoData, WindowsPayload } from "@/lib/agentboard";
+import type { RepoData, WindowsPayload } from "@/lib/agentboard/types";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 
 /** Only the fields the numbering reads — the fixture shape `editor-open.test.ts` uses. */

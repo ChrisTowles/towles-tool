@@ -11,7 +11,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { useAgentboardState } from "@/lib/agentboard";
+import { useAgentboardState } from "@/lib/agentboard/state";
 import { buildAttentionFeed, type AttentionItem, type AttentionKind } from "@/lib/attention-feed";
 import {
   alwaysOnHealth,

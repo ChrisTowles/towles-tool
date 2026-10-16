@@ -66,24 +66,10 @@ export type FocusSession = {
   openEnded: boolean;
 };
 
-export type Count = { key: string; count: number };
+type Count = { key: string; count: number };
 
 export const telemetryAttention = (date: string) =>
   invoke<AttentionSummary>("telemetry_attention", { date });
-
-/** `4h 12m` / `12m 30s` / `8s` — day-scale totals, unlike `fmtElapsed`'s clock.
- * Non-zero under a second is `<1s`, never `0s`: a real subprocess rendered as a
- * flat zero reads as "this didn't happen". */
-export function fmtDuration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  if (s === 0 && ms > 0) return "<1s";
-  return `${s}s`;
-}
 
 /** Null when the day is too empty for the ratio to mean anything. */
 export function focusShare(summary: AttentionSummary): number | null {
@@ -169,7 +155,7 @@ export const TELEMETRY_FILTERS_KEY = "tt-telemetry-filters";
 const KIND_VALUES = new Set<string>(["all", "event", "span"]);
 const OP_VALUES = new Set<string>(FILTER_OPS);
 
-export function isFilter(value: unknown): value is Filter {
+function isFilter(value: unknown): value is Filter {
   if (typeof value !== "object" || value === null) return false;
   const f = value as Record<string, unknown>;
   return (
@@ -181,7 +167,7 @@ export function isFilter(value: unknown): value is Filter {
   );
 }
 
-export function isRangeDays(value: unknown): value is RangeDays {
+function isRangeDays(value: unknown): value is RangeDays {
   return typeof value === "number" && (RANGE_DAYS as readonly number[]).includes(value);
 }
 
@@ -214,7 +200,7 @@ export function saveTelemetryFilters(filters: TelemetryFilters): void {
 export type DashboardRange = 1 | 3 | 7 | 14;
 export type DashboardGroupBy = "executable" | "task" | "working_directory";
 
-export type DashboardSeries = { name: string; count: number; failures: number; totalMs: number };
+type DashboardSeries = { name: string; count: number; failures: number; totalMs: number };
 
 export type DashboardSummary = {
   days: string[];
@@ -248,7 +234,7 @@ export const telemetryDashboard = (days: DashboardRange, groupBy: DashboardGroup
  * is already a rate; `perHour` with null sides means too little focused time. */
 export type BuildKey = { sha: string; day: string };
 
-export type BuildMeasures = {
+type BuildMeasures = {
   ghCalls: number;
   gitCalls: number;
   claudeCalls: number;
@@ -271,8 +257,8 @@ export type BuildSnapshot = {
   measures: BuildMeasures;
 };
 
-export type DeltaDirection = "lowerIsBetter" | "higherIsBetter" | "neutral";
-export type DeltaUnit = "count" | "percent" | "ms" | "minutes";
+type DeltaDirection = "lowerIsBetter" | "higherIsBetter" | "neutral";
+type DeltaUnit = "count" | "percent" | "ms" | "minutes";
 
 export type BuildDelta = {
   measure: string;
@@ -302,7 +288,7 @@ export function nearestRange(days: number): RangeDays {
 }
 
 /** Mirrors `tt_telemetry::query::ROW_CAP`. */
-export const QUERY_ROW_CAP = 2000;
+const QUERY_ROW_CAP = 2000;
 
 /** SQLite has no booleans; a blob arrives already described as text. */
 export type QueryValue = string | number | null;
@@ -353,7 +339,7 @@ export function fmtCell(value: QueryValue): string {
  * `count` above it; `today` is null with no population — no evidence, not 0%. */
 export type RuleKind = "share" | "count";
 
-export type RuleDayScore = { day: string; score: number | null; population: number };
+type RuleDayScore = { day: string; score: number | null; population: number };
 
 export type RuleScore = {
   id: string;

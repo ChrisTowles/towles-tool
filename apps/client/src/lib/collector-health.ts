@@ -29,7 +29,7 @@ export const COLLECTOR_STATE_LABEL: Record<CollectorState, string> = {
   "never-ran": "never ran",
 };
 
-export const COLLECTOR_LABELS: Record<CollectorKey, string> = {
+const COLLECTOR_LABELS: Record<CollectorKey, string> = {
   prs: "Pull requests",
   issues: "Issues",
   ci: "CI runs",
@@ -83,7 +83,7 @@ export function collectorHealth(
 }
 
 /** Exactly what `storeCollectNow` kicks off; calendar spends claude tokens a tick. */
-export const REFRESH_COLLECTORS: readonly CollectorKey[] = ["prs", "issues", "ci"];
+const REFRESH_COLLECTORS: readonly CollectorKey[] = ["prs", "issues", "ci"];
 
 /** What the header's freshness dot may judge: collectors that run unattended every
  * tick. A deliberately-disabled one's perpetual `never-ran` must not drag it. */

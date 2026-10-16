@@ -2,8 +2,9 @@ import { useMemo } from "react";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { BarRow, Card, Empty, maxCount, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
-import { fmtDuration, focusShare, type AttentionSummary, type FocusSession } from "@/lib/telemetry";
+import { focusShare, type AttentionSummary, type FocusSession } from "@/lib/telemetry";
 import { PALETTE } from "@/lib/colors";
+import { fmtDuration } from "@/lib/format";
 
 /** Attention — where the day went. Presentation only: every number is computed in
  * `crates/tt-telemetry/src/attention.rs`, along with the two counting rules that surprise

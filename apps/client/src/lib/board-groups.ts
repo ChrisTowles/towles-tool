@@ -1,4 +1,4 @@
-import { ownerRepoFromOrigin } from "@/lib/agentboard";
+import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
 import { TASK_STATUSES, type TaskItem, type TaskStatus } from "@/lib/data";
 
 export const NO_REPO_GROUP = "__no_repo__";

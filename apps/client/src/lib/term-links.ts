@@ -5,20 +5,20 @@
 
 import { isWideRun, type Run } from "@/lib/term-protocol";
 
-export interface LinkSegment {
+interface LinkSegment {
   y: number;
   /** Inclusive viewport column range. */
   start: number;
   end: number;
 }
 
-export interface UrlLink {
+interface UrlLink {
   kind: "url";
   url: string;
   segments: LinkSegment[];
 }
 
-export interface PathLink {
+interface PathLink {
   kind: "path";
   path: string;
   line: number | null;
