@@ -296,6 +296,24 @@ export function agentboardSections(
         ),
       },
       {
+        label: "Close landed tasks automatically",
+        keywords: ["close", "done", "merged", "landed", "worktree", "remove", "task"],
+        node: (
+          <ToggleRow
+            id="auto_close_landed"
+            label="Close landed tasks automatically"
+            description="Once a task's work is in the base branch and its checkout holds nothing else, close it as done and remove its worktree. Never while its agent is working or asking."
+            checked={settings.agentboard?.autoCloseLanded ?? true}
+            onCheckedChange={(v) =>
+              update((s) => ({
+                ...s,
+                agentboard: { ...s.agentboard, autoCloseLanded: v },
+              }))
+            }
+          />
+        ),
+      },
+      {
         label: "Shortcuts work in terminal",
         keywords: ["shortcut", "keyboard", "terminal", "focus", "hotkey", "jump", "needs you"],
         node: (

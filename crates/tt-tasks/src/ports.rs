@@ -9,6 +9,7 @@
 //!   leaves vite/esbuild orphaned and still bound when you signal only `lsof`'s pid.
 //! - SIGTERM, wait, then SIGKILL — a dev server gets a clean shutdown first.
 
+use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -43,6 +44,41 @@ pub fn holder(port: u16) -> Option<PortHolder> {
         .next()
         .map_or_else(|| "unknown".to_string(), |p| p.command);
     Some(PortHolder { pid, command })
+}
+
+/// Whether every listener on `port` runs from inside `dir` — the task's own dev server,
+/// which removing the task may stop. An unreadable cwd, or this process, answers no.
+pub fn listeners_inside(port: u16, dir: &Path) -> bool {
+    let Ok(dir) = dir.canonicalize() else {
+        return false;
+    };
+    let me = std::process::id() as i32;
+    let pids = listening_pids(port);
+    !pids.is_empty()
+        && pids
+            .iter()
+            .all(|&pid| pid != me && process_cwd(pid).is_some_and(|c| c.starts_with(&dir)))
+}
+
+#[cfg(target_os = "linux")]
+fn process_cwd(pid: i32) -> Option<PathBuf> {
+    std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_cwd(pid: i32) -> Option<PathBuf> {
+    let out = tt_exec::run("lsof", &["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"]).ok()?;
+    parse_lsof_cwd(&out.stdout)
+}
+
+/// `lsof -Fn`'s name field: the line starting with `n`.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn parse_lsof_cwd(stdout: &str) -> Option<PathBuf> {
+    stdout
+        .lines()
+        .find_map(|l| l.strip_prefix('n'))
+        .filter(|p| p.starts_with('/'))
+        .map(PathBuf::from)
 }
 
 /// Stop whatever is listening on `port`: SIGTERM its process group(s), then SIGKILL if
@@ -244,6 +280,58 @@ mod tests {
         assert!(parse_ps_row("1 /sbin/init").is_none());
         assert!(parse_ps_row("-1 whatever").is_none());
         assert_eq!(parse_ps_row("2 /usr/bin/node").unwrap().pgid, 2);
+    }
+
+    #[test]
+    fn lsof_cwd_is_the_name_field() {
+        assert_eq!(
+            parse_lsof_cwd("p123\nfcwd\nn/home/x/task\n"),
+            Some(PathBuf::from("/home/x/task"))
+        );
+        assert_eq!(parse_lsof_cwd("p123\n"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_listener_started_in_the_task_dir_is_the_tasks_own() {
+        let (Ok(_), Ok(_)) = (which("lsof"), which("python3")) else {
+            return;
+        };
+        let task = tempfile::TempDir::new().unwrap();
+        let elsewhere = tempfile::TempDir::new().unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let script = format!(
+            "import socket,time;s=socket.socket();s.bind(('127.0.0.1',{port}));s.listen();time.sleep(30)"
+        );
+        let mut child = std::process::Command::new("python3")
+            .args(["-c", &script])
+            .current_dir(task.path())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while listening_pids(port).is_empty() && Instant::now() < deadline {
+            sleep(Duration::from_millis(50));
+        }
+        let inside = listeners_inside(port, task.path());
+        let outside = listeners_inside(port, elsewhere.path());
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(inside, "a listener whose cwd is the task dir is the task's own");
+        assert!(!outside, "a listener elsewhere is foreign");
+    }
+
+    #[cfg(target_os = "linux")]
+    fn which(bin: &str) -> std::io::Result<std::process::Output> {
+        std::process::Command::new("which").arg(bin).output().and_then(|o| {
+            if o.status.success() { Ok(o) } else { Err(std::io::Error::other("missing")) }
+        })
+    }
+
+    #[test]
+    fn nothing_listening_is_not_the_tasks_own() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        assert!(!listeners_inside(port, dir.path()));
     }
 
     #[test]

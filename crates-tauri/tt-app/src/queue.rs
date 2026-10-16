@@ -1,6 +1,7 @@
 //! The queue's app half: rebuilt on every agentboard emit tick from the
 //! stamped payload plus the store, broadcast only when it changed.
 
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -11,11 +12,14 @@ use tt_store::{RankMove, SnoozeUntil};
 use crate::store::{StoreState, now_ms};
 
 pub const QUEUE_EVENT: &str = "queue://changed";
+pub const AUTO_CLOSED_EVENT: &str = "task://auto-closed";
 
 #[derive(Default)]
 pub struct QueueState {
     payload: Mutex<Option<StatePayload>>,
     last: Mutex<Option<TaskQueue>>,
+    /// Tasks auto-close has tried this run — one attempt each, so a refusal never loops.
+    auto_tried: Mutex<HashSet<i64>>,
 }
 
 fn build(app: &AppHandle, payload: &StatePayload) -> Option<TaskQueue> {
@@ -55,6 +59,7 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
         return;
     };
     drop_spent_snoozes(app, &queue.spent_snoozes);
+    auto_close(app, state, &queue);
     if let Some(at) = queue.settles_at_ms {
         let app = app.clone();
         let wait = u64::try_from(at - now_ms()).unwrap_or(0);
@@ -80,6 +85,60 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
     }
     let _ = app.emit(QUEUE_EVENT, &queue);
     *last = Some(queue);
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutoClosed {
+    title: String,
+    folder_dir: String,
+}
+
+/// Close each landed, idle task as done — `/done` with nobody pressing it. The removal
+/// guards still run, and a refusal is logged and never retried this run.
+fn auto_close(app: &AppHandle, state: &QueueState, queue: &TaskQueue) {
+    let fresh: Vec<_> = {
+        let mut tried = state.auto_tried.lock().unwrap();
+        queue
+            .auto_close_candidates()
+            .filter(|i| i.task_id.is_some_and(|id| tried.insert(id)))
+            .cloned()
+            .collect()
+    };
+    if fresh.is_empty() {
+        return;
+    }
+    let on = tt_config::load()
+        .ok()
+        .and_then(|s| s.agentboard.auto_close_landed)
+        .unwrap_or(tt_config::DEFAULT_AUTO_CLOSE_LANDED);
+    if !on {
+        return;
+    }
+    for item in fresh {
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let Some(task_id) = item.task_id else {
+                return;
+            };
+            let dir = std::path::Path::new(&item.folder_dir);
+            let finished =
+                finish_task(&app, task_id, dir, "Closed on its own: the work landed", false);
+            tracing::info!(
+                task_id,
+                closed = finished.is_ok(),
+                why = finished.as_ref().err(),
+                "task.auto_close"
+            );
+            if finished.is_ok() {
+                let _ = app.emit(
+                    AUTO_CLOSED_EVENT,
+                    AutoClosed { title: item.title.clone(), folder_dir: item.folder_dir.clone() },
+                );
+                after_write(&app);
+            }
+        });
+    }
 }
 
 /// An "until CI finishes" snooze ends with the run, so the next push can't re-hide its row.
@@ -242,7 +301,8 @@ fn land_one(app: &AppHandle, item: &tt_agentboard::queue::QueueItem) -> LandResu
             return result("failed", Some(e));
         }
     };
-    let finished = finish_task(app, task_id, dir, &format!("Landed PR #{number} from the queue"));
+    let finished =
+        finish_task(app, task_id, dir, &format!("Landed PR #{number} from the queue"), true);
     tracing::info!(task_id, pr = number, admin, closed = finished.is_ok(), "queue.land");
     match finished {
         Ok(()) => result("landed", admin.then(|| "merged as admin".to_string())),
@@ -251,12 +311,14 @@ fn land_one(app: &AppHandle, item: &tt_agentboard::queue::QueueItem) -> LandResu
 }
 
 /// `task_done` without the agent: the live finish gate, then the guarded removal as done.
-/// `Err` says why the task stays open.
+/// `Err` says why the task stays open. `stop_claimed` stops every listener on the task's
+/// claimed ports first; without it, removal stops only the ones running inside the task.
 fn finish_task(
     app: &AppHandle,
     task_id: i64,
     dir: &std::path::Path,
     summary: &str,
+    stop_claimed: bool,
 ) -> Result<(), String> {
     use crate::task::{DeleteTarget, TaskDeleteOutcome};
 
@@ -265,7 +327,9 @@ fn finish_task(
     if let Some(first) = blockers.first() {
         return Err(first.message.clone());
     }
-    tt_tasks::ops::stop_own_listeners(dir)?;
+    if stop_claimed {
+        tt_tasks::ops::stop_own_listeners(dir)?;
+    }
     app.state::<StoreState>().with(|s| {
         s.set_task_summary(task_id, summary, now_ms()).map(drop).map_err(|e| e.to_string())
     })?;

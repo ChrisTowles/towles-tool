@@ -82,7 +82,12 @@ Rules when working in a task:
   local branches no worktree has checked out. When a PR was fixed up or
   rebased before its squash, no local probe can match the content, so the
   last proof is GitHub's: a merged PR whose head, current or force-pushed
-  over, reaches the local tip reads as `PR merged`.
+  over, reaches the local tip reads as `PR merged`. A claimed port still in
+  use blocks removal only when its listener runs from outside the task:
+  one whose cwd is inside the task's worktree is its own dev server, and
+  removal stops it (once the git guards pass). The app closes a landed task
+  as done on its own once its checkout holds nothing else and no agent is
+  working or asking there (Settings → Agentboard, on by default).
 - **Ports come from the rendered `.env`** — `.env.example` is the template
   (`${tt:port A-B}` pool claims, `${tt:task-name}`, `${tt:var NAME}`; a repo
   without tokens uses the `.claude/task-env.template` sidecar, and a repo

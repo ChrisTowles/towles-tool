@@ -161,6 +161,20 @@ impl QueueItem {
     }
 }
 
+impl TaskQueue {
+    /// Tasks to close as done without asking: landed, nothing left in the checkout, and
+    /// no agent mid-turn or waiting on an answer there. Removal re-runs its own guards.
+    pub fn auto_close_candidates(&self) -> impl Iterator<Item = &QueueItem> {
+        self.items.iter().filter(|i| {
+            let landed =
+                i.reason == Some(WaitReason::Cleanup) || i.also.contains(&WaitReason::Cleanup);
+            let agent_busy =
+                i.lane == Lane::Running || i.reason.is_some_and(WaitReason::blocks_agent);
+            i.task_id.is_some() && landed && !agent_busy
+        })
+    }
+}
+
 pub struct QueueInputs<'a> {
     pub tasks: &'a [TaskItem],
     pub state: &'a StatePayload,
@@ -809,6 +823,35 @@ mod tests {
         let q = run(&s, &state(vec![clean, dirty]), &[], 0);
         assert_eq!(q.items[0].reason, Some(WaitReason::Cleanup));
         assert_eq!(q.items[1].lane, Lane::NoShell, "dirty is left alone");
+    }
+
+    #[test]
+    fn auto_close_takes_landed_tasks_but_never_a_working_agent() {
+        let (s, _) = store(&["idle", "busy", "asking", "open"]);
+        let landed = |dir: &str, sessions| {
+            let mut f = folder(dir, sessions);
+            f.landed = Some("PR merged".to_string());
+            f
+        };
+        let st = state(vec![
+            landed("/idle", vec![session("i", AgentStatus::Idle, None, 0)]),
+            landed("/busy", vec![session("b", AgentStatus::Busy, None, 0)]),
+            landed("/asking", vec![waiting("a", 0)]),
+            folder("/open", vec![]),
+        ]);
+        let q = run(&s, &st, &[], 10_000);
+        let picked: Vec<&str> = q.auto_close_candidates().map(|i| i.title.as_str()).collect();
+        assert_eq!(picked, vec!["idle"]);
+    }
+
+    #[test]
+    fn auto_close_skips_checkouts_no_task_owns() {
+        let (s, _) = store(&[]);
+        let mut f = folder("/stray", vec![]);
+        f.landed = Some("merged".to_string());
+        let q = run(&s, &state(vec![f]), &[], 0);
+        assert_eq!(q.items[0].reason, Some(WaitReason::Cleanup));
+        assert_eq!(q.auto_close_candidates().count(), 0);
     }
 
     #[test]
