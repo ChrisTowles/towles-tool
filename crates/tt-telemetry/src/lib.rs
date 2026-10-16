@@ -49,11 +49,11 @@ pub use builds::{
     BuildKey, BuildSnapshot, Delta, Direction, MIN_FOCUS_MS, Measures, PerHour, Unit, compare,
     snapshots,
 };
+pub use crash::{CRASH_EVENT, CrashRecord, cap_crash_text, read_crashes};
 pub use dashboard::{
     Bucket, BucketRow, DashboardFocus, DashboardSummary, DayProblems, DayWait, ExecutableProfile,
     GroupBy, HistogramBin, SeriesStat, SlowSpawn, summarize_dashboard,
 };
-pub use crash::{CRASH_EVENT, CrashRecord, cap_crash_text, read_crashes};
 pub use event_log::{EventLog, LogStorage, prune_dir, storage};
 pub use filter::{Filter, FilterOp, apply, matches};
 pub use keyboard::{
