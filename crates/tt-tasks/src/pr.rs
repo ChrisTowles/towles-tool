@@ -189,10 +189,82 @@ pub fn parse_merged_heads(value: &serde_json::Value) -> Vec<String> {
     heads
 }
 
+/// How a PR lands: the first method the repo allows, squash preferred. `None` allows none.
+pub fn merge_method(repo: &serde_json::Value) -> Option<&'static str> {
+    let allowed = |key: &str| repo.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+    [
+        ("squashMergeAllowed", "--squash"),
+        ("mergeCommitAllowed", "--merge"),
+        ("rebaseMergeAllowed", "--rebase"),
+    ]
+    .into_iter()
+    .find(|(key, _)| allowed(key))
+    .map(|(_, flag)| flag)
+}
+
+/// Branch protection refused a merge the PR's own state allows — the `/prm` case for `--admin`.
+pub fn blocked_by_protection(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    s.contains("base branch policy prohibits") || s.contains("--admin")
+}
+
+/// Merge PR `number` the way the repo lands PRs, as an admin when protection alone blocks
+/// it. Returns whether `--admin` was needed.
+pub fn merge(checkout: &Path, number: u64) -> Result<bool, String> {
+    let repo = gh_json(
+        checkout,
+        &[
+            "repo",
+            "view",
+            "--json",
+            "squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed",
+        ],
+    )?;
+    let method = merge_method(&repo).ok_or("the repo allows no merge method")?;
+    let n = number.to_string();
+    let run = |admin: bool| {
+        let mut args = vec!["pr", "merge", n.as_str(), method];
+        if admin {
+            args.push("--admin");
+        }
+        tt_exec::run_in_dir_with_timeout("gh", &args, checkout, GH_TIMEOUT)
+            .map_err(|e| format!("could not run gh: {e}"))
+    };
+    let out = run(false)?;
+    if out.ok() {
+        return Ok(false);
+    }
+    if !blocked_by_protection(&out.stderr) {
+        return Err(format!("gh pr merge {n}: {}", out.stderr.trim()));
+    }
+    let out = run(true)?;
+    if out.ok() { Ok(true) } else { Err(format!("gh pr merge {n} --admin: {}", out.stderr.trim())) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn merge_method_prefers_squash_then_merge_then_rebase() {
+        let all = json!({"squashMergeAllowed": true, "mergeCommitAllowed": true, "rebaseMergeAllowed": true});
+        assert_eq!(merge_method(&all), Some("--squash"));
+        let no_squash = json!({"squashMergeAllowed": false, "mergeCommitAllowed": true});
+        assert_eq!(merge_method(&no_squash), Some("--merge"));
+        assert_eq!(merge_method(&json!({"rebaseMergeAllowed": true})), Some("--rebase"));
+        assert_eq!(merge_method(&json!({})), None);
+    }
+
+    #[test]
+    fn only_a_protection_refusal_retries_as_admin() {
+        assert!(blocked_by_protection(
+            "X Pull request o/r#9 is not mergeable: the base branch policy prohibits the merge.\nTo have the pull request merged after all the requirements have been met, add the `--auto` flag.\nTo use administrator privileges to immediately merge the pull request, add the `--admin` flag."
+        ));
+        assert!(!blocked_by_protection(
+            "GraphQL: Pull Request is not mergeable (mergePullRequest)"
+        ));
+    }
 
     fn fixture(cross: bool) -> serde_json::Value {
         json!({

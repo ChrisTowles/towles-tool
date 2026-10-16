@@ -150,6 +150,17 @@ pub struct TaskQueue {
     pub spent_snoozes: Vec<String>,
 }
 
+impl QueueItem {
+    /// Batch landing takes only this: a task's open PR, approved and green. A merely green
+    /// PR still says "ready to land" but waits for a human to choose it.
+    pub fn landable(&self) -> bool {
+        self.task_id.is_some()
+            && self.pr.as_ref().is_some_and(|p| {
+                p.state == "open" && p.checks == "passing" && p.review_state == "approved"
+            })
+    }
+}
+
 pub struct QueueInputs<'a> {
     pub tasks: &'a [TaskItem],
     pub state: &'a StatePayload,
@@ -868,6 +879,9 @@ mod tests {
         assert_eq!(why("/ask").as_deref(), Some("asking"));
         assert_eq!(why("/ok").as_deref(), Some("PR approved"));
         assert_eq!(why("/green").as_deref(), Some("ready to land"));
+        assert!(item(&q, "/ok").landable());
+        assert!(!item(&q, "/green").landable(), "green but unapproved waits for a human");
+        assert!(!item(&q, "/ask").landable());
     }
 
     #[test]

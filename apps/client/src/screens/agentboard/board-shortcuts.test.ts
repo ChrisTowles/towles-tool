@@ -34,6 +34,13 @@ function context(over: Partial<BoardShortcutContext> = {}): BoardShortcutContext
     collapseWholeRail: vi.fn<() => boolean>(() => true),
     moveQueueCursor: vi.fn<() => boolean>(() => true),
     setSnoozeId: mockFn(),
+    queueActions: {
+      landAll: vi.fn<() => boolean>(() => true),
+      openCiLog: vi.fn<() => boolean>(() => true),
+      restart: vi.fn<() => boolean>(() => true),
+      fork: vi.fn<() => boolean>(() => true),
+    },
+    folderByDir: new Map(),
     focusActiveTerminal: vi.fn<() => boolean>(() => true),
     splitIntoWindow: mockFn(),
     ...over,
@@ -135,5 +142,21 @@ describe("boardShortcuts", () => {
 
   it("declines the note chord when no agent is in view", () => {
     expect(boardShortcuts(context())["ab-note-agent"]()).toBe(false);
+  });
+
+  it("lists Shift+L's land before l's CI log, so the first match is the right one", () => {
+    const keys = Object.keys(boardShortcuts(context({ tree: false })));
+    expect(keys.indexOf("queue-land")).toBeLessThan(keys.indexOf("queue-ci-log"));
+  });
+
+  it("hands the queue's row verbs the ringed row, and declines without one", () => {
+    const ringItem = { folderDir: "/w1" } as QueueItem;
+    const c = context({ tree: false, ringItem });
+    const map = boardShortcuts(c);
+    map["queue-fork"]();
+    map["queue-restart"]();
+    expect(vi.mocked(c.queueActions.fork)).toHaveBeenCalledWith(ringItem);
+    expect(vi.mocked(c.queueActions.restart)).toHaveBeenCalledWith(ringItem);
+    expect(boardShortcuts(context({ tree: false }))["queue-ci-log"]()).toBe(false);
   });
 });

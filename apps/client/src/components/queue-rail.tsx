@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@cloudflare/kumo";
-import { CaretDownIcon, CaretRightIcon, ClockIcon } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwiseIcon,
+  CaretDownIcon,
+  CaretRightIcon,
+  ClockIcon,
+  GitForkIcon,
+  GitMergeIcon,
+  ReceiptXIcon,
+} from "@phosphor-icons/react";
 import {
   BaseMovedChip,
   CommittedChip,
@@ -18,10 +26,13 @@ import type { FolderData, RepoData } from "@/lib/agentboard/types";
 import { fmtAge, type PrItem, type TaskItem } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import {
+  ciLogUrl,
+  landable,
   LANES,
   rankMove,
   reasonChip,
   REASON_TONE,
+  restartable,
   snoozePresets,
   snoozeUntil,
   type SnoozePreset,
@@ -29,7 +40,9 @@ import {
 } from "@/lib/queue";
 import { repoAccentStyles } from "@/lib/repo-identity";
 import type { Lane, QueueItem, TaskQueue } from "@/lib/schemas/queue";
-import { useShortcuts } from "@/lib/shortcuts";
+import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
+import { mouseAction } from "@/lib/shortcut-coach";
+import type { QueueRowActions } from "@/screens/agentboard/queue-actions";
 import { invoke } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
@@ -157,6 +170,7 @@ export function QueueRail({
   newTaskRepoKey,
   onPickRepo,
   newTaskForm,
+  queueActions,
 }: {
   /** Already narrowed to `repoFilter`. */
   queue: TaskQueue;
@@ -189,7 +203,9 @@ export function QueueRail({
   onPickRepo: (repo: RepoData) => void;
   /** The new-task form, open under the header. */
   newTaskForm?: ReactNode;
+  queueActions: QueueRowActions;
 }) {
+  const landCount = queue.items.filter(landable).length;
   const chipsFor = (item: QueueItem) => (
     <CheckoutChips
       folder={folderByDir.get(item.folderDir)}
@@ -212,6 +228,26 @@ export function QueueRail({
         onPick={onPickRepo}
       />
       {newTaskForm}
+      {live && landCount > 0 && (
+        <div className="flex items-center gap-2 border-b border-kumo-hairline px-3 py-1.5 text-xs text-kumo-subtle">
+          <span className="flex-1">
+            {landCount} approved PR{landCount === 1 ? "" : "s"}, checks green
+          </span>
+          <Button
+            size="xs"
+            variant="secondary"
+            icon={<GitMergeIcon />}
+            title={`Merge each and close its task (${shortcutHint("queue-land")})`}
+            data-testid="queue-land-all"
+            onClick={() => {
+              mouseAction("queue-land", "agentboard");
+              queueActions.landAll();
+            }}
+          >
+            Land all
+          </Button>
+        </div>
+      )}
       {!live ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
       ) : queue.items.length === 0 && repoFilter.size > 0 ? (
@@ -261,6 +297,7 @@ export function QueueRail({
                       snoozeOpen={snoozeId === id}
                       onSnoozeOpenChange={(o) => onSnoozeIdChange(o ? id : null)}
                       onSelect={() => onSelect(item)}
+                      actions={queueActions}
                     />
                   </motion.div>
                 );
@@ -396,6 +433,7 @@ function QueueRow({
   snoozeOpen,
   onSnoozeOpenChange,
   onSelect,
+  actions,
 }: {
   item: QueueItem;
   repo: RepoData | undefined;
@@ -407,8 +445,10 @@ function QueueRow({
   snoozeOpen: boolean;
   onSnoozeOpenChange: (open: boolean) => void;
   onSelect: () => void;
+  actions: QueueRowActions;
 }) {
   const chip = reasonChip(item, now);
+  const snoozable = item.reason != null && !item.snoozed;
   const look = repoLook(repo, item.repo);
   const meta = rowMeta(item, now);
   return (
@@ -472,13 +512,36 @@ function QueueRow({
           </Button>
         )}
         {/* Only on the row you're on or over, so the queue still reads as titles. */}
-        {item.reason && !item.snoozed && (
-          <div
-            className={cn(
-              "shrink-0",
-              selected || snoozeOpen ? "flex" : "hidden group-focus-within:flex group-hover:flex",
-            )}
-          >
+        <div
+          className={cn(
+            "shrink-0 items-center gap-0.5",
+            selected || snoozeOpen ? "flex" : "hidden group-focus-within:flex group-hover:flex",
+          )}
+        >
+          {ciLogUrl(item) && (
+            <RowVerb
+              label="CI log"
+              title={`Open the failing run in the browser pane (${shortcutHint("queue-ci-log")})`}
+              icon={<ReceiptXIcon />}
+              onClick={() => actions.openCiLog(item)}
+            />
+          )}
+          {restartable(item) && (
+            <RowVerb
+              label="Restart"
+              title={`Start the agent over on its goal (${shortcutHint("queue-restart")})`}
+              icon={<ArrowCounterClockwiseIcon />}
+              onClick={() => actions.restart(item)}
+            />
+          )}
+          {item.taskId != null && (
+            <RowVerb
+              title={`New task branched from ${item.branch} (${shortcutHint("queue-fork")})`}
+              icon={<GitForkIcon />}
+              onClick={() => actions.fork(item)}
+            />
+          )}
+          {snoozable && (
             <SnoozeButtons
               presets={snoozePresets(item)}
               autoFocus={snoozeOpen}
@@ -488,13 +551,39 @@ function QueueRow({
                 void snoozeQueueItem(item, preset);
               }}
             />
-          </div>
-        )}
+          )}
+        </div>
       </div>
       <div className="flex min-w-0 items-center gap-2 pl-6">
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-kumo-subtle">{meta}</span>
         {chips}
       </div>
     </div>
+  );
+}
+
+/** One of a row's verbs, beside the snooze presets and in their voice. */
+function RowVerb({
+  label,
+  title,
+  icon,
+  onClick,
+}: {
+  label?: string;
+  title: string;
+  icon: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label ?? title}
+      title={title}
+      onClick={onClick}
+      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none [&>svg]:size-3.5"
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

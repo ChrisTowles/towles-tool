@@ -228,3 +228,28 @@ export function nextUpArrival(
   if (head.folderDir === prevHeadId || head.folderDir === ctx.selectedId) return null;
   return ctx.selectedId === null && !ctx.terminalFocused ? "open" : null;
 }
+
+/** What batch landing takes — `QueueItem::landable` in Rust, which re-checks: a
+ * task's open PR, approved and green. */
+export function landable(item: QueueItem): boolean {
+  const pr = item.pr;
+  return (
+    item.taskId != null &&
+    pr != null &&
+    pr.state === "open" &&
+    pr.checks === "passing" &&
+    pr.reviewState === "approved"
+  );
+}
+
+/** Where a red row's failure is read: the newest failing run, else the PR's checks. */
+export function ciLogUrl(item: QueueItem): string | null {
+  const newest = item.ci.toSorted((a, b) => b.updatedMs - a.updatedMs)[0];
+  if (newest) return newest.url;
+  return item.pr?.checks === "failing" ? `${item.pr.url}/checks` : null;
+}
+
+/** An agent that errored out, with a session to start over in. */
+export function restartable(item: QueueItem): boolean {
+  return item.reason === "unblock" && item.sessionId != null;
+}

@@ -181,3 +181,106 @@ pub fn queue_unsnooze(
     after_write(&app);
     Ok(())
 }
+
+/// How one row of a batch landing ended.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LandResult {
+    pub folder_dir: String,
+    pub title: String,
+    /// `landed` (merged and closed), `merged` (merged, the task stays open), `skipped`
+    /// (no longer approved and green) or `failed` (nothing merged).
+    pub status: &'static str,
+    pub message: Option<String>,
+}
+
+/// Merge every picked row's approved, green PR, then close its task as done — `/done`'s gate
+/// and removal, so a row that still holds work keeps its worktree. Serial: one checkout at a
+/// time, the way a human would land them.
+#[tauri::command]
+pub async fn queue_land(
+    app: AppHandle,
+    folder_dirs: Vec<String>,
+) -> Result<Vec<LandResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let queue = current(&app).ok_or("the queue isn't ready yet")?;
+        let results: Vec<LandResult> = folder_dirs
+            .iter()
+            .map(|dir| match queue.items.iter().find(|i| &i.folder_dir == dir) {
+                Some(item) => land_one(&app, item),
+                None => LandResult {
+                    folder_dir: dir.clone(),
+                    title: dir.clone(),
+                    status: "skipped",
+                    message: Some("no longer on the queue".to_string()),
+                },
+            })
+            .collect();
+        after_write(&app);
+        Ok(results)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn land_one(app: &AppHandle, item: &tt_agentboard::queue::QueueItem) -> LandResult {
+    let result = |status, message: Option<String>| LandResult {
+        folder_dir: item.folder_dir.clone(),
+        title: item.title.clone(),
+        status,
+        message,
+    };
+    let (Some(task_id), Some(pr), true) = (item.task_id, item.pr.as_ref(), item.landable()) else {
+        return result("skipped", Some("no longer approved and green".to_string()));
+    };
+    let dir = std::path::Path::new(&item.folder_dir);
+    let number = u64::try_from(pr.number).unwrap_or_default();
+    let admin = match tt_tasks::pr::merge(dir, number) {
+        Ok(admin) => admin,
+        Err(e) => {
+            tracing::info!(task_id, pr = number, status = "failed", "queue.land");
+            return result("failed", Some(e));
+        }
+    };
+    let finished = finish_task(app, task_id, dir, &format!("Landed PR #{number} from the queue"));
+    tracing::info!(task_id, pr = number, admin, closed = finished.is_ok(), "queue.land");
+    match finished {
+        Ok(()) => result("landed", admin.then(|| "merged as admin".to_string())),
+        Err(why) => result("merged", Some(why)),
+    }
+}
+
+/// `task_done` without the agent: the live finish gate, then the guarded removal as done.
+/// `Err` says why the task stays open.
+fn finish_task(
+    app: &AppHandle,
+    task_id: i64,
+    dir: &std::path::Path,
+    summary: &str,
+) -> Result<(), String> {
+    use crate::task::{DeleteTarget, TaskDeleteOutcome};
+
+    let branch = tt_tasks::ops::head_branch(dir).ok_or("the checkout is on no branch")?;
+    let (blockers, _) = tt_tasks::ops::finish_blockers(dir, &branch);
+    if let Some(first) = blockers.first() {
+        return Err(first.message.clone());
+    }
+    tt_tasks::ops::stop_own_listeners(dir)?;
+    app.state::<StoreState>().with(|s| {
+        s.set_task_summary(task_id, summary, now_ms()).map(drop).map_err(|e| e.to_string())
+    })?;
+    let outcome = crate::task::delete_task_blocking(
+        app,
+        DeleteTarget::Board(task_id),
+        false,
+        Some(tt_store::TaskOutcome::Done),
+        false,
+    )?;
+    match outcome {
+        TaskDeleteOutcome::Deleted { .. } => Ok(()),
+        TaskDeleteOutcome::Blocked { blockers, .. } => Err(blockers
+            .first()
+            .map(|b| b.message.clone())
+            .unwrap_or_else(|| "the removal guards refused".to_string())),
+    }
+}

@@ -43,6 +43,12 @@ import { cn } from "@/lib/utils";
  * the last URL is a follow-up (FolderMeta). */
 const lastUrlByDir = new Map<string, string>();
 
+/** Point `dir`'s pane at `url`: an open pane navigates, a closed one opens there. */
+export function pointBrowserPane(dir: string, url: string): void {
+  lastUrlByDir.set(dir, url);
+  void browserNavigate(browserPaneId(dir), { url });
+}
+
 /** The pane's whole onboarding: one line saying where these logins live.
  * localStorage, like the workspace's own tab state — a dismissed hint is UI
  * memory, not a setting worth a round trip. */

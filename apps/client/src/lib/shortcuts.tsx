@@ -122,6 +122,39 @@ export const SHORTCUTS = defineShortcuts([
   { id: "queue-down", scope: "queue", keys: "j", description: "Next row in the task queue" },
   { id: "queue-up", scope: "queue", keys: "k", description: "Previous row in the task queue" },
   { id: "queue-snooze", scope: "queue", keys: "z", description: "Snooze the selected row" },
+  {
+    id: "queue-close",
+    scope: "queue",
+    keys: "x",
+    description: "Close the selected row's task (confirms first)",
+  },
+  // Before ci-log: a shift-less `l` also matches Shift+L, and the first match wins.
+  {
+    id: "queue-land",
+    scope: "queue",
+    keys: "shift+l",
+    description: "Land every approved, green PR (confirms first)",
+  },
+  {
+    id: "queue-ci-log",
+    scope: "queue",
+    keys: "l",
+    description: "Open the failing CI run in the browser pane",
+    when: "the row's CI is red",
+  },
+  {
+    id: "queue-restart",
+    scope: "queue",
+    keys: "r",
+    description: "Start the errored agent over on its goal",
+    when: "the row's agent errored",
+  },
+  {
+    id: "queue-fork",
+    scope: "queue",
+    keys: "f",
+    description: "New task branched from the selected task's branch",
+  },
   { id: "queue-rank-up", scope: "queue", keys: "alt+arrowup", description: "Raise priority" },
   {
     id: "queue-rank-down",
