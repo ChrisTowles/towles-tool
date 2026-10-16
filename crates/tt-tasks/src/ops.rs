@@ -511,6 +511,8 @@ mod finish;
 mod init;
 mod remove;
 mod render;
+#[cfg(test)]
+mod test_support;
 
 pub use branch::{BranchRefused, SyncError, live_task_branch, sync_task_branch};
 pub use claims::{PortClaim, PortRegistry, PortStatus, port_occupied, port_report};

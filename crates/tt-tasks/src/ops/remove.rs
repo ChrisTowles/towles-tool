@@ -681,3 +681,6 @@ fn docker_cleanup(task_name: &str, dir: &Path, messages: &mut Vec<String>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

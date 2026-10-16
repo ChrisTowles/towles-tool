@@ -316,3 +316,6 @@ pub(crate) fn release_task_ports(checkout: &Path, path: &Path, task: &str) {
         tracing::info!(target: "tt_tasks::claims", task, "task.ports_released");
     }
 }
+
+#[cfg(test)]
+mod tests;
