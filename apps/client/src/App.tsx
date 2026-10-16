@@ -16,6 +16,8 @@ import { TooltipProvider, Toasty } from "@cloudflare/kumo";
 import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard/state";
 import { subscribeEditorOpenFile } from "@/lib/editor-open";
 import { subscribePreviewShow } from "@/lib/preview-artifact";
+import { repeatDetail, repeatTitle, watchRepeatedErrors } from "@/lib/repeated-errors";
+import { uiAction } from "@/lib/ui-action";
 import { subscribeSummon } from "@/lib/summon";
 import { DiffView } from "@/components/diff-view";
 import { NoteDialog } from "@/components/note-dialog";
@@ -98,7 +100,9 @@ function Shortcuts() {
  * mounts on first visit, so a listener there would miss every start on a fresh
  * launch. Opens Agentboard so the new pane is on screen. */
 function TaskStartBridge() {
-  const { openTab } = useWorkspace();
+  const { openTab, activeTab } = useWorkspace();
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
   const state = useAgentboardState();
   // Read repos at delivery time, not capture time — a start can land before the
   // first agentboard snapshot has arrived.
@@ -119,6 +123,25 @@ function TaskStartBridge() {
             `Couldn't start task ${payload.taskId} — ${payload.repoRoot} isn't tracked on Agentboard`,
           ),
         () => openTabRef.current("agentboard"),
+      ),
+    [],
+  );
+
+  useEffect(
+    () =>
+      watchRepeatedErrors((e) =>
+        toast.error(repeatTitle(e), {
+          description: repeatDetail(e),
+          actions: [
+            {
+              label: "Open Doctor",
+              onClick: () => {
+                uiAction("repeated_error.open_doctor", activeTabRef.current);
+                openTabRef.current("doctor");
+              },
+            },
+          ],
+        }),
       ),
     [],
   );

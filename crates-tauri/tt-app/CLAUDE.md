@@ -107,7 +107,10 @@ invariants a single read won't surface: it is the largest crate in the repo
   `TT_SESSION_ID` that wrote it and `note_is_mine` drops other instances' —
   otherwise one `gh pr create` makes every open window sweep `gh`. A note naming
   nobody still fires everywhere, and `NudgeSeen` advances even for a skipped note
-  so it is rejected once rather than re-read on every wakeup.
+  so it is rejected once rather than re-read on every wakeup. A note also carries
+  the caller's cwd and `--trigger`: the PR/CI sweep covers only the tracked repo
+  holding that cwd (written per-repo, never as a full snapshot that would clear
+  the others), and the merged half runs only for `pr:merge` or an unlabelled note.
 
 ## IDE bridge, telemetry, and the rest
 

@@ -855,6 +855,7 @@ pub fn run() {
             agentboard::ab_ensure_session,
             doctor::doctor_run,
             doctor::doctor_recent_crashes,
+            doctor::doctor_repeated_errors,
             doctor::crash_report,
             settings::settings_get,
             settings::settings_set,

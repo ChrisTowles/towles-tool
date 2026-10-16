@@ -212,7 +212,7 @@ async fn serve_connection(app: &AppHandle, stream: tokio::net::TcpStream, shared
     shared.out.lock().unwrap().push(tx.clone());
     emit_status(app, shared);
     // A fresh CLI wants fresh diagnostics — kick a (debounced) check run.
-    shared.diagnostics.request(&shared.cwd);
+    shared.diagnostics.request_now(&shared.cwd);
 
     loop {
         tokio::select! {

@@ -14,7 +14,13 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@cloudflare/kumo";
-import { CrashRecordListSchema, DoctorReportSchema, type CrashRecord } from "@/lib/schemas/doctor";
+import {
+  CrashRecordListSchema,
+  DoctorReportSchema,
+  RepeatedErrorListSchema,
+  type CrashRecord,
+  type RepeatedError,
+} from "@/lib/schemas/doctor";
 import { fmtDuration } from "@/lib/format";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
@@ -56,16 +62,19 @@ type DoctorReport = {
 export function DoctorScreen() {
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [crashes, setCrashes] = useState<CrashRecord[]>([]);
+  const [repeated, setRepeated] = useState<RepeatedError[]>([]);
   const [running, setRunning] = useState(true);
 
   const refresh = useAsyncRefresh(async () => {
     setRunning(true);
-    const [run, recent] = await Promise.all([
+    const [run, recent, repeats] = await Promise.all([
       invoke<DoctorReport>("doctor_run", {}, { schema: DoctorReportSchema }),
       invoke<CrashRecord[]>("doctor_recent_crashes", {}, { schema: CrashRecordListSchema }),
+      invoke<RepeatedError[]>("doctor_repeated_errors", {}, { schema: RepeatedErrorListSchema }),
     ]);
     setReport(run.unwrapOr(null));
     setCrashes(recent.unwrapOr([]));
+    setRepeated(repeats.unwrapOr([]));
     setRunning(false);
   }, []);
 
@@ -132,6 +141,8 @@ export function DoctorScreen() {
             </Panel>
 
             <RecentCrashes crashes={crashes} />
+
+            <RepeatedErrors errors={repeated} />
 
             <Panel title="This checkout" icon={<GitBranchIcon className="size-4" />}>
               {report.checkout.map((c) => (
@@ -289,6 +300,42 @@ function RecentCrashes({ crashes }: { crashes: CrashRecord[] }) {
                     {c.stack}
                   </pre>
                 )}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </Panel>
+  );
+}
+
+/** Like crashes, not part of `allOk`: it describes the last day, not a check now. */
+function RepeatedErrors({ errors }: { errors: RepeatedError[] }) {
+  return (
+    <Panel
+      title="Repeated errors"
+      note={errors.length > 0 ? String(errors.length) : undefined}
+      icon={<WarningCircleIcon className="size-4" />}
+    >
+      {errors.length === 0 ? (
+        <Empty>Nothing has failed over and over in the last 24 hours.</Empty>
+      ) : (
+        errors.map((e) => {
+          const ago = fmtDuration(Math.max(0, Date.now() - Date.parse(e.lastTs)));
+          return (
+            <div key={e.key} className="flex items-start gap-3 px-3 py-2 text-sm">
+              <WarningCircleIcon
+                className={`mt-0.5 size-4 shrink-0 ${e.level === "ERROR" ? "text-destructive" : "text-warn"}`}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-medium break-words">{e.message}</span>
+                  <span className="shrink-0 font-mono text-xs text-kumo-subtle" title={e.lastTs}>
+                    ×{e.count} · last {ago} ago
+                  </span>
+                </div>
+                {e.error && <div className="mt-0.5 break-words font-mono text-xs">{e.error}</div>}
+                <div className="mt-0.5 truncate text-xs text-kumo-subtle">{e.target}</div>
               </div>
             </div>
           );

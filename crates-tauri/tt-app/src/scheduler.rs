@@ -10,7 +10,7 @@
 //! A batch can also fire early: [`spawn`]'s nudge-dir watch diffs each target's file mtime
 //! and acts only on notes naming one of this instance's own PTY sessions ([`note_is_mine`]).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
@@ -75,12 +75,15 @@ fn watched_collectors(collectors: &tt_config::CollectorsSettings) -> Vec<Watched
 #[derive(Clone)]
 enum Batch {
     /// Fast cadence: authored + review-requested open PRs, then the `ci` sweep.
+    /// `origin` narrows a nudge's sweep to the one repo it came from.
     PrsOpen {
         reuse_ms: i64,
+        origin: Option<PathBuf>,
     },
     /// Slow cadence: enough to catch a merged branch before its worktree is removed.
     PrsMerged {
         reuse_ms: i64,
+        origin: Option<PathBuf>,
     },
     Issues {
         reuse_ms: i64,
@@ -154,11 +157,8 @@ struct NudgeSeen {
 /// Every instance watches the same machine-global dir, so a note says who it is for or
 /// everyone sweeps `gh` for one terminal's mutation. A note naming nobody still reaches
 /// everyone: that is what a caller outside an app terminal writes.
-fn note_is_mine(dir: &Path, target: tt_collect::NudgeTarget, mine: &dyn Fn(&str) -> bool) -> bool {
-    match tt_collect::nudge::session_of(dir, target) {
-        Some(session) => mine(&session),
-        None => true,
-    }
+fn note_is_mine(note: &tt_collect::nudge::Note, mine: &dyn Fn(&str) -> bool) -> bool {
+    note.session.as_deref().is_none_or(mine)
 }
 
 /// Off a debounced "something changed" wakeup, the batches whose file advanced *and*
@@ -176,20 +176,24 @@ fn changed_nudge_batches(
 
     let mut changed = Vec::new();
     let prs_mtime = mtime(dir, tt_collect::NudgeTarget::Prs);
-    if prs_mtime.is_some()
-        && prs_mtime != seen.prs
-        && note_is_mine(dir, tt_collect::NudgeTarget::Prs, mine)
-    {
-        // Both halves, so a just-merged PR shows up now rather than on the next
-        // slow merged-cadence tick.
-        changed.push(Batch::PrsOpen { reuse_ms: tt_collect::FETCH_NOW });
-        changed.push(Batch::PrsMerged { reuse_ms: tt_collect::FETCH_NOW });
+    if prs_mtime.is_some() && prs_mtime != seen.prs {
+        let note = tt_collect::nudge::read(dir, tt_collect::NudgeTarget::Prs);
+        if note_is_mine(&note, mine) {
+            // Only the caller's repo; the merged half only for a merge, so a
+            // just-merged PR shows up now rather than on the slow merged tick.
+            let origin = note.origin.clone();
+            changed
+                .push(Batch::PrsOpen { reuse_ms: tt_collect::FETCH_NOW, origin: origin.clone() });
+            if note.refreshes_merged() {
+                changed.push(Batch::PrsMerged { reuse_ms: tt_collect::FETCH_NOW, origin });
+            }
+        }
     }
     seen.prs = prs_mtime;
     let issues_mtime = mtime(dir, tt_collect::NudgeTarget::Issues);
     if issues_mtime.is_some()
         && issues_mtime != seen.issues
-        && note_is_mine(dir, tt_collect::NudgeTarget::Issues, mine)
+        && note_is_mine(&tt_collect::nudge::read(dir, tt_collect::NudgeTarget::Issues), mine)
     {
         changed.push(Batch::Issues { reuse_ms: tt_collect::FETCH_NOW });
     }
@@ -197,7 +201,7 @@ fn changed_nudge_batches(
     let slack_mtime = mtime(dir, tt_collect::NudgeTarget::SlackDm);
     if slack_mtime.is_some()
         && slack_mtime != seen.slack
-        && note_is_mine(dir, tt_collect::NudgeTarget::SlackDm, mine)
+        && note_is_mine(&tt_collect::nudge::read(dir, tt_collect::NudgeTarget::SlackDm), mine)
     {
         changed.push(Batch::SlackDm(slack_config.clone()));
     }
@@ -280,13 +284,13 @@ pub fn spawn(app: AppHandle, reload: Arc<Notify>) {
                     _ = reload.notified() => break,
                     _ = pr_tick.tick(), if collectors.prs.enabled => {
                         if tick_due(&app, &mut skips.prs_open) {
-                            let batch = Batch::PrsOpen { reuse_ms: pr_reuse_ms };
+                            let batch = Batch::PrsOpen { reuse_ms: pr_reuse_ms, origin: None };
                             spawn_batch(&app, batch, calendar_period_ms, &guards.prs_open);
                         }
                     }
                     _ = pr_merged_tick.tick(), if collectors.prs.enabled => {
                         if tick_due(&app, &mut skips.prs_merged) {
-                            let batch = Batch::PrsMerged { reuse_ms: pr_merged_reuse_ms };
+                            let batch = Batch::PrsMerged { reuse_ms: pr_merged_reuse_ms, origin: None };
                             spawn_batch(&app, batch, calendar_period_ms, &guards.prs_merged);
                         }
                     }
@@ -389,15 +393,27 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
     let now = now_ms();
 
     match batch {
-        Batch::PrsOpen { reuse_ms } => {
+        Batch::PrsOpen { reuse_ms, origin } => {
             let repos = tt_collect::tracked_repo_dirs();
-            log_failure(tt_collect::collect_prs_open(&store, &repos, reuse_ms, now));
+            log_failure(tt_collect::collect_prs_open(
+                &store,
+                &repos,
+                origin.as_deref(),
+                reuse_ms,
+                now,
+            ));
             // CI health has no cadence of its own: it is read beside the PRs.
-            log_failure(tt_collect::collect_ci(&store, &repos, reuse_ms, now));
+            log_failure(tt_collect::collect_ci(&store, &repos, origin.as_deref(), reuse_ms, now));
         }
-        Batch::PrsMerged { reuse_ms } => {
+        Batch::PrsMerged { reuse_ms, origin } => {
             let repos = tt_collect::tracked_repo_dirs();
-            log_failure(tt_collect::collect_prs_merged(&store, &repos, reuse_ms, now));
+            log_failure(tt_collect::collect_prs_merged(
+                &store,
+                &repos,
+                origin.as_deref(),
+                reuse_ms,
+                now,
+            ));
         }
         Batch::Issues { reuse_ms } => {
             let repos = tt_collect::tracked_repo_dirs();
@@ -640,7 +656,9 @@ mod tests {
 
     /// Write a nudge note the way `tt task nudge` does, addressed to `session`.
     fn note(dir: &Path, target: tt_collect::NudgeTarget, session: Option<&str>) {
-        tt_collect::nudge::write(dir, target, session, 1_700_000_000_000).unwrap();
+        let note =
+            tt_collect::nudge::Note { session: session.map(str::to_string), ..Default::default() };
+        tt_collect::nudge::write(dir, target, &note, 1_700_000_000_000).unwrap();
     }
 
     #[test]

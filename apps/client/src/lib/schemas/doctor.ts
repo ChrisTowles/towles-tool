@@ -81,3 +81,19 @@ export const CrashRecordListSchema = z.array(
 );
 
 export type CrashRecord = z.infer<typeof CrashRecordListSchema>[number];
+
+/** `doctor_repeated_errors`: `tt_telemetry::RepeatedError`, most frequent first. */
+export const RepeatedErrorListSchema = z.array(
+  z.object({
+    key: z.string(),
+    level: z.string(),
+    target: z.string(),
+    message: z.string(),
+    error: z.string().nullable(),
+    count: z.number(),
+    firstTs: z.string(),
+    lastTs: z.string(),
+  }),
+);
+
+export type RepeatedError = z.infer<typeof RepeatedErrorListSchema>[number];

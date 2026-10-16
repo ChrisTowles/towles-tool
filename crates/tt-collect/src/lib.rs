@@ -461,16 +461,20 @@ pub fn collect_prs(store: &Store, repo_dirs: &[PathBuf], now_ms: i64) -> Collect
 pub fn collect_prs_open(
     store: &Store,
     repo_dirs: &[PathBuf],
+    origin: Option<&Path>,
     reuse_ms: i64,
     now_ms: i64,
 ) -> CollectSummary {
-    let repos = dedupe_repo_dirs(repo_dirs);
+    let (repo_dirs, scoped) = scope_to_origin(repo_dirs, origin);
+    let repos = dedupe_repo_dirs(&repo_dirs);
     let outcome =
         sweep_repos_shared(&repos, "prs-open", reuse_ms, now_ms, prs::collect_repo_prs_open);
-    let write = |all: &[tt_store::PrInput], repos: Option<&[String]>| match repos {
-        None => store.replace_open_prs(all),
-        Some(repos) => store.replace_open_prs_for_repos(repos, all),
-    };
+    let swept = swept_repos(&outcome, scoped);
+    let write =
+        |all: &[tt_store::PrInput], repos: Option<&[String]>| match repos.or(swept.as_deref()) {
+            None => store.replace_open_prs(all),
+            Some(repos) => store.replace_open_prs_for_repos(repos, all),
+        };
     let summary =
         finish_sweep(store, "prs", outcome, write, |p| (p.repo.clone(), p.number), now_ms);
     sync_task_links(store, &dirs_of(&repos), now_ms);
@@ -485,20 +489,39 @@ pub fn collect_prs_open(
 pub fn collect_prs_merged(
     store: &Store,
     repo_dirs: &[PathBuf],
+    origin: Option<&Path>,
     reuse_ms: i64,
     now_ms: i64,
 ) -> CollectSummary {
-    let repos = dedupe_repo_dirs(repo_dirs);
+    let (repo_dirs, scoped) = scope_to_origin(repo_dirs, origin);
+    let repos = dedupe_repo_dirs(&repo_dirs);
     let outcome =
         sweep_repos_shared(&repos, "prs-merged", reuse_ms, now_ms, prs::collect_repo_merged_prs);
-    let write = |all: &[tt_store::PrInput], repos: Option<&[String]>| match repos {
-        None => store.replace_merged_prs(all),
-        Some(repos) => store.replace_merged_prs_for_repos(repos, all),
-    };
+    let swept = swept_repos(&outcome, scoped);
+    let write =
+        |all: &[tt_store::PrInput], repos: Option<&[String]>| match repos.or(swept.as_deref()) {
+            None => store.replace_merged_prs(all),
+            Some(repos) => store.replace_merged_prs_for_repos(repos, all),
+        };
     let summary =
         finish_sweep(store, "prs", outcome, write, |p| (p.repo.clone(), p.number), now_ms);
     link_task_prs(store, &repo_dir_index(&dirs_of(&repos)), now_ms);
     summary
+}
+
+/// The one repo a nudge from `origin` is about, or every tracked repo when there is no
+/// origin or none holds it. `true` when narrowed: such a sweep must never be written as
+/// a full snapshot, which would clear every other repo's rows.
+fn scope_to_origin(repo_dirs: &[PathBuf], origin: Option<&Path>) -> (Vec<PathBuf>, bool) {
+    match nudge::origin_repo(repo_dirs, origin) {
+        Some(dir) => (vec![dir], true),
+        None => (repo_dirs.to_vec(), false),
+    }
+}
+
+/// For a narrowed sweep, the repos it answered for — the write's forced per-repo scope.
+fn swept_repos<T>(sweep: &Sweep<T>, scoped: bool) -> Option<Vec<String>> {
+    scoped.then(|| sweep.successes.iter().map(|(repo, _)| repo.clone()).collect())
 }
 
 /// The latest default-branch Actions run per workflow for every tracked repo, under
@@ -507,12 +530,14 @@ pub fn collect_prs_merged(
 pub fn collect_ci(
     store: &Store,
     repo_dirs: &[PathBuf],
+    origin: Option<&Path>,
     reuse_ms: i64,
     now_ms: i64,
 ) -> CollectSummary {
-    let repos = dedupe_repo_dirs(repo_dirs);
+    let (repo_dirs, scoped) = scope_to_origin(repo_dirs, origin);
+    let repos = dedupe_repo_dirs(&repo_dirs);
     let sweep = sweep_repos_shared(&repos, "ci", reuse_ms, now_ms, ci::collect_repo_ci);
-    finish_ci_sweep(store, sweep, now_ms)
+    finish_ci_sweep(store, sweep, scoped, now_ms)
 }
 
 /// How long a workflow missing from a successful fetch keeps its last run: long
@@ -523,8 +548,14 @@ const CI_ABSENT_KEEP_MS: i64 = 14 * 24 * 60 * 60 * 1000;
 /// CI rows are upserted, never swapped: a workflow missing from this page keeps its
 /// last known run until [`CI_ABSENT_KEEP_MS`] old. Only a sweep that reached every
 /// tracked repo prunes whole repos, and only repos no longer tracked.
-fn finish_ci_sweep(store: &Store, sweep: Sweep<tt_store::CiRun>, now_ms: i64) -> CollectSummary {
-    let clean = sweep.errors.is_empty() && sweep.skipped.is_empty();
+fn finish_ci_sweep(
+    store: &Store,
+    sweep: Sweep<tt_store::CiRun>,
+    scoped: bool,
+    now_ms: i64,
+) -> CollectSummary {
+    // A narrowed sweep says nothing about the repos it skipped.
+    let clean = sweep.errors.is_empty() && sweep.skipped.is_empty() && !scoped;
     let tracked: Vec<String> = sweep.successes.iter().map(|(repo, _)| repo.clone()).collect();
     let stale_before_ms = now_ms.saturating_sub(CI_ABSENT_KEEP_MS);
     let write = |all: &[tt_store::CiRun], _scope: Option<&[String]>| {
@@ -819,7 +850,7 @@ pub fn collect_manual(
         collect_issues(store, repo_dirs, FETCH_NOW, now_ms),
         collect_watched_issues(store, repo_dirs, watched_labels, FETCH_NOW, now_ms),
         collect_prs(store, repo_dirs, now_ms),
-        collect_ci(store, repo_dirs, FETCH_NOW, now_ms),
+        collect_ci(store, repo_dirs, None, FETCH_NOW, now_ms),
     ];
     if let Some(config) = slack {
         summaries.push(collect_slack_dm(store, config, now_ms));
@@ -1034,10 +1065,10 @@ mod tests {
     #[test]
     fn collect_prs_open_and_collect_prs_merged_are_clean_noops_and_share_the_prs_key() {
         let store = Store::open_in_memory().unwrap();
-        let open = collect_prs_open(&store, &[], FETCH_NOW, 1);
+        let open = collect_prs_open(&store, &[], None, FETCH_NOW, 1);
         assert!(open.ok);
         assert_eq!(open.count, 0);
-        let merged = collect_prs_merged(&store, &[], FETCH_NOW, 2);
+        let merged = collect_prs_merged(&store, &[], None, FETCH_NOW, 2);
         assert!(merged.ok);
         assert_eq!(merged.count, 0);
         // Both cadences are splits of one logical collector, so one `prs` key.
@@ -1164,7 +1195,7 @@ mod tests {
         store.close_task(done.id, TaskOutcome::Done, 10).unwrap();
 
         let now = tt_store::ARCHIVE_AFTER_MS + 100;
-        assert!(collect_prs_merged(&store, &[], FETCH_NOW, now).ok);
+        assert!(collect_prs_merged(&store, &[], None, FETCH_NOW, now).ok);
         assert!(store.get_task(done.id).unwrap().unwrap().archived_at.is_some());
     }
 
@@ -1481,7 +1512,7 @@ mod tests {
             errors: vec!["o/b: gh exploded".to_string()],
             skipped: vec![],
         };
-        let summary = finish_ci_sweep(&store, sweep, 5);
+        let summary = finish_ci_sweep(&store, sweep, false, 5);
 
         assert!(!summary.ok, "a failed repo still fails the run");
         assert_eq!(summary.count, 1);
@@ -1516,7 +1547,7 @@ mod tests {
             errors: vec![],
             skipped: vec![],
         };
-        let summary = finish_ci_sweep(&store, sweep, 5);
+        let summary = finish_ci_sweep(&store, sweep, false, 5);
 
         assert!(summary.ok);
         let keys: Vec<(String, String)> =
@@ -1549,7 +1580,7 @@ mod tests {
             errors: vec!["o/b: gh exploded".to_string()],
             skipped: vec![],
         };
-        finish_ci_sweep(&store, sweep, now);
+        finish_ci_sweep(&store, sweep, false, now);
 
         let keys: Vec<(String, String)> =
             store.ci_runs().unwrap().into_iter().map(|r| (r.repo, r.workflow)).collect();
@@ -1565,12 +1596,40 @@ mod tests {
     }
 
     #[test]
+    fn a_nudge_scoped_ci_sweep_leaves_other_repos_runs() {
+        let store = Store::open_in_memory().unwrap();
+        store.upsert_ci_runs(&[ci_run("o/b", "CI", "failure", 1)]).unwrap();
+        let sweep = Sweep {
+            successes: vec![("o/a".to_string(), vec![ci_run("o/a", "CI", "success", 5)])],
+            errors: vec![],
+            skipped: vec![],
+        };
+        finish_ci_sweep(&store, sweep, true, 5);
+        let repos: Vec<String> = store.ci_runs().unwrap().into_iter().map(|r| r.repo).collect();
+        assert_eq!(repos, ["o/a", "o/b"], "a clean one-repo sweep is no snapshot of the rest");
+    }
+
+    #[test]
+    fn a_nudge_narrows_the_sweep_to_its_repo_and_forces_a_per_repo_write() {
+        let dirs = [PathBuf::from("/c/a"), PathBuf::from("/c/b")];
+        let (only, scoped) = scope_to_origin(&dirs, Some(Path::new("/c/b/src")));
+        assert_eq!((only, scoped), (vec![PathBuf::from("/c/b")], true));
+        let (all, scoped) = scope_to_origin(&dirs, Some(Path::new("/elsewhere")));
+        assert_eq!((all.len(), scoped), (2, false), "an untracked origin sweeps everything");
+
+        let sweep: Sweep<()> =
+            Sweep { successes: vec![("o/b".to_string(), vec![])], errors: vec![], skipped: vec![] };
+        assert_eq!(swept_repos(&sweep, true), Some(vec!["o/b".to_string()]));
+        assert_eq!(swept_repos(&sweep, false), None);
+    }
+
+    #[test]
     fn ci_sweep_with_no_tracked_repos_clears_the_rows() {
         let store = Store::open_in_memory().unwrap();
         store.upsert_ci_runs(&[ci_run("o/a", "CI", "failure", 1)]).unwrap();
 
         let empty = Sweep { successes: vec![], errors: vec![], skipped: vec![] };
-        let summary = finish_ci_sweep(&store, empty, 5);
+        let summary = finish_ci_sweep(&store, empty, false, 5);
 
         assert!(summary.ok);
         assert_eq!(summary.message.as_deref(), Some("no repos configured"));
@@ -1587,7 +1646,7 @@ mod tests {
             errors: vec!["o/a: rate limited".to_string()],
             skipped: vec![],
         };
-        let summary = finish_ci_sweep(&store, failed, 5);
+        let summary = finish_ci_sweep(&store, failed, false, 5);
 
         assert!(!summary.ok);
         assert_eq!(store.ci_runs().unwrap().len(), 1, "a dead sweep isn't an untracked one");

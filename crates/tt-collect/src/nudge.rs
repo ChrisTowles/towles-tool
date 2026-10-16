@@ -2,7 +2,7 @@
 //! eagerly refresh, the nudge-dir filename each one touches, and the note left
 //! inside it naming the caller.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// A collector `tt task nudge` can refresh ahead of its normal poll cadence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,34 +35,60 @@ impl NudgeTarget {
     }
 }
 
-/// Write `target`'s nudge note: the timestamp, then the caller's app PTY
-/// session (`TT_SESSION_ID`) when it has one.
-pub fn write(
-    dir: &Path,
-    target: NudgeTarget,
-    session: Option<&str>,
-    now_ms: i64,
-) -> std::io::Result<()> {
+/// What a nudge note says about its caller. Every field is optional, and an absent
+/// one widens what the app does rather than narrowing it: losing a refresh is worse
+/// than running one more broadly than needed.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Note {
+    /// The caller's app PTY session (`TT_SESSION_ID`); `None` addresses every instance.
+    pub session: Option<String>,
+    /// The caller's cwd; the PR refresh covers only the tracked repo holding it.
+    pub origin: Option<PathBuf>,
+    /// The hook's `--trigger` label, e.g. `pr:create`.
+    pub trigger: Option<String>,
+}
+
+impl Note {
+    /// Whether the slow merged-PR half must run too. Only a merge moves a PR into the
+    /// merged list; a create, comment or edit changes nothing there.
+    pub fn refreshes_merged(&self) -> bool {
+        self.trigger.as_deref().is_none_or(|t| t == "pr:merge")
+    }
+}
+
+/// Write `target`'s nudge note: the timestamp, then one line per [`Note`] field.
+pub fn write(dir: &Path, target: NudgeTarget, note: &Note, now_ms: i64) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
-    let session = session.map(str::trim).filter(|s| !s.is_empty()).unwrap_or_default();
-    std::fs::write(dir.join(target.file_name()), format!("{now_ms}\n{session}\n"))
+    let line = |v: Option<&str>| v.map(str::trim).unwrap_or_default().replace('\n', " ");
+    let origin = note.origin.as_deref().map(|p| p.to_string_lossy().into_owned());
+    std::fs::write(
+        dir.join(target.file_name()),
+        format!(
+            "{now_ms}\n{}\n{}\n{}\n",
+            line(note.session.as_deref()),
+            line(origin.as_deref()),
+            line(note.trigger.as_deref()),
+        ),
+    )
 }
 
-/// The app PTY session named by a nudge note, or `None` when it names nobody.
-///
-/// `None` means "every instance should act": it is what a caller outside an app
-/// terminal writes (no `TT_SESSION_ID` to pass on), and what a note written by
-/// an older `tt` looks like, so the broadcast behaviour is the safe default
-/// rather than a silent no-op.
-pub fn session_in(contents: &str) -> Option<&str> {
-    contents.lines().nth(1).map(str::trim).filter(|s| !s.is_empty())
+/// Parse a note; a missing or blank line reads as `None`.
+pub fn parse(contents: &str) -> Note {
+    let mut lines = contents.lines().skip(1).map(str::trim);
+    let mut next = || lines.next().filter(|s| !s.is_empty()).map(str::to_string);
+    Note { session: next(), origin: next().map(PathBuf::from), trigger: next() }
 }
 
-/// Read back the session named by `target`'s nudge note. `None` when the file
-/// is missing, unreadable, or names nobody — all of which mean "act".
-pub fn session_of(dir: &Path, target: NudgeTarget) -> Option<String> {
-    let contents = std::fs::read_to_string(dir.join(target.file_name())).ok()?;
-    session_in(&contents).map(str::to_string)
+/// Read back `target`'s note. A missing or unreadable file is an empty note — "act".
+pub fn read(dir: &Path, target: NudgeTarget) -> Note {
+    std::fs::read_to_string(dir.join(target.file_name())).map(|c| parse(&c)).unwrap_or_default()
+}
+
+/// The tracked repo dir a nudge from `origin` is about: the deepest one holding it.
+/// `None` when no origin was given or none holds it — the caller then sweeps them all.
+pub fn origin_repo(repo_dirs: &[PathBuf], origin: Option<&Path>) -> Option<PathBuf> {
+    let origin = origin?;
+    repo_dirs.iter().filter(|d| origin.starts_with(d)).max_by_key(|d| d.as_os_str().len()).cloned()
 }
 
 #[cfg(test)]
@@ -75,33 +101,67 @@ mod tests {
         assert_eq!(NudgeTarget::SlackDm.file_name(), "slack");
     }
 
-    #[test]
-    fn a_note_round_trips_its_session() {
-        let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), NudgeTarget::Prs, Some("sess-abc"), 1_700_000_000_000).unwrap();
-        assert_eq!(session_of(dir.path(), NudgeTarget::Prs).as_deref(), Some("sess-abc"));
+    fn note(session: Option<&str>, origin: Option<&str>, trigger: Option<&str>) -> Note {
+        Note {
+            session: session.map(str::to_string),
+            origin: origin.map(PathBuf::from),
+            trigger: trigger.map(str::to_string),
+        }
     }
 
     #[test]
-    fn a_note_from_outside_an_app_terminal_names_nobody() {
+    fn a_note_round_trips_every_field() {
         let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), NudgeTarget::Issues, Some("   "), 1).unwrap();
-        assert_eq!(session_of(dir.path(), NudgeTarget::Issues), None);
-
-        write(dir.path(), NudgeTarget::SlackDm, None, 1).unwrap();
-        assert_eq!(session_of(dir.path(), NudgeTarget::SlackDm), None);
+        let written = note(Some("sess-abc"), Some("/code/repo/sub"), Some("pr:create"));
+        write(dir.path(), NudgeTarget::Prs, &written, 1_700_000_000_000).unwrap();
+        assert_eq!(read(dir.path(), NudgeTarget::Prs), written);
     }
 
     #[test]
-    fn a_timestamp_only_note_names_nobody() {
-        assert_eq!(session_in("1700000000000"), None);
-        assert_eq!(session_in("1700000000000\n"), None);
+    fn blank_fields_and_short_notes_read_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        write(dir.path(), NudgeTarget::Issues, &note(Some("   "), None, None), 1).unwrap();
+        assert_eq!(read(dir.path(), NudgeTarget::Issues), Note::default());
+        assert_eq!(parse("1700000000000"), Note::default());
+        assert_eq!(parse("1700000000000\nsess\n"), note(Some("sess"), None, None));
     }
 
     #[test]
-    fn a_missing_note_names_nobody() {
+    fn a_missing_note_is_empty() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(session_of(dir.path(), NudgeTarget::Prs), None);
+        assert_eq!(read(dir.path(), NudgeTarget::Prs), Note::default());
+    }
+
+    #[test]
+    fn only_a_merge_or_an_unlabelled_nudge_refreshes_merged_prs() {
+        assert!(note(None, None, Some("pr:merge")).refreshes_merged());
+        assert!(note(None, None, None).refreshes_merged());
+        for t in [
+            "pr:create",
+            "pr:comment",
+            "pr:edit",
+            "pr:close",
+            "pr:review",
+        ] {
+            assert!(!note(None, None, Some(t)).refreshes_merged(), "{t}");
+        }
+    }
+
+    #[test]
+    fn origin_repo_picks_the_deepest_tracked_dir_holding_the_cwd() {
+        let dirs = [
+            PathBuf::from("/c/repo"),
+            PathBuf::from("/c/repo/.claude/worktrees/t"),
+            PathBuf::from("/c/other"),
+        ];
+        let at = |p: &str| origin_repo(&dirs, Some(Path::new(p)));
+        assert_eq!(at("/c/repo/src"), Some(PathBuf::from("/c/repo")));
+        assert_eq!(
+            at("/c/repo/.claude/worktrees/t/x"),
+            Some(PathBuf::from("/c/repo/.claude/worktrees/t"))
+        );
+        assert_eq!(at("/c/repo-two"), None, "a sibling sharing a prefix is not inside");
+        assert_eq!(origin_repo(&dirs, None), None);
     }
 
     #[test]
