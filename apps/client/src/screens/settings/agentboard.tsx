@@ -29,6 +29,8 @@ import { matchesFilter } from "@/lib/settings-filter";
 import { NotInTauri } from "@/lib/errors";
 import {
   DEFAULT_NOTIFY_THRESHOLD,
+  DEFAULT_ADVANCE_AFTER_SUBMIT,
+  DEFAULT_AUTO_RESUME,
   NOTIFY_LEVELS,
   type NotifyLevel,
   type UserSettings,
@@ -307,6 +309,36 @@ export function agentboardSections(
                 ...s,
                 agentboard: { ...s.agentboard, shortcutsWorkInTerminal: v },
               }))
+            }
+          />
+        ),
+      },
+      {
+        label: "Resume sessions on launch",
+        keywords: ["resume", "restart", "launch", "claude", "session", "restore"],
+        node: (
+          <ToggleRow
+            id="auto_resume"
+            label="Resume sessions on launch"
+            description="Relaunch every pane that was running Claude when the app last closed, with claude --resume. Off, the app asks which to relaunch."
+            checked={settings.agentboard?.autoResume ?? DEFAULT_AUTO_RESUME}
+            onCheckedChange={(v) =>
+              update((s) => ({ ...s, agentboard: { ...s.agentboard, autoResume: v } }))
+            }
+          />
+        ),
+      },
+      {
+        label: "Move to the next agent after answering",
+        keywords: ["advance", "next", "focus", "queue", "needs you", "answer", "submit"],
+        node: (
+          <ToggleRow
+            id="advance_after_submit"
+            label="Move to the next agent after answering"
+            description="When you send a prompt to an agent that was waiting on you, focus moves to the next one asking, finished or errored. Keep typing in the pane and you stay."
+            checked={settings.agentboard?.advanceAfterSubmit ?? DEFAULT_ADVANCE_AFTER_SUBMIT}
+            onCheckedChange={(v) =>
+              update((s) => ({ ...s, agentboard: { ...s.agentboard, advanceAfterSubmit: v } }))
             }
           />
         ),

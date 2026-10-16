@@ -300,6 +300,8 @@ export type UserSettings = {
     copyOnSelect?: boolean;
     terminalFontSize?: number;
     shortcutsWorkInTerminal?: boolean;
+    autoResume?: boolean;
+    advanceAfterSubmit?: boolean;
     shortcutCoach?: boolean;
     boardGroupByRepo?: boolean;
     railFilter?: RailFilter;
@@ -374,6 +376,10 @@ export function useLiveSetting<T>(
 }
 
 /** {@link useLiveSetting} into a ref, for an effect that must not re-subscribe. */
+/** Unset means on; each is read where it acts and where Settings shows it. */
+export const DEFAULT_AUTO_RESUME = true;
+export const DEFAULT_ADVANCE_AFTER_SUBMIT = true;
+
 export function useLiveSettingRef<T>(
   select: (s: UserSettings) => T | undefined,
   fallback: T,

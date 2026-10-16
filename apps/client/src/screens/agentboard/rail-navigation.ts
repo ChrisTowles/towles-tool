@@ -3,7 +3,7 @@ import { cycleNotBusy } from "@/lib/agentboard/session";
 import type { AgWindow, FolderData, RepoData, Selected, SessionData } from "@/lib/agentboard/types";
 import { moveFocus, type FocusLevel } from "@/lib/agentboard/windows";
 import { buildJumpRecall, type JumpRecall } from "@/lib/jump-recall";
-import { cycleQueue, nextItem, stepRow } from "@/lib/queue";
+import { advanceTarget, cycleQueue, nextItem, stepRow } from "@/lib/queue";
 import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
 import { railMove, type RailNode } from "@/lib/rail-nodes";
 import type { QueueItem } from "@/lib/schemas/queue";
@@ -71,6 +71,17 @@ export function railNavigation(a: {
   function jumpToNeedsYou(direction: "next" | "prev") {
     const id = cycleQueue(a.railQueue, a.selected?.sessionId ?? null, direction);
     jumpTo(id ? (a.sessionById.get(id) ?? null) : null, "Queue's empty — nothing needs you.");
+  }
+
+  // After a prompt to `fromSessionId`: the next agent waiting on you, landed on
+  // as a keyboard jump is (recall card included) with its terminal focused.
+  function advanceFrom(fromSessionId: string): boolean {
+    const target = advanceTarget(a.railRef.current.shownQueue, fromSessionId);
+    const session = target?.sessionId ? a.sessionById.get(target.sessionId) : undefined;
+    if (!session) return false;
+    jumpTo(session, "");
+    a.setFocusTerminalRequest((r) => ({ id: session.id, nonce: (r?.nonce ?? 0) + 1 }));
+    return true;
   }
 
   /** Open a queue row in place: its session, else its checkout.
@@ -255,6 +266,7 @@ export function railNavigation(a: {
 
   return {
     jumpToNeedsYou,
+    advanceFrom,
     jumpToNotBusy,
     jumpToHotkey,
     selectQueueItem,

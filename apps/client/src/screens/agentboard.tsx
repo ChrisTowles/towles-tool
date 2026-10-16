@@ -27,6 +27,7 @@ import { toggled } from "./agentboard/helpers";
 import { PaneGrid } from "./agentboard/pane-grid";
 import { RailHeader } from "./agentboard/rail-header";
 import { railNavigation } from "./agentboard/rail-navigation";
+import { useAdvanceAfterSubmit } from "./agentboard/use-advance-after-submit";
 import { LandQueueDialog } from "./agentboard/land-dialog";
 import { useQueueActions } from "./agentboard/queue-actions";
 import { defaultTaskRepo, RailNewTask } from "./agentboard/rail-new-task";
@@ -480,6 +481,7 @@ export function AgentBoardScreen() {
     setFocusedPaneId,
     setFocusTerminalRequest,
   });
+  useAdvanceAfterSubmit(nav.advanceFrom, sessionById);
 
   function toggleLane(lane: Lane) {
     uiAction("queue.lane_toggle", "agentboard", lane);

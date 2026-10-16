@@ -152,6 +152,14 @@ pub struct AgentboardSettings {
     /// the code-server workbench, which loads its Windows/Linux keymap.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pc_keybindings: Option<bool>,
+
+    /// Relaunch the previous run's Claude panes on launch without asking. `None` = on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_resume: Option<bool>,
+
+    /// After a prompt is sent to a session waiting on you, focus the next one. `None` = on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub advance_after_submit: Option<bool>,
 }
 
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
@@ -1921,6 +1929,20 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         assert!(!json.contains("copyOnSelect"));
         assert!(s.agentboard.copy_on_select.unwrap_or(true));
+    }
+
+    #[test]
+    fn auto_resume_and_advance_default_unset_and_round_trip() {
+        let s = UserSettings::default();
+        assert!(s.agentboard.auto_resume.is_none() && s.agentboard.advance_after_submit.is_none());
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!json.contains("autoResume") && !json.contains("advanceAfterSubmit"));
+        let off: UserSettings = serde_json::from_str(
+            r#"{"agentboard":{"autoResume":false,"advanceAfterSubmit":false}}"#,
+        )
+        .unwrap();
+        assert_eq!(off.agentboard.auto_resume, Some(false));
+        assert_eq!(off.agentboard.advance_after_submit, Some(false));
     }
 
     #[test]

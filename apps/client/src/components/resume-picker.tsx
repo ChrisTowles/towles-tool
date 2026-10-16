@@ -4,14 +4,18 @@ import { FolderIcon } from "@phosphor-icons/react";
 import { Button, Checkbox, Dialog } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { requestOpenSession, resumeCandidates } from "@/lib/agentboard/requests";
+import { DEFAULT_AUTO_RESUME, loadUserSettings } from "@/lib/settings";
 import { invoke } from "@/lib/tauri";
+import { toast } from "@/lib/toast";
+import { uiAction } from "@/lib/ui-action";
 import type { ResumeCandidate } from "@/lib/agentboard/requests";
 import { fmtAge } from "@/lib/data";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
-/** Offers to relaunch the Claude sessions from the previous run (`claude
- * --resume`). `tt_agentboard::resume` decides *whether* to prompt, so this mounts
+/** Relaunches the Claude sessions from the previous run (`claude --resume`) —
+ * all of them, unasked, unless `agentboard.autoResume` is off, when it asks which.
+ * `tt_agentboard::resume` decides *whether* there is anything, so this mounts
  * unconditionally and stays invisible when there's nothing to offer. */
 export function ResumePicker() {
   const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
@@ -24,11 +28,23 @@ export function ResumePicker() {
     void (async () => {
       const found = (await resumeCandidates()).unwrapOr([]);
       if (found.length === 0) return;
+      const auto = (await loadUserSettings())?.agentboard?.autoResume ?? DEFAULT_AUTO_RESUME;
+      if (auto) {
+        settled.current = true;
+        relaunch(found, openTab);
+        uiAction("resume.auto", "agentboard", String(found.length));
+        toast.info(
+          found.length === 1
+            ? "Resumed 1 Claude session"
+            : `Resumed ${found.length} Claude sessions`,
+        );
+        return;
+      }
       setCandidates(found);
       setChosen(new Set(found.map((c) => c.paneId)));
       setOpen(true);
     })();
-  }, []);
+  }, [openTab]);
 
   function toggle(paneId: string) {
     setChosen((prev) => {
@@ -53,22 +69,8 @@ export function ResumePicker() {
   function resume() {
     const picked = candidates.filter((c) => chosen.has(c.paneId));
     settle(chosen);
-    if (picked.length === 0) return;
-    // Agentboard owns the pane→PTY machinery, so hand off rather than
-    // duplicating it. It may not be mounted yet at boot, which is exactly why
-    // the open-session bridge stashes a queue (see `requestOpenSession`).
-    openTab("agentboard");
-    // Oldest first: Agentboard activates each folder as it restores it, so the
-    // last one handed over is the one left on screen — that should be the
-    // session you were most recently in.
-    for (const c of picked.toReversed()) {
-      requestOpenSession({
-        folderDir: c.folderDir,
-        sessionId: c.paneId,
-        resumeId: c.claudeSessionId,
-        label: c.title ?? c.paneName,
-      });
-    }
+    uiAction("resume.picked", "agentboard", String(picked.length));
+    relaunch(picked, openTab);
   }
 
   const now = Date.now();
@@ -146,6 +148,25 @@ export function ResumePicker() {
       </Dialog>
     </Dialog.Root>
   );
+}
+
+function relaunch(picked: ResumeCandidate[], openTab: (id: "agentboard") => void) {
+  if (picked.length === 0) return;
+  // Agentboard owns the pane→PTY machinery, so hand off rather than
+  // duplicating it. It may not be mounted yet at boot, which is exactly why
+  // the open-session bridge stashes a queue (see `requestOpenSession`).
+  openTab("agentboard");
+  // Oldest first: Agentboard activates each folder as it restores it, so the
+  // last one handed over is the one left on screen — that should be the
+  // session you were most recently in.
+  for (const c of picked.toReversed()) {
+    requestOpenSession({
+      folderDir: c.folderDir,
+      sessionId: c.paneId,
+      resumeId: c.claudeSessionId,
+      label: c.title ?? c.paneName,
+    });
+  }
 }
 
 /** Last two path segments — enough to tell tasks of one repo apart. */
