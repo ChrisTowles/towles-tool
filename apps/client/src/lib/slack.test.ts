@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dmSignal } from "./slack";
+import { dmSignal, slackWriteError } from "./slack";
 import type { DmItem } from "./data";
 
 function dm(over: Partial<DmItem> = {}): DmItem {
@@ -39,5 +39,21 @@ describe("dmSignal", () => {
 
   it("separates channels rather than colliding them", () => {
     expect(dmSignal([dm(), dm({ channel: "D2" })])).not.toBe(dmSignal([dm(), dm()]));
+  });
+});
+
+describe("slackWriteError", () => {
+  it("names the scope a failed write needs", () => {
+    expect(slackWriteError("slack chat.postMessage failed: missing_scope", "send")).toContain(
+      "chat:write",
+    );
+    expect(slackWriteError("slack reactions.add failed: missing_scope", "react")).toContain(
+      "reactions:write",
+    );
+  });
+
+  it("names files:write when an image upload lacks it", () => {
+    const msg = "slack files.getUploadURLExternal failed: missing_scope (needs files:write)";
+    expect(slackWriteError(msg, "send")).toContain("files:write");
   });
 });

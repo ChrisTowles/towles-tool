@@ -232,8 +232,16 @@ export function useSlackDm(): {
 
 /** The `Err` carries the raw Slack error string (see {@link isScopeError}); the
  * command refreshes the store, which nudges {@link useSlackDm}. */
-export function slackDmSend(text: string, threadTs?: string): Promise<Result<void, IpcError>> {
-  return invoke<void>("slack_dm_send", { text, threadTs: threadTs ?? null });
+export function slackDmSend(
+  text: string,
+  threadTs?: string,
+  images: readonly { name: string; dataBase64: string }[] = [],
+): Promise<Result<void, IpcError>> {
+  return invoke<void>("slack_dm_send", {
+    text,
+    threadTs: threadTs ?? null,
+    images: images.map(({ name, dataBase64 }) => ({ name, dataBase64 })),
+  });
 }
 
 /** Toggle one of my reactions on a message. Slack treats a redundant toggle as
@@ -266,4 +274,21 @@ export type SlackUser = {
 /** Empty when the token is blank, so the picker degrades to a text input. */
 export function slackListUsers(): Promise<Result<SlackUser[], IpcError>> {
   return invoke<SlackUser[]>("slack_list_users");
+}
+
+/** Slack's raw error, mapped to the fix the user can act on. */
+export function slackWriteError(message: string, kind: "send" | "react"): string {
+  if (isAuthError(message)) {
+    return "Slack rejected that: your token is no longer valid. Re-issue it in Settings → Slack.";
+  }
+  if (isScopeError(message)) {
+    // An upload's scope error arrives already naming `files:write` (tt-collect).
+    const scope = message.includes("files:write")
+      ? "files:write"
+      : kind === "send"
+        ? "chat:write"
+        : "reactions:write";
+    return `Slack rejected that: re-authorize your token with the ${scope} scope, then try again.`;
+  }
+  return message;
 }

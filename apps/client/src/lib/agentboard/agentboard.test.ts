@@ -56,7 +56,7 @@ import {
   folderPaneDir,
   paneSession,
 } from "@/lib/agentboard/pane-ids";
-import { isPasteableImage } from "@/lib/agentboard/pasted-images";
+import { isPasteableImage } from "@/lib/pasted-images";
 import { waitForFirstFrame } from "@/lib/agentboard/pty";
 import {
   cycleNotBusy,

@@ -19,7 +19,7 @@ import {
   clipboardImageFromHost,
   imagesFromDataTransfer,
   isPasteableImage,
-} from "@/lib/agentboard/pasted-images";
+} from "@/lib/pasted-images";
 import { nextDraftScopeId } from "@/lib/agentboard/windows";
 import { IssueItem, storeGhIssuesList } from "@/lib/data";
 import { GoalEditor } from "@/components/goal-editor";

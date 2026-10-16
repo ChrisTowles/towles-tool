@@ -3,7 +3,7 @@ import { toast, toastManager } from "@/lib/toast";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar, AppSidebarIcons } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
-import { DmBanner } from "@/components/dm-banner";
+import { DmDrawer } from "@/components/dm-drawer";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { QuickLog } from "@/components/quick-log";
 import { StatusBar } from "@/components/status-bar";
@@ -173,9 +173,8 @@ function Workspace() {
     <div className="flex h-screen flex-col bg-background text-foreground">
       {!zen && <AppHeader />}
       <UpdateBanner />
-      <DmBanner />
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {/* Icon-collapsed nav: a fixed-width strip outside the panel group, not
             a ResizablePanel — its width is locked, so react-resizable-panels'
             drag machinery would be pure dead weight (mirrors the Agentboard
@@ -223,6 +222,7 @@ function Workspace() {
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
+        <DmDrawer />
       </div>
 
       {!zen && <StatusBar />}
