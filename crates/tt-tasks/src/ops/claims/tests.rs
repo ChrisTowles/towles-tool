@@ -1,10 +1,8 @@
 use std::net::TcpListener;
 
 use super::*;
-use crate::ops::test_support::isolate_home;
 
 fn root_with_tasks(tasks: &[&str]) -> (tempfile::TempDir, TaskRoot) {
-    isolate_home();
     let tmp = tempfile::tempdir().unwrap();
     let checkout = tmp.path().join("repo");
     fs::create_dir_all(checkout.join(".git")).unwrap();
@@ -141,13 +139,14 @@ fn the_report_merges_env_and_registry_and_marks_the_source() {
     fs::write(sr.task_dir("feat-env").join(".env"), format!("UI_PORT={env_only}\n")).unwrap();
     fs::write(sr.task_dir("feat-both").join(".env"), format!("API_PORT={both}\n")).unwrap();
 
-    let reg = port_registry_path(&sr.checkout).unwrap();
+    let ports_dir = sr.checkout.parent().unwrap().join("ports");
+    let reg = port_registry_path(&sr.checkout, Some(&ports_dir)).unwrap();
     record_task_ports(&sr, &reg, "feat-both", &pairs(&[("API_PORT", both)]), 99).unwrap();
     record_task_ports(&sr, &reg, "feat-reg", &pairs(&[("UI_PORT", reg_only)]), 55).unwrap();
     record_task_ports(&sr, &reg, "feat-dead", &pairs(&[("UI_PORT", dead)]), 1).unwrap();
     fs::remove_dir_all(sr.task_dir("feat-dead")).unwrap();
 
-    let report = port_report(&sr);
+    let report = port_report_in(&sr, Some(&ports_dir));
     let row = |port: u16| report.iter().find(|r| r.port == port);
     let env_row = row(env_only).unwrap();
     assert_eq!(

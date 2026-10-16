@@ -5,8 +5,17 @@ use crate::ops::claims::{record_task_ports, registry_claims};
 use crate::ops::test_support::{add_task, git, repo_with_origin};
 use crate::ops::{TEARDOWN_ENV_KEY, TaskRoot};
 
+fn ports_dir(sr: &TaskRoot) -> PathBuf {
+    sr.checkout.parent().unwrap().join("ports")
+}
+
 fn opts(sr: &TaskRoot, name: &str, force: bool) -> RemoveOpts {
-    RemoveOpts { root: Some(sr.checkout.clone()), name: name.to_string(), force }
+    RemoveOpts {
+        root: Some(sr.checkout.clone()),
+        name: name.to_string(),
+        force,
+        ports_dir: Some(ports_dir(sr)),
+    }
 }
 
 fn remove(sr: &TaskRoot, name: &str, force: bool) -> (Result<RemoveOutcome>, Vec<RemovePhase>) {
@@ -186,7 +195,7 @@ fn removal_releases_the_tasks_port_claims() {
     let (_tmp, sr) = repo_with_origin();
     add_task(&sr, "feat-a", "feat/a");
     add_task(&sr, "feat-b", "feat/b");
-    let reg = port_registry_path(&sr.checkout).unwrap();
+    let reg = port_registry_path(&sr.checkout, Some(&ports_dir(&sr))).unwrap();
     record_task_ports(&sr, &reg, "feat-a", &[("UI_PORT".into(), 4601)], 1).unwrap();
     record_task_ports(&sr, &reg, "feat-b", &[("UI_PORT".into(), 4602)], 1).unwrap();
 
@@ -256,16 +265,13 @@ fn phase_labels_are_distinct_and_non_empty() {
     assert!(!labels.contains(""));
 }
 
-/// `clean_tasks` sweeps the machine-wide ledger dir, so concurrent cleans would
-/// delete each other's fixture ledgers.
-static CLEAN_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn serial() -> std::sync::MutexGuard<'static, ()> {
-    CLEAN_SERIAL.lock().unwrap_or_else(|e| e.into_inner())
-}
-
 fn clean(sr: &TaskRoot, dry_run: bool) -> CleanReport {
-    let opts = CleanOpts { root: Some(sr.checkout.clone()), dry_run, scope_parents: Vec::new() };
+    let opts = CleanOpts {
+        root: Some(sr.checkout.clone()),
+        dry_run,
+        scope_parents: Vec::new(),
+        ports_dir: Some(ports_dir(sr)),
+    };
     clean_tasks(&opts, |_| None).unwrap()
 }
 
@@ -289,7 +295,6 @@ fn mixed_fleet() -> (tempfile::TempDir, TaskRoot) {
 
 #[test]
 fn a_dry_run_names_what_would_go_and_why_the_rest_stays_without_touching_disk() {
-    let _serial = serial();
     let (_tmp, sr) = mixed_fleet();
 
     let report = clean(&sr, true);
@@ -306,7 +311,6 @@ fn a_dry_run_names_what_would_go_and_why_the_rest_stays_without_touching_disk() 
 
 #[test]
 fn clean_removes_only_finished_tasks_and_deletes_their_branch() {
-    let _serial = serial();
     let (_tmp, sr) = mixed_fleet();
 
     let report = clean(&sr, false);
@@ -322,7 +326,6 @@ fn clean_removes_only_finished_tasks_and_deletes_their_branch() {
 
 #[test]
 fn clean_never_judges_detached_broken_or_base_branch_tasks_as_finished() {
-    let _serial = serial();
     let (_tmp, sr) = repo_with_origin();
     let detached = add_task(&sr, "feat-detached", "feat/detached");
     git(&detached, &["checkout", "-q", "--detach"]);
@@ -357,9 +360,8 @@ fn clean_never_judges_detached_broken_or_base_branch_tasks_as_finished() {
 
 #[test]
 fn clean_sweeps_registries_of_vanished_checkouts_but_not_live_ones() {
-    let _serial = serial();
     let (_tmp, sr) = repo_with_origin();
-    let ports_dir = tt_config::task_ports_dir().unwrap();
+    let ports_dir = ports_dir(&sr);
     fs::create_dir_all(&ports_dir).unwrap();
     let live = ports_dir.join("live-ledger.json");
     let dead = ports_dir.join("dead-ledger.json");
@@ -383,7 +385,6 @@ fn clean_sweeps_registries_of_vanished_checkouts_but_not_live_ones() {
 
 #[test]
 fn clean_sweeps_state_dirs_of_removed_checkouts_of_this_repo_only() {
-    let _serial = serial();
     let (tmp, sr) = repo_with_origin();
     add_task(&sr, "feat-live", "feat/live");
     let scope_parent = tmp.path().join("scopes");
@@ -394,6 +395,7 @@ fn clean_sweeps_state_dirs_of_removed_checkouts_of_this_repo_only() {
         root: Some(sr.checkout.clone()),
         dry_run: false,
         scope_parents: vec![scope_parent.clone()],
+        ports_dir: Some(ports_dir(&sr)),
     };
 
     let report = clean_tasks(&opts, |dir| {

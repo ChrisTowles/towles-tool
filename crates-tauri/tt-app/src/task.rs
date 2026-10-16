@@ -496,7 +496,7 @@ pub fn delete_task_blocking(
         }
         Err(error) => return Err(error.to_string()),
     };
-    let opts = RemoveOpts { root, name, force };
+    let opts = RemoveOpts { root, name, force, ports_dir: None };
     let mut hooks = AppRemovalHooks { app, dir };
     let rows = AppBoardRows { app, board_id };
     let removal = tt_agentboard::task_removal::TaskRemoval {
