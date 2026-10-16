@@ -7,7 +7,9 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::remove::{claimed_ports, docker_owns_port};
-use super::{base_refs, orphaned_count, port_occupied, repo_at, uncommitted_count, work_state};
+use super::{
+    PrProbe, base_refs, orphaned_count, port_occupied, repo_at, uncommitted_count, work_state,
+};
 use crate::landed::WorkState;
 use crate::pr::PullRequest;
 
@@ -46,6 +48,7 @@ pub fn finish_blockers(dir: &Path, branch: &str) -> (Vec<FinishBlocker>, Vec<Str
         &format!("refs/heads/{branch}"),
         uncommitted_count(dir),
         orphaned_count(dir),
+        PrProbe::Gh,
     );
     (classify_finish(&open_prs, &work, branch, &refs.base), notes)
 }

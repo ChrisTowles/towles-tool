@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowClockwiseIcon, GitCommitIcon, PencilIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, CheckIcon, GitCommitIcon, PencilIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@cloudflare/kumo";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Hint } from "@/components/hint";
@@ -310,8 +310,9 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
 
   const landedClean = commitsAhead > 0 && stats.landed != null && commitsUnlanded === 0;
   const partly = commitsUnlanded > 0 && commitsUnlanded !== commitsAhead;
+  // Landed lines are history, not pending work: one muted ok tone, never red/green.
   const tone = landedClean
-    ? "text-kumo-subtle hover:bg-kumo-tint"
+    ? "text-ok/70 hover:bg-kumo-tint hover:text-ok"
     : "text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default";
 
   return (
@@ -339,7 +340,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           />
         }
       >
-        <GitCommitIcon className="size-3" />
+        {landedClean ? <CheckIcon className="size-3" /> : <GitCommitIcon className="size-3" />}
         <ChipLabel text="committed" labeled={labeled} />
         {commitsAhead === 0 ? (
           /* Unlabeled, the word doubles as the affordance; labeled,
@@ -347,7 +348,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           <span>{labeled ? "none" : "files"}</span>
         ) : landedClean ? (
           <span>
-            {commitsAhead}c {stats.landed}
+            {stats.landed} +{fmtDiffLines(committedAdded)} −{fmtDiffLines(committedRemoved)}
           </span>
         ) : (
           <>
@@ -369,8 +370,8 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           ) : landedClean ? (
             <>
               All {commitsAhead} commit{commitsAhead === 1 ? "" : "s"} are already on {base} (
-              {stats.landed}) — the commit count stays put because the rewrite gave them new SHAs,
-              but nothing here is outstanding.
+              {stats.landed}): the +{fmtDiffLines(committedAdded)} −{fmtDiffLines(committedRemoved)}{" "}
+              lines landed, and nothing here is outstanding.
             </>
           ) : partly ? (
             <>

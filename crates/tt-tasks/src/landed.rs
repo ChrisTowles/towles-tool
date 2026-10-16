@@ -17,6 +17,9 @@ pub enum LandedVia {
     Ancestor,
     Patches,
     Squash,
+    /// A merged PR's head, current or force-pushed over, reaches the branch tip — the
+    /// one proof left once a rebase before the squash rewrote the content.
+    PrMerged,
     /// The remote branch was deleted — about the *remote*, not the content, so it
     /// answers only when no content check did.
     UpstreamGone,
@@ -28,6 +31,7 @@ impl LandedVia {
             Self::Ancestor => "merged",
             Self::Patches => "rebase-merged",
             Self::Squash => "squash-merged",
+            Self::PrMerged => "PR merged",
             Self::UpstreamGone => "upstream gone",
         }
     }

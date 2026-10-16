@@ -455,6 +455,7 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                     &format!("refs/heads/{current}"),
                     uncommitted,
                     ops::orphaned_count(&dir),
+                    ops::PrProbe::Gh,
                 );
                 let state = work.headline();
                 (current, false, work, state)

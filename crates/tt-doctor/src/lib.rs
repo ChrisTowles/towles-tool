@@ -192,6 +192,7 @@ fn check_stale_tasks() -> Vec<StaleTaskCheck> {
                 &branch_ref,
                 ops::uncommitted_count(&dir),
                 ops::orphaned_count(&dir),
+                ops::PrProbe::Gh,
             );
             classify_stale_task(&name, &branch, &refs.base, &work)
         })

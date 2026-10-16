@@ -1,4 +1,6 @@
 /target
+# Per-agent hardlinked build caches (`cp -al target target-<task>`).
+/target-*/
 node_modules/
 dist/
 /apps/client/dist

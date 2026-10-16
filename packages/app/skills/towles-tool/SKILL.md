@@ -57,6 +57,11 @@ tt task clean              # Remove every merged/gone task, then delete landed b
 tt task nudge <prs|issues|slack:dm>  # Refresh that collector now instead of on the app's next poll
 ```
 
+"Landed" is proven from content (merged, rebase-merged, squash-merged) or, when a
+PR was fixed up or rebased before merging, `PR merged`: a merged PR's head — current
+or one a force-push replaced — reaches the local tip. Commits added after that merge
+still read as unlanded.
+
 `nudge` is for hooks and scripts, not for you to run by hand — the app polls
 these collectors on its own cadence anyway. It routes by `TT_SESSION_ID`, so
 it reaches the app instance that opened the terminal it runs in; from a
