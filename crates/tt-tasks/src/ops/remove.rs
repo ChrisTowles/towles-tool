@@ -174,7 +174,7 @@ pub fn remove_task(
     // Name the holder of each foreign port — a blocker is only actionable if
     // the user can tell which process to stop. Skipped under --force, where it
     // would only decorate a log line at the cost of two subprocesses.
-    let foreign: Vec<ForeignPort> = claimed_ports(&dir)
+    let mut foreign: Vec<ForeignPort> = claimed_ports(&dir)
         .into_iter()
         .filter(|&p| port_occupied(p) && !docker_owns_port(&name, p))
         .map(|port| ForeignPort {
@@ -182,6 +182,11 @@ pub fn remove_task(
             holder: if opts.force { None } else { crate::ports::holder(port) },
         })
         .collect();
+    // A listener running from inside the task is its own dev server: stop it rather than
+    // block. Only once the git guards pass, or a refused removal costs a running server.
+    if !opts.force && dirty == 0 && unreachable == 0 {
+        foreign.retain(|fp| !stop_own_listener(fp, &dir, &mut messages));
+    }
 
     let blocked = crate::guards::check_removal(dirty, unreachable, &foreign);
     if !blocked.is_empty() {
@@ -370,6 +375,24 @@ fn foreign_owned(dir: &Path) -> Option<(PathBuf, u32)> {
 #[cfg(not(unix))]
 fn foreign_owned(_dir: &Path) -> Option<(PathBuf, u32)> {
     None
+}
+
+/// Stop `fp`'s listener when every process on it runs from inside `dir`. `true` = stopped.
+fn stop_own_listener(fp: &ForeignPort, dir: &Path, messages: &mut Vec<String>) -> bool {
+    if !crate::ports::listeners_inside(fp.port, dir) {
+        return false;
+    }
+    let who = fp.holder.as_ref().map_or_else(|| "its process".to_string(), |h| h.describe());
+    match crate::ports::stop_listeners(fp.port) {
+        Ok(_) => {
+            messages.push(format!("stopped {who} on port {} — this task's own", fp.port));
+            true
+        }
+        Err(e) => {
+            messages.push(format!("could not stop {who} on port {}: {e}", fp.port));
+            false
+        }
+    }
 }
 
 pub(super) fn claimed_ports(dir: &Path) -> BTreeSet<u16> {

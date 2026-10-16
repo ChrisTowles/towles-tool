@@ -63,6 +63,12 @@ PR was fixed up or rebased before merging, `PR merged`: a merged PR's head — c
 or one a force-push replaced — reaches the local tip. Commits added after that merge
 still read as unlanded.
 
+Removal stops the task's own dev server — a listener on a claimed port whose cwd is
+inside the task's worktree — instead of refusing; a listener from anywhere else still
+blocks. The app also closes a landed task as done by itself once its checkout holds
+nothing else and its agent is neither working nor asking, so a merged task usually
+needs no `rm` at all.
+
 More flags:
 
 - `new`: `-b`/`--branch` names the branch (default: slugged title), `--base <REF>`

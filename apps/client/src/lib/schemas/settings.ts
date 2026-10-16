@@ -173,6 +173,7 @@ const AgentboardBlockSchema = z
     advanceAfterSubmit: z.boolean().optional(),
     shortcutCoach: z.boolean().optional(),
     boardGroupByRepo: z.boolean().optional(),
+    autoCloseLanded: z.boolean().optional(),
     // `.catch` for the same reason as `notifyThreshold`: an unrecognized mode
     // (a newer build's, a hand-edit) reads as
     // unset rather than failing the whole settings parse.

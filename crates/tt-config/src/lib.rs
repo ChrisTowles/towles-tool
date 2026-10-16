@@ -119,6 +119,11 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board_group_by_repo: Option<bool>,
 
+    /// Close a task as done on its own once its work has landed and its checkout
+    /// holds nothing else. `None` = [`DEFAULT_AUTO_CLOSE_LANDED`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_close_landed: Option<bool>,
+
     /// Opaque: Rust never interprets it, and an unknown value reads as `None`.
     #[serde(
         skip_serializing_if = "Option::is_none",
@@ -165,6 +170,8 @@ pub struct AgentboardSettings {
 pub const DEFAULT_COMPACT_RECOMMEND_PERCENT: u8 = 30;
 
 pub const DEFAULT_SHOW_UNMANAGED_WORKTREES: bool = false;
+
+pub const DEFAULT_AUTO_CLOSE_LANDED: bool = true;
 
 /// Not a scale: [`Active`](Self::Active) asks about *now* (running, dirty,
 /// unpushed), [`Recent`](Self::Recent) about the last N hours.

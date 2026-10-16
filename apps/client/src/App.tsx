@@ -19,6 +19,7 @@ import { subscribePreviewShow } from "@/lib/preview-artifact";
 import { repeatDetail, repeatTitle, watchRepeatedErrors } from "@/lib/repeated-errors";
 import { uiAction } from "@/lib/ui-action";
 import { subscribeSummon } from "@/lib/summon";
+import { subscribeAutoClosed } from "@/lib/auto-close";
 import { DiffView } from "@/components/diff-view";
 import { NoteDialog } from "@/components/note-dialog";
 import { subscribeTaskStart } from "@/lib/task-start";
@@ -162,6 +163,7 @@ function TaskStartBridge() {
       ),
     [],
   );
+  useEffect(() => subscribeAutoClosed(), []);
   useEffect(
     () =>
       subscribeEditorOpenFile(

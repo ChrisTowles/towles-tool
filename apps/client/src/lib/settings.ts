@@ -304,6 +304,7 @@ export type UserSettings = {
     advanceAfterSubmit?: boolean;
     shortcutCoach?: boolean;
     boardGroupByRepo?: boolean;
+    autoCloseLanded?: boolean;
     railFilter?: RailFilter;
     railRecentHours?: number;
     showQuiet?: boolean;
