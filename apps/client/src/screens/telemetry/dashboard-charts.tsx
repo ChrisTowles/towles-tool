@@ -1,5 +1,6 @@
 import { NEUTRAL, PALETTE } from "@/lib/colors";
-import { fmtDuration, type DashboardSummary } from "@/lib/telemetry";
+import { type DashboardSummary } from "@/lib/telemetry";
+import { fmtDuration } from "@/lib/format";
 
 /** Series colours go by position in `summary.series`, never by name, so a series
  * keeps its hue across ranges and groupings; `other` (always last) is neutral.

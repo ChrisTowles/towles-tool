@@ -9,8 +9,6 @@ import {
   contextBand,
   ctxPct,
   fmtContext,
-  fmtElapsed,
-  fmtTokens,
   fmtWaitingAge,
   hasSubagentSpend,
   isAgent,
@@ -24,6 +22,7 @@ import {
   type SessionData,
 } from "@/lib/agentboard";
 import { cn } from "@/lib/utils";
+import { fmtElapsed, fmtTokens } from "@/lib/format";
 
 /** Warmth only, no context percent, and nothing at all unless Claude is running
  * here right now — `agentState` is pruned when the pid dies. */

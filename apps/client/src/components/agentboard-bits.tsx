@@ -34,8 +34,6 @@ import {
   collapsedLiveColor,
   comparedBaseLabel,
   ctxPct,
-  fmtDiffLines,
-  fmtElapsed,
   folderLandedButHasWork,
   gitCheckedLabel,
   isCacheExpiring,
@@ -72,6 +70,7 @@ import { errorMessage } from "@/lib/errors";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
+import { fmtDiffLines, fmtElapsed } from "@/lib/format";
 
 /** Shared atoms for the Agentboard rail rows, folder headers, pane chrome and
  * working-context band, so each surface composes the same pieces. */

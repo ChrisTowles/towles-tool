@@ -71,20 +71,6 @@ export type Count = { key: string; count: number };
 export const telemetryAttention = (date: string) =>
   invoke<AttentionSummary>("telemetry_attention", { date });
 
-/** `4h 12m` / `12m 30s` / `8s` — day-scale totals, unlike `fmtElapsed`'s clock.
- * Non-zero under a second is `<1s`, never `0s`: a real subprocess rendered as a
- * flat zero reads as "this didn't happen". */
-export function fmtDuration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
-  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  if (s === 0 && ms > 0) return "<1s";
-  return `${s}s`;
-}
-
 /** Null when the day is too empty for the ratio to mean anything. */
 export function focusShare(summary: AttentionSummary): number | null {
   if (summary.elapsedMs <= 0) return null;

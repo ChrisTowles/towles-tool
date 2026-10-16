@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { noteChip, useInbox } from "@/lib/inbox";
 import {
   claudeTitleName,
-  fmtElapsed,
   fmtWaitingAge,
   isAgent,
   sessionCatchesEye,
@@ -26,6 +25,7 @@ import {
   type SessionActions,
   type SessionData,
 } from "@/lib/agentboard";
+import { fmtElapsed } from "@/lib/format";
 
 export function SessionRow({
   session,

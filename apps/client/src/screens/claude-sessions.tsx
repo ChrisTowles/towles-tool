@@ -49,6 +49,7 @@ import { uiAction } from "@/lib/ui-action";
 import { useClipboardCopy } from "@/lib/use-clipboard-copy";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
+import { fmtTokens } from "@/lib/format";
 
 /** Surface a failed sessions read. Silent outside the Tauri shell, where every
  * command fails identically and the screen already says so. */
@@ -126,12 +127,6 @@ function cssPx(name: string): number {
 /** A font stack from `index.css` (`--font-sans`), so a canvas sets the app's face. */
 function cssFont(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 }
 
 /** Estimated dollar cost. Sub-cent figures round to `<$0.01` rather than `$0.00`
@@ -286,7 +281,7 @@ function DayStackChart({ days, colors }: { days: LedgerDay[]; colors: Map<string
         yAxis: {
           type: "value",
           splitLine: { lineStyle: { color: border } },
-          axisLabel: { color: muted, formatter: (v: number) => formatTokens(v) },
+          axisLabel: { color: muted, formatter: (v: number) => fmtTokens(v) },
         },
         series: [
           ...repos.map((repo) => ({
@@ -388,7 +383,7 @@ function RankedBarChart({
               position: "right",
               color: muted,
               formatter: (p: { value: number; dataIndex: number }) =>
-                `${formatTokens(p.value)} · ${formatCost(bars[p.dataIndex]?.costUsd ?? 0)}`,
+                `${fmtTokens(p.value)} · ${formatCost(bars[p.dataIndex]?.costUsd ?? 0)}`,
             },
           },
         ],
@@ -899,7 +894,7 @@ function BreakdownDialog({
           </Dialog.Title>
           <Dialog.Description className="text-sm">
             {session && <ProjectName name={session.project} />} · {session?.date} ·{" "}
-            {formatTokens((session?.inputTokens ?? 0) + (session?.outputTokens ?? 0))} in+out
+            {fmtTokens((session?.inputTokens ?? 0) + (session?.outputTokens ?? 0))} in+out
           </Dialog.Description>
         </div>
 
@@ -930,7 +925,7 @@ function BreakdownDialog({
                         fraction={(t.inputTokens + t.outputTokens) / maxTool}
                       />
                       <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
-                        {formatTokens(t.inputTokens + t.outputTokens)}
+                        {fmtTokens(t.inputTokens + t.outputTokens)}
                       </span>
                     </div>
                   ))}
@@ -960,7 +955,7 @@ function BreakdownDialog({
                         fraction={(t.inputTokens + t.outputTokens) / maxTurn}
                       />
                       <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
-                        {formatTokens(t.inputTokens + t.outputTokens)}
+                        {fmtTokens(t.inputTokens + t.outputTokens)}
                       </span>
                     </div>
                   ))}
@@ -1118,13 +1113,13 @@ function SessionTable({ sessions, searching }: { sessions: ClaudeSession[]; sear
                     outlier ? "font-semibold text-warn" : "text-foreground",
                   )}
                 >
-                  {formatTokens(billable)}
+                  {fmtTokens(billable)}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono text-xs text-muted-foreground">
-                  {formatTokens(s.cacheReadTokens)}
+                  {fmtTokens(s.cacheReadTokens)}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono text-xs text-muted-foreground">
-                  {formatTokens(s.cacheCreationTokens)}
+                  {fmtTokens(s.cacheCreationTokens)}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono text-xs text-foreground">
                   {formatCost(s.costUsd)}
@@ -1351,11 +1346,11 @@ export function ClaudeSessionsScreen() {
               <StatTile label="Sessions" value={String(totals.sessions)} />
               <StatTile
                 label="In + Out"
-                value={formatTokens(totals.inputTokens + totals.outputTokens)}
-                detail={`${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out`}
+                value={fmtTokens(totals.inputTokens + totals.outputTokens)}
+                detail={`${fmtTokens(totals.inputTokens)} in · ${fmtTokens(totals.outputTokens)} out`}
               />
-              <StatTile label="Cache read" value={formatTokens(totals.cacheReadTokens)} />
-              <StatTile label="Cache write" value={formatTokens(totals.cacheCreationTokens)} />
+              <StatTile label="Cache read" value={fmtTokens(totals.cacheReadTokens)} />
+              <StatTile label="Cache write" value={fmtTokens(totals.cacheCreationTokens)} />
               <StatTile
                 label="Est. cost"
                 value={formatCost(totals.costUsd)}
