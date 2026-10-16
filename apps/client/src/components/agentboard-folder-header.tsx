@@ -28,6 +28,7 @@ import {
 import {
   BaseMovedChip,
   CommittedChip,
+  CostChip,
   UncommittedChip,
 } from "@/components/agentboard-bits/diff-chips";
 import { FolderLandedBadge, SafeToDeleteBadge } from "@/components/agentboard-bits/landed-badges";
@@ -359,6 +360,7 @@ export function FolderHeader({
             <BaseMovedChip stats={folder} />
             <UncommittedChip stats={folder} onOpen={onOpenFiles} />
             <CommittedChip stats={folder} onOpen={onOpenFiles} />
+            <CostChip dir={folder.dir} />
           </div>
         )}
         {/* What you can do. One `shrink-0` cluster, not loose siblings of the

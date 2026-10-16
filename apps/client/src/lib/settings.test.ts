@@ -3,6 +3,7 @@ import {
   createSettingsWriter,
   nextCalendarSourceId,
   withDefaultPromptImprovers,
+  withMissingSavedQueries,
   type CalendarSource,
   type PromptImprover,
   type UserSettings,
@@ -241,5 +242,23 @@ describe("createSettingsWriter", () => {
     expect(disk.load).not.toHaveBeenCalled();
     expect(disk.save).not.toHaveBeenCalled();
     expect(states).toEqual([]);
+  });
+});
+
+describe("withMissingSavedQueries", () => {
+  it("appends only the built-ins missing by id and keeps edited ones as they are", () => {
+    const mine = [
+      { id: "slow-spawns", label: "mine", sql: "select 1" },
+      { id: "custom", label: "custom", sql: "select 2" },
+    ];
+    const defaults = [
+      { id: "slow-spawns", label: "slow spawns > 2 s", sql: "select 3" },
+      { id: "model-spend-by-day", label: "model spend by day", sql: "select 4" },
+    ];
+    expect(withMissingSavedQueries(mine, defaults).map((q) => [q.id, q.label])).toEqual([
+      ["slow-spawns", "mine"],
+      ["custom", "custom"],
+      ["model-spend-by-day", "model spend by day"],
+    ]);
   });
 });

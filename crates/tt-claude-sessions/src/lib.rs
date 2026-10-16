@@ -9,6 +9,7 @@ use thiserror::Error;
 
 pub mod analyzer;
 pub mod breakdown;
+pub mod by_dir;
 pub mod cadence;
 pub mod insights;
 pub mod ledger;
@@ -37,6 +38,7 @@ pub use analyzer::{
     get_model_name, get_primary_model,
 };
 pub use breakdown::{SessionBreakdown, TurnBreakdown, build_session_breakdown, find_session_path};
+pub use by_dir::{DirCost, cost_by_dir};
 pub use cadence::{CadenceSummary, DayBucket, DayHourCell, build_cadence};
 pub use insights::{Insight, InsightKind, build_insights};
 pub use ledger::{

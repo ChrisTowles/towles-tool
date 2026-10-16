@@ -6,13 +6,14 @@
 //! only a single session's turn/tool breakdown re-parses, on demand.
 
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
 use tt_claude_sessions::{
-    BarChartDay, CadenceSummary, LedgerTotals, ModelBar, ProjectBar, SessionBreakdown,
+    BarChartDay, CadenceSummary, DirCost, LedgerTotals, ModelBar, ProjectBar, SessionBreakdown,
     SessionDetail, UsageLimits, build_cadence, build_insights, build_ledger_days,
-    build_ledger_model_totals, build_ledger_project_totals, build_session_breakdown,
+    build_ledger_model_totals, build_ledger_project_totals, build_session_breakdown, cost_by_dir,
     find_session_path, ledger_totals, parse_transcript_file, read_cached_usage_limits,
     scan_sessions_detailed, search_sessions,
 };
@@ -128,6 +129,42 @@ pub async fn claude_sessions_summary(
     })
     .await
     .map_err(|e| format!("claude sessions scan task panicked: {e}"))?
+}
+
+/// The rail's per-checkout bill covers this many days of sessions.
+const DIR_COST_DAYS: f64 = 30.0;
+
+/// A rail-polled scan is re-run at most this often; transcripts are multi-MB.
+const DIR_COST_TTL: Duration = Duration::from_secs(10 * 60);
+
+/// The rail's own scan, apart from the screen's: its window never changes, and
+/// a rescan here must not clobber the window the screen is browsing.
+#[derive(Clone, Default)]
+pub struct DirCostCache(Arc<Mutex<Option<DirCostScan>>>);
+
+struct DirCostScan {
+    at: Instant,
+    details: Vec<SessionDetail>,
+}
+
+/// Estimated spend per checkout over the last [`DIR_COST_DAYS`], one row per
+/// `dirs` entry. A session counts toward the deepest checkout its cwd is in.
+#[tauri::command]
+pub async fn claude_cost_by_dir(
+    dirs: Vec<String>,
+    cache: tauri::State<'_, DirCostCache>,
+) -> Result<Vec<DirCost>, String> {
+    let handle = cache.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = handle.lock().expect("dir cost cache poisoned");
+        if guard.as_ref().is_none_or(|cached| cached.at.elapsed() >= DIR_COST_TTL) {
+            *guard = Some(DirCostScan { at: Instant::now(), details: scan(DIR_COST_DAYS)? });
+        }
+        let details = &guard.as_ref().expect("cache populated above").details;
+        Ok(cost_by_dir(details, &dirs))
+    })
+    .await
+    .map_err(|e| format!("claude cost scan task panicked: {e}"))?
 }
 
 /// Rate-limit bars for the status bar, read from the CLI's own cached

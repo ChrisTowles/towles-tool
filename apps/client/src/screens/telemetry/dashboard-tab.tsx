@@ -1,8 +1,11 @@
 import {
   ArrowClockwiseIcon,
   CaretDownIcon,
+  ChartBarIcon,
   CrosshairIcon,
   HourglassIcon,
+  ClockCountdownIcon,
+  WarningIcon,
   StackIcon,
   TimerIcon,
   type Icon,
@@ -14,7 +17,10 @@ import { cn } from "@/lib/utils";
 import { uiAction } from "@/lib/ui-action";
 import { type DashboardGroupBy, type DashboardRange, type DashboardSummary } from "@/lib/telemetry";
 import {
+  ColumnBars,
+  dayTick,
   DurationBars,
+  seriesColorAt,
   ErrorRateLines,
   SeriesLegend,
   StackedBars,
@@ -125,6 +131,10 @@ export function DashboardTab({
   );
 }
 
+function sum<T>(rows: T[], key: { [K in keyof T]: T[K] extends number ? K : never }[keyof T]) {
+  return rows.reduce((n, r) => n + (r[key] as number), 0);
+}
+
 function ratePct(t: { count: number; failures: number }): string {
   return t.count > 0 ? `${((t.failures / t.count) * 100).toFixed(1)}%` : "–";
 }
@@ -189,6 +199,102 @@ function DashboardGrid({
         <p className="mt-1 text-mini text-muted-foreground">
           Overlaps allowed, so it can exceed wall time.
         </p>
+      </ChartCard>
+
+      <ChartCard
+        icon={ChartBarIcon}
+        title="Spawn durations"
+        note={`${summary.durationHistogram.reduce((n, b) => n + b.count, 0)}`}
+      >
+        <ColumnBars
+          label="Finished spawns per duration bin"
+          columns={summary.durationHistogram.map((b) => ({
+            key: b.label,
+            label: b.label,
+            caption: b.count > 0 ? String(b.count) : "",
+            segments: [
+              { value: b.count, color: seriesColorAt(0), title: `${b.label} · ${b.count} spawns` },
+            ],
+          }))}
+        />
+      </ChartCard>
+
+      <ChartCard icon={WarningIcon} title="Warnings · errors per day">
+        {summary.topProblems.length === 0 ? (
+          <Empty inline>No warnings or errors in this range.</Empty>
+        ) : (
+          <>
+            <ColumnBars
+              label="Warning and error records per day"
+              columns={summary.problemsByDay.map((d, i, all) => ({
+                key: d.day,
+                label: dayTick(d.day, i, all.length),
+                caption: d.warnings + d.errors > 0 ? String(d.warnings + d.errors) : "",
+                segments: [
+                  {
+                    value: d.warnings,
+                    color: seriesColorAt(0),
+                    title: `${d.day} · ${d.warnings} warnings of ${d.records} records`,
+                  },
+                  {
+                    value: d.errors,
+                    color: seriesColorAt(2),
+                    title: `${d.day} · ${d.errors} errors, ${d.failedSpawns} failed spawns`,
+                  },
+                ],
+              }))}
+            />
+            <SeriesLegend
+              items={[
+                {
+                  name: "warnings",
+                  index: 0,
+                  note: String(sum(summary.problemsByDay, "warnings")),
+                },
+                { name: "errors", index: 2, note: String(sum(summary.problemsByDay, "errors")) },
+              ]}
+            />
+            <ul className="mt-2 flex flex-col gap-0.5 text-xs">
+              {summary.topProblems.map((p) => (
+                <li key={p.key} className="flex items-baseline justify-between gap-3">
+                  <span className="truncate font-mono" title={p.key}>
+                    {p.key}
+                  </span>
+                  <span className="font-mono text-mini text-muted-foreground [font-variant-numeric:tabular-nums]">
+                    {p.count}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </ChartCard>
+
+      <ChartCard icon={ClockCountdownIcon} title="Slowest spawns">
+        {summary.slowest.length === 0 ? (
+          <Empty inline>No finished spawns.</Empty>
+        ) : (
+          <ul className="flex flex-col gap-1 text-xs">
+            {summary.slowest.map((s) => (
+              <li key={`${s.ts}-${s.executable}`}>
+                <button
+                  type="button"
+                  className="flex w-full items-baseline gap-2 rounded px-1 text-left hover:bg-muted"
+                  title={`${s.ts} · ${s.workingDirectory || "no cwd"} · ${s.outcome}`}
+                  onClick={() => onPoint({ day: s.ts.slice(0, 10), executable: s.executable })}
+                >
+                  <span className="w-16 shrink-0 truncate font-mono">{s.executable}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                    {s.workingDirectory.split("/").pop() || "–"}
+                  </span>
+                  <span className="font-mono text-mini [font-variant-numeric:tabular-nums]">
+                    {fmtDuration(s.durationMs)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </ChartCard>
 
       <StatTile

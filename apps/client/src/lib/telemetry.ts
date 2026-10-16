@@ -224,6 +224,23 @@ export type DashboardSummary = {
   waitByDay: { day: string; count: number; totalMs: number }[];
   focus: { focusedMs: number; longestMs: number };
   notifications: { fired: number; skipped: number };
+  /** Finished spawns per duration bin; `upperMs` is null on the open last bin. */
+  durationHistogram: { label: string; upperMs: number | null; count: number }[];
+  slowest: {
+    ts: string;
+    executable: string;
+    durationMs: number;
+    outcome: string;
+    workingDirectory: string;
+  }[];
+  problemsByDay: {
+    day: string;
+    records: number;
+    warnings: number;
+    errors: number;
+    failedSpawns: number;
+  }[];
+  topProblems: { key: string; count: number }[];
 };
 
 export const telemetryDashboard = (days: DashboardRange, groupBy: DashboardGroupBy) =>
@@ -358,3 +375,32 @@ export const telemetryRules = (days: number) => invoke<RuleScore[]>("telemetry_r
 
 /** Enabled rules failing right now; the status bar polls this. */
 export const telemetryRulesFailing = () => invoke<number>("telemetry_rules_failing");
+
+/** The Agents tab, summarized in Rust (`crates/tt-telemetry/src/agents.rs`): the
+ * app's own model spend (any event carrying `cost_usd`) and each checkout's agent
+ * time from `agent.status_changed`. */
+type SourceSpend = { source: string; usd: number; calls: number };
+
+export type AgentsSummary = {
+  spendByDay: { day: string; usd: number; calls: number; bySource: SourceSpend[] }[];
+  spendBySource: SourceSpend[];
+  totalUsd: number;
+  timeByFolder: { folder: string; workingMs: number; waitingMs: number; sessions: number }[];
+};
+
+export const telemetryAgents = (days: number) =>
+  invoke<AgentsSummary>("telemetry_agents", { days });
+
+/** The event log's footprint and the retention the settings ask for. */
+export type TelemetryStorage = {
+  files: number;
+  bytes: number;
+  oldest: string | null;
+  newest: string | null;
+  retainDays: number;
+};
+
+export const telemetryStorage = () => invoke<TelemetryStorage>("telemetry_storage");
+
+/** Delete the files past the saved retention now, not at the next rollover. */
+export const telemetryPrune = () => invoke<TelemetryStorage>("telemetry_prune");

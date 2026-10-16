@@ -84,6 +84,8 @@ const SavedQuerySchema = z
     sql: z.string(),
   })
   .passthrough();
+/** `settings_default_saved_queries` returns this. */
+export const SavedQueryListSchema = z.array(SavedQuerySchema);
 /** So does `settings_default_telemetry_rules`. */
 export const TelemetryRuleListSchema = z.array(TelemetryRuleSchema);
 

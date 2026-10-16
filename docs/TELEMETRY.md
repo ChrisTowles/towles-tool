@@ -10,7 +10,7 @@ disagree about the on-disk schema. `tt_telemetry::init` installs the global `tra
 subscriber for both binaries (it replaced `env_logger` — a hard cutover,
 no second logger), fanning out to stderr (filtered by `-v`/`RUST_LOG`) and
 to an **event log on disk**: one JSON object per line at
-`<data_dir>/telemetry/events-<date>.jsonl`, rotated daily, 14 days kept.
+`<data_dir>/telemetry/events-<date>.jsonl`, rotated daily, 14 days kept by default (`telemetry.retainDays`, Settings → Collectors).
 The disk sink records at `debug` regardless of `RUST_LOG` — a quiet
 terminal must not mean a useless log — and every record carries OTel
 resource attributes including `tt.task`, so a line is attributable to the
@@ -98,6 +98,15 @@ most three instructions, the head of `top_missed`'s share ranking — a bound ac
 the mouse keeps winning, or needs-you alerts (`notify_needs_you: fired`, counted per
 day in `keyboard.rs`) that no `answersNeedsYou` chord answered. Tips live on the
 binding in `lib/shortcuts.tsx`.
+Its **Agents** tab (`tt_telemetry::summarize_agents`, `crates/tt-telemetry/src/agents.rs`)
+reads two things already logged: any event carrying a numeric `cost_usd` (the prompt
+improvers, `/next`, Slack agents) rolled up per day and per message, and
+`agent.status_changed` folded into each checkout's working versus waiting-on-you
+time — a segment runs to that session's next status, its close, or the range's end,
+capped at an hour so a quit app or a night's wait isn't counted as either. The
+Dashboard's duration histogram, slowest spawns and warnings-per-day come from the
+same `summarize_dashboard` pass. Per-checkout *session* spend is a different source
+(transcripts, via `tt-claude-sessions`' `cost_by_dir`) and shows in the tree rail.
 Its **Rules** tab is Braintrust's scorers with counting in place of a model
 (`tt_telemetry::score`, `crates/tt-telemetry/src/rules.rs`): a rule is
 settings (`tt_config::TelemetryRule`, editable under Settings → Collectors)

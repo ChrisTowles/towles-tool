@@ -47,3 +47,12 @@ export function fmtDuration(ms: number): string {
   if (s === 0 && ms > 0) return "<1s";
   return `${s}s`;
 }
+
+/** Estimated dollar cost. Sub-cent figures round to `<$0.01` rather than `$0.00`
+ * so a nonzero session never reads as free. */
+export function fmtUsd(n: number): string {
+  if (n > 0 && n < 0.01) return "<$0.01";
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  if (n >= 100) return `$${n.toFixed(0)}`;
+  return `$${n.toFixed(2)}`;
+}

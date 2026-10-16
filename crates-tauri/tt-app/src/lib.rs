@@ -686,6 +686,7 @@ pub fn run() {
         .manage(preview::PreviewWatches::default())
         .manage(task_explorer::ExplorerState::default())
         .manage(claude_sessions::ClaudeSessionsCache::default())
+        .manage(claude_sessions::DirCostCache::default())
         .on_window_event(|window, event| match event {
             // Without a record an orderly close is indistinguishable from a
             // kill or crash — a real triage dead-end once.
@@ -828,6 +829,7 @@ pub fn run() {
             claude_sessions::claude_sessions_insights,
             claude_sessions::claude_sessions_breakdown,
             claude_sessions::claude_sessions_cadence,
+            claude_sessions::claude_cost_by_dir,
             telemetry::telemetry_days,
             telemetry::telemetry_events,
             telemetry::telemetry_attention,
@@ -841,12 +843,16 @@ pub fn run() {
             telemetry::telemetry_query_reload,
             telemetry::telemetry_rules,
             telemetry::telemetry_rules_failing,
+            telemetry::telemetry_agents,
+            telemetry::telemetry_storage,
+            telemetry::telemetry_prune,
             agentboard::ab_ensure_session,
             doctor::doctor_run,
             settings::settings_get,
             settings::settings_set,
             settings::settings_default_prompt_improvers,
             settings::settings_default_telemetry_rules,
+            settings::settings_default_saved_queries,
             terminal::spawn::term_start,
             terminal::spawn::term_kill,
             terminal::input::term_write,

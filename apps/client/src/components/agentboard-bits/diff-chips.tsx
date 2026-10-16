@@ -11,7 +11,9 @@ import { withHint } from "@/lib/shortcuts";
 import { errorMessage } from "@/lib/errors";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
-import { fmtDiffLines } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { fmtDiffLines, fmtUsd } from "@/lib/format";
+import { useDirCost } from "@/lib/agentboard/cost";
 
 /** Which branch every git stat here was measured against, and the one place to
  * retarget it. Click to edit, blank to auto-detect. */
@@ -386,5 +388,20 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
         <CommitBreakdownPreview commits={commits} stats={stats} base={base} />
       </HoverCardContent>
     </HoverCard>
+  );
+}
+
+/** What this checkout's Claude sessions cost over the last 30 days, estimated
+ * from their transcripts. A fact, so bare type like the counts beside it. */
+export function CostChip({ dir }: { dir: string }) {
+  const cost = useDirCost(dir);
+  if (!cost || cost.costUsd < 0.01) return null;
+  return (
+    <span
+      className={cn(CHIP_CLASS, "text-kumo-subtle hover:bg-kumo-tint")}
+      title={`Estimated Claude spend here, last 30 days · ${cost.sessions} sessions, ${cost.userTurns} prompts`}
+    >
+      {fmtUsd(cost.costUsd)}
+    </span>
   );
 }

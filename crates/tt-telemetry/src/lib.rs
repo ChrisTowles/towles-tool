@@ -11,6 +11,7 @@
 //!   stays empty, so checking it by eye reads as "telemetry is broken". Use
 //!   `telemetry_dir()`.
 
+mod agents;
 mod attention;
 mod builds;
 mod dashboard;
@@ -36,6 +37,9 @@ pub(crate) fn serialize_subscriber_tests() -> std::sync::MutexGuard<'static, ()>
     SUBSCRIBER.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+pub use agents::{
+    AgentsSummary, DaySpend, FolderTime, MAX_SEGMENT_MS, SourceSpend, summarize_agents,
+};
 pub use attention::{
     ActionSummary, AttentionSummary, Count, ExecutableStat, FocusSession, FocusSummary, HourBucket,
     MachineSummary, NotificationSummary, summarize,
@@ -45,10 +49,10 @@ pub use builds::{
     snapshots,
 };
 pub use dashboard::{
-    Bucket, BucketRow, DashboardFocus, DashboardSummary, DayWait, ExecutableProfile, GroupBy,
-    SeriesStat, summarize_dashboard,
+    Bucket, BucketRow, DashboardFocus, DashboardSummary, DayProblems, DayWait, ExecutableProfile,
+    GroupBy, HistogramBin, SeriesStat, SlowSpawn, summarize_dashboard,
 };
-pub use event_log::EventLog;
+pub use event_log::{EventLog, LogStorage, prune_dir, storage};
 pub use filter::{Filter, FilterOp, apply, matches};
 pub use keyboard::{
     GOAL_MIN_ACTIONS, GOAL_SHARE, KeyboardDay, KeyboardScore, ShortcutSplit, keyboard_score,
@@ -64,9 +68,6 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
-
-/// Days of event-log history kept before rotation prunes a file.
-const RETAIN_DAYS: usize = 14;
 
 /// Set to `0`/`false` to skip the disk sink entirely (stderr logging still
 /// works). For contexts that must not write state at all.
@@ -120,6 +121,18 @@ fn resource(service: &str) -> Map<String, Value> {
     attrs
 }
 
+/// Read without `tt_config::load`, which writes a default settings file when
+/// there is none — not a logger's business. Unreadable means the default.
+fn configured_retain_days() -> usize {
+    tt_config::config_path()
+        .ok()
+        .filter(|path| path.exists())
+        .and_then(|path| tt_config::load_from(&path).ok())
+        .map(|settings| settings.telemetry)
+        .unwrap_or_default()
+        .retain_days()
+}
+
 /// Install the global subscriber for `service` (`"tt"`, `"tt-app"`, …).
 ///
 /// `default_level` is the stderr filter used when `RUST_LOG` is unset. The disk
@@ -134,8 +147,9 @@ pub fn init(service: &str, default_level: &str) -> Result<()> {
         None
     } else {
         let dir = tt_config::telemetry_dir()?;
+        let retain_days = configured_retain_days();
         Some(
-            EventLogLayer::new(EventLog::new(dir, RETAIN_DAYS), resource(service))
+            EventLogLayer::new(EventLog::new(dir, retain_days), resource(service))
                 .with_filter(EnvFilter::new(DISK_FILTER)),
         )
     };

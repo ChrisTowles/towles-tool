@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   PromptImproverListSchema,
+  SavedQueryListSchema,
   TelemetryRuleListSchema,
   UserSettingsSchema,
 } from "./schemas/settings";
@@ -180,6 +181,25 @@ export function nextTelemetryRuleId(rules: TelemetryRule[], label: string): stri
 }
 
 /** Read from `tt_config`, like {@link defaultPromptImprovers}. */
+export function defaultSavedQueries() {
+  return invoke<SavedQuery[]>(
+    "settings_default_saved_queries",
+    {},
+    { schema: SavedQueryListSchema },
+  );
+}
+
+/** Appends the built-in queries the user doesn't have by id; one they kept is
+ * left as edited, since a query is theirs once saved. */
+export function withMissingSavedQueries(
+  current: SavedQuery[],
+  defaults: SavedQuery[],
+): SavedQuery[] {
+  const have = new Set(current.map((q) => q.id));
+  return [...current, ...defaults.filter((q) => !have.has(q.id))];
+}
+
+/** Read from `tt_config`, like {@link defaultPromptImprovers}. */
 export function defaultTelemetryRules() {
   return invoke<TelemetryRule[]>(
     "settings_default_telemetry_rules",
@@ -248,6 +268,8 @@ export type UserSettings = {
   /** The tt Claude mod's `/next`: one bare model question per keystroke, capped per day.
    * Rust reads it (`tt_config::NextPromptSettings`); unset keys take its defaults. */
   nextPrompt?: { question?: string; model?: string; dailyBudgetUsd?: number };
+  /** Rust reads it (`tt_config::TelemetrySettings`) when the app starts. */
+  telemetry?: { retainDays?: number };
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through
    * `ab_set_show_unmanaged_worktrees`, not by saving here. */

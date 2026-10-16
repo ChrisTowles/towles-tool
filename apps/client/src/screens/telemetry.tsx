@@ -9,6 +9,7 @@ import {
   KeyboardIcon,
   LightbulbIcon,
   LightningIcon,
+  RobotIcon,
   ScrollIcon,
   ShieldCheckIcon,
   SquaresFourIcon,
@@ -29,6 +30,7 @@ import {
   TELEMETRY_FILTERS_KEY,
   telemetryAttention,
   telemetryBuilds,
+  telemetryAgents,
   telemetryDashboard,
   telemetryDays,
   telemetryEvents,
@@ -37,6 +39,7 @@ import {
   telemetryTrace,
   type AttentionSummary,
   type BuildSnapshot,
+  type AgentsSummary,
   type DashboardGroupBy,
   type DashboardRange,
   type DashboardSummary,
@@ -59,6 +62,7 @@ import {
 import { AttentionTab } from "@/screens/telemetry/attention-tab";
 import { BuildsTab } from "@/screens/telemetry/builds-tab";
 import { DEFAULT_GROUP, DEFAULT_RANGE, DashboardTab } from "@/screens/telemetry/dashboard-tab";
+import { AgentsTab, DEFAULT_AGENT_RANGE, type AgentRange } from "@/screens/telemetry/agents-tab";
 import type { LogPoint } from "@/screens/telemetry/dashboard-charts";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { LogFilterBar } from "@/screens/telemetry/log-filter-bar";
@@ -139,6 +143,9 @@ export function TelemetryScreen() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [dashboardRange, setDashboardRange] = useState<DashboardRange>(DEFAULT_RANGE);
   const [dashboardGroup, setDashboardGroup] = useState<DashboardGroupBy>(DEFAULT_GROUP);
+  const [agents, setAgents] = useState<AgentsSummary | null>(null);
+  const [agentsLoading, setAgentsLoading] = useState(false);
+  const [agentsRange, setAgentsRange] = useState<AgentRange>(DEFAULT_AGENT_RANGE);
   const [builds, setBuilds] = useState<BuildSnapshot[] | null>(null);
   const [buildsLoading, setBuildsLoading] = useState(false);
   const [rules, setRules] = useState<RuleScore[] | null>(null);
@@ -215,6 +222,19 @@ export function TelemetryScreen() {
   }
 
   /** Range-scoped like the keyboard score, so it ignores the day picker too. */
+  async function loadAgents() {
+    setAgentsLoading(true);
+    const r = await telemetryAgents(agentsRange);
+    r.match({
+      ok: setAgents,
+      err: (e) => {
+        setAgents(null);
+        if (!NotInTauri.is(e)) toast.error(`Could not summarize agents: ${errorMessage(e)}`);
+      },
+    });
+    setAgentsLoading(false);
+  }
+
   async function loadDashboard() {
     setDashboardLoading(true);
     const r = await telemetryDashboard(dashboardRange, dashboardGroup);
@@ -280,6 +300,7 @@ export function TelemetryScreen() {
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
     if (tab === "dashboard") void loadDashboard();
+    if (tab === "agents") void loadAgents();
     if (tab === "builds") void loadBuilds();
     if (tab === "rules") void loadRules();
     if (tab === "log") void loadLog();
@@ -317,6 +338,11 @@ export function TelemetryScreen() {
   }, [tab, dashboardRange, dashboardGroup]);
 
   useEffect(() => {
+    if (tab === "agents") void loadAgents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAgents is read fresh, not tracked
+  }, [tab, agentsRange]);
+
+  useEffect(() => {
     if (tab === "builds") void loadBuilds();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loadBuilds is read fresh, not tracked
   }, [tab]);
@@ -333,6 +359,7 @@ export function TelemetryScreen() {
     if (day && tab === "attention") void loadAttention(day);
     if (tab === "keyboard") void loadKeyboard();
     if (tab === "dashboard") void loadDashboard();
+    if (tab === "agents") void loadAgents();
     if (tab === "builds") void loadBuilds();
     if (tab === "rules") void loadRules();
   }
@@ -558,6 +585,15 @@ export function TelemetryScreen() {
             ),
           },
           {
+            value: "agents",
+            label: (
+              <span className="flex items-center gap-2">
+                <RobotIcon className="size-4" />
+                Agents
+              </span>
+            ),
+          },
+          {
             value: "builds",
             label: (
               <span className="flex items-center gap-2">
@@ -656,6 +692,18 @@ export function TelemetryScreen() {
               onGroup={setDashboardGroup}
               onRefresh={() => void loadDashboard()}
               onOpenLog={openLogAt}
+            />
+          </div>
+        )}
+
+        {tab === "agents" && (
+          <div className="p-4">
+            <AgentsTab
+              summary={agents}
+              loading={agentsLoading}
+              range={agentsRange}
+              onRange={setAgentsRange}
+              onRefresh={() => void loadAgents()}
             />
           </div>
         )}

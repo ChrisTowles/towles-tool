@@ -311,6 +311,36 @@ pub struct NextPromptSettings {
     pub daily_budget_usd: f64,
 }
 
+/// The on-disk event log (`tt-telemetry`). Read once at startup by the writer,
+/// and by the Settings screen's "prune now".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct TelemetrySettings {
+    /// Daily `events-<date>.jsonl` files kept; older ones are deleted on rollover.
+    pub retain_days: u32,
+}
+
+pub const DEFAULT_TELEMETRY_RETAIN_DAYS: u32 = 14;
+
+/// Bounds on [`TelemetrySettings::retain_days`]: at least today, at most a year.
+pub const TELEMETRY_RETAIN_DAYS_RANGE: std::ops::RangeInclusive<u32> = 1..=365;
+
+impl Default for TelemetrySettings {
+    fn default() -> Self {
+        Self { retain_days: DEFAULT_TELEMETRY_RETAIN_DAYS }
+    }
+}
+
+impl TelemetrySettings {
+    /// [`Self::retain_days`] clamped into [`TELEMETRY_RETAIN_DAYS_RANGE`].
+    pub fn retain_days(&self) -> usize {
+        self.retain_days
+            .clamp(*TELEMETRY_RETAIN_DAYS_RANGE.start(), *TELEMETRY_RETAIN_DAYS_RANGE.end())
+            as usize
+    }
+}
+
 pub const DEFAULT_NEXT_PROMPT_QUESTION: &str = "What is the person most likely to type as \
 their next prompt to this coding agent? Answer with the prompt exactly as they would type it, \
 in their own style and length, and how confident you are from 0 to 1. Answer an empty prompt if \
@@ -425,9 +455,10 @@ pub struct SavedQuery {
 }
 
 impl SavedQuery {
-    /// Four questions the log exists to answer, each a working example of the
-    /// schema: spans by outcome, the slow tail, focus churn, and the
-    /// notifications that landed while the window had focus.
+    /// Questions the log exists to answer, each a working example of the schema:
+    /// spans by outcome, the slow tail, focus churn, notifications that landed
+    /// while the window had focus, the app's own model spend, agent status
+    /// churn, and the warnings worth a look.
     pub fn defaults() -> Vec<Self> {
         vec![
             Self {
@@ -449,6 +480,21 @@ impl SavedQuery {
                 id: "interruptions-while-focused".to_string(),
                 label: "interruptions while focused".to_string(),
                 sql: DEFAULT_QUERY_INTERRUPTIONS.to_string(),
+            },
+            Self {
+                id: "model-spend-by-day".to_string(),
+                label: "model spend by day".to_string(),
+                sql: DEFAULT_QUERY_MODEL_SPEND.to_string(),
+            },
+            Self {
+                id: "agent-status-by-checkout".to_string(),
+                label: "agent status moves by checkout".to_string(),
+                sql: DEFAULT_QUERY_AGENT_STATUS.to_string(),
+            },
+            Self {
+                id: "warnings-by-message".to_string(),
+                label: "warnings and errors by message".to_string(),
+                sql: DEFAULT_QUERY_PROBLEMS.to_string(),
             },
         ]
     }
@@ -481,6 +527,23 @@ where n.message = 'notify_needs_you: fired'
        where f.message = 'window.focus_changed' and f.ts < n.ts
        order by f.ts desc limit 1) = 1
 order by n.ts desc limit 100";
+
+pub const DEFAULT_QUERY_MODEL_SPEND: &str = "\
+select day, message as source, count(*) as calls,
+       round(sum(json_extract(fields, '$.cost_usd')), 4) as usd
+from records where json_extract(fields, '$.cost_usd') is not null
+group by 1, 2 order by day desc, usd desc limit 100";
+
+pub const DEFAULT_QUERY_AGENT_STATUS: &str = "\
+select day, json_extract(fields, '$.folder') as checkout,
+       json_extract(fields, '$.to') as status, count(*) as moves
+from records where message = 'agent.status_changed'
+group by 1, 2, 3 order by day desc, moves desc limit 100";
+
+pub const DEFAULT_QUERY_PROBLEMS: &str = "\
+select level, coalesce(message, name) as what, target, count(*) as n, max(ts) as last
+from records where level in ('WARN', 'ERROR')
+group by 1, 2, 3 order by n desc limit 50";
 
 /// `Share`: the percentage of `select` matches also matching `pass`, failing
 /// *below* `threshold`. `Count`: the number of matches, failing *above* it.
@@ -861,6 +924,17 @@ pub struct UserSettings {
     /// Lenient for the same reason as `mcp`.
     #[serde(default, deserialize_with = "lenient_next_prompt")]
     pub next_prompt: NextPromptSettings,
+
+    /// Lenient for the same reason as `mcp`.
+    #[serde(default, deserialize_with = "lenient_telemetry")]
+    pub telemetry: TelemetrySettings,
+}
+
+fn lenient_telemetry<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<TelemetrySettings, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 fn lenient_next_prompt<'de, D: serde::Deserializer<'de>>(
@@ -903,6 +977,7 @@ impl Default for UserSettings {
             mcp: McpSettings::default(),
             agents: AgentsSettings::default(),
             next_prompt: NextPromptSettings::default(),
+            telemetry: TelemetrySettings::default(),
         }
     }
 }
@@ -1356,6 +1431,19 @@ mod tests {
     }
 
     #[test]
+    fn telemetry_retention_is_clamped_and_lenient() {
+        assert_eq!(TelemetrySettings::default().retain_days(), 14);
+        assert_eq!(TelemetrySettings { retain_days: 0 }.retain_days(), 1);
+        assert_eq!(TelemetrySettings { retain_days: 9_999 }.retain_days(), 365);
+        let parsed: UserSettings =
+            serde_json::from_str(r#"{"telemetry": {"retainDays": "lots"}}"#).unwrap();
+        assert_eq!(parsed.telemetry, TelemetrySettings::default());
+        let parsed: UserSettings =
+            serde_json::from_str(r#"{"telemetry": {"retainDays": 30}}"#).unwrap();
+        assert_eq!(parsed.telemetry.retain_days(), 30);
+    }
+
+    #[test]
     fn defaults_match_ts_cli() {
         let settings = UserSettings::default();
         assert_eq!(settings.preferred_editor, "code");
@@ -1602,7 +1690,10 @@ mod tests {
                 "gh-failures-by-cwd",
                 "slow-spawns",
                 "focus-flips-per-hour",
-                "interruptions-while-focused"
+                "interruptions-while-focused",
+                "model-spend-by-day",
+                "agent-status-by-checkout",
+                "warnings-by-message"
             ]
         );
         assert!(s.saved_queries.iter().all(|q| !q.label.trim().is_empty()));
