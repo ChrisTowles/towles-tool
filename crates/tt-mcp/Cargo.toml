@@ -19,6 +19,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+tt-git = { workspace = true, features = ["test-support"] }
 # Validates every tool result against its own `outputSchema` in the test helpers.
 jsonschema = { version = "0.52.1", default-features = false }
 tempfile = "3.14.0"

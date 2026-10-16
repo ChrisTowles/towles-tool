@@ -28,6 +28,7 @@ tt-git = { workspace = true }
 tt-store = { workspace = true }
 
 [dev-dependencies]
+tt-git = { workspace = true, features = ["test-support"] }
 # Property tests for the envfile parse/merge invariants — the seam every
 # port claim and inherited secret passes through.
 proptest = "1.6.0"
