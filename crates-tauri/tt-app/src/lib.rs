@@ -625,9 +625,7 @@ pub fn run() {
                                 // Case-preserving: a folded copy reads as a
                                 // second repo next to `gh`-reported slugs.
                                 let slug =
-                                    tt_git::task_assign::repo_slug_from_remote_preserving_case(
-                                        &url,
-                                    )?;
+                                    tt_git::remote::repo_slug_from_remote_preserving_case(&url)?;
                                 Some((dir, slug))
                             })
                             .collect();
