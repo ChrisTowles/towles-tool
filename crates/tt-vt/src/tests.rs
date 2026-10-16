@@ -1,0 +1,1023 @@
+use super::*;
+use crate::frame::flags;
+
+fn engine(cols: u16, rows: u16) -> Engine {
+    Engine::new(EngineOptions { cols, rows, max_scrollback: 1000 }).expect("engine")
+}
+
+fn row_text(frame: &Frame, y: u16) -> String {
+    frame
+        .changed
+        .iter()
+        .find(|r| r.y == y)
+        .map(|r| r.runs.iter().map(|run| run.text.as_str()).collect::<String>())
+        .unwrap_or_default()
+}
+
+fn theme(dark: bool) -> Theme {
+    Theme {
+        fg: 0xcdd6f4,
+        bg: 0x112233,
+        cursor: None,
+        // ANSI 1 (red) set to a sentinel so indexed resolution is provable.
+        palette16: {
+            let mut p = [0u32; 16];
+            p[1] = 0xaa0000;
+            p
+        },
+        dark,
+    }
+}
+
+#[test]
+fn theme_defaults_flow_into_frame_colors() {
+    let mut e = engine(20, 4);
+    e.set_theme(&theme(true)).expect("set theme");
+    e.feed(b"hi");
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(frame.colors.bg, 0x112233);
+    assert_eq!(frame.colors.fg, 0xcdd6f4);
+}
+
+#[test]
+fn theme_palette_resolves_indexed_colors() {
+    let mut e = engine(20, 4);
+    e.set_theme(&theme(true)).expect("set theme");
+    e.feed(b"\x1b[31mred");
+    let frame = e.render().expect("render").expect("frame");
+    let row = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    let red = row.runs.iter().find(|r| r.text == "red").expect("styled run");
+    assert_eq!(red.fg, Some(0xaa0000), "SGR 31 resolves via the pushed palette");
+}
+
+#[test]
+fn theme_answers_osc_background_query() {
+    let mut e = engine(20, 4);
+    e.set_theme(&theme(true)).expect("set theme");
+    e.feed(b"\x1b]11;?\x1b\\");
+    let reply = String::from_utf8_lossy(&e.take_pty_output()).into_owned();
+    // xterm reply format doubles each channel byte: rgb:1111/2222/3333.
+    assert!(
+        reply.contains("rgb:1111/2222/3333"),
+        "OSC 11 answers the pushed background, got {reply:?}"
+    );
+}
+
+#[test]
+fn program_color_override_wins_the_osc_query() {
+    let mut e = engine(20, 4);
+    e.set_theme(&theme(true)).expect("set theme");
+    // The program sets its own background (OSC 11 set), then queries it
+    // back — the override must win over the pushed theme, like xterm.
+    e.feed(b"\x1b]11;#445566\x07");
+    e.take_pty_output();
+    e.feed(b"\x1b]11;?\x07");
+    let reply = String::from_utf8_lossy(&e.take_pty_output()).into_owned();
+    assert!(reply.contains("rgb:4444/5555/6666"), "override wins over the theme, got {reply:?}");
+}
+
+#[test]
+fn theme_answers_color_scheme_query() {
+    let mut e = engine(20, 4);
+    e.set_theme(&theme(true)).expect("set theme");
+    e.feed(b"\x1b[?996n");
+    let dark_reply = String::from_utf8_lossy(&e.take_pty_output()).into_owned();
+    assert!(dark_reply.contains("997;1"), "dark scheme reports 997;1, got {dark_reply:?}");
+
+    e.set_theme(&theme(false)).expect("set theme");
+    e.feed(b"\x1b[?996n");
+    let light_reply = String::from_utf8_lossy(&e.take_pty_output()).into_owned();
+    assert!(light_reply.contains("997;2"), "light scheme reports 997;2, got {light_reply:?}");
+}
+
+#[test]
+fn bracketed_paste_wraps_and_defuses_the_terminator() {
+    let mut e = engine(40, 5);
+    // The program negotiates bracketed paste (mode 2004), then the user
+    // pastes text carrying an embedded bracket terminator — the classic
+    // paste-injection payload. The encoder must scrub the ESC so the
+    // payload cannot close the bracket and execute.
+    e.feed(b"\x1b[?2004h");
+    e.take_pty_output();
+    assert_eq!(e.paste("hi\x1b[201~rm -rf /\n", false).expect("paste"), PasteOutcome::Pasted);
+    let out = String::from_utf8_lossy(&e.take_pty_output()).into_owned();
+    assert!(out.starts_with("\x1b[200~"), "paste opens the bracket, got {out:?}");
+    assert!(out.ends_with("\x1b[201~"), "paste closes the bracket, got {out:?}");
+    let body = &out["\x1b[200~".len()..out.len() - "\x1b[201~".len()];
+    assert!(!body.contains('\x1b'), "embedded ESC scrubbed inside the bracket: {body:?}");
+}
+
+#[test]
+fn bare_shell_multiline_paste_needs_confirmation() {
+    let mut e = engine(40, 5);
+    // No bracketed paste: a newline would execute immediately, so the
+    // engine writes nothing until the caller confirms with force.
+    assert_eq!(e.paste("rm -rf /\n", false).expect("paste"), PasteOutcome::NeedsConfirm);
+    assert!(e.take_pty_output().is_empty(), "nothing reaches the shell unconfirmed");
+
+    assert_eq!(e.paste("rm -rf /\n", true).expect("paste"), PasteOutcome::Pasted);
+    let out = e.take_pty_output();
+    assert_eq!(out.as_slice(), b"rm -rf /\r", "newline becomes CR on a bare shell");
+}
+
+#[test]
+fn single_line_paste_never_prompts() {
+    let mut e = engine(40, 5);
+    assert_eq!(e.paste("hello world", false).expect("paste"), PasteOutcome::Pasted);
+    assert_eq!(e.take_pty_output().as_slice(), b"hello world");
+}
+
+fn key_press(code: &str, key: &str) -> KeyEvent {
+    KeyEvent {
+        code: code.into(),
+        key: key.into(),
+        action: KeyAction::Press,
+        shift: false,
+        alt: false,
+        ctrl: false,
+        meta: false,
+        caps_lock: false,
+        num_lock: false,
+    }
+}
+
+/// Encode one keystroke and return the bytes it queued for the PTY.
+fn encoded(e: &mut Engine, event: &KeyEvent) -> Vec<u8> {
+    e.key(event).expect("encode key");
+    e.take_pty_output()
+}
+
+#[test]
+fn plain_keys_encode_legacy_bytes() {
+    let mut e = engine(40, 5);
+    assert_eq!(encoded(&mut e, &key_press("KeyA", "a")), b"a");
+    assert_eq!(encoded(&mut e, &key_press("Enter", "Enter")), b"\r");
+    let ctrl_c = KeyEvent { ctrl: true, ..key_press("KeyC", "c") };
+    assert_eq!(encoded(&mut e, &ctrl_c), b"\x03");
+    let shift_a = KeyEvent { shift: true, ..key_press("KeyA", "A") };
+    assert_eq!(encoded(&mut e, &shift_a), b"A");
+}
+
+#[test]
+fn cursor_keys_honor_application_mode() {
+    let mut e = engine(40, 5);
+    assert_eq!(encoded(&mut e, &key_press("ArrowUp", "ArrowUp")), b"\x1b[A");
+    e.feed(b"\x1b[?1h"); // DECCKM: application cursor keys
+    assert_eq!(encoded(&mut e, &key_press("ArrowUp", "ArrowUp")), b"\x1bOA");
+}
+
+#[test]
+fn kitty_disambiguate_encodes_shift_enter() {
+    let mut e = engine(40, 5);
+    // Even in legacy mode ghostty's encoder disambiguates Shift+Enter,
+    // using xterm's CSI 27 (modifyOtherKeys-style) form — already better
+    // than the old frontend encoder, which sent a bare \r.
+    let shift_enter = KeyEvent { shift: true, ..key_press("Enter", "Enter") };
+    assert_eq!(encoded(&mut e, &shift_enter), b"\x1b[27;2;13~");
+
+    // The program pushes kitty disambiguation (CSI > 1 u), like Claude
+    // Code does at startup; now Shift+Enter gets its own sequence while
+    // plain Enter stays legacy.
+    e.feed(b"\x1b[>1u");
+    assert_eq!(encoded(&mut e, &shift_enter), b"\x1b[13;2u");
+    assert_eq!(encoded(&mut e, &key_press("Enter", "Enter")), b"\r");
+}
+
+fn left_click(x: u16, y: u16) -> MouseInput {
+    MouseInput {
+        action: MouseAction::Press,
+        button: Some(MouseButton::Left),
+        x,
+        y,
+        shift: false,
+        alt: false,
+        ctrl: false,
+        any_button: true,
+    }
+}
+
+#[test]
+fn mouse_click_reports_in_the_negotiated_protocol() {
+    let mut e = engine(40, 5);
+    // No tracking: a click writes nothing — local selection territory.
+    e.mouse(&left_click(3, 2)).expect("mouse");
+    assert!(e.take_pty_output().is_empty());
+
+    // The program negotiates click tracking + SGR format (1000 + 1006);
+    // reports are 1-based, `M` press / `m` release.
+    e.feed(b"\x1b[?1000h\x1b[?1006h");
+    e.mouse(&left_click(3, 2)).expect("mouse");
+    assert_eq!(e.take_pty_output().as_slice(), b"\x1b[<0;4;3M");
+    let release =
+        MouseInput { action: MouseAction::Release, any_button: false, ..left_click(3, 2) };
+    e.mouse(&release).expect("mouse");
+    assert_eq!(e.take_pty_output().as_slice(), b"\x1b[<0;4;3m");
+}
+
+#[test]
+fn motion_is_silent_under_click_only_tracking() {
+    let mut e = engine(40, 5);
+    e.feed(b"\x1b[?1000h\x1b[?1006h");
+    let motion = MouseInput {
+        action: MouseAction::Motion,
+        button: None,
+        any_button: false,
+        ..left_click(5, 1)
+    };
+    e.mouse(&motion).expect("mouse");
+    assert!(e.take_pty_output().is_empty(), "mode 1000 wants clicks only");
+
+    // Any-motion tracking (1003): now bare motion reports (32 + 3 = 35).
+    e.feed(b"\x1b[?1003h");
+    e.mouse(&motion).expect("mouse");
+    let out = e.take_pty_output();
+    assert!(out.starts_with(b"\x1b[<35;"), "got {:?}", String::from_utf8_lossy(&out));
+}
+
+#[test]
+fn focus_reports_only_when_mode_1004_is_on() {
+    let mut e = engine(40, 5);
+    e.focus(true).expect("focus");
+    assert!(e.take_pty_output().is_empty(), "no focus events unless asked");
+
+    e.feed(b"\x1b[?1004h");
+    e.focus(true).expect("focus");
+    assert_eq!(e.take_pty_output().as_slice(), b"\x1b[I");
+    e.focus(false).expect("focus");
+    assert_eq!(e.take_pty_output().as_slice(), b"\x1b[O");
+}
+
+#[test]
+fn wheel_scrolls_the_viewport_on_the_primary_screen() {
+    let mut e = engine(10, 3);
+    for i in 0..8 {
+        e.feed(format!("line{i}\r\n").as_bytes());
+    }
+    let live_top = e.viewport_top().expect("viewport_top");
+    assert!(live_top > 0, "output built scrollback");
+
+    e.wheel(0, 0, -2, false).expect("wheel");
+    assert!(e.take_pty_output().is_empty(), "no bytes reach the program");
+    assert_eq!(e.viewport_top().expect("viewport_top"), live_top - 2, "viewport scrolled");
+}
+
+#[test]
+fn wheel_becomes_arrows_on_the_alt_screen_until_1007_off() {
+    let mut e = engine(10, 3);
+    e.feed(b"\x1b[?1049h");
+    e.take_pty_output();
+
+    // Alternate-scroll (mode 1007) is on by default in libghostty: the
+    // wheel types arrow keys into the fullscreen TUI (how `less` and
+    // `git log` scroll), one per line.
+    e.wheel(0, 0, -1, false).expect("wheel");
+    assert_eq!(e.take_pty_output().as_slice(), b"\x1b[A");
+    e.wheel(0, 0, 2, false).expect("wheel");
+    assert_eq!(e.take_pty_output().as_slice(), b"\x1b[B\x1b[B");
+
+    // A program that turns 1007 off gets silence, not stray arrows.
+    e.feed(b"\x1b[?1007l");
+    e.wheel(0, 0, -1, false).expect("wheel");
+    assert!(e.take_pty_output().is_empty());
+}
+
+#[test]
+fn wheel_reports_to_a_mouse_tracking_program() {
+    let mut e = engine(10, 3);
+    e.feed(b"\x1b[?1000h\x1b[?1006h");
+    e.wheel(2, 1, -1, false).expect("wheel");
+    // SGR wheel-up is button 64, 1-based coords.
+    assert_eq!(e.take_pty_output().as_slice(), b"\x1b[<64;3;2M");
+}
+
+#[test]
+fn underline_styles_and_color_ride_their_run() {
+    let mut e = engine(40, 5);
+    // Curly underline (SGR 4:3) in red (SGR 58:2::255:0:0) — the shape
+    // diagnostics squiggles take in nvim/helix.
+    e.feed(b"\x1b[4:3m\x1b[58:2::255:0:0mwavy\x1b[0m plain \x1b[21mdouble");
+    let frame = e.render().expect("render").expect("frame");
+    let row = frame.changed.iter().find(|r| r.y == 0).unwrap();
+
+    let wavy = row.runs.iter().find(|r| r.text == "wavy").expect("curly run");
+    assert_ne!(wavy.flags & flags::UNDERLINE, 0, "any-underline flag still set");
+    assert_eq!(wavy.ul, Some(3), "curly is style 3");
+    assert_eq!(wavy.ulc, Some(0xff0000), "SGR 58 direct color");
+
+    let double = row.runs.iter().find(|r| r.text == "double").expect("double run");
+    assert_eq!(double.ul, Some(2));
+    assert_eq!(double.ulc, None, "no SGR 58: underline uses fg");
+
+    let plain = row.runs.iter().find(|r| r.text.contains("plain")).expect("plain run");
+    assert_eq!(plain.ul, None);
+    assert_eq!(plain.flags & flags::UNDERLINE, 0);
+}
+
+#[test]
+fn single_underline_keeps_a_compact_run() {
+    let mut e = engine(40, 5);
+    e.feed(b"\x1b[4munderlined");
+    let frame = e.render().expect("render").expect("frame");
+    let row = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    let run = row.runs.iter().find(|r| r.text == "underlined").expect("run");
+    assert_ne!(run.flags & flags::UNDERLINE, 0);
+    assert_eq!(run.ul, None, "single underline needs no style field");
+}
+
+#[test]
+fn cursor_color_reports_the_osc_12_override() {
+    let mut e = engine(20, 4);
+    e.feed(b"x");
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(frame.cursor.color, None, "no override: theme cursor");
+
+    e.feed(b"\x1b]12;#00ff88\x07y");
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(frame.cursor.color, Some(0x00ff88));
+}
+
+#[test]
+fn bell_and_notifications_surface_once() {
+    let mut e = engine(20, 4);
+    assert!(!e.take_bell());
+    e.feed(b"ding\x07");
+    assert!(e.take_bell(), "BEL sets the attention flag");
+    assert!(!e.take_bell(), "drained after take");
+
+    e.feed(b"\x1b]9;Claude needs your input\x07");
+    assert_eq!(e.take_notifications(), vec!["Claude needs your input".to_string()]);
+    assert!(e.take_notifications().is_empty());
+    // Progress reports are not notifications.
+    e.feed(b"\x1b]9;4;1;50\x07");
+    assert!(e.take_notifications().is_empty());
+}
+
+#[test]
+fn pwd_change_rides_the_next_frame() {
+    let mut e = engine(20, 4);
+    e.feed(b"x");
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(frame.pwd, None);
+
+    // OSC 7: shell integration reports the cwd as a file:// URI. A pwd
+    // change alone (no cell writes) must still produce a frame.
+    e.feed(b"\x1b]7;file://host/home/ctowles/code\x1b\\");
+    let frame = e.render().expect("render").expect("pwd change produces a frame");
+    assert_eq!(frame.pwd.as_deref(), Some("file://host/home/ctowles/code"));
+    let next = e.render().expect("render");
+    assert!(next.is_none_or(|f| f.pwd.is_none()), "pwd ships only on the frame where it changed");
+}
+
+#[test]
+fn xtwinops_size_query_answers_from_resize_metrics() {
+    let mut e = engine(20, 4);
+    e.resize(20, 4, 8, 16).expect("resize");
+    e.feed(b"\x1b[14t"); // report text area size in pixels
+    let reply = String::from_utf8_lossy(&e.take_pty_output()).into_owned();
+    // 20 cols × 8px = 160 wide, 4 rows × 16px = 64 high: CSI 4 ; 64 ; 160 t
+    assert!(reply.contains("4;64;160t"), "pixel size from cell metrics, got {reply:?}");
+}
+
+#[test]
+fn key_release_is_silent_without_kitty_report_events() {
+    let mut e = engine(40, 5);
+    let release = KeyEvent { action: KeyAction::Release, ..key_press("KeyA", "a") };
+    assert_eq!(encoded(&mut e, &release), b"", "legacy mode ignores releases");
+}
+
+#[test]
+fn styled_text_becomes_runs() {
+    let mut e = engine(40, 5);
+    e.feed(b"plain \x1b[1;32mbold-green\x1b[0m tail");
+    let frame = e.render().expect("render").expect("first frame");
+
+    assert!(frame.full, "first frame is a full redraw");
+    assert_eq!(frame.cols, 40);
+    assert_eq!(row_text(&frame, 0), "plain bold-green tail");
+
+    let row = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    let green = row.runs.iter().find(|r| r.text == "bold-green").expect("styled run split out");
+    assert_ne!(green.flags & flags::BOLD, 0);
+    assert!(green.fg.is_some(), "palette green resolves to an rgb fg");
+    let plain = row.runs.iter().find(|r| r.text.starts_with("plain")).unwrap();
+    assert_eq!(plain.flags, 0);
+    assert_eq!(plain.fg, None);
+}
+
+#[test]
+fn osc8_hyperlink_surfaces_on_its_run() {
+    let mut e = engine(40, 5);
+    // OSC 8 wraps a link label whose visible text needn't look like a
+    // URL at all (mirrors what `gh`/markdown-rendering CLIs emit).
+    e.feed(b"see \x1b]8;;https://example.com/pr/1\x1b\\here\x1b]8;;\x1b\\ for detail");
+    let frame = e.render().expect("render").expect("first frame");
+
+    assert_eq!(row_text(&frame, 0), "see here for detail");
+    let row = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    let linked = row.runs.iter().find(|r| r.text == "here").expect("hyperlink run split out");
+    assert_eq!(linked.link.as_deref(), Some("https://example.com/pr/1"));
+    let plain = row.runs.iter().find(|r| r.text.starts_with("see")).unwrap();
+    assert_eq!(plain.link, None);
+}
+
+#[test]
+fn soft_wrapped_row_carries_the_wrap_flag() {
+    let mut e = engine(10, 4);
+    // 13 printable chars into a 10-column grid: row 0 soft-wraps into
+    // row 1. The flag is what lets the renderer join rows for link
+    // detection instead of guessing from text that fills the last column.
+    e.feed(b"0123456789abc");
+    let frame = e.render().expect("render").expect("first frame");
+
+    assert_eq!(row_text(&frame, 0), "0123456789");
+    assert_eq!(row_text(&frame, 1), "abc");
+    let row0 = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    let row1 = frame.changed.iter().find(|r| r.y == 1).unwrap();
+    assert!(row0.wrapped, "row that flows into the next is flagged");
+    assert!(!row1.wrapped, "continuation row does not itself wrap");
+}
+
+#[test]
+fn hard_newline_does_not_set_the_wrap_flag() {
+    let mut e = engine(10, 4);
+    // Row 0 fills every column but ends with a real newline — exactly
+    // the case the old "text reaches the last column" heuristic got
+    // wrong by joining unrelated rows.
+    e.feed(b"0123456789\r\nnext line");
+    let frame = e.render().expect("render").expect("first frame");
+
+    assert_eq!(row_text(&frame, 0), "0123456789");
+    let row0 = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    assert!(!row0.wrapped, "a full row ended by CRLF is not soft-wrapped");
+}
+
+#[test]
+fn render_is_incremental() {
+    let mut e = engine(20, 4);
+    e.feed(b"one\r\n");
+    e.render().expect("render").expect("frame");
+
+    assert!(e.render().expect("render").is_none(), "nothing changed since last render");
+
+    e.feed(b"two");
+    let frame = e.render().expect("render").expect("frame");
+    assert!(!frame.full);
+    assert_eq!(frame.changed.len(), 1, "only the cursor row changed");
+    assert_eq!(row_text(&frame, 1), "two");
+}
+
+#[test]
+fn cursor_only_move_still_renders_a_frame() {
+    let mut e = engine(20, 4);
+    e.feed(b"abc");
+    let frame = e.render().expect("render").expect("first frame");
+    assert_eq!(frame.cursor.x, 3);
+    assert!(e.render().expect("render").is_none(), "engine is clean");
+
+    // CUB: move the cursor left with no cell writes — libghostty-vt's
+    // dirty tracking only covers cell content, so without tracking the
+    // cursor separately this render would wrongly report nothing changed
+    // and the frontend would never learn the cursor moved.
+    e.feed(b"\x1b[D");
+    let frame = e.render().expect("render").expect("cursor move must still produce a frame");
+    assert!(!frame.full);
+    assert!(frame.changed.is_empty(), "no cell content changed, only the cursor");
+    assert_eq!(frame.cursor.x, 2);
+
+    assert!(e.render().expect("render").is_none(), "clean again after the cursor settles");
+}
+
+#[test]
+fn request_full_forces_a_full_frame_from_a_clean_engine() {
+    let mut e = engine(20, 4);
+    e.feed(b"one\r\ntwo");
+    e.render().expect("render").expect("first frame");
+    assert!(e.render().expect("render").is_none(), "engine is clean");
+
+    // A re-shown pane asks for a full repaint even though nothing is
+    // dirty — the frame must exist, be full, and carry every row (#47).
+    e.request_full();
+    let frame = e.render().expect("render").expect("forced frame");
+    assert!(frame.full);
+    assert_eq!(frame.changed.len(), 4, "all viewport rows resent");
+    assert_eq!(row_text(&frame, 0), "one");
+    assert_eq!(row_text(&frame, 1), "two");
+
+    // One-shot: the next render is incremental again.
+    assert!(e.render().expect("render").is_none());
+}
+
+#[test]
+fn title_change_is_reported_once() {
+    let mut e = engine(20, 4);
+    e.feed(b"\x1b]0;my-title\x07");
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(frame.title.as_deref(), Some("my-title"));
+
+    e.feed(b"x");
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(frame.title, None, "unchanged title is not re-sent");
+}
+
+#[test]
+fn device_query_produces_pty_reply() {
+    let mut e = engine(20, 4);
+    e.feed(b"\x1b[c"); // DA1: who are you?
+    let reply = e.take_pty_output();
+    assert!(reply.starts_with(b"\x1b["), "DA1 reply written back for the PTY, got {reply:?}");
+}
+
+#[test]
+fn resize_reflows_wrapped_lines() {
+    let mut e = engine(10, 4);
+    e.feed(b"aaaaaaaaaabbbb"); // wraps after 10 cols
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(row_text(&frame, 0), "aaaaaaaaaa");
+    assert_eq!(row_text(&frame, 1), "bbbb");
+
+    e.resize(20, 4, 8, 16).expect("resize");
+    let frame = e.render().expect("render").expect("frame");
+    assert_eq!(frame.cols, 20);
+    assert_eq!(row_text(&frame, 0), "aaaaaaaaaabbbb", "line unwraps on widen");
+}
+
+#[test]
+fn modes_track_terminal_state() {
+    let mut e = engine(20, 4);
+    e.feed(b"x");
+    let frame = e.render().expect("render").expect("frame");
+    assert!(!frame.modes.alt_screen);
+
+    // Enter alt screen (1049).
+    e.feed(b"\x1b[?1049h");
+    let frame = e.render().expect("render").expect("frame");
+    assert!(frame.modes.alt_screen);
+    assert!(!frame.modes.mouse_tracking);
+
+    // Mode flips alone don't dirty cells (no frame goes out until
+    // something paints), so ride along with a visible byte.
+    e.feed(b"\x1b[?1000hx");
+    let frame = e.render().expect("render").expect("frame");
+    assert!(frame.modes.mouse_tracking);
+}
+
+#[test]
+fn wheel_reports_only_when_the_app_tracks_the_mouse() {
+    let mut e = engine(20, 4);
+    e.feed(b"hi");
+    assert!(e.take_pty_output().is_empty());
+
+    // No mouse tracking: a wheel gesture writes nothing to the PTY — in
+    // particular it is never translated into arrow keys.
+    e.wheel(3, 1, -2, false).expect("wheel");
+    assert!(e.take_pty_output().is_empty(), "untracked wheel must not reach the app");
+
+    // Normal tracking (1000) + SGR encoding (1006), vim/htop style:
+    // wheel up is a button-64 press at the 1-based cell position.
+    e.feed(b"\x1b[?1000h\x1b[?1006h");
+    e.wheel(3, 1, -1, false).expect("wheel");
+    assert_eq!(e.take_pty_output(), b"\x1b[<64;4;2M");
+
+    // Down is button 65; one report per line.
+    e.wheel(3, 1, 2, false).expect("wheel");
+    assert_eq!(e.take_pty_output(), b"\x1b[<65;4;2M\x1b[<65;4;2M");
+
+    // A fling's report count is capped.
+    e.wheel(0, 0, -100, false).expect("wheel");
+    assert_eq!(e.take_pty_output(), b"\x1b[<64;1;1M".repeat(5));
+
+    // Legacy tracking without SGR gets the negotiated X10 encoding
+    // (button and coords as offset bytes), not SGR.
+    e.feed(b"\x1b[?1006l");
+    e.wheel(3, 1, -1, false).expect("wheel");
+    assert_eq!(e.take_pty_output(), b"\x1b[M\x60\x24\x22");
+}
+
+#[test]
+fn scroll_moves_viewport_into_scrollback() {
+    let mut e = engine(10, 3);
+    for i in 0..20 {
+        e.feed(format!("line{i}\r\n").as_bytes());
+    }
+    e.render().expect("render").expect("frame");
+
+    e.scroll(Some(-5));
+    let frame = e.render().expect("render").expect("scrolled frame");
+    assert!(frame.changed.iter().any(|r| !r.runs.is_empty()));
+    let top = row_text(&frame, 0);
+    assert!(
+        top.starts_with("line") && top != "line18",
+        "viewport moved off the live tail, got {top:?}"
+    );
+
+    e.scroll(None); // back to bottom
+    let frame = e.render().expect("render").expect("frame");
+    assert!(row_text(&frame, 0).starts_with("line"));
+}
+
+#[test]
+fn clear_scrollback_drops_history_but_keeps_the_visible_screen() {
+    let mut e = engine(10, 3);
+    for i in 0..20 {
+        e.feed(format!("line{i}\r\n").as_bytes());
+    }
+    let frame = e.render().expect("render").expect("frame");
+    // 20 lines through a 3-row viewport leaves a real scrollback tail.
+    assert!(frame.scrollback_rows > 0, "precondition: scrollback exists");
+    // The live viewport shows the most recent lines.
+    assert_eq!(row_text(&frame, 0), "line18");
+    assert_eq!(row_text(&frame, 1), "line19");
+
+    e.clear_scrollback();
+    let frame = e.render().expect("render").expect("clear forces a frame");
+    assert!(frame.full, "clearing scrollback forces a full repaint");
+    assert_eq!(frame.scrollback_rows, 0, "scrollback history dropped");
+    assert_eq!(frame.viewport_top, 0, "viewport top collapses with the history");
+    // The visible screen is untouched — same rows as before the clear.
+    assert_eq!(row_text(&frame, 0), "line18");
+    assert_eq!(row_text(&frame, 1), "line19");
+}
+
+/// Surface pixels. The test engines never resize, so cell metrics stay at
+/// the 1px default and cell N spans x in [N, N+1) — `N + LEFT` points at
+/// its left half, `N + RIGHT` at its right. Selection ends snap to the
+/// nearer cell edge, so which half a gesture starts and ends in is what
+/// decides whether that cell is in the selection.
+const LEFT: f64 = 0.25;
+const RIGHT: f64 = 0.75;
+fn press(e: &mut Engine, x: f64, y: f64, time_ms: f64) {
+    e.pointer(engine::Pointer::Press { x, y, time_ms }).expect("press");
+}
+fn drag_to(e: &mut Engine, x: f64, y: f64) {
+    e.pointer(engine::Pointer::Drag { x, y, rectangle: false }).expect("drag");
+}
+fn release(e: &mut Engine) {
+    e.pointer(engine::Pointer::Release).expect("release");
+}
+
+#[test]
+fn selection_highlights_rows_and_copies_text() {
+    let mut e = engine(20, 4);
+    e.feed(b"alpha beta\r\ngamma");
+    e.render().expect("render").expect("frame");
+
+    press(&mut e, LEFT, 0.5, 0.0);
+    drag_to(&mut e, 2.0 + RIGHT, 1.5);
+    release(&mut e);
+    let frame = e.render().expect("render").expect("selection forces a frame");
+    assert!(frame.full, "selection change repaints everything");
+    let row0 = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    let row1 = frame.changed.iter().find(|r| r.y == 1).unwrap();
+    assert_eq!(row0.sel, Some((0, 19)), "row 0 selected to line end");
+    assert_eq!(row1.sel.map(|s| s.0), Some(0), "row 1 selected from col 0");
+
+    let text = e.copy_selection().expect("copy").expect("selection text");
+    assert!(text.contains("alpha beta") && text.contains("gam"), "got {text:?}");
+
+    e.select(engine::Select::Clear).expect("clear");
+    let frame = e.render().expect("render").expect("clear forces a frame");
+    assert!(frame.changed.iter().all(|r| r.sel.is_none()));
+    assert_eq!(e.copy_selection().expect("copy"), None);
+}
+
+/// A 3-row viewport over 20 written lines: the live viewport shows
+/// line18/line19, and line0..line17 sit in scrollback. Absolute row `n`
+/// is `line{n}`.
+fn scrolled_engine() -> Engine {
+    let mut e = engine(10, 3);
+    for i in 0..20 {
+        e.feed(format!("line{i}\r\n").as_bytes());
+    }
+    e.render().expect("render").expect("frame");
+    e
+}
+
+#[test]
+fn a_selection_keeps_its_text_when_the_viewport_moves() {
+    let mut e = scrolled_engine();
+    // Triple-click the viewport's top row: three presses inside the repeat
+    // window, which libghostty promotes to a line selection.
+    for t in [0.0, 100.0, 200.0] {
+        press(&mut e, LEFT, 0.5, t);
+        release(&mut e);
+    }
+    assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line18"));
+
+    // The gesture anchors on a tracked grid reference, so paging the
+    // viewport does not re-point it at whatever now sits on that row.
+    e.scroll(Some(-6));
+    assert_eq!(e.copy_selection().expect("copy").as_deref(), Some("line18"));
+}
+
+#[test]
+fn a_drag_extends_across_a_scroll_without_moving_its_anchor() {
+    let mut e = scrolled_engine();
+    let top = e.viewport_top().expect("viewport_top");
+
+    // Press mid-way along the viewport's top row ("line18"), then page up
+    // mid-gesture and drag to the newly revealed top row. The view never
+    // names the anchor again — the gesture still holds it.
+    assert!(top > 0, "precondition: the viewport sits over scrollback");
+    press(&mut e, 5.0 + RIGHT, 0.5, 0.0);
+    e.scroll(Some(-3));
+    drag_to(&mut e, LEFT, 0.5);
+
+    let text = e.copy_selection().expect("copy").expect("selection text");
+    // The anchor is still on line18 three pages later, which is the point:
+    // nothing re-sent it.
+    assert_eq!(
+        text, "line15\nline16\nline17\nline18",
+        "drag reaches back through scrollback from its original anchor"
+    );
+}
+
+#[test]
+fn a_selection_scrolled_out_of_view_still_reports_itself() {
+    let mut e = scrolled_engine();
+    for t in [0.0, 100.0, 200.0] {
+        press(&mut e, LEFT, 0.5, t);
+        release(&mut e);
+    }
+    e.scroll(Some(-6));
+    let frame = e.render().expect("render").expect("frame");
+    assert!(frame.selection, "selection is live");
+    assert!(
+        frame.changed.iter().all(|r| r.sel.is_none()),
+        "precondition: it highlights no visible row"
+    );
+
+    e.select(engine::Select::Clear).expect("clear");
+    let frame = e.render().expect("render").expect("frame");
+    assert!(!frame.selection, "cleared");
+}
+
+#[test]
+fn shift_wheel_reaches_scrollback_past_a_tracking_program() {
+    let mut e = scrolled_engine();
+    e.feed(b"\x1b[?1003h\x1b[?1006h"); // what Claude Code holds all session
+    let live_top = e.viewport_top().expect("viewport_top");
+
+    // Without shift the program owns the wheel and the viewport stays put.
+    e.wheel(0, 0, -2, false).expect("wheel");
+    assert!(!e.take_pty_output().is_empty(), "reported to the program");
+    assert_eq!(e.viewport_top().expect("viewport_top"), live_top, "viewport unmoved");
+
+    // Shift is the override: local scroll, nothing sent to the program.
+    e.wheel(0, 0, -2, true).expect("wheel");
+    assert!(e.take_pty_output().is_empty(), "shift+wheel is not the program's");
+    assert_eq!(e.viewport_top().expect("viewport_top"), live_top - 2, "paged scrollback");
+}
+
+#[test]
+fn word_selection_snaps_to_boundaries() {
+    let mut e = engine(20, 4);
+    e.feed(b"alpha beta");
+    e.render().expect("render").expect("frame");
+
+    // Double-click inside "beta".
+    press(&mut e, 7.0 + LEFT, 0.5, 0.0);
+    release(&mut e);
+    press(&mut e, 7.0 + LEFT, 0.5, 100.0);
+    release(&mut e);
+    let text = e.copy_selection().expect("copy").expect("word text");
+    assert_eq!(text, "beta");
+}
+
+#[test]
+fn wide_chars_advance_two_columns() {
+    let mut e = engine(20, 4);
+    e.feed("日本 x".as_bytes());
+    let frame = e.render().expect("render").expect("frame");
+    let row = frame.changed.iter().find(|r| r.y == 0).unwrap();
+    assert_eq!(row_text(&frame, 0), "日本 x");
+    let total: u16 = row.runs.iter().map(|r| r.width).sum();
+    assert_eq!(total, 6, "2+2 wide cells + space + x");
+    let cursor_row_run = &row.runs[0];
+    assert_eq!(cursor_row_run.x, 0);
+}
+
+#[test]
+fn search_spans_scrollback_and_reports_absolute_rows() {
+    let mut e = engine(10, 3);
+    for i in 0..20 {
+        e.feed(format!("line{i}\r\n").as_bytes());
+    }
+    e.render().expect("render").expect("frame");
+
+    // "line1" matches line1 plus line10..line19 (substring), top to bottom.
+    let matches = e.search("line1", 100).expect("search");
+    assert_eq!(matches.len(), 11);
+    assert_eq!(matches[0], SearchMatch { row: 1, col: 0, width: 5 });
+    assert!(matches.iter().all(|m| m.col == 0 && m.width == 5));
+    assert!(matches.windows(2).all(|w| w[0].row < w[1].row), "ordered top to bottom");
+
+    // The oldest row lives in scrollback, well above the 3-row viewport.
+    assert_eq!(
+        e.search("line0", 10).expect("search"),
+        vec![SearchMatch { row: 0, col: 0, width: 5 }]
+    );
+
+    // The limit caps the result count.
+    assert_eq!(e.search("line", 4).expect("search").len(), 4);
+}
+
+#[test]
+fn search_is_case_insensitive_and_column_exact_across_wide_chars() {
+    let mut e = engine(20, 4);
+    e.feed("Hello \x1b[1m日本\x1b[0m World".as_bytes());
+    e.render().expect("render").expect("frame");
+
+    assert_eq!(
+        e.search("hello", 10).expect("search"),
+        vec![SearchMatch { row: 0, col: 0, width: 5 }]
+    );
+    // "World" sits after two wide chars (4 columns) — column is grid-exact.
+    assert_eq!(
+        e.search("WORLD", 10).expect("search"),
+        vec![SearchMatch { row: 0, col: 11, width: 5 }]
+    );
+    assert!(e.search("absent", 10).expect("search").is_empty());
+    assert!(e.search("", 10).expect("search").is_empty());
+}
+
+#[test]
+fn scroll_to_moves_the_viewport_and_frames_carry_viewport_top() {
+    let mut e = engine(10, 3);
+    for i in 0..40 {
+        e.feed(format!("line{i}\r\n").as_bytes());
+    }
+    let frame = e.render().expect("render").expect("frame");
+    // At the live bottom the viewport top equals the scrollback depth.
+    assert_eq!(frame.viewport_top, frame.scrollback_rows);
+    assert!(frame.viewport_top > 0);
+
+    e.scroll_to(0).expect("scroll_to top row");
+    let frame = e.render().expect("render").expect("scrolled frame");
+    assert_eq!(frame.viewport_top, 0);
+    assert_eq!(row_text(&frame, 0), "line0");
+
+    // Scrolling to an already-visible row keeps the viewport put.
+    e.scroll_to(1).expect("scroll_to visible row");
+    assert_eq!(e.viewport_top().expect("viewport_top"), 0);
+}
+
+#[test]
+fn frame_serializes_to_compact_json() {
+    let mut e = engine(20, 4);
+    e.feed(b"hi");
+    let frame = e.render().expect("render").expect("frame");
+    let json = serde_json::to_value(&frame).expect("serialize");
+    assert_eq!(json["full"], true);
+    assert_eq!(json["changed"][0]["runs"][0]["text"], "hi");
+    assert!(
+        json["changed"][0]["runs"][0].get("fg").is_none(),
+        "default colors are omitted from the wire format"
+    );
+}
+
+#[test]
+fn session_thread_round_trips() {
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let session =
+        Session::spawn(EngineOptions { cols: 20, rows: 4, max_scrollback: 100 }, move |event| {
+            let _ = event_tx.send(event);
+        })
+        .expect("spawn session");
+
+    assert!(session.send(Input::Bytes(b"hello".to_vec())));
+    let frame = loop {
+        match event_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("session produced an event")
+        {
+            Event::Frame(f) => break f,
+            Event::PtyReply(_) | Event::Clipboard(_) | Event::Bell | Event::Notify(_) => {}
+        }
+    };
+    assert_eq!(
+        frame.changed.iter().find(|r| r.y == 0).map(|r| r.runs[0].text.clone()),
+        Some("hello".into())
+    );
+    drop(session); // joins the thread
+}
+
+#[test]
+fn session_surfaces_osc52_clipboard_writes() {
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let session =
+        Session::spawn(EngineOptions { cols: 20, rows: 4, max_scrollback: 100 }, move |event| {
+            let _ = event_tx.send(event);
+        })
+        .expect("spawn session");
+
+    // A program copies "hi" via OSC 52 (aGk= is base64 for "hi").
+    assert!(session.send(Input::Bytes(b"\x1b]52;c;aGk=\x07".to_vec())));
+    let clip = loop {
+        match event_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("session produced an event")
+        {
+            Event::Clipboard(text) => break text,
+            Event::Frame(_) | Event::PtyReply(_) | Event::Bell | Event::Notify(_) => {}
+        }
+    };
+    assert_eq!(clip, "hi");
+    drop(session);
+}
+
+#[test]
+fn session_coalesces_bursts_into_few_frames() {
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let session =
+        Session::spawn(EngineOptions { cols: 40, rows: 8, max_scrollback: 100 }, move |event| {
+            let _ = event_tx.send(event);
+        })
+        .expect("spawn session");
+
+    // A flood of small chunks, like a TUI redrawing on every keystroke.
+    for i in 0..200 {
+        assert!(session.send(Input::Bytes(format!("chunk {i}\r\n").into_bytes())));
+    }
+    // Dropping closes the channel; the thread drains queued input, renders,
+    // and exits, which also drops the sink and ends the event stream.
+    drop(session);
+
+    let frames = event_rx.iter().filter(|e| matches!(e, Event::Frame(_))).count();
+    assert!(frames > 0, "the burst must produce at least one frame");
+    assert!(frames < 20, "200 rapid chunks must coalesce into few frames, got {frames}");
+}
+
+#[test]
+fn engine_tracks_synchronized_output_mode() {
+    let mut e = engine(20, 4);
+    assert!(!e.sync_output(), "mode 2026 starts unset");
+    e.feed(b"\x1b[?2026h");
+    assert!(e.sync_output(), "BSU sets synchronized output");
+    e.feed(b"\x1b[?2026l");
+    assert!(!e.sync_output(), "ESU clears synchronized output");
+}
+
+#[test]
+fn session_holds_frames_during_synchronized_output() {
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let session =
+        Session::spawn(EngineOptions { cols: 20, rows: 4, max_scrollback: 100 }, move |event| {
+            let _ = event_tx.send(event);
+        })
+        .expect("spawn session");
+
+    // An open batch must not ship a half-drawn frame: nothing renders
+    // while BSU is held (guard well under SYNC_OUTPUT_MAX_HOLD so a slow
+    // machine can't run the hold cap down before the recv starts).
+    assert!(session.send(Input::Bytes(b"\x1b[?2026hbatched".to_vec())));
+    match event_rx.recv_timeout(std::time::Duration::from_millis(50)) {
+        Err(_) => {}
+        Ok(Event::Frame(_)) => panic!("frame shipped inside an open synchronized batch"),
+        Ok(_) => {}
+    }
+
+    // Closing the batch releases the frame with the batched content.
+    assert!(session.send(Input::Bytes(b"\x1b[?2026l".to_vec())));
+    let frame = loop {
+        match event_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("closing the batch must release a frame")
+        {
+            Event::Frame(f) => break f,
+            Event::PtyReply(_) | Event::Clipboard(_) | Event::Bell | Event::Notify(_) => {}
+        }
+    };
+    assert_eq!(
+        frame.changed.iter().find(|r| r.y == 0).map(|r| r.runs[0].text.clone()),
+        Some("batched".into())
+    );
+    drop(session);
+}
+
+#[test]
+fn synchronized_output_hold_is_bounded() {
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let session =
+        Session::spawn(EngineOptions { cols: 20, rows: 4, max_scrollback: 100 }, move |event| {
+            let _ = event_tx.send(event);
+        })
+        .expect("spawn session");
+
+    // A program that opens a batch and dies mid-update must not freeze
+    // the pane: the frame ships once SYNC_OUTPUT_MAX_HOLD expires.
+    assert!(session.send(Input::Bytes(b"\x1b[?2026hstuck".to_vec())));
+    let frame = loop {
+        match event_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the hold cap must force a frame out")
+        {
+            Event::Frame(f) => break f,
+            Event::PtyReply(_) | Event::Clipboard(_) | Event::Bell | Event::Notify(_) => {}
+        }
+    };
+    assert_eq!(
+        frame.changed.iter().find(|r| r.y == 0).map(|r| r.runs[0].text.clone()),
+        Some("stuck".into())
+    );
+    drop(session);
+}
