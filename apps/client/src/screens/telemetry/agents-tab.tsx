@@ -14,7 +14,7 @@ import {
 } from "@/screens/telemetry/dashboard-charts";
 
 /** Agents — what the app's own `claude` calls cost (prompt improvers, `/next`,
- * Slack agents) and how each checkout's agents split their time between working
+ * copy suggestions) and how each checkout's agents split their time between working
  * and waiting on you. Presentation only; the numbers come from
  * `crates/tt-telemetry/src/agents.rs`. Session spend lives on Claude Sessions. */
 

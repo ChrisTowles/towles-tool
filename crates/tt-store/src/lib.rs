@@ -21,7 +21,6 @@ pub use attention::{
     WatchedCollector,
 };
 
-mod agents;
 mod collect;
 mod events;
 mod github;
@@ -30,7 +29,6 @@ mod notes;
 mod schema;
 mod tasks;
 
-pub use agents::{AgentReminder, AgentSession, TurnOutcome};
 pub use model::*;
 pub use notes::{AgentNote, NoteDelivery, NoteSource, SpendLedger};
 

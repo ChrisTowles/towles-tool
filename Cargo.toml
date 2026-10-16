@@ -7,7 +7,6 @@ members = [
   "crates/comment-budget",
   # Shared crates (no Tauri dependency)
   "crates/tt-agentboard",
-  "crates/tt-agents",
   "crates/tt-browser",
   "crates/tt-claude-code",
   "crates/tt-codeserver",
@@ -98,7 +97,6 @@ wait-timeout = "0.2.1"
 
 # Internal crates - shared
 tt-agentboard = { path = "crates/tt-agentboard" }
-tt-agents = { path = "crates/tt-agents" }
 tt-browser = { path = "crates/tt-browser" }
 tt-jarvis = { path = "crates/tt-jarvis" }
 tt-pane = { path = "crates-tauri/tt-pane" }

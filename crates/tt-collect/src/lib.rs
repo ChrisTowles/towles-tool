@@ -28,8 +28,8 @@ pub use slack::{
     react, send_dm, set_reaction,
 };
 pub use slack_socket::{
-    Backoff, Envelope, MessageEvent, ReactionEvent, SlackEvent, ack_json, is_new_message,
-    is_watched_event, open_socket_connection, parse_connection_url, parse_envelope,
+    Backoff, Envelope, MessageEvent, ReactionEvent, SlackEvent, ack_json, is_watched_event,
+    open_socket_connection, parse_connection_url, parse_envelope,
 };
 
 use std::path::{Path, PathBuf};

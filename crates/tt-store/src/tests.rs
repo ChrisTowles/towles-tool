@@ -268,6 +268,30 @@ fn migrations_are_idempotent() {
     assert_eq!(version, SCHEMA_VERSION.to_string());
 }
 
+#[test]
+fn reopening_drops_the_retired_slack_agent_tables() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    drop(Store::open(&path).unwrap());
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE agent_turns (id INTEGER); CREATE TABLE agent_sessions (agent TEXT);",
+        )
+        .unwrap();
+    let s = Store::open(&path).unwrap();
+    let left: i64 = s
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN \
+             ('agent_sessions', 'agent_threads', 'agent_posts', 'agent_reminders', 'agent_turns')",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
 /// A db below the floor is refused at open, not left to fail later on a
 /// `no such column` from a query.
 #[test]

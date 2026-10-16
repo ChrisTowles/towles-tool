@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 29;
+pub(crate) const SCHEMA_VERSION: i64 = 30;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -175,8 +175,6 @@ CREATE TABLE IF NOT EXISTS ci_runs (
 );
 ";
 
-/// v21: personal Slack agents — resumable sessions, thread ownership, an echo guard
-/// for what the agents posted as Chris, self-set reminders, and a per-turn audit log.
 /// v24: "not now" on a queue row, keyed by the row's snooze key and to the queue
 /// reason it was set on, so a new reason resurfaces it. `until_ms` NULL means until that reason changes. Replaces v22's
 /// task-only `task_snoozes`, whose rows carry over as `task:<id>`.
@@ -236,49 +234,13 @@ CREATE TABLE IF NOT EXISTS clip_spend (
 );
 ";
 
-const SCHEMA_AGENTS_V21: &str = "\
-CREATE TABLE IF NOT EXISTS agent_sessions (
-    agent TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    memory_hash TEXT NOT NULL DEFAULT '',
-    updated_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS agent_threads (
-    channel TEXT NOT NULL,
-    thread_ts TEXT NOT NULL,
-    agent TEXT NOT NULL,
-    PRIMARY KEY (channel, thread_ts)
-);
-CREATE TABLE IF NOT EXISTS agent_posts (
-    channel TEXT NOT NULL,
-    ts TEXT NOT NULL,
-    agent TEXT NOT NULL,
-    posted_at INTEGER NOT NULL,
-    PRIMARY KEY (channel, ts)
-);
-CREATE TABLE IF NOT EXISTS agent_reminders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent TEXT NOT NULL,
-    channel TEXT NOT NULL,
-    thread_ts TEXT NOT NULL,
-    note TEXT NOT NULL,
-    due_at INTEGER NOT NULL,
-    created_at INTEGER NOT NULL,
-    fired_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_agent_reminders_due ON agent_reminders(fired_at, due_at);
-CREATE TABLE IF NOT EXISTS agent_turns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent TEXT NOT NULL,
-    channel TEXT NOT NULL,
-    thread_ts TEXT NOT NULL,
-    started_at INTEGER NOT NULL,
-    finished_at INTEGER,
-    outcome TEXT,
-    cost_usd REAL,
-    denials TEXT NOT NULL DEFAULT '[]',
-    error TEXT
-);
+/// v30: the personal Slack agents are gone; their tables go with them.
+const DROP_AGENTS_V30: &str = "\
+DROP TABLE IF EXISTS agent_sessions;
+DROP TABLE IF EXISTS agent_threads;
+DROP TABLE IF EXISTS agent_posts;
+DROP TABLE IF EXISTS agent_reminders;
+DROP TABLE IF EXISTS agent_turns;
 ";
 
 impl Store {
@@ -336,7 +298,6 @@ impl Store {
         self.conn.execute_batch(SCHEMA_REPOS_V12)?;
         self.conn.execute_batch(SCHEMA_ITEM_DISMISSALS_V15)?;
         self.conn.execute_batch(SCHEMA_CI_RUNS_V20)?;
-        self.conn.execute_batch(SCHEMA_AGENTS_V21)?;
         self.migrate_ci_runs_branch_v23()?;
         self.migrate_queue_snoozes_v24()?;
         self.migrate_pr_status_base_branch_v25()?;
@@ -345,6 +306,7 @@ impl Store {
         self.migrate_issues_assignees_v28()?;
         self.conn.execute_batch(SCHEMA_WATCHED_ISSUES_V28)?;
         self.conn.execute_batch(SCHEMA_CLIP_SPEND_V29)?;
+        self.conn.execute_batch(DROP_AGENTS_V30)?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",

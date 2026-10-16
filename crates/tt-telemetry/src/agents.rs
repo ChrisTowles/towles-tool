@@ -1,7 +1,7 @@
 //! The Telemetry screen's Agents tab: what the app's own `claude` calls cost, and
 //! how long each checkout's agents spent working versus waiting on you. Both are
 //! read off records the app already writes — any event carrying a numeric
-//! `cost_usd` (`task_suggest`, `next_prompt.model_call`, `agent.turn_finished`),
+//! `cost_usd` (`task_suggest`, `next_prompt.model_call`, `clip_suggest.asked`),
 //! and `agent.status_changed`, one record per move of a session's shown status.
 //!
 //! Time is attributed per session: each status record opens a segment that runs

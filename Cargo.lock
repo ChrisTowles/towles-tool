@@ -9276,21 +9276,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tt-agents"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 2.0.18",
- "tt-config",
- "tt-exec",
- "tt-store",
-]
-
-[[package]]
 name = "tt-app"
 version = "0.2.0"
 dependencies = [
@@ -9326,7 +9311,6 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "tt-agentboard",
- "tt-agents",
  "tt-browser",
  "tt-claude-sessions",
  "tt-codeserver",
