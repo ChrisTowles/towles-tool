@@ -66,7 +66,7 @@ export type FocusSession = {
   openEnded: boolean;
 };
 
-export type Count = { key: string; count: number };
+type Count = { key: string; count: number };
 
 export const telemetryAttention = (date: string) =>
   invoke<AttentionSummary>("telemetry_attention", { date });
@@ -155,7 +155,7 @@ export const TELEMETRY_FILTERS_KEY = "tt-telemetry-filters";
 const KIND_VALUES = new Set<string>(["all", "event", "span"]);
 const OP_VALUES = new Set<string>(FILTER_OPS);
 
-export function isFilter(value: unknown): value is Filter {
+function isFilter(value: unknown): value is Filter {
   if (typeof value !== "object" || value === null) return false;
   const f = value as Record<string, unknown>;
   return (
@@ -167,7 +167,7 @@ export function isFilter(value: unknown): value is Filter {
   );
 }
 
-export function isRangeDays(value: unknown): value is RangeDays {
+function isRangeDays(value: unknown): value is RangeDays {
   return typeof value === "number" && (RANGE_DAYS as readonly number[]).includes(value);
 }
 
@@ -200,7 +200,7 @@ export function saveTelemetryFilters(filters: TelemetryFilters): void {
 export type DashboardRange = 1 | 3 | 7 | 14;
 export type DashboardGroupBy = "executable" | "task" | "working_directory";
 
-export type DashboardSeries = { name: string; count: number; failures: number; totalMs: number };
+type DashboardSeries = { name: string; count: number; failures: number; totalMs: number };
 
 export type DashboardSummary = {
   days: string[];
@@ -234,7 +234,7 @@ export const telemetryDashboard = (days: DashboardRange, groupBy: DashboardGroup
  * is already a rate; `perHour` with null sides means too little focused time. */
 export type BuildKey = { sha: string; day: string };
 
-export type BuildMeasures = {
+type BuildMeasures = {
   ghCalls: number;
   gitCalls: number;
   claudeCalls: number;
@@ -257,8 +257,8 @@ export type BuildSnapshot = {
   measures: BuildMeasures;
 };
 
-export type DeltaDirection = "lowerIsBetter" | "higherIsBetter" | "neutral";
-export type DeltaUnit = "count" | "percent" | "ms" | "minutes";
+type DeltaDirection = "lowerIsBetter" | "higherIsBetter" | "neutral";
+type DeltaUnit = "count" | "percent" | "ms" | "minutes";
 
 export type BuildDelta = {
   measure: string;
@@ -288,7 +288,7 @@ export function nearestRange(days: number): RangeDays {
 }
 
 /** Mirrors `tt_telemetry::query::ROW_CAP`. */
-export const QUERY_ROW_CAP = 2000;
+const QUERY_ROW_CAP = 2000;
 
 /** SQLite has no booleans; a blob arrives already described as text. */
 export type QueryValue = string | number | null;
@@ -339,7 +339,7 @@ export function fmtCell(value: QueryValue): string {
  * `count` above it; `today` is null with no population — no evidence, not 0%. */
 export type RuleKind = "share" | "count";
 
-export type RuleDayScore = { day: string; score: number | null; population: number };
+type RuleDayScore = { day: string; score: number | null; population: number };
 
 export type RuleScore = {
   id: string;

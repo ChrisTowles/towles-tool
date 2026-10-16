@@ -70,7 +70,7 @@ export type Annotation = {
  * identically in both themes. Red first — the default is "this is broken". */
 export const ANNOTATION_COLORS = ["#ef4444", "#22c55e", "#3b82f6", "#eab308"] as const;
 
-export const ANNOTATION_STROKE_WIDTH = 3;
+const ANNOTATION_STROKE_WIDTH = 3;
 export const ANNOTATION_FONT = "600 14px system-ui, sans-serif";
 
 /** Normalize two drag corners into a positive-size rect. */
@@ -153,7 +153,7 @@ export function feedbackLaunch(comment: string, url: string, paths: string[]): s
 /** How feedback reaches a session: a note to an agent whose tt mod is listening, a
  * `claude` launch in a plain shell, or nothing — an agent without the mod is never
  * typed into, since its input box may hold a half-written prompt. */
-export type SendMode = "note" | "launch" | "unreachable";
+type SendMode = "note" | "launch" | "unreachable";
 
 /** Only `live` sessions qualify — a session never started has no PTY to reach
  * ("A pane has no PTY until it is rendered", apps/client/CLAUDE.md). */

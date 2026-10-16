@@ -222,7 +222,7 @@ function BackgroundAgentsBadge({ n }: { n: number }) {
 
 /** Shape and color derive from `Dot`, so the buckets can't drift from it. No
  * `n` is a bare dot, for a count something beside it already says. */
-export function DotCount({ status, n }: { status: AlertStatus; n?: number }) {
+function DotCount({ status, n }: { status: AlertStatus; n?: number }) {
   return (
     <span className="flex items-center gap-1 text-kumo-subtle">
       <span
@@ -1243,7 +1243,7 @@ function AttachIssueDialog({
 
 /** How this branch's work reached the base, straight from git — a squash merge
  * is invisible to naive checks, and a PR-less task has no other evidence. */
-export function LandedBadge({ landed, base }: { landed: LandedVia; base: string }) {
+function LandedBadge({ landed, base }: { landed: LandedVia; base: string }) {
   return (
     <Tooltip
       side="bottom"

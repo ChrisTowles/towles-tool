@@ -57,10 +57,10 @@ jobs:
       - name: typecheck
         run: bunx tsc -b
 
-      # oxlint over apps/client. The repo documents oxlint *warnings* as
-      # non-blocking, but `bun run lint` (oxlint .) only exits non-zero on
-      # errors, and the tree is currently clean — so a non-zero exit here is a
-      # real regression worth blocking on.
+      # oxlint over apps/client, then knip for dead exports/files. The repo
+      # documents oxlint *warnings* as non-blocking, but `bun run lint` only
+      # exits non-zero on errors, and the tree is currently clean — so a
+      # non-zero exit here is a real regression worth blocking on.
       - name: lint
         run: bun run lint
 

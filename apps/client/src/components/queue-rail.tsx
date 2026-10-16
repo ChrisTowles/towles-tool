@@ -89,7 +89,7 @@ async function report(r: Awaited<ReturnType<typeof invoke>>) {
   if (r.isErr() && !NotInTauri.is(r.error)) toast.error(errorMessage(r.error));
 }
 
-export async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<void> {
+async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<void> {
   if (!item.reason) return;
   uiAction("queue.snooze", "agentboard", preset);
   await report(
@@ -278,7 +278,7 @@ export function QueueRail({
 }
 
 /** The snooze presets as buttons, one click each. `z` lands focus on the first. */
-export function SnoozeButtons({
+function SnoozeButtons({
   onSnooze,
   autoFocus = false,
   onDismiss,

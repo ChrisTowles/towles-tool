@@ -25,7 +25,7 @@ function urgencyKey(s: SessionData): number[] {
   ];
 }
 
-export function compareUrgency(a: SessionData, b: SessionData): number {
+function compareUrgency(a: SessionData, b: SessionData): number {
   const ka = urgencyKey(a);
   const kb = urgencyKey(b);
   for (let i = 0; i < ka.length; i++) {

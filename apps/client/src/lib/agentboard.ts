@@ -51,7 +51,7 @@ export type AgentEventDetails = {
   backgroundAgents?: number | null;
 };
 
-export type AgentEvent = {
+type AgentEvent = {
   agent: string;
   session: string;
   status: AgentStatus;
@@ -61,7 +61,7 @@ export type AgentEvent = {
   details?: AgentEventDetails | null;
 };
 
-export type NeedsReason = "waitingForInput" | "errored" | "finished";
+type NeedsReason = "waitingForInput" | "errored" | "finished";
 
 /** A port the shell saw in `.env` at spawn that the file now claims differently. */
 export type PortDrift = { key: string; spawnedPort: number; currentPort: number };
@@ -93,7 +93,7 @@ export type RowTask = {
 };
 
 /** Why a rail row exists — a record, never a fact about the filesystem. */
-export type RowRecord =
+type RowRecord =
   /** The one row kind with no task: tracking a repo isn't a unit of work. */
   | { origin: "checkout" }
   /** The user's own work. */
@@ -104,7 +104,7 @@ export type RowRecord =
   | { origin: "home" };
 
 /** Stamped by the app — the only thing that tells a live create from a dead one. */
-export type RowPhase = { state: "creating"; label: string } | { state: "removing"; label: string };
+type RowPhase = { state: "creating"; label: string } | { state: "removing"; label: string };
 
 export function folderTask(folder: FolderData): RowTask | undefined {
   return "task" in folder.record ? folder.record.task : undefined;
@@ -296,7 +296,7 @@ export type WindowsPayload = { windows: AgWindow[]; activeWindows: Record<string
 
 /** Before parsing: `panes` may be empty in blobs written before empty windows
  * became unrepresentable. */
-export type WireWindow = Omit<AgWindow, "panes"> & { panes: string[] };
+type WireWindow = Omit<AgWindow, "panes"> & { panes: string[] };
 export type WireWindowsPayload = { windows: WireWindow[]; activeWindows: Record<string, string> };
 
 export type StatePayload = {
@@ -784,7 +784,7 @@ export function moveFocus(args: {
  * a folder vanish from the rail the same instant. */
 export const IDLE_GRACE_MS = 45 * 60_000;
 
-export function folderLastActivityAt(f: FolderData): number {
+function folderLastActivityAt(f: FolderData): number {
   let last = 0;
   for (const s of f.sessions) {
     for (const ev of [s.agentState, ...s.agents]) {
@@ -928,8 +928,6 @@ const TASK_BLOCKER_KINDS = ["dirtyTree", "unreachableCommits", "foreignPort"] as
 export type TaskBlockerKind = (typeof TASK_BLOCKER_KINDS)[number];
 
 export type TaskBlocker = z.infer<typeof TaskBlockerSchema>;
-
-export type { TaskDeleteOutcome } from "./schemas/task";
 
 /** What forcing past a blocker would discard, as a noun for the button. */
 const DISCARDED: Record<string, string> = {

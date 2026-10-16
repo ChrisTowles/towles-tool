@@ -5,7 +5,7 @@ import { fmtDuration } from "@/lib/format";
 /** Series colours go by position in `summary.series`, never by name, so a series
  * keeps its hue across ranges and groupings; `other` (always last) is neutral.
  * They are the app's shared palette, so a chart never borrows a status hue. */
-export function seriesColor(name: string, index: number): string {
+function seriesColor(name: string, index: number): string {
   return name === "other" ? NEUTRAL : (PALETTE[index] ?? NEUTRAL);
 }
 

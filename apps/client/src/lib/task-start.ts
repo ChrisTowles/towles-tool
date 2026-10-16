@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requestAgentboardNav, ownerRepoFromOrigin, type RepoData } from "@/lib/agentboard";
+import { requestAgentboardNav, type RepoData } from "@/lib/agentboard";
 import { isTauri } from "@/lib/tauri";
 
 /** MCP `task_start` delivery: `task://start` becomes the `start-task` Agentboard
@@ -79,5 +79,3 @@ export function subscribeTaskStart(
     unlisten?.();
   };
 }
-
-export { ownerRepoFromOrigin };

@@ -6,7 +6,7 @@ import type { TaskItem } from "@/lib/data";
  */
 
 /** One resolved link that counts as evidence the task is finished. */
-export type RollupEvidence = {
+type RollupEvidence = {
   kind: "issue" | "pr";
   /** `PR #496` / `#339` — matches the chip the card already renders. */
   ref: string;

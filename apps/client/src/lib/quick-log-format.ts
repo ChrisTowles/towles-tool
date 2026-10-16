@@ -17,7 +17,7 @@ export function formatLogLine(text: string, opts: FormatLogOpts): string {
   return `- ${hh}:${mm} ${prefix}${body}`;
 }
 
-export type QuickLogKind = "journal" | "todo";
+type QuickLogKind = "journal" | "todo";
 
 export type ParsedQuickLog = {
   kind: QuickLogKind;

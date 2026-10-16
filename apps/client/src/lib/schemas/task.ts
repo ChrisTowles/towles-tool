@@ -21,7 +21,7 @@ export const BaseBranchesSchema = z.array(
 export type BaseBranch = z.infer<typeof BaseBranchesSchema>[number];
 
 /** Mirrors `tt_tasks::pr::PullRequest`. */
-export const PullRequestSchema = z.object({
+const PullRequestSchema = z.object({
   number: z.number().int().positive(),
   title: z.string(),
   url: z.string(),

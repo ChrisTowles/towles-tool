@@ -131,7 +131,7 @@ export type TaskSuggestion = {
   fallback: string | null;
 };
 
-export const BRANCH_SLUG_SOURCE_CHARS = 50;
+const BRANCH_SLUG_SOURCE_CHARS = 50;
 
 /** Per `repo.key`: a repo you triage wants a different default from one where
  * only your own issues matter. */
@@ -199,16 +199,16 @@ function IssueList({
   );
 }
 
-export function goalToBranch(goal: string): string {
+function goalToBranch(goal: string): string {
   const slug = slugify(goal.slice(0, BRANCH_SLUG_SOURCE_CHARS));
   return slug ? `feat/${slug}` : "";
 }
 
 /** Mirrors `tt_tasks::suggest`'s `TITLE_MAX_CHARS`. */
-export const TITLE_MAX_CHARS = 60;
+const TITLE_MAX_CHARS = 60;
 
 /** Cut at a word boundary and never slugged: a title is prose, not a git ref. */
-export function goalToTitle(goal: string): string {
+function goalToTitle(goal: string): string {
   const trimmed = goal.trim();
   if (trimmed.length <= TITLE_MAX_CHARS) return trimmed;
   const cut = trimmed.slice(0, TITLE_MAX_CHARS);
@@ -218,13 +218,13 @@ export function goalToTitle(goal: string): string {
 
 /** `feat/`, not tt-git's `feature/` (this app's convention), so a picked issue
  * and a typed goal produce the same shape. */
-export function branchFromIssue(number: number, title: string): string {
+function branchFromIssue(number: number, title: string): string {
   const slug = slugify(title.slice(0, BRANCH_SLUG_SOURCE_CHARS));
   return slug ? `feat/${number}-${slug}` : `feat/${number}`;
 }
 
 /** Seeded into an empty goal on a PR pick; editable like any other goal. */
-export function reviewGoal(pr: PullRequest): string {
+function reviewGoal(pr: PullRequest): string {
   return `Review PR #${pr.number}: ${pr.title}`;
 }
 

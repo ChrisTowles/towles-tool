@@ -6,7 +6,7 @@ import type { ScreenId } from "./screens";
  * not a persistent selection. A DOM-free singleton to dodge an import cycle
  * between `workspace.tsx` and the destination screens. */
 
-export type FocusKind = "pr" | "todo" | "repo" | "issue";
+type FocusKind = "pr" | "todo" | "repo" | "issue";
 
 export type FocusTarget = { screen: ScreenId; kind: FocusKind; id: string };
 
@@ -58,11 +58,7 @@ const MAX_ATTEMPTS = 12;
 const RETRY_MS = 150;
 
 /** Matched on the dataset: ids hold `/` and `#`, so a selector would be fragile. */
-export function findFocusRow(
-  container: HTMLElement,
-  kind: FocusKind,
-  id: string,
-): HTMLElement | null {
+function findFocusRow(container: HTMLElement, kind: FocusKind, id: string): HTMLElement | null {
   const rows = container.querySelectorAll<HTMLElement>(`[data-focus-kind="${kind}"]`);
   for (const row of rows) {
     if (row.dataset.focusId === id) return row;

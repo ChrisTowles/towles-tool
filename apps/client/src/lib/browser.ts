@@ -19,7 +19,6 @@ const BrowserStatusSchema = z.object({
   chromeFound: z.boolean(),
   chromePath: z.string().nullish(),
 });
-export type BrowserStatus = z.infer<typeof BrowserStatusSchema>;
 
 export const browserStatus = () =>
   invoke("browser_status", {}, { schema: BrowserStatusSchema, timeoutMs: 5_000 });

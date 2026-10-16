@@ -2,14 +2,14 @@ import { useCallback, type RefObject } from "react";
 import { persistAgentboardSetting, useLiveSetting, useLiveSettingRef } from "./settings";
 
 /** Built-in default for `agentboard.copyOnSelect` — on, matching tt-config. */
-export const DEFAULT_COPY_ON_SELECT = true;
+const DEFAULT_COPY_ON_SELECT = true;
 
 /** Built-in default for `agentboard.terminalFontSize` (px), matching tt-config. */
 export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 /** Terminal font-size zoom bounds — small enough to stay legible, large enough
  * to fit a usable grid. */
-export const MIN_TERMINAL_FONT_SIZE = 8;
-export const MAX_TERMINAL_FONT_SIZE = 32;
+const MIN_TERMINAL_FONT_SIZE = 8;
+const MAX_TERMINAL_FONT_SIZE = 32;
 
 /** Clamp/round an arbitrary px value into the supported terminal font range. */
 export function clampTerminalFontSize(px: number): number {

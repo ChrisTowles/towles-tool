@@ -5,7 +5,7 @@
 import { visit } from "unist-util-visit";
 import type { Blockquote, Root, Text } from "mdast";
 
-export const ALERT_KINDS = ["note", "tip", "important", "warning", "caution"] as const;
+const ALERT_KINDS = ["note", "tip", "important", "warning", "caution"] as const;
 
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
