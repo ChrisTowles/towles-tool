@@ -96,7 +96,8 @@ pub trait EditorHost: Send {
 /// The app-side half of `needs_you`: which sessions wait on the user is the agentboard's
 /// PTY-stamped state, invisible from this Tauri-free crate.
 pub trait AttentionHost: Send {
-    fn needs_you(&self) -> Vec<WaitingSession>;
+    /// The queue's On-you rows, in queue order.
+    fn needs_you(&self) -> Vec<WaitingRow>;
 
     /// Chime until the user answers — a hand-off: returns once the chime starts.
     fn summon(&self, request: SummonRequest) -> Result<(), String>;
@@ -116,17 +117,23 @@ const SUMMON_DEFAULT_MINUTES: u32 = 15;
 const SUMMON_MAX_MINUTES: u32 = 60;
 const SUMMON_REASON_MAX_CHARS: usize = 200;
 
-/// One session the rail badges as needing the user.
-pub struct WaitingSession {
-    /// The rail's session id — the `TT_SESSION_ID` its terminal carries.
-    pub session: String,
-    pub name: String,
+/// One checkout the queue has on the user, and why.
+pub struct WaitingRow {
+    /// The session to open — the `TT_SESSION_ID` its terminal carries — when an agent is
+    /// what waits; a red CI or a PR to land has none.
+    pub session: Option<String>,
+    pub title: String,
     pub repo: String,
-    /// The checkout or worktree directory the session runs in.
+    /// The checkout or worktree directory.
     pub dir: String,
-    /// `waitingForInput`, `errored` or `finished`.
+    /// The queue's wait reason: `unblock`, `answer`, `review`, `fix_ci`, `address_review`,
+    /// `land` or `cleanup`.
     pub reason: String,
-    pub since_ms: i64,
+    /// The reason in the queue chip's words, e.g. `asking`, `CI red`, `PR approved`.
+    pub why: String,
+    /// Further reasons behind the first, least urgent last.
+    pub also: Vec<String>,
+    pub since_ms: Option<i64>,
 }
 
 /// A validated path to reveal in the Files pane — see [`EditorHost`].
@@ -980,33 +987,31 @@ impl Dispatcher {
         Ok(json!({ "status": "showing", "path": path, "title": title, "routed": routed }))
     }
 
-    /// The other sessions waiting on the user, oldest wait first. The caller's own terminal is left
+    /// What waits on the user, in the queue's order. The caller's own terminal is left
     /// out: it is the one the user is already looking at.
     fn needs_you(&self, ctx: &RequestContext) -> Result<Value, String> {
         let host = self
             .attention_host
             .as_ref()
             .ok_or_else(|| "needs_you is unavailable: no attention host is attached".to_string())?;
-        let mut waiting: Vec<WaitingSession> = host
+        let waiting: Vec<Value> = host
             .needs_you()
             .into_iter()
-            .filter(|s| ctx.session.as_deref() != Some(s.session.as_str()))
-            .collect();
-        waiting.sort_by_key(|s| s.since_ms);
-        let sessions: Vec<Value> = waiting
-            .into_iter()
-            .map(|s| {
+            .filter(|w| ctx.session.is_none() || w.session != ctx.session)
+            .map(|w| {
                 json!({
-                    "session": s.session,
-                    "name": s.name,
-                    "repo": s.repo,
-                    "dir": s.dir,
-                    "reason": s.reason,
-                    "sinceMs": s.since_ms,
+                    "session": w.session,
+                    "title": w.title,
+                    "repo": w.repo,
+                    "dir": w.dir,
+                    "reason": w.reason,
+                    "why": w.why,
+                    "also": w.also,
+                    "sinceMs": w.since_ms,
                 })
             })
             .collect();
-        Ok(json!({ "sessions": sessions }))
+        Ok(json!({ "waiting": waiting }))
     }
 
     /// Chime until the user answers the caller's terminal — see [`AttentionHost::summon`].
@@ -1607,7 +1612,7 @@ pub fn tool_definitions() -> Value {
         },
         {
             "name": "needs_you",
-            "description": "The other sessions in this app waiting on the human — a question asked, an error, or a finished turn they haven't looked at — oldest wait first. Your own terminal is left out. Each names its session, repo, directory and `reason` (`waitingForInput`, `errored`, `finished`). An empty list means nobody else is blocked on them.",
+            "description": "Everything in this app waiting on the human, in the order their queue would work it — an agent asking, errored or finished unseen, a red CI, a review asking for changes, a PR ready to land, a landed worktree to clean up. Your own terminal is left out. Each names its checkout `dir`, `repo`, `title`, the `session` to open (null when no agent is what waits), `reason` (`unblock`, `answer`, `review`, `fix_ci`, `address_review`, `land`, `cleanup`), `why` (the same reason in the queue's words, e.g. `asking`, `CI red`, `PR approved`), any further reasons in `also`, and `sinceMs` when the wait has a start. An empty list means nothing else is on them.",
             "inputSchema": no_args(),
         },
         {

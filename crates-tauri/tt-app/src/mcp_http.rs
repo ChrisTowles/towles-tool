@@ -377,7 +377,7 @@ impl tt_mcp::EditorHost for AppEditorHost {
     }
 }
 
-/// Reads the same stamped payload the rail renders, so `needs_you` and the badges agree.
+/// Reads the queue the rail renders, so `needs_you` and the queue agree.
 struct AppAttentionHost {
     app: AppHandle,
 }
@@ -387,31 +387,28 @@ impl tt_mcp::AttentionHost for AppAttentionHost {
         crate::summon::start(&self.app, request)
     }
 
-    fn needs_you(&self) -> Vec<tt_mcp::WaitingSession> {
-        let payload = crate::agentboard::stamped_payload(&self.app);
-        let mut waiting = Vec::new();
-        for repo in &payload.repos {
-            for folder in &repo.folders {
-                for s in &folder.sessions {
-                    let (Some(reason), Some(since_ms)) = (s.needs_reason, s.needs_since_ms) else {
-                        continue;
-                    };
-                    let reason = serde_json::to_value(reason)
-                        .ok()
-                        .and_then(|v| v.as_str().map(str::to_string))
-                        .unwrap_or_default();
-                    waiting.push(tt_mcp::WaitingSession {
-                        session: s.id.clone(),
-                        name: s.name.clone(),
-                        repo: repo.name.clone(),
-                        dir: folder.dir.clone(),
-                        reason,
-                        since_ms,
-                    });
-                }
-            }
-        }
-        waiting
+    fn needs_you(&self) -> Vec<tt_mcp::WaitingRow> {
+        let Some(queue) = crate::queue::current(&self.app) else {
+            return Vec::new();
+        };
+        queue
+            .items
+            .into_iter()
+            .filter(|i| i.lane == tt_agentboard::queue::Lane::OnYou)
+            .filter_map(|i| {
+                let reason = i.reason?;
+                Some(tt_mcp::WaitingRow {
+                    session: i.session_id,
+                    title: i.title,
+                    repo: i.repo,
+                    dir: i.folder_dir,
+                    reason: reason.as_str().to_string(),
+                    why: i.why.unwrap_or_default(),
+                    also: i.also.iter().map(|r| r.as_str().to_string()).collect(),
+                    since_ms: i.since_ms,
+                })
+            })
+            .collect()
     }
 }
 

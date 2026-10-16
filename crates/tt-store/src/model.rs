@@ -143,7 +143,18 @@ pub struct QueueSnooze {
     pub key: String,
     pub reason: String,
     pub until_ms: Option<i64>,
+    /// Holds only while the row's PR checks are pending.
+    pub until_ci: bool,
     pub created_at: i64,
+}
+
+/// What a new snooze holds on: the queue reason it was set on, plus an optional
+/// time limit and "until CI finishes".
+#[derive(Debug, Clone, Copy)]
+pub struct SnoozeUntil<'a> {
+    pub reason: &'a str,
+    pub until_ms: Option<i64>,
+    pub until_ci: bool,
 }
 
 /// One constant so the manual "Archive done" button and the auto-sweep agree on "old enough".

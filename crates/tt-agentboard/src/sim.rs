@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use tt_store::PrItem;
 
-use crate::bridge::{NeedsSince, StatePayload, needs_reason, recompute_needs};
+use crate::bridge::{SinceStamps, StatePayload, needs_reason, recompute_needs};
 use crate::queue::{Lane, QueueInputs, TaskQueue};
 use crate::repo_meta::{HexColor, resolve_colors};
 use crate::types::{
@@ -159,7 +159,7 @@ fn folder_data(
     index: usize,
     start_ms: i64,
     now_ms: i64,
-    since: &mut NeedsSince,
+    since: &mut SinceStamps,
 ) -> FolderData {
     let mut worked_at_ms = 0;
     let sessions: Vec<SessionData> = checkout
@@ -221,7 +221,7 @@ fn origin_url(repo: &str) -> String {
 
 /// The payload the app would emit at `now_ms`, `recompute_needs` included.
 pub fn state_at(scenario: &Scenario, now_ms: i64) -> StatePayload {
-    let mut since = NeedsSince::new();
+    let mut since = SinceStamps::new();
     let mut repos: Vec<RepoData> = Vec::new();
     for (index, checkout) in scenario.checkouts.iter().enumerate() {
         let folder = folder_data(checkout, index, scenario.start_ms, now_ms, &mut since);

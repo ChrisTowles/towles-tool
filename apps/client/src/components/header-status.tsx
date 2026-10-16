@@ -20,7 +20,7 @@ import {
   worstCollectorState,
 } from "@/lib/collector-health";
 import { fmtAge, useStoreSnapshot } from "@/lib/data";
-import { nextItem, REASON_FACE, useTaskQueue } from "@/lib/queue";
+import { nextItem, useTaskQueue } from "@/lib/queue";
 import { useNow } from "@/lib/now";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE } from "@/lib/pr-tone";
@@ -33,7 +33,7 @@ export function NextUpChip() {
   const { queue } = useTaskQueue();
   const head = nextItem(queue);
   if (!head) return null;
-  const label = head.reason ? REASON_FACE[head.reason].label : null;
+  const label = head.why;
   return (
     <button
       className="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint"

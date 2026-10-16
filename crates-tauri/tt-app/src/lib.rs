@@ -280,7 +280,7 @@ pub fn run() {
                 engine: engine.clone(),
                 emit: emit.clone(),
                 scan: scan.clone(),
-                needs_since: Mutex::new(tt_agentboard::bridge::NeedsSince::new()),
+                needs_since: Mutex::new(tt_agentboard::bridge::SinceStamps::new()),
                 ever_live: Mutex::new(std::collections::HashSet::new()),
                 shutting_down: std::sync::atomic::AtomicBool::new(false),
                 coalescer: Mutex::new(tt_agentboard::Coalescer::new()),

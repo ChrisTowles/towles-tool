@@ -20,15 +20,24 @@ export function sessionSaid(s: SessionData): string | null {
 }
 
 export function fmtWaitingAge(sinceMs: number | null | undefined, now: number): string | null {
+  return fmtStateAge("waiting", sinceMs, now);
+}
+
+/** `word 4m` — how long something has been in a state, coarse enough not to tick by the second. */
+export function fmtStateAge(
+  word: string,
+  sinceMs: number | null | undefined,
+  now: number,
+): string | null {
   if (sinceMs == null) return null;
   const diff = now - sinceMs;
   if (diff < 0) return null;
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "waiting <1m";
-  if (mins < 60) return `waiting ${mins}m`;
+  if (mins < 1) return `${word} <1m`;
+  if (mins < 60) return `${word} ${mins}m`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `waiting ${hrs}h`;
-  return `waiting ${Math.floor(hrs / 24)}d`;
+  if (hrs < 24) return `${word} ${hrs}h`;
+  return `${word} ${Math.floor(hrs / 24)}d`;
 }
 
 /** Free to pick up: an agent that isn't working, or a flagged session. A plain

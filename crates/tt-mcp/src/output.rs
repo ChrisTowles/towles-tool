@@ -116,19 +116,21 @@ struct FileOpening {
 #[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct Waiting {
-    session: String,
-    name: String,
+    session: Option<String>,
+    title: String,
     repo: String,
     dir: String,
     reason: String,
-    since_ms: i64,
+    why: String,
+    also: Vec<String>,
+    since_ms: Option<i64>,
 }
 
 #[derive(JsonSchema)]
 #[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct NeedsYou {
-    sessions: Vec<Waiting>,
+    waiting: Vec<Waiting>,
 }
 
 #[derive(JsonSchema)]

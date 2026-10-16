@@ -9,6 +9,8 @@ import {
   rowForFolder,
   stepRow,
   rankMove,
+  reasonChip,
+  snoozePresets,
   snoozeUntil,
   tomorrowMorning,
 } from "./queue";
@@ -19,6 +21,7 @@ function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
     taskId: id,
     lane: "on_you",
     reason: "answer",
+    why: "asking",
     also: [],
     title: `t${id}`,
     repo: "o/r",
@@ -32,6 +35,7 @@ function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
     rank: id * 1024,
     sinceMs: null,
     snoozedUntilMs: null,
+    snoozedUntilCi: false,
     snoozed: false,
     ...over,
   };
@@ -82,6 +86,30 @@ describe("snooze presets", () => {
     expect(snoozeUntil("tomorrow", now)).toBe(new Date(2026, 9, 11, 9, 0).getTime());
     expect(tomorrowMorning(now)).toBe(new Date(2026, 9, 11, 9, 0).getTime());
     expect(snoozeUntil("until_change", now)).toBeNull();
+    expect(snoozeUntil("until_ci", now)).toBeNull();
+  });
+
+  it("offers until CI finishes only while the PR's checks run", () => {
+    const pr = { repo: "o/r", number: 1, url: "u", state: "open", reviewState: "" };
+    expect(snoozePresets(item(1))).not.toContain("until_ci");
+    expect(snoozePresets(item(1, { pr: { ...pr, checks: "passing" } }))).not.toContain("until_ci");
+    expect(snoozePresets(item(1, { pr: { ...pr, checks: "pending" } }))).toContain("until_ci");
+  });
+});
+
+describe("reasonChip", () => {
+  const now = 10 * 60_000;
+  it("says why and for how long on you, and the agent's state off it", () => {
+    expect(reasonChip(item(1, { sinceMs: now - 4 * 60_000 }), now)).toBe("asking 4m");
+    expect(reasonChip(item(1, { why: "CI red", reason: "fix_ci" }), now)).toBe("CI red");
+    const off = { reason: null, why: null } as const;
+    expect(reasonChip(item(1, { ...off, lane: "running", sinceMs: now - 12 * 60_000 }), now)).toBe(
+      "working 12m",
+    );
+    expect(reasonChip(item(1, { ...off, lane: "idle", sinceMs: now - 30_000 }), now)).toBe(
+      "idle <1m",
+    );
+    expect(reasonChip(item(1, { ...off, lane: "parked" }), now)).toBeNull();
   });
 });
 

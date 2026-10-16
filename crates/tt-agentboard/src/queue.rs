@@ -33,6 +33,20 @@ impl WaitReason {
         matches!(self, Self::Unblock | Self::Answer)
     }
 
+    /// The words the queue chip and `needs_you` say it in; the PR tells approved from merely green.
+    pub fn phrase(self, pr: Option<&QueuePr>) -> &'static str {
+        match self {
+            Self::Unblock => "errored",
+            Self::Answer => "asking",
+            Self::Review => "finished",
+            Self::FixCi => "CI red",
+            Self::AddressReview => "changes asked",
+            Self::Land if pr.is_some_and(|p| p.review_state == "approved") => "PR approved",
+            Self::Land => "ready to land",
+            Self::Cleanup => "landed",
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Unblock => "unblock",
@@ -96,6 +110,8 @@ pub struct QueueItem {
     pub task_id: Option<i64>,
     pub lane: Lane,
     pub reason: Option<WaitReason>,
+    /// `reason` in words — [`WaitReason::phrase`].
+    pub why: Option<String>,
     pub also: Vec<WaitReason>,
     pub title: String,
     pub repo: String,
@@ -109,8 +125,12 @@ pub struct QueueItem {
     pub ci: Vec<QueueCi>,
     /// The owning task's board rank; a checkout no task owns has none.
     pub rank: Option<i64>,
+    /// When the row entered its state: the wait began, CI broke, or the agent
+    /// started working or reached its prompt.
     pub since_ms: Option<i64>,
     pub snoozed_until_ms: Option<i64>,
+    /// Held only while the PR's checks are pending.
+    pub snoozed_until_ci: bool,
     pub snoozed: bool,
 }
 
@@ -124,6 +144,10 @@ pub struct TaskQueue {
     /// nothing else may tick. Never sent.
     #[serde(skip)]
     pub settles_at_ms: Option<i64>,
+    /// Snooze keys set "until CI finishes" whose CI has finished — the app drops
+    /// them, so the next push doesn't re-hide the row. Never sent.
+    #[serde(skip)]
+    pub spent_snoozes: Vec<String>,
 }
 
 pub struct QueueInputs<'a> {
@@ -165,14 +189,17 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
             )
         })
         .collect();
+    let mut spent_snoozes = Vec::new();
     for item in &mut items {
-        apply_snooze(item, &snoozes, inputs.now_ms);
+        if let Some(key) = apply_snooze(item, &snoozes, inputs.now_ms) {
+            spent_snoozes.push(key);
+        }
     }
     items.sort_by(|a, b| {
         order_key(a).cmp(&order_key(b)).then_with(|| a.folder_dir.cmp(&b.folder_dir))
     });
     let next = items.iter().find(|i| i.lane == Lane::OnYou).map(|i| i.folder_dir.clone());
-    TaskQueue { next, items, settles_at_ms }
+    TaskQueue { next, items, settles_at_ms, spent_snoozes }
 }
 
 /// A checkout's row, titled and ranked by the task owning it when one does.
@@ -203,6 +230,9 @@ fn checkout_item(
         reasons.push((WaitReason::Cleanup, None));
     }
     settle(&mut item, reasons);
+    if item.since_ms.is_none() {
+        item.since_ms = lane_since(folder, &item);
+    }
     if matches!(item.lane, Lane::Idle | Lane::NoShell) && holds_unlanded_work(folder) {
         item.lane = Lane::Parked;
     }
@@ -238,6 +268,7 @@ fn base_item(
         task_id,
         lane: Lane::Idle,
         reason: None,
+        why: None,
         also: Vec::new(),
         title: String::new(),
         repo: repo
@@ -255,7 +286,25 @@ fn base_item(
         rank,
         since_ms: None,
         snoozed_until_ms: None,
+        snoozed_until_ci: false,
         snoozed: false,
+    }
+}
+
+/// How long the row has been in a lane with no wait of its own: the oldest
+/// working agent's run, the idle one's time at its prompt, a red CI's break.
+fn lane_since(folder: &FolderData, item: &QueueItem) -> Option<i64> {
+    let live = || folder.sessions.iter().filter(|s| s.live);
+    match (item.lane, item.reason) {
+        (Lane::Running, _) => live()
+            .filter(|s| s.agent_state.as_ref().is_some_and(|a| a.is_working()))
+            .filter_map(|s| s.phase_since_ms)
+            .min(),
+        (Lane::Idle, _) => live()
+            .find(|s| Some(s.id.as_str()) == item.session_id.as_deref())
+            .and_then(|s| s.phase_since_ms),
+        (Lane::OnYou, Some(WaitReason::FixCi)) => item.ci.iter().map(|c| c.updated_ms).max(),
+        _ => None,
     }
 }
 
@@ -409,6 +458,7 @@ fn settle(item: &mut QueueItem, mut reasons: Vec<(WaitReason, Option<(i64, Strin
     };
     item.lane = Lane::OnYou;
     item.reason = Some(primary);
+    item.why = Some(primary.phrase(item.pr.as_ref()).to_string());
     item.also = reasons[1..].iter().map(|(r, _)| *r).collect();
     if let Some((since, id)) = session {
         item.since_ms = (since != i64::MAX).then_some(since);
@@ -417,24 +467,34 @@ fn settle(item: &mut QueueItem, mut reasons: Vec<(WaitReason, Option<(i64, Strin
     if item.running_agents > 0 && !primary.blocks_agent() && primary != WaitReason::Review {
         item.lane = Lane::Running;
         item.reason = None;
+        item.why = None;
         item.also.clear();
     }
 }
 
 /// Parks a row the user snoozed — while the reason it was set on is still the
-/// row's reason and the time has not run out, so a new reason resurfaces it.
-fn apply_snooze(item: &mut QueueItem, snoozes: &HashMap<&str, &QueueSnooze>, now_ms: i64) {
-    let Some(reason) = item.reason else {
-        return;
-    };
-    if let Some(s) = snoozes.get(snooze_key(&item.folder_dir).as_str())
-        && s.reason == reason.as_str()
-        && s.until_ms.is_none_or(|u| u > now_ms)
-    {
-        item.lane = Lane::Parked;
-        item.snoozed = true;
-        item.snoozed_until_ms = s.until_ms;
+/// row's reason, the time has not run out, and (for "until CI finishes") the
+/// PR's checks are still pending, so a new reason resurfaces it. Returns the key
+/// of an "until CI" snooze whose CI is done, which nothing should hold again.
+fn apply_snooze(
+    item: &mut QueueItem,
+    snoozes: &HashMap<&str, &QueueSnooze>,
+    now_ms: i64,
+) -> Option<String> {
+    let reason = item.reason?;
+    let key = snooze_key(&item.folder_dir);
+    let s = snoozes.get(key.as_str())?;
+    if s.reason != reason.as_str() || s.until_ms.is_some_and(|u| u <= now_ms) {
+        return None;
     }
+    if s.until_ci && item.pr.as_ref().is_none_or(|p| p.checks != "pending") {
+        return Some(key);
+    }
+    item.lane = Lane::Parked;
+    item.snoozed = true;
+    item.snoozed_until_ms = s.until_ms;
+    item.snoozed_until_ci = s.until_ci;
+    None
 }
 
 fn said_for(folder: &FolderData, session_id: Option<&str>) -> Option<String> {
@@ -584,7 +644,8 @@ mod tests {
     }
 
     fn snooze(s: &Store, dir: &str, reason: &str, until_ms: Option<i64>) {
-        s.snooze_queue_item(&snooze_key(dir), reason, until_ms, 0).unwrap();
+        let until = tt_store::SnoozeUntil { reason, until_ms, until_ci: false };
+        s.snooze_queue_item(&snooze_key(dir), until, 0).unwrap();
     }
 
     fn item<'a>(q: &'a TaskQueue, dir: &str) -> &'a QueueItem {
@@ -772,6 +833,60 @@ mod tests {
         assert_eq!(item(&q, other).lane, Lane::OnYou, "a sibling row is untouched");
         assert_eq!(q.next, next(other));
         assert_eq!(item(&run(&s, &st, &[], 150), one).lane, Lane::OnYou, "timed out");
+    }
+
+    #[test]
+    fn an_until_ci_snooze_holds_while_checks_pend_then_is_spent() {
+        let (s, _) = store(&["x"]);
+        let st = state(vec![folder("/x", vec![waiting("s", 5)])]);
+        let until = tt_store::SnoozeUntil { reason: "answer", until_ms: None, until_ci: true };
+        s.snooze_queue_item(&snooze_key("/x"), until, 0).unwrap();
+        let pending = [pr("feat/x", "open", "pending", "")];
+        let q = run(&s, &st, &pending, 10_000);
+        assert!(item(&q, "/x").snoozed_until_ci);
+        assert_eq!(item(&q, "/x").lane, Lane::Parked);
+        assert!(q.spent_snoozes.is_empty());
+        let done = [pr("feat/x", "open", "passing", "")];
+        let q = run(&s, &st, &done, 10_000);
+        assert_eq!(item(&q, "/x").lane, Lane::OnYou);
+        assert_eq!(q.spent_snoozes, [snooze_key("/x")]);
+    }
+
+    #[test]
+    fn why_says_the_reason_in_words_and_tells_approved_from_green() {
+        let (s, _) = store(&["ask", "ok", "green"]);
+        let st = state(vec![
+            folder("/ask", vec![waiting("s", 0)]),
+            folder("/ok", vec![]),
+            folder("/green", vec![]),
+        ]);
+        let mut green = pr("feat/green", "open", "passing", "");
+        green.number = 9;
+        let prs = [pr("feat/ok", "open", "passing", "approved"), green];
+        let q = run(&s, &st, &prs, 10_000);
+        let why = |d: &str| item(&q, d).why.clone();
+        assert_eq!(why("/ask").as_deref(), Some("asking"));
+        assert_eq!(why("/ok").as_deref(), Some("PR approved"));
+        assert_eq!(why("/green").as_deref(), Some("ready to land"));
+    }
+
+    #[test]
+    fn rows_off_the_on_you_lane_carry_how_long_they_have_been_so() {
+        let (s, _) = store(&["busy", "idle"]);
+        let mut busy = session("b", AgentStatus::Busy, None, 0);
+        busy.phase_since_ms = Some(400);
+        let mut idle = session("i", AgentStatus::Idle, None, 0);
+        idle.phase_since_ms = Some(700);
+        let st = state(vec![folder("/busy", vec![busy]), folder("/idle", vec![idle])]);
+        let q = run(&s, &st, &[], 1_000);
+        assert_eq!(
+            (item(&q, "/busy").lane, item(&q, "/busy").since_ms),
+            (Lane::Running, Some(400))
+        );
+        assert_eq!((item(&q, "/idle").lane, item(&q, "/idle").since_ms), (Lane::Idle, Some(700)));
+        let runs = [ci("CI", "feat/busy", "failure")];
+        let st = state(vec![folder("/busy", vec![])]);
+        assert_eq!(item(&run_ci(&s, &st, &[], &runs, 0), "/busy").since_ms, Some(10));
     }
 
     #[test]

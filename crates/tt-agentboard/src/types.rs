@@ -166,6 +166,9 @@ pub struct SessionData {
     pub needs_since_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_reason: Option<NeedsYouReason>,
+    /// When the live agent entered what it is doing now — working, waiting, at its prompt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_since_ms: Option<i64>,
     #[serde(default)]
     pub working: bool,
     pub agent_state: Option<AgentEvent>,

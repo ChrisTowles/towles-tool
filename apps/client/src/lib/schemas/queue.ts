@@ -36,6 +36,8 @@ const QueueItemSchema = z.object({
   taskId: z.number().nullable(),
   lane: LaneSchema,
   reason: WaitReasonSchema.nullable(),
+  /** `reason` in words — `WaitReason::phrase` in Rust. */
+  why: z.string().nullable(),
   also: z.array(WaitReasonSchema),
   title: z.string(),
   repo: z.string(),
@@ -49,6 +51,7 @@ const QueueItemSchema = z.object({
   rank: z.number().nullable(),
   sinceMs: z.number().nullable(),
   snoozedUntilMs: z.number().nullable(),
+  snoozedUntilCi: z.boolean(),
   snoozed: z.boolean(),
 });
 export type QueueItem = z.infer<typeof QueueItemSchema>;

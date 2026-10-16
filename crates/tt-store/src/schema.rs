@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 26;
+pub(crate) const SCHEMA_VERSION: i64 = 27;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -316,6 +316,7 @@ impl Store {
         self.migrate_queue_snoozes_v24()?;
         self.migrate_pr_status_base_branch_v25()?;
         self.conn.execute_batch(SCHEMA_NOTES_V26)?;
+        self.migrate_queue_snoozes_until_ci_v27()?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -510,6 +511,21 @@ impl Store {
                 "INSERT OR IGNORE INTO queue_snoozes (key, reason, until_ms, created_at)
                    SELECT 'task:' || task_id, reason, until_ms, created_at FROM task_snoozes;
                  DROP TABLE task_snoozes;",
+            )?;
+        }
+        Ok(())
+    }
+
+    /// v27: a snooze that holds only while the row's PR checks are pending.
+    fn migrate_queue_snoozes_until_ci_v27(&self) -> Result<()> {
+        let has_col: bool = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('queue_snoozes') WHERE name = 'until_ci'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if !has_col {
+            self.conn.execute_batch(
+                "ALTER TABLE queue_snoozes ADD COLUMN until_ci INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
         Ok(())

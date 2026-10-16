@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tt_agentboard::StatePayload;
 use tt_agentboard::queue::{QueueInputs, TaskQueue, snooze_key};
-use tt_store::RankMove;
+use tt_store::{RankMove, SnoozeUntil};
 
 use crate::store::{StoreState, now_ms};
 
@@ -54,6 +54,7 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
     let Some(queue) = build(app, payload) else {
         return;
     };
+    drop_spent_snoozes(app, &queue.spent_snoozes);
     if let Some(at) = queue.settles_at_ms {
         let app = app.clone();
         let wait = u64::try_from(at - now_ms()).unwrap_or(0);
@@ -81,6 +82,17 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
     *last = Some(queue);
 }
 
+/// An "until CI finishes" snooze ends with the run, so the next push can't re-hide its row.
+fn drop_spent_snoozes(app: &AppHandle, keys: &[String]) {
+    if keys.is_empty() {
+        return;
+    }
+    let result = app.state::<StoreState>().with(|s| {
+        keys.iter().try_for_each(|k| s.unsnooze_queue_item(k)).map_err(|e| e.to_string())
+    });
+    tracing::info!(count = keys.len(), ok = result.is_ok(), "queue.snooze_spent");
+}
+
 /// One record per row that changed lane — the queue jumping, as the eye sees it.
 fn log_lane_changes(prev: &TaskQueue, next: &TaskQueue) {
     for item in &next.items {
@@ -102,15 +114,20 @@ fn log_lane_changes(prev: &TaskQueue, next: &TaskQueue) {
 }
 
 #[tauri::command]
-pub fn queue_get(app: AppHandle, state: State<QueueState>) -> Option<TaskQueue> {
-    if let Some(simulated) = crate::sim::queue(&app) {
+pub fn queue_get(app: AppHandle) -> Option<TaskQueue> {
+    current(&app)
+}
+
+/// The queue as the rail last saw it, or built now before the first emit tick.
+pub fn current(app: &AppHandle) -> Option<TaskQueue> {
+    if let Some(simulated) = crate::sim::queue(app) {
         return Some(simulated);
     }
-    if let Some(queue) = state.last.lock().unwrap().clone() {
+    if let Some(queue) = app.state::<QueueState>().last.lock().unwrap().clone() {
         return Some(queue);
     }
-    let payload = crate::agentboard::stamped_payload(&app);
-    build(&app, &payload)
+    let payload = crate::agentboard::stamped_payload(app);
+    build(app, &payload)
 }
 
 /// Rank changes show on the Board too; the snapshot emit also rebuilds the queue.
@@ -139,12 +156,13 @@ pub fn queue_snooze(
     folder_dir: String,
     reason: String,
     until_ms: Option<i64>,
+    until_ci: bool,
 ) -> Result<(), String> {
     let key = snooze_key(&folder_dir);
-    let result = store.with(|s| {
-        s.snooze_queue_item(&key, &reason, until_ms, now_ms()).map_err(|e| e.to_string())
-    });
-    tracing::info!(reason, until_ms, ok = result.is_ok(), "queue.snoozed");
+    let until = SnoozeUntil { reason: &reason, until_ms, until_ci };
+    let result =
+        store.with(|s| s.snooze_queue_item(&key, until, now_ms()).map_err(|e| e.to_string()));
+    tracing::info!(reason, until_ms, until_ci, ok = result.is_ok(), "queue.snoozed");
     result?;
     after_write(&app);
     Ok(())

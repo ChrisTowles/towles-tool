@@ -1441,16 +1441,28 @@ fn snoozes_replace_and_clear_and_go_with_their_task() {
     let a = s.add_task("a", "backlog", None, None, 1).unwrap();
     s.set_task_worktree(a.id, "/r", Some("o/r"), Some("feat/a"), Some("/w")).unwrap();
     let key = "folder:/w";
-    s.snooze_queue_item(key, "answer", Some(100), 5).unwrap();
-    s.snooze_queue_item(key, "land", None, 6).unwrap();
-    s.snooze_queue_item("ci:o/r@main", "fix_ci", None, 6).unwrap();
+    s.snooze_queue_item(
+        key,
+        SnoozeUntil { reason: "answer", until_ms: Some(100), until_ci: false },
+        5,
+    )
+    .unwrap();
+    s.snooze_queue_item(key, SnoozeUntil { reason: "land", until_ms: None, until_ci: false }, 6)
+        .unwrap();
+    s.snooze_queue_item(
+        "ci:o/r@main",
+        SnoozeUntil { reason: "fix_ci", until_ms: None, until_ci: false },
+        6,
+    )
+    .unwrap();
     let snoozes = s.queue_snoozes().unwrap();
     assert_eq!(snoozes.len(), 2);
     assert_eq!((snoozes[0].key.as_str(), snoozes[0].reason.as_str()), ("ci:o/r@main", "fix_ci"));
     assert_eq!((snoozes[1].reason.as_str(), snoozes[1].until_ms), ("land", None));
     s.unsnooze_queue_item(key).unwrap();
     assert_eq!(s.queue_snoozes().unwrap().len(), 1);
-    s.snooze_queue_item(key, "land", None, 7).unwrap();
+    s.snooze_queue_item(key, SnoozeUntil { reason: "land", until_ms: None, until_ci: false }, 7)
+        .unwrap();
     s.delete_task(a.id).unwrap();
     let left = s.queue_snoozes().unwrap();
     assert_eq!(left.len(), 1, "only the task's own snooze goes with it");
@@ -1460,9 +1472,24 @@ fn snoozes_replace_and_clear_and_go_with_their_task() {
 #[test]
 fn writing_a_snooze_sweeps_the_spent_timed_ones() {
     let s = Store::open_in_memory().unwrap();
-    s.snooze_queue_item("pr:o/r#1", "fix_ci", Some(10), 0).unwrap();
-    s.snooze_queue_item("pr:o/r#2", "fix_ci", None, 0).unwrap();
-    s.snooze_queue_item("pr:o/r#3", "fix_ci", Some(500), 20).unwrap();
+    s.snooze_queue_item(
+        "pr:o/r#1",
+        SnoozeUntil { reason: "fix_ci", until_ms: Some(10), until_ci: false },
+        0,
+    )
+    .unwrap();
+    s.snooze_queue_item(
+        "pr:o/r#2",
+        SnoozeUntil { reason: "fix_ci", until_ms: None, until_ci: false },
+        0,
+    )
+    .unwrap();
+    s.snooze_queue_item(
+        "pr:o/r#3",
+        SnoozeUntil { reason: "fix_ci", until_ms: Some(500), until_ci: false },
+        20,
+    )
+    .unwrap();
     let keys: Vec<String> = s.queue_snoozes().unwrap().into_iter().map(|q| q.key).collect();
     assert_eq!(keys, ["pr:o/r#2", "pr:o/r#3"]);
 }
