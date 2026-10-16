@@ -132,6 +132,61 @@ pub fn socket(bridge_dir: &Path, folder: &Path) -> PathBuf {
     bridge_dir.join(format!("w-{key}.sock"))
 }
 
+/// Whether `folder`'s workbench has an extension host up — the bridge
+/// activates on `*`, so its socket answering is the workbench being usable. A
+/// socket file alone isn't: a killed host never removes it.
+pub fn is_live(bridge_dir: &Path, folder: &Path) -> bool {
+    std::os::unix::net::UnixStream::connect(socket(bridge_dir, folder)).is_ok()
+}
+
+/// End the extension host of the workbench a pane unmounted at `unmounted_at_ms`.
+/// A remounted iframe is a new window with a host of its own, and code-server
+/// keeps the old one for its 3-hour reconnection grace — ~230 MB a remount. The
+/// host compares the time with its own activation, so a request landing after a
+/// remount can't end the host that replaced it. `Ok(false)`: nothing to end.
+pub fn release(
+    bridge_dir: &Path,
+    folder: &Path,
+    unmounted_at_ms: i64,
+    deadline: Duration,
+) -> Result<bool, CodeServerError> {
+    let body = json!({ "type": "release", "unmountedAtMs": unmounted_at_ms }).to_string();
+    let request = format!(
+        "POST / HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    let socket = socket(bridge_dir, folder);
+    let start = Instant::now();
+    loop {
+        match unix_http(&socket, &request) {
+            Ok(reply) if reply.status == 200 => {
+                let released = serde_json::from_str::<Value>(&reply.body)
+                    .ok()
+                    .and_then(|v| v.get("released").and_then(Value::as_bool));
+                return Ok(released.unwrap_or(false));
+            }
+            Ok(reply) => {
+                return Err(CodeServerError::Reveal(format!("{} {}", reply.status, reply.body)));
+            }
+            // A pane closed mid-boot: its host is about to come up, orphaned.
+            Err(_) if start.elapsed() < deadline => std::thread::sleep(RETRY_PAUSE),
+            Err(_) => return Ok(false),
+        }
+    }
+}
+
+/// How long until [`is_live`], or `None` past `deadline`.
+pub fn wait_live(bridge_dir: &Path, folder: &Path, deadline: Duration) -> Option<Duration> {
+    let start = Instant::now();
+    while start.elapsed() < deadline {
+        if is_live(bridge_dir, folder) {
+            return Some(start.elapsed());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    None
+}
+
 /// Ask `folder`'s workbench to put everything uncommitted on screen, as VS
 /// Code's Source Control would open it.
 pub fn show(bridge_dir: &Path, folder: &Path) -> Result<(), CodeServerError> {
@@ -206,6 +261,59 @@ mod tests {
         let b = socket(dir, Path::new("/home/me/code/very/deeply/nested/checkout-b"));
         assert_ne!(a, b);
         assert!(a.to_string_lossy().len() < 108);
+    }
+
+    #[test]
+    fn a_workbench_is_live_only_while_its_socket_answers() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = Path::new("/home/me/checkout");
+        assert!(!is_live(dir.path(), folder));
+        let listener = std::os::unix::net::UnixListener::bind(socket(dir.path(), folder)).unwrap();
+        assert!(is_live(dir.path(), folder));
+        assert!(wait_live(dir.path(), folder, Duration::from_secs(1)).is_some());
+        drop(listener);
+        // The file outlives the listener, as it does a killed extension host.
+        assert!(socket(dir.path(), folder).exists());
+        assert!(!is_live(dir.path(), folder));
+        assert!(wait_live(dir.path(), folder, Duration::from_millis(150)).is_none());
+    }
+
+    /// One HTTP/1.0 exchange on `socket`, answered with `reply`; returns the request body.
+    fn answer_once(socket: PathBuf, reply: &'static str) -> std::thread::JoinHandle<String> {
+        use std::io::{Read, Write};
+        let _ = std::fs::remove_file(&socket);
+        let listener = std::os::unix::net::UnixListener::bind(socket).unwrap();
+        std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = conn.read(&mut buf).unwrap();
+            let raw = String::from_utf8_lossy(&buf[..n]).into_owned();
+            let head = format!("HTTP/1.0 200 OK\r\nContent-Length: {}\r\n\r\n", reply.len());
+            conn.write_all(head.as_bytes()).unwrap();
+            conn.write_all(reply.as_bytes()).unwrap();
+            raw.split_once("\r\n\r\n").unwrap().1.to_string()
+        })
+    }
+
+    #[test]
+    fn release_tells_the_host_when_its_pane_unmounted_and_reports_its_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = Path::new("/home/me/checkout");
+        let server = answer_once(socket(dir.path(), folder), r#"{"released":true}"#);
+        assert!(release(dir.path(), folder, 1_700, Duration::from_secs(5)).unwrap());
+        let sent: Value = serde_json::from_str(&server.join().unwrap()).unwrap();
+        assert_eq!(sent, json!({ "type": "release", "unmountedAtMs": 1_700 }));
+
+        let server = answer_once(socket(dir.path(), folder), r#"{"released":false}"#);
+        assert!(!release(dir.path(), folder, 1_700, Duration::from_secs(5)).unwrap());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn release_with_no_workbench_gives_up_at_the_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = Path::new("/home/me/never-opened");
+        assert!(!release(dir.path(), folder, 0, Duration::from_millis(300)).unwrap());
     }
 
     #[test]

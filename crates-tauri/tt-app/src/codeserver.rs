@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, State};
@@ -155,13 +156,57 @@ fn config(binary: PathBuf) -> Result<CodeServerConfig, String> {
 
 /// The port of the running server, starting one if there is none. A child that
 /// died since the last call is replaced rather than reported.
-fn running_port(app: &AppHandle, child: &Mutex<Option<CodeServerChild>>) -> Result<u16, String> {
+fn running_port(
+    app: &AppHandle,
+    child: &Mutex<Option<CodeServerChild>>,
+) -> Result<(u16, bool), String> {
     let mut guard = child.lock().map_err(|_| "code-server host poisoned".to_string())?;
-    if !guard.as_mut().is_some_and(CodeServerChild::is_running) {
+    let cold = !guard.as_mut().is_some_and(CodeServerChild::is_running);
+    if cold {
         let cfg = config(binary(app)?)?;
-        *guard = Some(CodeServerChild::launch(&cfg).map_err(|e| e.to_string())?);
+        let started = Instant::now();
+        let launched = CodeServerChild::launch(&cfg).map_err(|e| e.to_string());
+        tracing::info!(
+            duration_ms = started.elapsed().as_millis() as u64,
+            outcome = if launched.is_ok() { "ok" } else { "failed" },
+            "code_server.launched"
+        );
+        *guard = Some(launched?);
     }
-    guard.as_ref().map(|c| c.port).ok_or_else(|| "code-server not running".to_string())
+    let port = guard.as_ref().map(|c| c.port).ok_or("code-server not running")?;
+    Ok((port, cold))
+}
+
+/// Times a workbench from the pane asking to its extension host answering, so
+/// cold starts are a `jq` query. A folder whose host is already up is a remount,
+/// not a start, and records nothing.
+fn time_workbench_boot(folder: PathBuf, asked: Instant, server_cold: bool) {
+    static TIMING: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    let bridge_dir = tt_config::code_server_bridge_dir();
+    if bridge::is_live(&bridge_dir, &folder) {
+        return;
+    }
+    // A pane remounted mid-boot asks again; that is still the one boot.
+    let Ok(mut timing) = TIMING.lock() else {
+        return;
+    };
+    if timing.contains(&folder) {
+        return;
+    }
+    timing.push(folder.clone());
+    drop(timing);
+    std::thread::spawn(move || {
+        let ready = bridge::wait_live(&bridge_dir, &folder, Duration::from_secs(90));
+        if let Ok(mut timing) = TIMING.lock() {
+            timing.retain(|f| f != &folder);
+        }
+        tracing::info!(
+            duration_ms = ready.map(|_| asked.elapsed().as_millis() as u64),
+            server_cold,
+            outcome = if ready.is_some() { "ready" } else { "timed_out" },
+            "code_server.workbench_ready"
+        );
+    });
 }
 
 /// The workbench URL for `dir`, starting the server if this is the first pane.
@@ -181,13 +226,33 @@ pub async fn code_server_open(
     if !folder.is_dir() {
         return Err(format!("not a directory: {dir}"));
     }
+    let asked = Instant::now();
     let child = Arc::clone(&state.child);
-    let port = tauri::async_runtime::spawn_blocking(move || running_port(&app, &child))
-        .await
-        .map_err(|e| format!("code-server launch task failed: {e}"))??;
+    let (port, server_cold) =
+        tauri::async_runtime::spawn_blocking(move || running_port(&app, &child))
+            .await
+            .map_err(|e| format!("code-server launch task failed: {e}"))??;
+    time_workbench_boot(folder.clone(), asked, server_cold);
     let file = path.map(|p| folder.join(p));
     let open = file.as_deref().map(|f| (f, line));
     Ok(CodeServerInfo { url: workbench_url(port, &folder, open, pc_keymap), port })
+}
+
+/// A Files pane unmounted — folder switch, close, or its task removed — so its
+/// workbench's extension host is an orphan; see [`bridge::release`]. Waits out a
+/// workbench still booting, which would otherwise come up orphaned.
+#[tauri::command]
+pub async fn code_server_release(dir: String, unmounted_at_ms: i64) -> Result<bool, String> {
+    let bridge_dir = tt_config::code_server_bridge_dir();
+    let folder = PathBuf::from(&dir);
+    let released = tauri::async_runtime::spawn_blocking(move || {
+        bridge::release(&bridge_dir, &folder, unmounted_at_ms, Duration::from_secs(20))
+    })
+    .await
+    .map_err(|e| format!("code-server release task failed: {e}"))?
+    .map_err(|e| e.to_string())?;
+    tracing::info!(released, "code_server.workbench_released");
+    Ok(released)
 }
 
 /// Open `path` in the workbench already running for `dir` — checkout-relative,

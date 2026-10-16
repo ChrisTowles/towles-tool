@@ -67,8 +67,8 @@ pub use coalesce::Coalescer;
 pub use engine::{GitInvalidation, RailRow, UnrecordedWorktree};
 pub use env_drift::PortDrift;
 pub use git_info::{
-    BranchDiff, BranchDiffFile, CommitStat, branch_diff, commit_stats, compute_git_info,
-    prune_stale_worktree,
+    BranchDiff, BranchDiffFile, CommitStat, FilePatch, PatchHunk, branch_diff, commit_stats,
+    compute_git_info, file_patch, prune_stale_worktree,
 };
 pub use git_meter::{GitWork, GitWorkMeter};
 pub use launch::{LaunchConfig, port_listening, read_launch_file};

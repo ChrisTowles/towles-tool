@@ -104,8 +104,19 @@ on Linux/WebKitGTK against code-server 4.133.0 (Code 1.133.0), 2026-08-20:
 ~300–530 MB and three processes — extension host, file watcher, shared worker —
 and the repo's size moves that more than anything else. Four checkouts live in
 2.3 GB; four VS Code windows do not. Disk is the number that stays worse: **740
-MB unpacked**, too much for the Tauri bundle, hence the install below. Cold start
-is ~5 s; every pane after that is an iframe against a warm server.
+MB unpacked**, too much for the Tauri bundle, hence the install below.
+
+**Every pane mount is a workbench boot, ~4 s, and the server is not the cost.**
+`code_server.launched` and `code_server.workbench_ready` time it (4.137.0,
+2026-10-16): the server comes up in ~0.8 s, the workbench in ~3.4–4.4 s after
+that, warm server or not. Pre-starting the server would save under a second
+once a session; pre-booting a workbench is a hidden iframe at ~300–500 MB per
+guess, so neither is done. A pane unmounts on every folder switch, and the
+iframe it leaves is a window code-server holds an extension host for through
+its 3-hour reconnection grace (~230 MB each) — a remount is a new window, never
+a reconnect. So the pane's unmount asks the bridge to end that host
+(`code_server_release`), which closing a pane and removing a task both go
+through.
 
 ## Installing itself
 

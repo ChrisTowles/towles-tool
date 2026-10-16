@@ -684,6 +684,22 @@ pub async fn ab_get_branch_diff(
     .flatten()
 }
 
+/// One file of the branch diff as hunks, for the quick diff view.
+#[tauri::command]
+pub async fn ab_get_file_patch(
+    dir: String,
+    base_branch: Option<String>,
+    path: String,
+    old_path: Option<String>,
+) -> Option<tt_agentboard::FilePatch> {
+    tauri::async_runtime::spawn_blocking(move || {
+        tt_agentboard::file_patch(&dir, base_branch.as_deref(), &path, old_path.as_deref())
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// Per-commit line counts for the committed chip's hover card, oldest commit
 /// first. Async: a many-commit branch is one tree diff per commit.
 #[tauri::command]

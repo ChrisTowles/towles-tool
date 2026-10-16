@@ -562,7 +562,7 @@ pub(super) fn count_lines(before: Option<&[u8]>, after: Option<&[u8]>) -> (i64, 
 }
 
 /// git's own binary heuristic: a NUL byte within the first 8000 bytes.
-fn is_binary(content: &[u8]) -> bool {
+pub(super) fn is_binary(content: &[u8]) -> bool {
     content.iter().take(8000).any(|b| *b == 0)
 }
 

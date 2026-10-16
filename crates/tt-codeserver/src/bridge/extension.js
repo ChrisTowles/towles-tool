@@ -65,7 +65,20 @@ async function revealInExplorer(folder, target) {
   await vscode.commands.executeCommand("revealInExplorer", uri);
 }
 
+// Code-server keeps a host whose window went away for its reconnection grace,
+// but a pane that mounts again is a new window with a new host, so the old one
+// can only be ended. Only a host that predates the unmount: the request can land
+// after a remount, and the host it then reaches is the replacement. VS Code
+// swallows an extension's `process.exit`, hence the signal.
+const activatedAt = Date.now();
+function release(request) {
+  if (!(activatedAt < request.unmountedAtMs)) return false;
+  setTimeout(() => process.kill(process.pid, "SIGTERM"), 100);
+  return true;
+}
+
 async function run(folder, request) {
+  if (request.type === "release") return { released: release(request) };
   if (request.type === "changes") return showChanges(await repository(folder));
   if (request.type === "claude-session") return openClaudeSession(request.sessionId);
   if (request.type === "reveal") return revealInExplorer(folder, request.path);
@@ -93,8 +106,8 @@ function onConnection(folder, conn) {
     if (Buffer.byteLength(body) < length) return;
     conn.removeAllListeners("data");
     try {
-      await run(folder, JSON.parse(body));
-      reply(conn, 200, '{"ok":true}');
+      const result = await run(folder, JSON.parse(body));
+      reply(conn, 200, JSON.stringify(result ?? { ok: true }));
     } catch (e) {
       const status = e instanceof NotReady ? 503 : 500;
       reply(conn, status, JSON.stringify({ error: e?.message ?? String(e) }));

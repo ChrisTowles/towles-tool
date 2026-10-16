@@ -32,6 +32,11 @@ export function codeServerReveal(dir: string, path: string, line: number | null)
   return invoke<null>("code_server_reveal", { dir, path, line });
 }
 
+/** End the extension host a just-unmounted pane left behind (`bridge::release`). */
+export function codeServerRelease(dir: string, unmountedAtMs: number) {
+  return invoke<boolean>("code_server_release", { dir, unmountedAtMs });
+}
+
 /** Select `path` (checkout-relative) in the Explorer of `dir`'s workbench. */
 export function codeServerRevealInExplorer(dir: string, path: string) {
   return invoke<null>("code_server_reveal_in_explorer", { dir, path });

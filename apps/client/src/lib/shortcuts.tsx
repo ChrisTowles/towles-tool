@@ -197,6 +197,14 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
+    id: "ab-quick-diff",
+    scope: "agentboard",
+    keys: "mod+shift+g",
+    description: "Quick diff of the focused folder against its base",
+    when: FOLDER_FOCUSED,
+    allowInEditable: true,
+  },
+  {
     id: "ab-toggle-rail",
     scope: "agentboard",
     keys: "mod+shift+b",

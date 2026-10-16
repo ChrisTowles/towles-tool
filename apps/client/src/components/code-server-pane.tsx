@@ -8,7 +8,12 @@ import { toast } from "@/lib/toast";
 import type { FilesOpenRequest } from "@/components/files-pane";
 import { Button } from "@cloudflare/kumo";
 import type { CodeServerInstall } from "@/lib/code-server";
-import { codeServerOpen, codeServerReveal, subscribeCodeServerInstall } from "@/lib/code-server";
+import {
+  codeServerOpen,
+  codeServerRelease,
+  codeServerReveal,
+  subscribeCodeServerInstall,
+} from "@/lib/code-server";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { pcKeymap, subscribeKeymap } from "@/lib/keymap";
 
@@ -66,6 +71,8 @@ export function CodeServerPane({
     });
     return () => {
       alive = false;
+      // An unmounted iframe leaves its extension host behind for hours.
+      void codeServerRelease(dir, Date.now());
     };
   }, [dir, attempt, pcKeys]);
 
