@@ -5,22 +5,16 @@ import { CaretDownIcon, CaretRightIcon, ClockIcon } from "@phosphor-icons/react"
 import {
   BaseMovedChip,
   CommittedChip,
-  FolderLandedBadge,
-  HotkeyBadge,
-  IssueChip,
-  PrChip,
   UncommittedChip,
-} from "@/components/agentboard-bits";
+} from "@/components/agentboard-bits/diff-chips";
+import { FolderLandedBadge } from "@/components/agentboard-bits/landed-badges";
+import { IssueChip, PrChip } from "@/components/agentboard-bits/pr-issue-chips";
+import { HotkeyBadge } from "@/components/agentboard-bits/primitives";
 import { QueueRepoBar } from "@/components/queue-repo-bar";
-import {
-  branchRedundant,
-  isHomeRepo,
-  prForFolder,
-  requestAgentboardNav,
-  taskForFolder,
-  type FolderData,
-  type RepoData,
-} from "@/lib/agentboard";
+import { isHomeRepo, prForFolder, taskForFolder } from "@/lib/agentboard/folder";
+import { branchRedundant } from "@/lib/agentboard/folder-name";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import type { FolderData, RepoData } from "@/lib/agentboard/types";
 import { fmtAge, type PrItem, type TaskItem } from "@/lib/data";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import {

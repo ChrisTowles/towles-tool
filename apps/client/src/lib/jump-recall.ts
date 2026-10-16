@@ -1,15 +1,10 @@
 /** What the jump keys cost you: Shift+Ctrl+N lands you in a pane that looks
  * like every other pane, so the board says out loud where you are and what was
  * happening here. Pure — the card only renders what this returns. */
-import {
-  fmtWaitingAge,
-  folderLastWorkedAt,
-  humanizeFolderName,
-  sessionSaid,
-  type FolderData,
-  type RepoData,
-  type SessionData,
-} from "./agentboard";
+import { folderLastWorkedAt } from "@/lib/agentboard/folder";
+import { humanizeFolderName } from "@/lib/agentboard/folder-name";
+import { fmtWaitingAge, sessionSaid } from "@/lib/agentboard/session";
+import type { FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
 import { fmtAge } from "./data";
 
 export type JumpRecall = {

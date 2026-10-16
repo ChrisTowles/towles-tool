@@ -2,25 +2,26 @@ import { useState } from "react";
 import { XIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { Dot, fmtMins, IconBtn } from "@/components/agentboard-bits";
+import { IconBtn } from "@/components/agentboard-bits/primitives";
+import { fmtMins } from "@/components/agentboard-bits/session-badges";
+import { Dot } from "@/components/agentboard-bits/status-dots";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
+import type { SessionActions } from "@/lib/agentboard/actions";
 import {
   CONTEXT_BAND_ADVICE,
   contextBand,
   ctxPct,
   fmtContext,
-  fmtWaitingAge,
   hasSubagentSpend,
-  isAgent,
   isCacheExpiring,
   isCold,
   modelContextLabel,
   sessionTotalTokens,
   subagentLabel,
   type ContextBand,
-  type SessionActions,
-  type SessionData,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/context";
+import { fmtWaitingAge, isAgent } from "@/lib/agentboard/session";
+import type { SessionData } from "@/lib/agentboard/types";
 import { cn } from "@/lib/utils";
 import { fmtElapsed, fmtTokens } from "@/lib/format";
 

@@ -1,17 +1,11 @@
 /** The pane area's no-folder view: the fleet ranked by attention, an axis the
  * repo-grouped rail structurally cannot show. Only a blocked agent earns a row
  * — the rail already states uncommitted work and landed branches. */
-import {
-  fmtWaitingAge,
-  folderHoldsNoWork,
-  folderLastWorkedAt,
-  humanizeFolderName,
-  liveSessions,
-  sessionSaid,
-  type FolderData,
-  type RepoData,
-  type SessionData,
-} from "./agentboard";
+import { folderLastWorkedAt } from "@/lib/agentboard/folder";
+import { humanizeFolderName } from "@/lib/agentboard/folder-name";
+import { folderHoldsNoWork } from "@/lib/agentboard/landing";
+import { fmtWaitingAge, liveSessions, sessionSaid } from "@/lib/agentboard/session";
+import type { FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
 
 export type StandbyRow = {
   dir: string;

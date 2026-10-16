@@ -3,16 +3,11 @@
 import { useState } from "react";
 import { AppWindowIcon, CubeIcon, EyeIcon, TreeStructureIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
-import { IconBtn } from "@/components/agentboard-bits";
+import { IconBtn } from "@/components/agentboard-bits/primitives";
 import { cn } from "@/lib/utils";
-import {
-  isFilesPane,
-  isJarvisPane,
-  isBrowserPane,
-  isPreviewPane,
-  windowColor,
-  type AgWindow,
-} from "@/lib/agentboard";
+import { isFilesPane, isJarvisPane, isBrowserPane, isPreviewPane } from "@/lib/agentboard/pane-ids";
+import type { AgWindow } from "@/lib/agentboard/types";
+import { windowColor } from "@/lib/agentboard/windows";
 
 /** Color, not a text label: window names carry no signal in the rail. */
 export function WindowSpine({

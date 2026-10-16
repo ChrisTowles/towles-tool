@@ -3,18 +3,14 @@
 import { useState } from "react";
 import { DotsThreeVerticalIcon, EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
-import {
-  CacheBadge,
-  ModelBadge,
-  Dot,
-  Glyph,
-  HotkeyBadge,
-  IconBtn,
-  PortDriftBadge,
-} from "@/components/agentboard-bits";
+import { PortDriftBadge } from "@/components/agentboard-bits/badges";
+import { Glyph, HotkeyBadge, IconBtn } from "@/components/agentboard-bits/primitives";
+import { CacheBadge, ModelBadge } from "@/components/agentboard-bits/session-badges";
+import { Dot } from "@/components/agentboard-bits/status-dots";
 import { Button, DropdownMenu } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
 import { noteChip, useInbox } from "@/lib/inbox";
+import type { SessionActions } from "@/lib/agentboard/actions";
 import {
   claudeTitleName,
   fmtWaitingAge,
@@ -22,9 +18,8 @@ import {
   sessionCatchesEye,
   sessionLabel,
   sessionStatusText,
-  type SessionActions,
-  type SessionData,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/session";
+import type { SessionData } from "@/lib/agentboard/types";
 import { fmtElapsed } from "@/lib/format";
 
 export function SessionRow({

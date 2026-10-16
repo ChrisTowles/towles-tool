@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
-import type { StatePayload } from "@/lib/agentboard";
+import type { StatePayload } from "@/lib/agentboard/types";
 import type { ScreenId } from "@/lib/screens";
 import type { CollapseChange } from "@/lib/rail-collapse";
 import { RAIL_COLLAPSE_KEY } from "./helpers";

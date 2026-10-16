@@ -1,5 +1,5 @@
 import { invoke } from "@/lib/tauri";
-import { shellQuote } from "@/lib/agentboard";
+import { shellQuote } from "@/lib/agentboard/pty";
 
 /** One dev-server config from a checkout's Claude Desktop
  * `.claude/launch.json` (`configurations[]`: name / runtimeExecutable /

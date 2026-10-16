@@ -12,52 +12,53 @@ import {
 } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import {
-  BaseMovedChip,
   BranchDriftBadge,
   BranchLabel,
-  Chevron,
-  CollapsedLive,
-  CommittedChip,
   CreatingBadge,
   DeletingBadge,
   DetachedActions,
   DetachedBadge,
   NoTaskBadge,
   SettingUpBadge,
-  FilesButton,
-  FolderLandedBadge,
   GhostBadge,
-  IconBtn,
-  IssueChip,
-  BrowserButton,
-  JarvisButton,
   NeedsBadge,
   PortDriftBadge,
   QuietBadge,
-  PrChip,
-  PreviewButton,
-  RepoMenu,
-  SafeToDeleteBadge,
+} from "@/components/agentboard-bits/badges";
+import {
+  BaseMovedChip,
+  CommittedChip,
   UncommittedChip,
-} from "@/components/agentboard-bits";
+} from "@/components/agentboard-bits/diff-chips";
+import { FolderLandedBadge, SafeToDeleteBadge } from "@/components/agentboard-bits/landed-badges";
+import {
+  FilesButton,
+  BrowserButton,
+  JarvisButton,
+  PreviewButton,
+} from "@/components/agentboard-bits/pane-buttons";
+import { IssueChip, PrChip } from "@/components/agentboard-bits/pr-issue-chips";
+import { IconBtn } from "@/components/agentboard-bits/primitives";
+import { RepoMenu } from "@/components/agentboard-bits/repo-menu";
+import { Chevron, CollapsedLive } from "@/components/agentboard-bits/status-dots";
 import { DevServersButton } from "@/components/dev-servers";
 import { Input } from "@cloudflare/kumo";
 import { repoAccentStyles, repoIcon, type RepoIdentity } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
+import type { SessionActions } from "@/lib/agentboard/actions";
 import {
   comparedBaseLabel,
   folderBranchDrift,
   folderCreating,
   folderDetached,
   folderIsUnclaimed,
-  folderPortDrift,
   folderRemoving,
-  folderSafeToDelete,
-  humanizeFolderName,
   pathScope,
-  type FolderData,
-  type SessionActions,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/folder";
+import { humanizeFolderName } from "@/lib/agentboard/folder-name";
+import { folderSafeToDelete } from "@/lib/agentboard/landing";
+import { folderPortDrift } from "@/lib/agentboard/session";
+import type { FolderData } from "@/lib/agentboard/types";
 import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
 
 export function FolderHeader({

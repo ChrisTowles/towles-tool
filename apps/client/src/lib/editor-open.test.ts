@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RepoData } from "@/lib/agentboard";
+import type { RepoData } from "@/lib/agentboard/types";
 import { openFileNav } from "@/lib/editor-open";
 
 /** A rail repo row with only the fields the routing reads — the same fixture

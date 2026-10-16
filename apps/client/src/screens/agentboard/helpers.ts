@@ -3,7 +3,7 @@ import { invoke } from "@/lib/tauri";
 import { NotInTauri } from "@/lib/errors";
 import { storeAddTask, storeAttachTaskIssue, storeItemDismiss } from "@/lib/data";
 import { uiAction } from "@/lib/ui-action";
-import type { PaneRect } from "@/lib/agentboard";
+import type { PaneRect } from "@/lib/agentboard/layout";
 import type { NewTaskSubmit } from "@/components/inline-new-task";
 
 /** Sentinel key in the persisted collapse map for "the whole rail is collapsed

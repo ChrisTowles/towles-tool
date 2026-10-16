@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RepoData, WindowsPayload } from "@/lib/agentboard";
+import type { RepoData, WindowsPayload } from "@/lib/agentboard/types";
 import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
 import { railMove, railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
 

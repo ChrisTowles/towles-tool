@@ -1,5 +1,7 @@
 import { z } from "zod";
-import { nextOpenFileNonce, requestAgentboardNav, type RepoData } from "@/lib/agentboard";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import type { RepoData } from "@/lib/agentboard/types";
+import { nextOpenFileNonce } from "@/lib/agentboard/windows";
 import { folderForPath, folderForSession } from "@/lib/preview-artifact";
 import { isTauri } from "@/lib/tauri";
 

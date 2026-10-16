@@ -3,17 +3,14 @@
 // session rollup and the two things you do in a directory: open a session or
 // its files.
 import { HouseIcon, PlusIcon } from "@phosphor-icons/react";
-import {
-  Chevron,
-  CollapsedLive,
-  FilesButton,
-  IconBtn,
-  NeedsBadge,
-} from "@/components/agentboard-bits";
+import { NeedsBadge } from "@/components/agentboard-bits/badges";
+import { FilesButton } from "@/components/agentboard-bits/pane-buttons";
+import { IconBtn } from "@/components/agentboard-bits/primitives";
+import { Chevron, CollapsedLive } from "@/components/agentboard-bits/status-dots";
 import { Hint } from "@/components/hint";
 import { repoAccentStyles, type RepoIdentity } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
-import type { FolderData } from "@/lib/agentboard";
+import type { FolderData } from "@/lib/agentboard/types";
 
 export function HomeHeader({
   identity,

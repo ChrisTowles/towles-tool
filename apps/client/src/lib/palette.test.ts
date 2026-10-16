@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
-import {
-  applyOverlays,
-  OVERLAY_STARTED,
-  type AgentStatus,
-  type FolderData,
-  type RepoData,
-  type SessionData,
-  type StatePayload,
-} from "./agentboard";
+import { applyOverlays, OVERLAY_STARTED } from "@/lib/agentboard/overlays";
+import type {
+  AgentStatus,
+  FolderData,
+  RepoData,
+  SessionData,
+  StatePayload,
+} from "@/lib/agentboard/types";
 import type { IssueItem, PrItem } from "./data";
 import {
   paletteRepoEntries,

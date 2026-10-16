@@ -13,16 +13,14 @@ import {
 import { useEffect, useState } from "react";
 
 import { Button, Checkbox, Combobox, Input, Popover, Select } from "@cloudflare/kumo";
+import { ClaudeEffort, ClaudeLaunchOptions, ClaudeModel } from "@/lib/agentboard/claude-command";
 import {
-  ClaudeEffort,
-  ClaudeLaunchOptions,
-  ClaudeModel,
   PastedImage,
   clipboardImageFromHost,
   imagesFromDataTransfer,
   isPasteableImage,
-  nextDraftScopeId,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/pasted-images";
+import { nextDraftScopeId } from "@/lib/agentboard/windows";
 import { IssueItem, storeGhIssuesList } from "@/lib/data";
 import { GoalEditor } from "@/components/goal-editor";
 import { ImageLightbox } from "@/components/image-lightbox";

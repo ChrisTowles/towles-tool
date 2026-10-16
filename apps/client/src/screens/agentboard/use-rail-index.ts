@@ -5,10 +5,8 @@ import {
   partitionQuiet,
   searchRepos,
   withoutFolded,
-  type FolderData,
-  type RepoData,
-  type SessionData,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/folder";
+import type { FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
 import type { RailFilter } from "@/lib/settings";
 
 export type RailIndex = {

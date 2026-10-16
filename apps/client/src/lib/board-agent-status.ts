@@ -1,4 +1,6 @@
-import { ALERT_ORDER, isAgent, sessionCatchesEye, type SessionData } from "./agentboard";
+import { isAgent, sessionCatchesEye } from "@/lib/agentboard/session";
+import { ALERT_ORDER } from "@/lib/agentboard/status";
+import type { SessionData } from "@/lib/agentboard/types";
 
 export type WorktreeFolder = { dir: string; sessions: SessionData[] };
 

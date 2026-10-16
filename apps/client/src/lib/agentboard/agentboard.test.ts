@@ -1,43 +1,50 @@
 import { describe, expect, it } from "vitest";
+import { claudeCommand, promptWithImages } from "@/lib/agentboard/claude-command";
 import {
-  agentRollup,
-  collapsedLiveColor,
-  rollupAlertColor,
-  sessionBackgroundAgents,
   cacheWarnMs,
   contextBand,
   hasSubagentSpend,
   sessionTotalTokens,
   subagentLabel,
-  changedFolderDirs,
-  moveFocus,
-  cycleNotBusy,
-  colCount,
-  dragCol,
-  ownerRepoFromOrigin,
-  dropPane,
   fmtContext,
-  fmtWaitingAge,
+  modelContextLabel,
+  modelLetter,
+  isCacheExpiring,
+} from "@/lib/agentboard/context";
+import {
+  ownerRepoFromOrigin,
   gitCheckedLabel,
+  folderBranchDrift,
+  folderRecreateBranch,
+  isFolderFiltered,
+  isFolderIdle,
+  isFolderStale,
+  isFolderUnmanaged,
+  folderLastWorkedAt,
+  issuesForFolder,
+  pathScope,
+  prForFolder,
+  partitionQuiet,
+  searchRepos,
+  taskForFolder,
+  IDLE_GRACE_MS,
+  withoutFolded,
+} from "@/lib/agentboard/folder";
+import { branchRedundant, humanizeFolderName } from "@/lib/agentboard/folder-name";
+import {
   folderActionableItems,
   folderLandingSummary,
   folderLanded,
   folderLandedButHasWork,
-  folderBranchDrift,
-  folderRecreateBranch,
   folderRemovableTask,
   forceDeleteLabel,
-  branchRedundant,
-  humanizeFolderName,
-  modelContextLabel,
-  modelLetter,
-  paneCloseTarget,
   stoppablePort,
-  successorPane,
   type TaskBlocker,
   folderHoldsNoWork,
   folderSafeToDelete,
-  hydrateWins,
+} from "@/lib/agentboard/landing";
+import { colCount, dragCol, paneRects, snapCol } from "@/lib/agentboard/layout";
+import {
   previewPaneId,
   isFilesPane,
   isJarvisPane,
@@ -47,44 +54,46 @@ import {
   filesPaneId,
   filesPaneTarget,
   folderPaneDir,
-  isCacheExpiring,
-  claudeCommand,
-  isFolderFiltered,
-  isFolderIdle,
-  isFolderStale,
-  isFolderUnmanaged,
-  folderLastWorkedAt,
-  isPasteableImage,
-  issuesForFolder,
-  normalizeWins,
-  paneRects,
   paneSession,
-  snapCol,
-  pathScope,
-  placePane,
-  prForFolder,
-  partitionQuiet,
-  searchRepos,
-  taskForFolder,
-  promptWithImages,
-  pruneWins,
-  IDLE_GRACE_MS,
+} from "@/lib/agentboard/pane-ids";
+import { isPasteableImage } from "@/lib/agentboard/pasted-images";
+import { waitForFirstFrame } from "@/lib/agentboard/pty";
+import {
+  cycleNotBusy,
+  fmtWaitingAge,
   sessionCatchesEye,
   sessionNotBusy,
-  waitForFirstFrame,
-  withoutFolded,
-  type AgentStatus,
-  type FolderData,
-  type Panes,
-  type RepoData,
-  type SessionData,
-  type WindowsPayload,
-  type WireWindowsPayload,
+} from "@/lib/agentboard/session";
+import {
+  agentRollup,
+  collapsedLiveColor,
+  rollupAlertColor,
+  sessionBackgroundAgents,
+} from "@/lib/agentboard/status";
+import type {
+  AgentStatus,
+  FolderData,
+  Panes,
+  RepoData,
+  SessionData,
+  WindowsPayload,
+  WireWindowsPayload,
+} from "@/lib/agentboard/types";
+import {
+  changedFolderDirs,
+  moveFocus,
+  dropPane,
+  paneCloseTarget,
+  successorPane,
+  hydrateWins,
+  normalizeWins,
+  placePane,
+  pruneWins,
   nextOpenFileNonce,
   nextWindowId,
-} from "./agentboard";
+} from "@/lib/agentboard/windows";
 import { foldedRepoLabel } from "@/components/agentboard-fold-rows";
-import type { PrItem, TaskItem } from "./data";
+import type { PrItem, TaskItem } from "@/lib/data";
 
 describe("nextWindowId", () => {
   it("never repeats an id, even when minted within one millisecond", () => {

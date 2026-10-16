@@ -11,7 +11,7 @@ import { TooltipProvider } from "@cloudflare/kumo";
 import { WorkspaceProvider } from "@/lib/workspace";
 import { NowProvider } from "@/lib/now";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
-import { AgentboardStateProvider } from "@/lib/agentboard-state";
+import { AgentboardStateProvider } from "@/lib/agentboard/state";
 
 // jsdom omits a few browser APIs that ThemeProvider (matchMedia) and the Base UI
 // primitives (ResizeObserver, pointer capture, scrollIntoView, getAnimations)

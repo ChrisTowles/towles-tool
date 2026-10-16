@@ -13,7 +13,7 @@ import { ZenIndicator } from "@/components/zen-indicator";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider, Toasty } from "@cloudflare/kumo";
-import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard-state";
+import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard/state";
 import { subscribeEditorOpenFile } from "@/lib/editor-open";
 import { subscribePreviewShow } from "@/lib/preview-artifact";
 import { subscribeSummon } from "@/lib/summon";

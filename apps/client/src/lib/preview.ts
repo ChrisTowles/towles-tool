@@ -1,5 +1,7 @@
 import { invoke } from "@/lib/tauri";
-import { claudeCommand, type FolderData, isAgent, promptWithImages } from "@/lib/agentboard";
+import { claudeCommand, promptWithImages } from "@/lib/agentboard/claude-command";
+import { isAgent } from "@/lib/agentboard/session";
+import type { FolderData } from "@/lib/agentboard/types";
 import { devServerUrl, type LaunchConfigStatus } from "@/lib/launch";
 
 /** A dev server detected from a tracked checkout's `.claude/launch.json`. */

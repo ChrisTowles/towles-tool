@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { CommitStatRow } from "@/components/agentboard-bits";
-import { comparedBaseLabel, type BranchDiff, type BranchDiffFile } from "@/lib/agentboard";
+import { CommitStatRow } from "@/components/agentboard-bits/diff-chips";
+import { comparedBaseLabel } from "@/lib/agentboard/folder";
+import type { BranchDiff, BranchDiffFile } from "@/lib/agentboard/types";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { fmtDiffLines } from "@/lib/format";

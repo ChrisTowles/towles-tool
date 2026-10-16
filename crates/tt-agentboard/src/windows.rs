@@ -25,7 +25,7 @@ pub struct AgWindow {
     #[serde(default)]
     pub panes: Vec<String>,
     /// User-dragged column widths in per-mille of the tiling width (client-
-    /// owned — see `paneRects` in `apps/client/src/lib/agentboard.ts`).
+    /// owned — see `paneRects` in `apps/client/src/lib/agentboard/layout.ts`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cols: Option<Vec<u16>>,
 }
@@ -157,7 +157,7 @@ impl WindowsStore {
 
 /// Pane-id prefixes marking a *folder* pane, which encodes a folder dir instead
 /// of a session id. Must match the prefixes `folderPaneDir` walks in
-/// `apps/client/src/lib/agentboard.ts`.
+/// `apps/client/src/lib/agentboard/pane-ids.ts`.
 const FOLDER_PANE_PREFIXES: [&str; 4] = ["~files:", "~preview:", "~jarvis:", "~browser:"];
 
 /// The folder dir a folder-pane id points at (`None` for session panes).
@@ -166,7 +166,7 @@ fn folder_pane_dir(pane_id: &str) -> Option<&str> {
 }
 
 /// Headless port of the client's `pruneWins` + active-window normalization
-/// (`apps/client/src/lib/agentboard.ts` — keep the two in lockstep): the blob
+/// (`apps/client/src/lib/agentboard/windows.ts` — keep the two in lockstep): the blob
 /// outlives its referents when a task is removed with no app running. Drops
 /// windows failing `folder_valid`, then panes that are neither a known session
 /// id nor a valid folder's own pane; a window emptied by the prune vanishes,

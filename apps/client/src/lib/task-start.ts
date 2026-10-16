@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { requestAgentboardNav, type RepoData } from "@/lib/agentboard";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import type { RepoData } from "@/lib/agentboard/types";
 import { isTauri } from "@/lib/tauri";
 
 /** MCP `task_start` delivery: `task://start` becomes the `start-task` Agentboard

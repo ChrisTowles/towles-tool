@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
-import { fmtMins } from "@/components/agentboard-bits";
+import { fmtMins } from "@/components/agentboard-bits/session-badges";
 import { WorkingContext } from "@/components/agentboard-working-context";
 import { QueueRail, FOLDED_BY_DEFAULT, rerankQueueItem } from "@/components/queue-rail";
 import { RailIconStrip, RollupChip } from "@/components/agentboard-rail";
@@ -34,58 +34,59 @@ import {
   SplitSessionDialog,
   StartClaudeDialog,
 } from "./agentboard/dialogs";
+import type { RemoveTarget, SessionActions, StartClaudeTarget } from "@/lib/agentboard/actions";
 import {
   claudeCommand,
   claudeResumeCommand,
-  claudeTitleName,
-  moveFocus,
-  consumePendingAgentboardNav,
-  consumePendingOpenSessions,
-  cycleNotBusy,
-  filesPaneId,
-  filesPaneTarget,
+  type ClaudeLaunchOptions,
+} from "@/lib/agentboard/claude-command";
+import { isCacheExpiring } from "@/lib/agentboard/context";
+import {
   folderBusy,
   folderRecreateBranch,
-  folderRemovableTask,
   folderRemoving,
-  isAgent,
-  isCacheExpiring,
+  prForFolder,
+  taskForFolder,
+  folderTask,
+  isFolderUnmanaged,
+  isHomeRepo,
+} from "@/lib/agentboard/folder";
+import { abSetSessionPurpose } from "@/lib/agentboard/ipc";
+import { folderRemovableTask } from "@/lib/agentboard/landing";
+import { OVERLAY_STARTED, OVERLAY_STOPPED } from "@/lib/agentboard/overlays";
+import {
+  filesPaneId,
+  filesPaneTarget,
   browserPaneId,
   jarvisPaneId,
+  previewPaneId,
+} from "@/lib/agentboard/pane-ids";
+import { sleep, termWriteRetry, waitForFirstFrame } from "@/lib/agentboard/pty";
+import {
+  consumePendingAgentboardNav,
+  consumePendingOpenSessions,
+  onAgentboardNavRequest,
+  onOpenSessionRequest,
+  type AgentboardNav,
+  type PendingOpenSession,
+} from "@/lib/agentboard/requests";
+import {
+  claudeTitleName,
+  cycleNotBusy,
+  isAgent,
   liveSessions,
+  sessionLabel,
+} from "@/lib/agentboard/session";
+import { useAgentboardState, useSetAgentOverlay } from "@/lib/agentboard/state";
+import type { FolderData, RepoData, Selected, SessionData } from "@/lib/agentboard/types";
+import {
+  moveFocus,
   nextOpenFileNonce,
   nextWindowId,
   paneCloseTarget,
-  onAgentboardNavRequest,
-  onOpenSessionRequest,
-  abSetSessionPurpose,
-  prForFolder,
-  previewPaneId,
-  sessionLabel,
-  sleep,
   successorPane,
-  taskForFolder,
-  folderTask,
-  termWriteRetry,
-  useAgentboardState,
-  useSetAgentOverlay,
-  waitForFirstFrame,
-  OVERLAY_STARTED,
-  OVERLAY_STOPPED,
-  type AgentboardNav,
   type FocusLevel,
-  type FolderData,
-  isFolderUnmanaged,
-  isHomeRepo,
-  type ClaudeLaunchOptions,
-  type PendingOpenSession,
-  type RemoveTarget,
-  type RepoData,
-  type Selected,
-  type SessionActions,
-  type SessionData,
-  type StartClaudeTarget,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/windows";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
 import { buildJumpRecall, type JumpRecall } from "@/lib/jump-recall";

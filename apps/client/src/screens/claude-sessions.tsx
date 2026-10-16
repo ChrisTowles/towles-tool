@@ -40,8 +40,8 @@ import {
   type LedgerDay,
   type SessionBreakdown,
 } from "@/lib/claude-sessions";
-import { requestAgentboardNav } from "@/lib/agentboard";
-import { useAgentboardState } from "@/lib/agentboard-state";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import { useAgentboardState } from "@/lib/agentboard/state";
 import { NEUTRAL, PALETTE, paletteAt } from "@/lib/colors";
 import { repoInk, seriesColors } from "@/lib/repo-identity";
 import { NotInTauri, type IpcError } from "@/lib/errors";

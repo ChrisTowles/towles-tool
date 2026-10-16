@@ -7,8 +7,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { invoke } from "./tauri";
-import { applyOverlays, type Overlay, type StatePayload, type WindowsPayload } from "./agentboard";
+import { invoke } from "@/lib/tauri";
+import { applyOverlays, type Overlay } from "@/lib/agentboard/overlays";
+import type { StatePayload, WindowsPayload } from "@/lib/agentboard/types";
 
 const EMPTY_WINDOWS: WindowsPayload = { windows: [], activeWindows: {} };
 
