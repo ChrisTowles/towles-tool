@@ -149,6 +149,15 @@ pub fn open_claude_session(
     post(bridge_dir, folder, &json!({ "type": "claude-session", "sessionId": session_id }))
 }
 
+/// Select `path` in the Explorer of `folder`'s workbench, expanding its folder.
+pub fn reveal_in_explorer(
+    bridge_dir: &Path,
+    folder: &Path,
+    path: &Path,
+) -> Result<(), CodeServerError> {
+    post(bridge_dir, folder, &json!({ "type": "reveal", "path": path.to_string_lossy() }))
+}
+
 /// Polls, like [`crate::reveal`]: a pane opened a moment ago is still booting.
 fn post(bridge_dir: &Path, folder: &Path, body: &Value) -> Result<(), CodeServerError> {
     let body = body.to_string();

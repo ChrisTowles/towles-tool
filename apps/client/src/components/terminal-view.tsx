@@ -69,6 +69,7 @@ export function TerminalView({
   onExit,
   onTitle,
   onOpenPath,
+  onRevealPath,
   focusRequest,
 }: {
   termId: string;
@@ -77,6 +78,8 @@ export function TerminalView({
   /** OSC 0/2. Claude Code emits `✳ <title>`, which the rail uses as its label. */
   onTitle?: (termId: string, title: string) => void;
   onOpenPath?: (path: string, line: number | null) => void;
+  /** Show a path's folder in the Files pane; absent, only the file manager is offered. */
+  onRevealPath?: (path: string) => void;
   /** Bump to focus this pane's hidden input; absent/unchanged does nothing. */
   focusRequest?: number;
 }) {
@@ -95,6 +98,8 @@ export function TerminalView({
     void invoke("term_open_path", { path: link.path, cwd, line: link.line, termId });
   const openPathInEditorRef = useRef(openPathInEditor);
   openPathInEditorRef.current = openPathInEditor;
+  const revealPathExternally = (link: Extract<TermLink, { kind: "path" }>) =>
+    void invoke("term_reveal_path", { path: link.path, cwd, termId });
 
   const searchRef = useRef<{ matches: SearchMatch[]; current: number }>({
     matches: [],
@@ -1042,6 +1047,19 @@ export function TerminalView({
                 <ContextMenuItem onClick={() => openPathInEditor(menuLink)}>
                   Open in external editor
                 </ContextMenuItem>
+              )}
+              {menuLink.kind === "path" && (
+                <>
+                  <ContextMenuSeparator />
+                  {onRevealPath && (
+                    <ContextMenuItem onClick={() => onRevealPath(menuLink.path)}>
+                      Open folder in files
+                    </ContextMenuItem>
+                  )}
+                  <ContextMenuItem onClick={() => revealPathExternally(menuLink)}>
+                    Open folder in file manager
+                  </ContextMenuItem>
+                </>
               )}
               <ContextMenuSeparator />
             </>

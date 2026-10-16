@@ -71,6 +71,7 @@ export function PaneGrid(props: {
     path: string,
     line: number | null,
   ) => Promise<void>;
+  onRevealTerminalPath: (dir: string, termId: string, path: string) => Promise<void>;
   onRemovePane: (paneId: string) => void;
   onSelectFolder: (dir: string) => void;
   /** Set by a keyboard jump only; null once dismissed or aged out. */
@@ -101,6 +102,7 @@ export function PaneGrid(props: {
     onExit,
     onTitle,
     onOpenTerminalPath,
+    onRevealTerminalPath,
     onRemovePane,
     onSelectFolder,
     jumpRecall,
@@ -180,6 +182,9 @@ export function PaneGrid(props: {
                     termDir
                       ? (path, line) => void onOpenTerminalPath(termDir, id, path, line)
                       : undefined
+                  }
+                  onRevealPath={
+                    termDir ? (path) => void onRevealTerminalPath(termDir, id, path) : undefined
                   }
                   focusRequest={
                     focusTerminalRequest?.id === id ? focusTerminalRequest.nonce : undefined
