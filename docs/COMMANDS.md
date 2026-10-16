@@ -11,6 +11,7 @@ cargo run -p tt-cli -- task ls      # e.g. task, journal, collect
 cargo fmt --check                   # formatting (rustfmt, 100-col)
 cargo clippy --all -- -D warnings   # lint; warnings are errors
 cargo test --all                    # unit + assert_cmd black-box tests
+cargo machete                       # unused dependencies (CI gates on it)
 cargo comment-budget                # comment-volume ratchet vs the merge-base with main — what CI runs
 cargo comment-budget --all          # every file judged as if new: the standing backlog
 ```
@@ -90,6 +91,7 @@ bun run drive -- <verb>             # drive the dev:drive window (status|invoke|
 bun run e2e                         # regression suite vs the real shell (see below)
 cd apps/client && bun run lint      # oxlint (warnings are non-blocking) + knip (unused exports/files)
 cd apps/client && bun run format    # oxfmt, in place (100-col, matches rustfmt's width)
+bun run check:bundle                # after a client build: gzipped-size ratchet (`--write` resets it)
 cd apps/client && npx kumo doc <Name>             # a Kumo component's props/examples
 ```
 
