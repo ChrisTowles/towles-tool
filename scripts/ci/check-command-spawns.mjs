@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 const SPAWN_RE = /\b(?:tokio::process::Command|process::Command|Command)::new\b/;
 
 // `tt_exec::run("git", …)` and friends skip SPAWN_RE but still break the rule
-// that only tt-git runs git. The program literal may sit on its own line.
+// that only tt-git runs git, test code included (use `tt_git::testing`). The program literal may sit on its own line.
 const GIT_SPAWN_RE = /\b(?:Command::new|(?:tt_exec::)?run\w*)\(\s*"git"/g;
 
 // Production crates other than tt-git may not spawn `git` at all; the build
@@ -114,17 +114,16 @@ const gitViolations = [];
 const paths = rsFiles();
 const testOnlyFiles = testOnlyModuleFiles(paths);
 for (const path of paths) {
-  if (testOnlyFiles.has(path) || /(^|\/)tests\//.test(path)) continue;
   const text = readFileSync(path, "utf8");
   const lines = text.split("\n");
   const gated = testGatedLines(lines);
   if (!mayRunGit(path)) {
     for (const m of text.matchAll(GIT_SPAWN_RE)) {
       const line = text.slice(0, m.index).split("\n").length;
-      if (!gated.has(line)) gitViolations.push(`${path}:${line}: ${lines[line - 1].trim()}`);
+      gitViolations.push(`${path}:${line}: ${lines[line - 1].trim()}`);
     }
   }
-  if (isAllowedPath(path)) continue;
+  if (isAllowedPath(path) || testOnlyFiles.has(path)) continue;
   for (let i = 0; i < lines.length; i++) {
     const scrubbed = scrub(lines[i]);
     if (SPAWN_RE.test(scrubbed) && !gated.has(i + 1)) {
@@ -136,7 +135,7 @@ for (const path of paths) {
 if (gitViolations.length > 0) {
   console.error(
     "`git` spawned outside crates/tt-git.\n" +
-      "Add a typed function to tt_git::cli (or tt_git::repo) and call that instead.\n",
+      "Add a typed function to tt_git::cli (or tt_git::repo), or in tests use tt_git::testing.\n",
   );
   for (const v of gitViolations) console.error("  " + v);
   process.exit(1);

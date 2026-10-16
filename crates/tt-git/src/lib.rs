@@ -5,6 +5,7 @@
 //! The rest is pure decision logic that takes data and returns data, unit-testable
 //! without `gh` or a terminal.
 //!
+//! - [`testing`] — behind `test-support`: fixture git helpers for other crates' tests.
 //! - [`cli`] — the typed `git` subprocess operations (fetch, worktree writes).
 //! - [`repo`] — in-process git: the per-folder [`repo::RepoCache`], refs,
 //!   graph walks, status, diffs, and patch identity. Start there; its module
@@ -19,3 +20,5 @@ pub mod cli;
 pub mod provision;
 pub mod repo;
 pub mod task_assign;
+#[cfg(feature = "test-support")]
+pub mod testing;

@@ -3,15 +3,7 @@ use super::*;
 const NOW: i64 = 1_700_000_000_000;
 
 fn git(dir: impl AsRef<std::path::Path>, args: &[&str]) {
-    assert!(
-        std::process::Command::new("git")
-            .arg("-C")
-            .arg(dir.as_ref())
-            .args(args)
-            .status()
-            .unwrap()
-            .success()
-    );
+    tt_git::testing::git(dir.as_ref(), args);
 }
 
 fn worktree_dirs_of(dir: &str) -> Vec<String> {
@@ -405,17 +397,10 @@ fn worked_recently_signals_track_commits_and_unstaged_edits() {
     let dir = root.path().to_str().unwrap();
 
     let clean = compute_git_info(dir, None, None, NOW);
-    let head_commit: i64 = String::from_utf8(
-        std::process::Command::new("git")
-            .args(["-C", dir, "log", "-1", "--format=%ct", "HEAD"])
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap()
-    .trim()
-    .parse()
-    .unwrap();
+    let head_commit: i64 =
+        tt_git::testing::git(std::path::Path::new(dir), &["log", "-1", "--format=%ct", "HEAD"])
+            .parse()
+            .unwrap();
     assert_eq!(clean.head_commit_ms, head_commit * 1000, "the base branch still has a commit");
     assert_eq!(clean.worktree_touched_ms, 0, "a clean tree was touched by nobody");
 
@@ -521,14 +506,7 @@ fn commits_unlanded_reaches_zero_after_a_rebase_style_landing_even_though_ahead_
     git(repo, &["checkout", "--quiet", "-b", "feature"]);
     std::fs::write(repo.join("f.txt"), "2").unwrap();
     git(repo, &["commit", "--quiet", "-am", "on feature"]);
-    let feature_commit = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .unwrap()
-        .stdout;
-    let feature_commit = String::from_utf8(feature_commit).unwrap().trim().to_string();
+    let feature_commit = tt_git::testing::git(repo, &["rev-parse", "HEAD"]);
 
     git(repo, &["checkout", "--quiet", "main"]);
     std::fs::write(repo.join("other.txt"), "unrelated").unwrap();
@@ -643,13 +621,7 @@ fn resolve_git_dir_fs_follows_the_gitdir_file_for_a_real_worktree() {
 
     let resolved = resolve_git_dir_fs(&worktree).expect("real worktree must resolve");
     // What `rev-parse --git-dir` answers, reached with zero spawns.
-    let spawned = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&worktree)
-        .args(["rev-parse", "--git-dir"])
-        .output()
-        .expect("git runs");
-    let spawned = String::from_utf8_lossy(&spawned.stdout).trim().to_string();
+    let spawned = tt_git::testing::git(&worktree, &["rev-parse", "--git-dir"]);
     assert_eq!(resolved, std::path::PathBuf::from(spawned));
     assert!(resolved.to_string_lossy().contains("/worktrees/task"));
     assert!(resolved.join("HEAD").is_file(), "the resolved gitdir must have its own HEAD");
@@ -906,12 +878,7 @@ fn a_changed_base_override_forces_a_full_recompute() {
     let repo = root.path();
     init_repo(repo);
     let dir = repo.to_str().unwrap();
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo)
-        .args(["branch", "develop"])
-        .status()
-        .unwrap();
+    git(repo, &["branch", "develop"]);
 
     let first = compute_git_info(dir, None, None, NOW);
     let mut poisoned = first.clone();
@@ -1057,15 +1024,7 @@ fn a_detached_head_keeps_its_repository_identity() {
     let attached = compute_git_info(dir, None, None, NOW);
     assert!(!attached.common_dir.is_empty());
 
-    assert!(
-        std::process::Command::new("git")
-            .arg("-C")
-            .arg(root.path())
-            .args(["checkout", "--quiet", "--detach", "HEAD"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    git(root.path(), &["checkout", "--quiet", "--detach", "HEAD"]);
 
     let info = compute_git_info(dir, None, None, NOW);
     assert!(info.branch.is_empty(), "no branch to report");

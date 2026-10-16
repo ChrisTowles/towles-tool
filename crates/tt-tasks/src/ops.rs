@@ -982,18 +982,7 @@ mod tests {
     /// silently fails without `-c user.{name,email}=...`, and `is_ok()` alone
     /// only proves the process spawned, not that it did anything.
     pub(super) fn git_ok(dir: &Path, args: &[&str]) {
-        let dir = dir.to_str().unwrap();
-        let mut full = vec![
-            "-C",
-            dir,
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@test",
-        ];
-        full.extend_from_slice(args);
-        let out = tt_exec::run("git", &full).unwrap();
-        assert!(out.ok(), "git {full:?} failed: {}", out.stderr);
+        tt_git::testing::git(dir, args);
     }
 
     #[test]

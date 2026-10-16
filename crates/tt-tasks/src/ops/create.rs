@@ -400,12 +400,7 @@ mod tests {
     use super::*;
 
     fn git(dir: &Path, args: &[&str]) -> String {
-        let dir = dir.to_str().unwrap();
-        let mut full = vec!["-C", dir, "-c", "user.name=T", "-c", "user.email=t@t"];
-        full.extend_from_slice(args);
-        let out = tt_exec::run("git", &full).unwrap();
-        assert!(out.ok(), "git {full:?} failed: {}", out.stderr);
-        out.stdout.trim().to_string()
+        tt_git::testing::git(dir, args)
     }
 
     /// An origin with PR #7 on `feat/x`, and a clone of it as the task root.

@@ -943,13 +943,7 @@ fn task_summary_requires_both_args_and_a_known_id() {
 }
 
 fn git(dir: &std::path::Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .args(["-c", "user.name=Test", "-c", "user.email=test@test"])
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    tt_git::testing::git(dir, args);
 }
 
 /// A checkout on `main` with a task worktree on `feat/old`, bound to a fresh row.

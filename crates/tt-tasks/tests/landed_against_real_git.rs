@@ -10,7 +10,6 @@
 //! itself.
 
 use std::path::Path;
-use std::process::Command;
 
 use tt_tasks::landed::{LandedVia, WorkState, probe_work_state};
 
@@ -59,8 +58,7 @@ fn without_identity<T>(body: impl FnOnce() -> T) -> T {
 }
 
 fn run(dir: &Path, args: &[&str]) {
-    let out = Command::new("git").args(args).current_dir(dir).output().expect("git runs");
-    assert!(out.status.success(), "git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+    tt_git::testing::git(dir, args);
 }
 
 fn commit(dir: &Path, file: &str, body: &str) {
