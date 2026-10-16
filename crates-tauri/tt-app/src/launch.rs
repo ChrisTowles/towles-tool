@@ -2,11 +2,7 @@
 //! Tauri glue over [`tt_agentboard::launch`]. `launch_configs` lists a
 //! folder's configs with live status (port probe + which app session runs
 //! each); `launch_register` records "config X now runs in session Y" after
-//! the client typed the launch command into that session's PTY. The launch
-//! itself is frontend-driven, exactly like starting `claude` in a pane —
-//! there is no backend spawn path here (the PTY's shell spawn is already
-//! recorded via `tt_exec::record_detached_spawn`), so the register event
-//! below is what makes the launch gesture visible in the event log.
+//! the client typed the launch command into that session's PTY.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -15,10 +11,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
 /// Which app session (PTY) each launched dev-server config runs in, keyed by
-/// `(folder dir, config name)`. In-memory only: PTYs die with the app, so
-/// the mapping does too (the terminal's own no-cross-restart-persistence
-/// rule). Pruned against the live-PTY registry on every read, so a closed
-/// pane stops claiming its config the moment it's gone.
+/// `(folder dir, config name)`. In-memory only; pruned against the live-PTY registry on read.
 #[derive(Default)]
 pub struct LaunchState {
     running: Mutex<HashMap<(String, String), String>>,
@@ -32,9 +25,6 @@ pub struct LaunchState {
 pub struct LaunchConfigStatus {
     #[serde(flatten)]
     pub config: tt_agentboard::LaunchConfig,
-    /// Something accepts TCP connections on `port` right now. Always false
-    /// for a config without a port — the client tells "unknown" from
-    /// "stopped" by `port` itself.
     pub port_listening: bool,
     pub session_id: Option<String>,
 }
@@ -63,8 +53,6 @@ fn launch_configs_blocking(
         return Ok(Vec::new());
     };
 
-    // Resolve each config's owning session while pruning dead panes, then
-    // drop the lock before the network probes.
     let live = app.state::<crate::terminal::TermState>().live_ids();
     let launch_state = app.state::<LaunchState>();
     let sessions: Vec<Option<String>> = {
@@ -76,8 +64,6 @@ fn launch_configs_blocking(
             .collect()
     };
 
-    // One probe per distinct port — configs may share one (the blog fixture's
-    // "all" covers the same server as "blog").
     let mut probed: HashMap<u16, bool> = HashMap::new();
     Ok(file
         .configurations

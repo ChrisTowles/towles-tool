@@ -14,11 +14,8 @@
 /// How a branch's work reached the base branch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LandedVia {
-    /// Reachable from the base — a classic merge commit.
     Ancestor,
-    /// Every commit is patch-identical to one in the base — rebased or cherry-picked.
     Patches,
-    /// The cumulative diff is in the base under a different SHA — a squash merge.
     Squash,
     /// The remote branch was deleted — about the *remote*, not the content, so it
     /// answers only when no content check did.
@@ -49,12 +46,9 @@ impl LandedVia {
 /// reached the base survive on the branch and can be pushed later.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WorkState {
-    /// `git status --porcelain` entries — changed or untracked paths.
     pub uncommitted: usize,
-    /// Commits since the merge-base whose content is not in the base branch.
     pub unlanded: u64,
     pub total_commits: u64,
-    /// Set when *all* the branch's content is in the base.
     pub landed: Option<LandedVia>,
     /// Commits reachable from no branch and no remote — a detached HEAD's work, which
     /// removal really would destroy. Distinct from `unlanded`, which is safe.
@@ -62,13 +56,10 @@ pub struct WorkState {
 }
 
 impl WorkState {
-    /// Whether removing this task would lose anything a user cannot recover.
     pub fn holds_work(&self) -> bool {
         self.uncommitted > 0 || self.unlanded > 0 || self.orphaned > 0
     }
 
-    /// One line naming each axis that is non-zero. Empty when there is nothing to
-    /// report beyond how it landed.
     pub fn headline(&self) -> String {
         let mut parts = Vec::new();
         if self.uncommitted > 0 {
@@ -80,8 +71,6 @@ impl WorkState {
         if self.orphaned > 0 {
             parts.push(format!("{} orphaned", self.orphaned));
         }
-        // "merged" on a task nobody committed to would claim work that never existed,
-        // and an absorbed branch is indistinguishable from one cut off an older base.
         if self.total_commits == 0 {
             if parts.is_empty() {
                 return "no commits".to_string();
@@ -172,7 +161,6 @@ pub fn probe_work_state(
         return state;
     }
 
-    // Computed once and reused by every check below, the watermark scan included.
     let landed_patches = repo.base_patch_ids(merge_base, base_id);
     let is_landed = |patch: Option<tt_git::repo::PatchId>| {
         patch.is_some_and(|patch| landed_patches.contains(&patch))
@@ -185,15 +173,11 @@ pub fn probe_work_state(
     state.landed =
         classify(ancestor, tip_equals_base, cherry_plus, total, tree_landed, upstream_gone);
 
-    // Only content evidence justifies zero; a gone upstream leaves them counted.
     state.unlanded = if state.landed.is_some_and(LandedVia::is_content_proof) {
         0
     } else if total as usize > MAX_PROBES {
         cherry_plus
     } else {
-        // The tip's cumulative tree is what `tree_landed` already probed, and this arm
-        // only runs when that was false. Everything past the first landed commit is
-        // discarded by the count, so the scan stops there.
         let landed_at = commits[1..]
             .iter()
             .position(|rev| is_landed(repo.cumulative_patch_id(merge_base, *rev)));
@@ -240,13 +224,11 @@ mod tests {
     #[test]
     fn gone_upstream_answers_only_when_content_checks_do_not() {
         assert_eq!(classify(false, false, 1, 1, false, true), Some(LandedVia::UpstreamGone));
-        // Content evidence outranks it.
         assert_eq!(classify(false, false, 2, 2, true, true), Some(LandedVia::Squash));
     }
 
     #[test]
     fn headline_separates_the_two_axes() {
-        // total_commits must be set, or this exercises the "no commits" wording.
         let s = WorkState { uncommitted: 2, unlanded: 1, total_commits: 1, ..Default::default() };
         assert_eq!(s.headline(), "2 uncommitted, 1 unlanded");
     }
@@ -273,7 +255,6 @@ mod tests {
         assert_eq!(s.headline(), "2 orphaned");
         assert!(s.holds_work());
 
-        // Detached: nothing since a merge-base, but the orphan axis still reports.
         let detached = WorkState { orphaned: 2, ..Default::default() };
         assert_eq!(detached.headline(), "2 orphaned, no commits");
         assert!(detached.holds_work());

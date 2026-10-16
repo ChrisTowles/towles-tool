@@ -1281,8 +1281,8 @@ fn task_in_worktree(dispatcher: &mut Dispatcher) -> i64 {
     id
 }
 
-/// A merge moves the card to done while the worktree lives on: `task_list` no longer shows
-/// it, which is how `/done` used to lose the task.
+/// A merge moves the card to done while the worktree lives on, so `task_list` no longer
+/// shows it.
 #[test]
 fn task_done_finds_a_closed_task_from_below_its_worktree_and_deletes_it_as_done() {
     let (mut dispatcher, calls) = with_host(deleted("x", vec!["removed".to_string()]));

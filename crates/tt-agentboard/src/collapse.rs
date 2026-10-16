@@ -1,24 +1,14 @@
-//! Persisted folder-rail collapse/expand state (issue #52). Keyed by the
-//! frontend's own opaque row key — `RepoData.key` for a solo-repo row, or
-//! `"<repoKey>::<folderDir>"` for a sub-folder row inside a multi-checkout
-//! repo (see `apps/client/src/screens/agentboard.tsx`'s `RepoGroup`). Both are
-//! stable across restarts and across Agentboard windows (derived from the git
-//! remote origin URL, or the folder's own path when there's no remote).
+//! Persisted folder-rail collapse/expand state, keyed by the frontend's opaque row key
+//! (`RepoData.key`, or `"<repoKey>::<folderDir>"` for a sub-folder row).
 //!
-//! Absence of a key means "expanded" (the default) — collapsing sets `true`,
-//! expanding removes the key. Every mutation is therefore an exact single-key
-//! op, so unlike `windows.rs` the frontend needn't track "touched" keys itself.
-//!
-//! Stored at `~/.config/towles-tool/agentboard/collapse.json`. Path-
-//! parameterized so tests use a tempdir.
+//! Absence of a key means "expanded": collapsing sets `true`, expanding removes the key,
+//! so every mutation is an exact single-key op.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// On-disk shape: `{ "collapsed": { "<key>": true, ... } }`. Keys default to
-/// expanded, so only collapsed rows are ever stored.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CollapsePayload {
@@ -26,24 +16,18 @@ pub struct CollapsePayload {
     pub collapsed: BTreeMap<String, bool>,
 }
 
-/// Owns the collapse map plus its file path. Loaded once; each `set` persists
-/// via a reread-merge-write (see [`CollapseStore::save`]).
 #[derive(Debug, Default)]
 pub struct CollapseStore {
     path: Option<PathBuf>,
     payload: CollapsePayload,
-    /// The single key changed by the last `set`, if not yet saved.
     dirty_key: Option<String>,
 }
 
-/// Default location: `<agentboard_dir>/collapse.json` (task-scoped in a task
-/// checkout; see [`tt_config::agentboard_dir`]).
 pub fn default_collapse_path() -> PathBuf {
     tt_config::agentboard_dir_lossy().join("collapse.json")
 }
 
 impl CollapseStore {
-    /// Load from `path` (default-empty on missing/corrupt). `None` = in-memory.
     pub fn new(path: Option<PathBuf>) -> Self {
         let payload = match &path {
             Some(p) => load(p),
@@ -56,9 +40,6 @@ impl CollapseStore {
         &self.payload
     }
 
-    /// Set (`true`) or clear (`false`, the default — removes the key) one
-    /// row's collapsed state. Returns whether it changed; caller persists on
-    /// `true`.
     pub fn set(&mut self, key: &str, collapsed: bool) -> bool {
         let current = self.payload.collapsed.get(key).copied().unwrap_or(false);
         if current == collapsed {
@@ -99,7 +80,6 @@ impl CollapseStore {
     }
 }
 
-/// Load the collapse map from `path` (default-empty on missing/corrupt).
 fn load(path: &Path) -> CollapsePayload {
     let Ok(text) = std::fs::read_to_string(path) else {
         return CollapsePayload::default();
@@ -146,7 +126,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("collapse.json");
         let store = CollapseStore::new(Some(path.clone()));
-        // No `set` call, so no dirty key — save() must not create the file.
         let mut store = store;
         store.save().unwrap();
         assert!(!path.exists());
@@ -157,15 +136,12 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("collapse.json");
 
-        // Two long-lived "app instances" both loaded before either has saved.
         let mut a = CollapseStore::new(Some(path.clone()));
         let mut b = CollapseStore::new(Some(path.clone()));
 
         a.set("repo:a", true);
         a.save().unwrap();
 
-        // B never learned about repo:a (loaded before A's save), but toggles
-        // its own row — must not erase A's toggle.
         b.set("repo:b", true);
         b.save().unwrap();
 

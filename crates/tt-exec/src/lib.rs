@@ -17,7 +17,7 @@ use thiserror::Error;
 /// Env-var name prefixes identifying the running app instance, which must not
 /// leak into a process spawned inside it. A shell that starts a *nested* app
 /// instance must re-derive its own port and session identity; inheriting the
-/// parent's collides on its port and mis-attributes to its session (#39).
+/// parent's collides on its port and mis-attributes to its session.
 pub const APP_INSTANCE_ENV_PREFIXES: &[&str] = &["TT_", "TAURI_", "npm_"];
 
 /// Env vars that stamp a process as living *inside* a Claude Code session. With

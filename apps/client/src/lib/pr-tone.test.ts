@@ -11,8 +11,8 @@ describe("prNeedsYou", () => {
   });
 
   it("a PR that is no longer open needs nothing — merged or closed", () => {
-    // The rail's attention strip used to keep closed-unmerged PRs on the
-    // `state !== "merged"` test while the header and Agent Board scoped to open.
+    // The rail's attention strip, the header and the Agent Board must agree that a
+    // closed-unmerged PR needs nothing.
     for (const state of ["merged", "closed"]) {
       expect(prNeedsYou({ state, checks: "failing", reviewState: "review_requested" })).toBe(false);
       expect(prChecksFailing({ state, checks: "failing" })).toBe(false);

@@ -1,17 +1,14 @@
 //! A Model Context Protocol (MCP) server for towles-tool — **the transport-free
 //! half**. [`Dispatcher::dispatch_at`] takes one JSON-RPC request string and returns
 //! one response string, knowing nothing about sockets, HTTP, ports or the wall clock.
-//! Same split as [`tt_ide`]: the transport lives in `crates-tauri/tt-app`, so the
-//! whole tool surface is unit-testable with no server to stand up.
 //!
 //! Speaks **MCP 2026-07-28 only** — no `initialize` handshake, no session: every request
 //! carries its version and the caller's identity in `params._meta`, `server/discover`
 //! says so up front, and a client opening with `initialize` is refused by an error
 //! naming the version, all the spec asks of a modern-only server.
 //!
-//! No capability gate on writes: they are local and reversible, and any session with
-//! shell access could `sqlite3` tt.db regardless. What *is* guarded — a web page POSTing
-//! to `127.0.0.1` — belongs to the transport's admission checks.
+//! No capability gate on writes: they are local and reversible. The transport's
+//! admission checks guard against a web page POSTing to `127.0.0.1`.
 
 use std::borrow::Cow;
 use std::path::Path;

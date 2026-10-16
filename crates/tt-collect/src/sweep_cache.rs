@@ -4,12 +4,6 @@
 //! points an hour out of 5,000. Whoever asks first writes the answer down; anyone
 //! starting while it is still recent reads that instead. Hence a cache, not a lock:
 //! we share the answers, not the job.
-//!
-//! **The unit is `(collector, repo)`, not one sweep**, because that's the unit the
-//! answer is true of. Keying by the sweep needs two rules this doesn't: a sweep
-//! where one repo failed can't be published (a reader replaces whole tables from
-//! it, so a missing repo reads back as "nothing"), and a reader would have to prove
-//! the sweep covered exactly the repos it tracks. Writes are temp-then-rename.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,33 +12,17 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// One repo's answer to one collector's question, and when it was fetched.
-///
-/// Rows only: a missing folder or a failed `gh` call happened to *this* window
-/// and belongs in its own run message, not replayed at everyone else.
-///
-/// Generic over the row container so reader and writer are one type — a
-/// borrowed twin could drift on a field name and read back as "nothing cached".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct CachedRepo<R> {
-    /// Epoch ms, handed in by the caller — nothing here reads the clock.
     pub fetched_at_ms: i64,
     pub rows: R,
 }
 
-/// Is an answer fetched at `fetched_at_ms` still usable at `now_ms`?
-///
-/// A timestamp from the future counts as too old, not forever young: clocks do
-/// move backwards, and trusting one would stop collection until it caught up.
 pub(crate) fn is_fresh(fetched_at_ms: i64, now_ms: i64, ttl_ms: i64) -> bool {
     let age = now_ms.saturating_sub(fetched_at_ms);
     (0..ttl_ms).contains(&age)
 }
 
-/// `<dir>/<kind>/<owner>/<repo>.json` — where `repo`'s answer to `kind`'s
-/// question lives.
-///
-/// A name that isn't exactly `owner/repo` gets no path at all rather than a
-/// guessed one; it can't be shared, so it gets fetched.
 fn repo_path(dir: &Path, kind: &str, repo: &str) -> Option<PathBuf> {
     let (owner, name) = repo.split_once('/')?;
     let plain = |s: &str| !s.is_empty() && s != "." && s != ".." && !s.contains(['/', '\\']);

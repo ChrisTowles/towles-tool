@@ -46,7 +46,7 @@ export function useCollapseState(state: StatePayload, screen: ScreenId): Collaps
     }));
   }
 
-  // Whole-rail icon collapse (issue #70): same persisted map, sentinel key.
+  // Whole-rail icon collapse: same persisted map, sentinel key.
   const railCollapsed = !!collapsed[RAIL_COLLAPSE_KEY];
   const toggleRail = () => {
     uiAction("agentboard.rail_toggle", screen, railCollapsed ? "expand" : "collapse");

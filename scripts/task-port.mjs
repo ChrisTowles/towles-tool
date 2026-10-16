@@ -142,7 +142,6 @@ function listeningPids(port) {
   }
 }
 
-// Rejects pgid < 2: `killPort` negates it, and -0/-1 are kill(2) wildcards.
 /** @param {string} pid */
 function pgidOf(pid) {
   try {
@@ -170,8 +169,6 @@ async function waitUntilFree(port, timeoutMs, pollMs) {
   return listeningPids(port).length === 0;
 }
 
-// Kills the whole process group, not just lsof's pid. Only ever for a port this
-// task owns — on a scanned one the listener may be a sibling's dev server.
 /** @param {number} port */
 export async function killPort(port) {
   if (process.platform === "win32") return;
@@ -205,8 +202,6 @@ export async function killPort(port) {
 }
 
 /**
- * `TT_BEVY=1` compiles the native Bevy pane in (`tt-app`'s `bevy` feature). Merged
- * into any `--features` already present, since tauri takes the flag once.
  * @param {string[]} args
  */
 export function withBevyFeature(args) {
@@ -220,7 +215,6 @@ export function withBevyFeature(args) {
 }
 
 /**
- * Own process-group leader: signalling the one visible pid leaves vite orphaned.
  * @param {string[]} args
  * @param {NodeJS.ProcessEnv} env
  */
@@ -228,7 +222,6 @@ export function spawnTauriDev(args, env) {
   const posix = process.platform !== "win32";
   const child = spawn("tauri", withBevyFeature(args), {
     stdio: "inherit",
-    // macOS only: runs the dev binary from a generated `.app` for the Dock icon.
     env: { ...env, ...macosDevAppEnv(scriptsRepoRoot) },
     shell: !posix,
     detached: posix, // Windows `detached` means "own console", not a group

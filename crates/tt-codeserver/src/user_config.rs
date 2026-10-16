@@ -1,11 +1,7 @@
 //! The settings and keybindings every checkout edits, kept in one place.
 //!
-//! The user data dir is instance-scoped, so without this each checkout has its
-//! own `settings.json` and an extension has to be configured once per pane —
-//! wrong for an app whose whole claim is one editor across N checkouts. Only
-//! the hand-edited files move: `globalStorage`, `workspaceStorage` and the
-//! state DB beside them stay per-instance, because two apps run at once and
-//! neither VS Code nor SQLite expects a second writer.
+//! Instance-scoped data dirs would give each checkout its own `settings.json`; only the
+//! hand-edited files move here, while `globalStorage` and the state DB stay per-instance.
 //!
 //! Symlinks, re-established on every launch. VS Code writes settings
 //! atomically — a temp file renamed over the target — which on some paths

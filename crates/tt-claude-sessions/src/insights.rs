@@ -15,10 +15,7 @@ use serde::Serialize;
 
 use crate::ledger::SessionDetail;
 
-/// A session must be ≥ this multiple of the window median (and past the
-/// absolute floor) to be flagged as a token outlier.
 const OUTLIER_FACTOR: f64 = 5.0;
-/// Ignore outliers below this in+out volume — 5× a tiny median is noise.
 const OUTLIER_FLOOR: i64 = 200_000;
 /// Sessions below this volume are excluded from the median: one-question
 /// sessions are common and would drag the baseline to a few K, making every
@@ -28,15 +25,10 @@ const MEDIAN_MIN: i64 = 20_000;
 /// At most this many findings of one kind, so a window where one pattern
 /// fires everywhere still shows the other patterns.
 const MAX_PER_KIND: usize = 4;
-/// Extra reads of already-read files before a session is a re-read loop.
 const REREAD_MIN: i64 = 15;
-/// Cache-write tokens must exceed this floor to flag cache churn…
 const CACHE_CHURN_FLOOR: i64 = 2_000_000;
-/// …and be at least this multiple of the session's in+out volume.
 const CACHE_CHURN_FACTOR: f64 = 20.0;
-/// Human prompts in one session before it's flagged as a marathon.
 const MARATHON_TURNS: i64 = 50;
-/// Findings returned at most — a feed, not a firehose.
 const MAX_INSIGHTS: usize = 12;
 
 /// What a finding is about. Serialized as a camelCase discriminant the
@@ -44,14 +36,11 @@ const MAX_INSIGHTS: usize = 12;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum InsightKind {
-    /// In+out volume far above the window median.
     TokenOutlier,
-    /// The same files were re-read many times — a context-loss loop.
     RereadLoop,
     /// Cache writes dwarf the useful work — context re-established over and
     /// over (restarts, compactions, very long sessions).
     CacheChurn,
-    /// Very many human prompts in a single session.
     Marathon,
 }
 
@@ -61,11 +50,8 @@ pub struct Insight {
     pub kind: InsightKind,
     /// Multiples of the flagging threshold — the cross-kind sort key.
     pub score: f64,
-    /// Index into the `details` slice passed to [`build_insights`].
     pub index: usize,
-    /// Headline number, e.g. `"6.2× median"` or `"38 re-reads"`.
     pub metric: String,
-    /// One-sentence "why this matters".
     pub detail: String,
 }
 
@@ -170,7 +156,6 @@ pub fn build_insights(details: &[SessionDetail]) -> Vec<Insight> {
     }
 
     insights.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    // Keep the feed mixed: at most MAX_PER_KIND of any one kind, best-first.
     let mut kind_counts: std::collections::HashMap<InsightKind, usize> = Default::default();
     insights.retain(|i| {
         let count = kind_counts.entry(i.kind).or_insert(0);

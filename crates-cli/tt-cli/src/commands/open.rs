@@ -1,11 +1,5 @@
 //! `tt open <PATH>` — put a file or folder on screen in the app's Files pane,
 //! in the task the caller is sitting in.
-//!
-//! A client, not an editor launcher: it POSTs the `file_open` MCP tool call to
-//! the app instance serving this checkout, with the same `X-TT-Session` routing
-//! an agent's own `file_open` uses (`tt-mcp`'s `EditorHost`, `tt-app`'s
-//! `mcp_http`). The root CLAUDE.md has the why; two things it doesn't say:
-//!
 //! - **`TT_SESSION_ID` is what routes.** Every shell the app spawns has it, so
 //!   `tt open` in a task's terminal opens in that task. Run from a plain
 //!   terminal there is nothing to route on and the app falls back to matching
@@ -20,9 +14,6 @@ use crate::ui;
 use std::path::Path;
 use std::time::Duration;
 
-/// How long to wait on the app. Generous for loopback because the dispatcher
-/// holds one mutex across a call, so a `file_open` can queue behind another
-/// tool's work — but bounded, since a wedged app must not hang a CLI.
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn run(path: &Path, line: Option<u32>) -> i32 {
@@ -34,9 +25,6 @@ pub fn run(path: &Path, line: Option<u32>) -> i32 {
         }
     };
 
-    // The pane can only browse a checkout, so a path in none of them can't be
-    // shown. Checked before dialing the app: this is the caller's mistake, and it
-    // is answerable without one.
     if tt_git::repo::discover_root(&target).is_none() {
         ui::error(&format!(
             "{} is not inside a git repository — the app's file pane browses a checkout, so \
@@ -115,9 +103,6 @@ fn call_file_open(
     let answer: serde_json::Value =
         response.into_json().map_err(|e| format!("unreadable answer from the app: {e}"))?;
 
-    // Two failure shapes: a JSON-RPC error (bad request) and an `isError` tool
-    // result (the tool ran and refused — a path the app can't show). Both are
-    // the user's answer, so neither may pass as success.
     if let Some(message) = answer.pointer("/error/message").and_then(|m| m.as_str()) {
         return Err(message.to_string());
     }
@@ -166,14 +151,11 @@ mod tests {
         assert_eq!(split_line_suffix(&operand), (file.to_str().unwrap(), Some(42)));
     }
 
-    /// Nothing to split when the head isn't a real path — the whole operand is
-    /// the path, and canonicalize gets to produce the error message.
     #[test]
     fn a_colon_in_a_name_is_not_a_line() {
         assert_eq!(split_line_suffix("/nope/gone.rs:42"), ("/nope/gone.rs:42", None));
     }
 
-    /// A file that really is named `notes:12` wins over the line reading.
     #[test]
     fn an_existing_path_ending_in_a_number_stays_whole() {
         let dir = tempfile::tempdir().unwrap();

@@ -10,9 +10,6 @@
 //!   acked** within a few seconds by echoing its `envelope_id`.
 //! - `disconnect` — Slack is closing this socket (every few minutes, by design);
 //!   reconnect with a *fresh* `apps.connections.open`.
-//!
-//! Everything here is pure and unit-tested; the WebSocket I/O lives in the app
-//! shell (`crates-tauri/tt-app/src/slack_socket.rs`), keeping this crate Tauri-free.
 
 use std::time::Duration;
 

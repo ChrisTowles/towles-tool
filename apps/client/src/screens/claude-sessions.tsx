@@ -76,8 +76,7 @@ const WEEKEND_OUTLINE = PALETTE[6];
 const WORK_HOUR_OUTLINE = PALETTE[1];
 const NO_SERIES_COLORS = new Map<string, string>();
 
-/** The 8 common tools get dedicated hues (same assignment the old report
- * used); anything else folds to gray so the legend stays honest. */
+/** The 8 common tools get dedicated hues; anything else folds to gray so the legend stays honest. */
 const TOOL_COLORS: Record<string, string> = {
   Glob: PALETTE[0],
   Read: PALETTE[1],

@@ -8,10 +8,6 @@
 //! treats `examples/*.rs` and `examples/*/main.rs` as example binaries — a file
 //! in a subdirectory is includable without cargo trying to build it as its own
 //! binary with no `main`.
-//!
-//! This is **harness scaffolding, not the production path**. The real embedding
-//! (`tt-pane`) reaches Wayland through GDK, using the Tauri window's existing
-//! `wl_display` and toplevel surface rather than creating its own.
 
 use std::sync::{Arc, Mutex};
 

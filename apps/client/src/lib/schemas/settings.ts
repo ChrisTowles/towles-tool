@@ -156,7 +156,7 @@ const AgentboardBlockSchema = z
     shortcutCoach: z.boolean().optional(),
     boardGroupByRepo: z.boolean().optional(),
     // `.catch` for the same reason as `notifyThreshold`: an unrecognized mode
-    // (a newer build's, a hand-edit, the boolean this key used to be) reads as
+    // (a newer build's, a hand-edit) reads as
     // unset rather than failing the whole settings parse.
     railFilter: RailFilterSchema.optional().catch(undefined),
     railRecentHours: z.number().optional(),

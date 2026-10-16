@@ -13,15 +13,10 @@
 
 use std::path::{Path, PathBuf};
 
-/// `<dir>/.claude/launch.json` — where Claude Desktop saves a checkout's
-/// dev-server configs.
 pub fn launch_file_path(dir: &Path) -> PathBuf {
     dir.join(".claude").join("launch.json")
 }
 
-/// Whether `dir` has a `launch.json` at all — the cheap probe stamped onto
-/// [`crate::types::FolderData`], so the client gates its dev-servers affordance
-/// without reading the file every poll.
 pub fn has_launch_file(dir: &Path) -> bool {
     launch_file_path(dir).is_file()
 }
@@ -30,23 +25,17 @@ pub fn has_launch_file(dir: &Path) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchConfig {
-    /// Display name, e.g. `"blog"`.
     #[serde(default)]
     pub name: String,
-    /// The command itself, e.g. `"pnpm"`. Empty = not launchable.
     #[serde(default)]
     pub runtime_executable: String,
-    /// Arguments for the command, e.g. `["--filter", "@x/blog", "dev"]`.
     #[serde(default)]
     pub runtime_args: Vec<String>,
-    /// Port the server listens on once up. Two configs may share one, and one
-    /// without a port simply can't be probed.
     #[serde(default)]
     pub port: Option<u16>,
 }
 
 impl LaunchConfig {
-    /// A config the app can actually start — parsing keeps every entry.
     pub fn launchable(&self) -> bool {
         !self.runtime_executable.trim().is_empty()
     }
@@ -79,7 +68,6 @@ pub fn read_launch_file(dir: &Path) -> crate::Result<Option<LaunchFile>> {
 /// file that parses to nothing has no configs rather than being an error;
 /// failures come back as [`crate::Error::Json`], already carrying line/column.
 fn parse_launch_json(text: &str) -> crate::Result<LaunchFile> {
-    // `Option<_>` because whitespace/comments-only input deserializes as null.
     jsonc_parser::parse_to_serde_value::<Option<LaunchFile>>(text, &JSONC_OPTIONS)
         .map(Option::unwrap_or_default)
         .map_err(|e| crate::Error::Json(serde::de::Error::custom(e)))
@@ -89,8 +77,6 @@ fn parse_launch_json(text: &str) -> crate::Result<LaunchFile> {
 /// commas. `jsonc-parser`'s own defaults are far looser, and accepting those
 /// would quietly launch from a file Claude Desktop itself calls malformed —
 /// the opposite of the compatibility this module exists for.
-/// (`allow_missing_commas` governs only object keys; between *array* elements
-/// the parser is lossless either way, so that one is left alone.)
 const JSONC_OPTIONS: jsonc_parser::ParseOptions = jsonc_parser::ParseOptions {
     allow_comments: true,
     allow_trailing_commas: true,
@@ -130,7 +116,6 @@ pub fn port_listening(port: u16) -> bool {
 mod tests {
     use super::*;
 
-    /// The real file Claude Desktop wrote for the blog repo.
     const BLOG_FIXTURE: &str = r#"{
       "version": "0.0.1",
       "configurations": [
@@ -243,7 +228,6 @@ mod tests {
         assert_eq!(file.configurations[0].port, Some(3000));
     }
 
-    /// `//` and `/*` inside a string are content, not comments.
     #[test]
     fn comment_markers_inside_strings_survive() {
         let file = parse_launch_json(
@@ -293,8 +277,6 @@ mod tests {
         assert!(!has_launch_file(root.path()));
     }
 
-    /// Start of the kernel's auto-assigned port range; below it a port is only
-    /// ever bound by explicit request, never handed out by `bind(0)`.
     fn ephemeral_range_start() -> u16 {
         std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
             .ok()
@@ -319,7 +301,6 @@ mod tests {
     #[test]
     fn port_listening_tracks_a_real_listener() {
         let Some((listener, port)) = bind_below_ephemeral_range() else {
-            // No free non-ephemeral port to borrow — skip rather than race.
             return;
         };
         assert!(port_listening(port), "a bound listener must read as listening");

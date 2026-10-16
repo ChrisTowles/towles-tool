@@ -9,9 +9,6 @@
 //!    attribution reads `TT_SESSION_ID` from `/proc` and dies with the process.
 //! 2. **The transcript is still on disk** — it supplies the authoritative recency
 //!    (file mtime) and the title, and `claude --resume` needs it anyway.
-//!
-//! Clock, paths and pid-liveness are all parameters, so the decisions are
-//! unit-testable without a real prior run.
 
 use std::path::{Path, PathBuf};
 
@@ -24,7 +21,6 @@ use crate::sessions::SessionRecord;
 /// narrow enough that a week-old session is never suggested unprompted.
 pub const DEFAULT_RESUME_WINDOW_MS: i64 = 12 * 60 * 60 * 1000;
 
-/// How often the running app refreshes its heartbeat.
 pub const HEARTBEAT_INTERVAL_MS: i64 = 30_000;
 
 /// Slack above the estimated end time before a transcript counts as "touched
@@ -54,8 +50,6 @@ pub enum PriorRun {
     Ended { at_ms: i64 },
 }
 
-/// `<agentboard_dir>/runtime.json` — instance-scoped like the rest of the
-/// agentboard run state (a task's prior run is not the daily driver's).
 pub fn default_runtime_path() -> PathBuf {
     tt_config::agentboard_dir_lossy().join("runtime.json")
 }
@@ -70,7 +64,6 @@ pub fn classify_prior(prior: Option<&RunMarker>, pid_alive: bool) -> PriorRun {
     }
 }
 
-/// Read the marker (`None` on missing/corrupt — both mean "nothing to trust").
 pub fn read_marker(path: &Path) -> Option<RunMarker> {
     serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
@@ -92,8 +85,6 @@ pub fn begin_run(path: &Path, pid: u32, now_ms: i64, pid_alive: impl Fn(u32) -> 
     verdict
 }
 
-/// A transcript located on disk. Carries the mtime so the cheap recency filter
-/// can run before anything parses the file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptRef {
     pub path: PathBuf,
@@ -105,13 +96,10 @@ pub struct TranscriptRef {
 #[serde(rename_all = "camelCase")]
 pub struct ResumeCandidate {
     pub folder_dir: String,
-    /// tt's PTY session id (`SessionRecord.id`) — the pane to restore into.
     pub pane_id: String,
     pub pane_name: String,
-    /// The thread id to hand to `claude --resume`.
     pub claude_session_id: String,
     pub title: Option<String>,
-    /// Transcript mtime — when this session was last worked on.
     pub last_active_ms: i64,
 }
 
@@ -158,8 +146,6 @@ where
     out
 }
 
-/// Find a session's transcript and stat it. No parsing — see
-/// [`select_candidates`].
 pub fn locate_transcript(
     projects_dir: &Path,
     cwd: &str,
@@ -200,8 +186,6 @@ mod tests {
         }
     }
 
-    /// Stands in for the transcripts on disk: only pairs present here resolve,
-    /// so an absent entry models "no transcript".
     type Disk = HashMap<(String, String), (Option<String>, i64)>;
 
     fn disk(entries: &[(&str, &str, Option<&str>, i64)]) -> Disk {
@@ -213,7 +197,6 @@ mod tests {
             .collect()
     }
 
-    /// `locate` keys the fake path by session id so `title` can find it back.
     fn locate_from(map: &Disk) -> impl Fn(&str, &str) -> Option<TranscriptRef> + '_ {
         move |dir, sid| {
             map.get(&(dir.to_string(), sid.to_string())).map(|(_, mtime)| TranscriptRef {
@@ -257,8 +240,6 @@ mod tests {
 
     #[test]
     fn a_marker_with_live_pid_is_a_concurrent_instance_not_offered() {
-        // Otherwise a second window offers to resume the sessions the first is
-        // actively using.
         let marker = RunMarker { pid: 1, started_at_ms: 0, heartbeat_ms: 900 };
         assert_eq!(classify_prior(Some(&marker), true), PriorRun::Clean);
     }
@@ -275,8 +256,6 @@ mod tests {
         let now = read_marker(&path).unwrap();
         assert_eq!(now.pid, 4242);
 
-        // A launch right after this one still reports it, since the pid this
-        // test's `DEAD` probe reports is never alive.
         write_marker(&path, &RunMarker { pid: 4242, started_at_ms: 1000, heartbeat_ms: 1100 })
             .unwrap();
         assert_eq!(begin_run(&path, 5555, 1200, DEAD), PriorRun::Ended { at_ms: 1100 });
@@ -334,8 +313,6 @@ mod tests {
 
     #[test]
     fn the_expensive_title_read_is_skipped_for_filtered_out_records() {
-        // The whole point of the two-phase split: a stale record must not cost
-        // a transcript parse.
         use std::cell::Cell;
         let records = [("/r/a".to_string(), rec("stale", "shell 1", Some("c-old")))];
         let d = disk(&[("/r/a", "c-old", Some("ancient"), 0)]);

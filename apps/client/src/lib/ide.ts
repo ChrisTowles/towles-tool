@@ -1,6 +1,6 @@
 /** Frontend half of the Claude Code IDE bridge (docs/CLAUDE-CODE-IDE.md): every
- * embedded terminal hosts an IDE server in Rust. The app no longer owns an
- * editor, so all this half does is report connectedness and carry `openFile`. */
+ * embedded terminal hosts an IDE server in Rust. This half only reports connectedness and
+ * carries `openFile`. */
 
 import { useEffect, useMemo, useState } from "react";
 import { invoke, isTauri } from "@/lib/tauri";

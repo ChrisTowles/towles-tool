@@ -100,8 +100,7 @@ describe("showFileNav", () => {
     });
   });
 
-  /** The regression this routing exists for: a scratch file under no tracked
-   * folder used to land in whichever folder was on screen. */
+  /** A scratch file under no tracked folder must not land in whichever folder is on screen. */
   it("sends a /tmp artifact to the calling agent's own task", () => {
     const nav = showFileNav(
       { path: "/tmp/scratch/hello.html", title: "Hello", session: "s-feat-x" },

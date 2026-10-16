@@ -14,19 +14,13 @@ use thiserror::Error;
 
 /// The process holding a port: enough to recognize it ("that's my dev server") without
 /// opening a terminal.
-///
-/// Lives with the decision rather than in [`crate::ports`] that discovers it: this module
-/// is the pure half of the crate, and a decision depending on a module that spawns
-/// subprocesses is the arrow that erodes that.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PortHolder {
     pub pid: i32,
-    /// Executable name — see `ports::command_name` for why it is `argv[0]`, not `comm`.
     pub command: String,
 }
 
 impl PortHolder {
-    /// `node (pid 12345)` — how both the guard message and the app's row say who.
     pub fn describe(&self) -> String {
         format!("{} (pid {})", self.command, self.pid)
     }
@@ -36,8 +30,6 @@ impl PortHolder {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForeignPort {
     pub port: u16,
-    /// `None` when `lsof`/`ps` couldn't name the process — the bind probe still proved
-    /// *something* is there.
     pub holder: Option<PortHolder>,
 }
 
@@ -68,7 +60,6 @@ pub enum RmBlocked {
 }
 
 impl RmBlocked {
-    /// Stable identifier, so a UI branches on the kind and not the message text.
     pub fn kind(&self) -> &'static str {
         match self {
             Self::DirtyTree { .. } => "dirtyTree",
@@ -77,9 +68,6 @@ impl RmBlocked {
         }
     }
 
-    /// What turns the refusal into a next step — an instruction, not a diagnosis. Plain
-    /// prose, no markup: the app's dialog is not a terminal, and backticks around a
-    /// command showed up as literal backticks on screen.
     pub fn remedy(&self) -> String {
         match self {
             Self::DirtyTree { .. } => "Commit or stash the changes to keep them.".to_string(),
@@ -106,8 +94,6 @@ impl RmBlocked {
         }
     }
 
-    /// The claimed port this guard is about, for a shell that can offer to clear it —
-    /// an accessor, so shells never reach into the enum's variant shapes.
     pub fn port(&self) -> Option<u16> {
         match self {
             Self::ForeignPortListener { port, .. } => Some(*port),
@@ -117,8 +103,6 @@ impl RmBlocked {
 }
 
 /// Every reason removal is blocked, given the gathered state. Empty = safe.
-/// `foreign_ports` excludes the task's own docker containers, which are about to be
-/// removed anyway; what is left means a dev server is still running.
 pub fn check_removal(
     dirty_entries: usize,
     unreachable_commits: u64,
@@ -140,8 +124,6 @@ pub fn check_removal(
 }
 
 /// Whether a docker container/volume name belongs to `task_name`. Anchored:
-/// `blog-task-1-postgres` and `blog-task-1_data` match `blog-task-1`;
-/// `blog-task-10-postgres` does NOT (substring filters caught it in the probe).
 pub fn docker_resource_matches(resource: &str, task_name: &str) -> bool {
     match resource.strip_prefix(task_name) {
         Some("") => true,

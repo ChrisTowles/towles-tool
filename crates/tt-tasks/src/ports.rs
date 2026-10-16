@@ -8,9 +8,6 @@
 //! - Signal the listener's POSIX **process group**, not its pid: a `npm run dev` tree
 //!   leaves vite/esbuild orphaned and still bound when you signal only `lsof`'s pid.
 //! - SIGTERM, wait, then SIGKILL — a dev server gets a clean shutdown first.
-//!
-//! Every probe is best-effort: a missing `lsof`/`ps`, a process exiting between listing
-//! and signal, or a platform with no process groups degrades to "no holder known".
 
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -33,16 +30,12 @@ pub enum PortError {
     StillInUse { port: u16 },
 }
 
-/// What [`stop_listeners`] did, for the caller's user-facing message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stopped {
-    /// Process groups signaled. Empty = the port was already free.
     pub pgids: Vec<i32>,
-    /// Whether SIGTERM alone was enough (`false` = it took a SIGKILL).
     pub graceful: bool,
 }
 
-/// Identify what is listening on `port`, if we can name it.
 pub fn holder(port: u16) -> Option<PortHolder> {
     let pid = *listening_pids(port).first()?;
     let command = probe_processes(&[pid])
@@ -55,10 +48,6 @@ pub fn holder(port: u16) -> Option<PortHolder> {
 /// Stop whatever is listening on `port`: SIGTERM its process group(s), then SIGKILL if
 /// the port is still held. Returns only once the port is actually free, since the caller
 /// usually retries whatever the listener was blocking.
-///
-/// `pub(crate)` on purpose: the only thing keeping this from killing a sibling task's
-/// legitimate dev server is the claim check in [`crate::ops::stop_task_port`], its sole
-/// caller. Every port this task did not claim belongs to somebody else.
 pub(crate) fn stop_listeners(port: u16) -> Result<Stopped, PortError> {
     if !cfg!(unix) {
         return Err(PortError::Unsupported);
@@ -99,8 +88,6 @@ fn listening_pgids(port: u16) -> Vec<i32> {
 }
 
 fn listening_pids(port: u16) -> Vec<i32> {
-    // lsof exits 1 with no output on a free port, indistinguishable from an lsof-less
-    // machine here; both mean "no pid to offer".
     tt_exec::run("lsof", &["-ti", &format!("tcp:{port}"), "-sTCP:LISTEN"])
         .map(|out| parse_lsof_pids(&out.stdout))
         .unwrap_or_default()
@@ -111,8 +98,6 @@ struct ProcInfo {
     command: String,
 }
 
-/// Every pid in one `ps` call, not one call per pid per field — the pgid and the display
-/// name come out of the same row.
 fn probe_processes(pids: &[i32]) -> Vec<ProcInfo> {
     if pids.is_empty() {
         return Vec::new();
@@ -155,7 +140,6 @@ fn command_name(args: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_string())
 }
 
-/// One pid per line, as `lsof -t` prints them.
 fn parse_lsof_pids(stdout: &str) -> Vec<i32> {
     let mut pids: Vec<i32> = Vec::new();
     for pid in stdout.lines().filter_map(|line| line.trim().parse::<i32>().ok()) {
@@ -169,12 +153,9 @@ fn parse_lsof_pids(stdout: &str) -> Vec<i32> {
 const TERM: i32 = 15;
 const KILL: i32 = 9;
 
-/// Signal each process group. A group that's already gone (ESRCH) is the success case.
 #[cfg(unix)]
 fn signal_groups(pgids: &[i32], signal: i32) {
     for &pgid in pgids {
-        // Guarded again next to the syscall, not just in `parse_ps_row`: this is the
-        // line that cannot be taken back.
         if pgid < 2 {
             continue;
         }
@@ -213,7 +194,6 @@ mod tests {
 
     #[test]
     fn lsof_noise_is_ignored() {
-        // A free port and lsof's warning lines must never yield a bogus 0.
         assert!(parse_lsof_pids("").is_empty());
         assert!(parse_lsof_pids("lsof: WARNING: can't stat() fuse.gvfsd\n").is_empty());
         assert!(parse_lsof_pids("0\n-1\n").is_empty());
@@ -223,7 +203,6 @@ mod tests {
     fn command_name_is_argv0s_basename() {
         assert_eq!(command_name("/usr/bin/node -e require('net')").as_deref(), Some("node"));
         assert_eq!(command_name("npm run dev").as_deref(), Some("npm"));
-        // A long absolute path must still reduce to the one word worth showing.
         assert_eq!(
             command_name(
                 "/home/x/.nvm/versions/node/v22.0.0/bin/node /home/x/p/node_modules/.bin/vite"
@@ -248,8 +227,6 @@ mod tests {
 
     #[test]
     fn ps_rows_yield_a_pgid_and_a_name() {
-        // `ps` right-pads the pgid column and argv keeps its own spacing, so the split
-        // must be "first field, then all the rest".
         let row = parse_ps_row(" 12345 /usr/bin/node /p/node_modules/.bin/vite --host").unwrap();
         assert_eq!(row.pgid, 12345);
         assert_eq!(row.command, "node");
@@ -263,8 +240,6 @@ mod tests {
 
     #[test]
     fn pgids_that_kill_would_read_as_wildcards_are_refused() {
-        // Negated, 0 is "my own process group" and 1 is "every process this user can
-        // signal". Neither is a real pgid, and neither is survivable.
         assert!(parse_ps_row("0 /usr/bin/node server.js").is_none());
         assert!(parse_ps_row("1 /sbin/init").is_none());
         assert!(parse_ps_row("-1 whatever").is_none());
@@ -273,7 +248,6 @@ mod tests {
 
     #[test]
     fn a_pgid_with_no_argv_still_signals() {
-        // A process mid-exit can have an empty `args` and still be worth signaling.
         let row = parse_ps_row("7 ").unwrap();
         assert_eq!(row.pgid, 7);
         assert_eq!(row.command, "unknown");

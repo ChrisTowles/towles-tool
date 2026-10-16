@@ -1,9 +1,5 @@
 //! Commit-graph queries: merge-base, ahead/behind, reachability, and the
 //! commit walks the task machinery counts work with.
-//!
-//! These replace `merge-base`, `rev-list --count`, `rev-list --left-right`,
-//! `merge-base --is-ancestor` and `log -1 --format=%ct` — together the majority
-//! of the subprocesses the Agentboard poll used to spawn.
 
 use super::{Repo, Result};
 

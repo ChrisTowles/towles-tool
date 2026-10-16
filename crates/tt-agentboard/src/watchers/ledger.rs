@@ -270,7 +270,7 @@ mod tests {
             send_message("t", T2),
         ]);
         assert_eq!(bg.background_running(None), 1);
-        // The old notification, re-logged on delivery after the resume.
+        // The same notification, re-logged on delivery after the resume.
         observe(&mut bg, &teammate_idle("t", T1, T3));
         assert_eq!(bg.background_running(None), 1);
         observe(&mut bg, &teammate_idle("t", T3, T3));

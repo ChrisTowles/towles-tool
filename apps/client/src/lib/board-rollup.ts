@@ -8,19 +8,14 @@ import type { TaskItem } from "@/lib/data";
 /** One resolved link that counts as evidence the task is finished. */
 type RollupEvidence = {
   kind: "issue" | "pr";
-  /** `PR #496` / `#339` — matches the chip the card already renders. */
   ref: string;
-  /** `owner/repo#496` — the unambiguous ref, for the tooltip. */
   qualified: string;
-  /** The link's observed terminal state: `merged` or `closed`. */
   state: string;
 };
 
 /** The rollup that explains a `done` card, or `null` when nothing did. */
 export type TaskRollup = {
-  /** Every resolved link, in the card's chip order (issues, then PRs). */
   evidence: RollupEvidence[];
-  /** One line for the card — `PR #496 merged`, or counts once it gets long. */
   summary: string;
 };
 
@@ -59,8 +54,6 @@ export function taskRollup(task: TaskItem): TaskRollup | null {
   return { evidence, summary: summarize(evidence) };
 }
 
-/** `PR #496 merged · #339 closed` for a few refs, `2 PRs merged · 1 issue
- * closed` once naming them all would overflow the card. */
 function summarize(evidence: RollupEvidence[]): string {
   if (evidence.length <= NAME_REFS_UP_TO) {
     return evidence.map((e) => `${e.ref} ${e.state}`).join(" · ");

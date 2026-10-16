@@ -598,9 +598,8 @@ mod tests {
 
     #[test]
     fn port_occupied_catches_an_ipv6_only_listener() {
-        // A listener bound only to ::1 must still mark the port occupied —
-        // checking just 127.0.0.1 (the old behavior) let a fresh claim
-        // collide with a sibling task's server bound the other stack.
+        // A listener bound only to ::1 must still mark the port occupied, or a fresh claim
+        // collides with a sibling task's server bound the other stack.
         // Machines without an IPv6 loopback can't stage the scenario at all —
         // skip rather than fail, mirroring port_occupied's own tolerance for
         // an absent stack.
@@ -901,9 +900,7 @@ mod tests {
     fn render_task_env_with_no_template_renders_an_empty_env() {
         // A repo with neither a tokenized .env.example nor the sidecar — a
         // plain checkout never onboarded — still renders: empty .env, no
-        // claims, and for a task dir the marker. (The old behavior was a hard
-        // "no template" error, which made task creation fail for any such
-        // repo.)
+        // claims, and for a task dir the marker — never a "no template" error.
         let (_tmp, sr) = temp_task_root();
         let task = sr.task_dir("feat-thing");
         fs::create_dir_all(&task).unwrap();

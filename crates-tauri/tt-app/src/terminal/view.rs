@@ -77,7 +77,7 @@ pub fn term_scroll_to(state: State<TermState>, term_id: String, row: usize) -> R
 
 /// One full frame regardless of dirty state. A pane coming back from
 /// `display:none` needs it: dirty-only frames never resend clean rows, so the
-/// stale canvas would stay stale until a scroll (#47).
+/// stale canvas would stay stale until a scroll.
 #[tauri::command]
 pub fn term_request_full(state: State<TermState>, term_id: String) -> Result<(), String> {
     state.send(&term_id, VtInput::RequestFull)

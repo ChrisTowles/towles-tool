@@ -1,9 +1,6 @@
 //! Working-tree status — the in-process `git status --porcelain`.
 //!
-//! Callers of the old shell-out parsed porcelain text for two facts: is
-//! anything changed at all, and which paths are untracked. Those are what this
-//! returns, as data. Nothing reconstructs a porcelain line, because nothing
-//! ever wanted one.
+//! Returns data, not porcelain text: whether anything changed and which paths are untracked.
 
 use super::{Repo, Result};
 

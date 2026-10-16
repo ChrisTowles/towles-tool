@@ -22,7 +22,6 @@ fn telemetry_dir() -> Result<PathBuf, String> {
     tt_config::telemetry_dir().map_err(|e| e.to_string())
 }
 
-/// Dates with a log file on disk, newest first.
 #[tauri::command]
 pub async fn telemetry_days() -> Result<Vec<String>, String> {
     let dir = telemetry_dir()?;
@@ -33,7 +32,6 @@ pub async fn telemetry_days() -> Result<Vec<String>, String> {
     .map_err(|e| format!("telemetry day list task panicked: {e}"))?
 }
 
-/// One day's records, in the order they were written.
 #[tauri::command]
 pub async fn telemetry_events(date: String) -> Result<Vec<TelemetryRecord>, String> {
     let dir = telemetry_dir()?;
@@ -58,8 +56,6 @@ pub async fn telemetry_attention(date: String) -> Result<AttentionSummary, Strin
     .map_err(|e| format!("telemetry attention task panicked: {e}"))?
 }
 
-/// Days of history the keyboard habit is scored over — a fortnight, matching
-/// the log's own retention, which is the most history there can be.
 const KEYBOARD_WINDOW_DAYS: i64 = 14;
 
 /// Finished days, keyed by date. This one is polled (the status-bar indicator)
@@ -99,8 +95,6 @@ pub async fn telemetry_keyboard() -> Result<KeyboardScore, String> {
     .map_err(|e| format!("telemetry keyboard task panicked: {e}"))?
 }
 
-/// One day's split, served from [`PAST_DAYS`] unless it's today (still being
-/// written) — a cache miss reads and summarizes the file.
 fn keyboard_day(dir: &Path, date: &str, is_today: bool) -> Result<KeyboardDay, String> {
     if !is_today
         && let Ok(cache) = PAST_DAYS.lock()
@@ -178,8 +172,6 @@ pub async fn telemetry_build_compare(
     .map_err(|e| format!("telemetry build compare task panicked: {e}"))?
 }
 
-/// The newest `limit` matches plus the full count, so the bar can say "684
-/// rows" while the DOM holds a few hundred.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordPage {
@@ -230,7 +222,6 @@ pub async fn telemetry_trace(ts: String, day: String) -> Result<Vec<TelemetryRec
     .map_err(|e| format!("telemetry trace task panicked: {e}"))?
 }
 
-/// Days the Query tab loads — the log's retention, so "everything there is".
 const QUERY_WINDOW_DAYS: usize = 14;
 
 /// The Query tab's database, kept for the UTC day it was built on: loading a
@@ -287,8 +278,6 @@ pub async fn telemetry_query(sql: String) -> Result<QueryResult, String> {
     .map_err(|e| format!("telemetry query task panicked: {e}"))?
 }
 
-/// Rebuilds the Query tab's database from disk now, so lines written since
-/// the last build (today's file is live) are queryable before the day rolls.
 #[tauri::command]
 pub async fn telemetry_query_reload() -> Result<(), String> {
     let dir = telemetry_dir()?;
@@ -302,7 +291,6 @@ pub async fn telemetry_query_reload() -> Result<(), String> {
     .map_err(|e| format!("telemetry query reload task panicked: {e}"))?
 }
 
-/// The rules in settings, in the crate's scoring shape.
 fn load_rules() -> Result<Vec<Rule>, String> {
     let settings = tt_config::load().map_err(|e| e.to_string())?;
     Ok(settings.telemetry_rules.into_iter().map(Rule::from).collect())
@@ -331,9 +319,6 @@ pub async fn telemetry_rules(days: u32) -> Result<Vec<RuleScore>, String> {
     .map_err(|e| format!("telemetry rules task panicked: {e}"))?
 }
 
-/// How many enabled rules are failing right now — the status-bar pill. Polled,
-/// so it reads only as far back as the widest enabled rule's window: with the
-/// shipped rules that is today's file alone.
 #[tauri::command]
 pub async fn telemetry_rules_failing() -> Result<usize, String> {
     let dir = telemetry_dir()?;

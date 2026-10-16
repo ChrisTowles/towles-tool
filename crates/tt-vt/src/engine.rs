@@ -1061,9 +1061,8 @@ mod tests {
 
     #[test]
     fn combining_mark_keeps_full_cluster_in_one_cell() {
-        // "e" + U+0301 (combining acute) is one grapheme cell. The old code
-        // carried only the base 'e' and dropped the accent; the fix keeps both
-        // codepoints while the cell still occupies a single column.
+        // "e" + U+0301 (combining acute) is one grapheme cell: both codepoints survive in a
+        // single column.
         let mut e = engine();
         e.feed("e\u{301}".as_bytes());
         let runs = row0_runs(&mut e);

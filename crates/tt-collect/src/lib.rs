@@ -960,8 +960,7 @@ mod tests {
 
     #[test]
     fn a_claude_side_failure_reads_as_itself() {
-        // The bug this migration fixes: a credit-balance error used to come
-        // back as "no parseable JSON in claude output".
+        // A credit-balance error must not read as "no parseable JSON in claude output".
         let raw = r#"{"type":"result","is_error":true,
             "result":"Credit balance is too low to run this request."}"#;
         let e = tt_exec::claude::parse_response::<CalendarAnswer>(raw).unwrap_err();
