@@ -795,3 +795,6 @@ fn renumber_ranks(tx: &rusqlite::Transaction<'_>) -> Result<()> {
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

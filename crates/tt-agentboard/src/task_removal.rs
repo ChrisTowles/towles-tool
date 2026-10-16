@@ -305,7 +305,12 @@ mod tests {
         let dir = tmp.path().join("gone-worktree");
         let path = repos_json(&tmp, &[dir.to_str().unwrap()]);
         let store = store_with_task_at(dir.to_str().unwrap());
-        let opts = RemoveOpts { root: None, name: "gone-worktree".to_string(), force: false };
+        let opts = RemoveOpts {
+            root: None,
+            name: "gone-worktree".to_string(),
+            force: false,
+            ports_dir: None,
+        };
 
         let outcome = remove_task_and_bindings(
             TaskRemoval {
@@ -337,7 +342,12 @@ mod tests {
         std::fs::create_dir_all(checkout.join(".git")).unwrap();
         let dir = checkout.join(".claude/worktrees/feat-tpyo");
         let path = repos_json(&tmp, &[]);
-        let opts = RemoveOpts { root: Some(checkout), name: "feat-tpyo".to_string(), force: false };
+        let opts = RemoveOpts {
+            root: Some(checkout),
+            name: "feat-tpyo".to_string(),
+            force: false,
+            ports_dir: None,
+        };
 
         let error = remove_task_and_bindings(
             TaskRemoval {
