@@ -41,6 +41,8 @@ const URL_RE = /https?:\/\/[^\s"'`<>]+/g;
 /** Deliberately over-matches any `word.ext` token; `isPathLike` then rejects
  * prose like `example.com` or a bare `1.2.3` version. */
 const PATH_RE = /(?:\/|\.\.?\/|~\/)?(?:[\w.@~+-]+\/)*[\w.@~+-]+\.[A-Za-z0-9]+(?::\d+(?::\d+)?)?/g;
+/** `#123` or `owner/name#123`, not inside a word, path or `&#123;` entity. */
+const REF_RE = /(?<![\w/#&])(?:([\w.-]+\/[\w.-]+))?#(\d{1,6})(?!\w)/g;
 const TRAILING = new Set([".", ",", ";", ":", "!", "?"]);
 const CLOSERS: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
 /** How many rows a wrapped link may span in either direction from the probe. */
@@ -293,8 +295,15 @@ function segmentsOf(at: Cell[], start: number, end: number): LinkSegment[] {
 }
 
 /** The link under viewport cell (x, y), or null. URLs win over paths where both
- * could match, since URL spans are masked out before path detection. */
-export function linkAt(lines: GridLine[], cols: number, x: number, y: number): TermLink | null {
+ * could match, since URL spans are masked out before path detection. A bare
+ * `#123` links into `ghRepo` (gh's `owner/name`) and is inert without it. */
+export function linkAt(
+  lines: GridLine[],
+  cols: number,
+  x: number,
+  y: number,
+  ghRepo?: string,
+): TermLink | null {
   if (cols <= 0 || x < 0 || y < 0 || y >= lines.length) return null;
 
   const rows: RowCells[] = lines.map((line) => ({
@@ -334,6 +343,17 @@ export function linkAt(lines: GridLine[], cols: number, x: number, y: number): T
     if (probe < start || probe > end) continue;
     const { path, line } = splitPathLine(raw);
     return { kind: "path", path, line, segments: segmentsOf(at, start, end) };
+  }
+
+  for (const m of masked.matchAll(REF_RE)) {
+    const start = m.index;
+    const end = start + m[0].length - 1; // inclusive
+    if (probe < start || probe > end) continue;
+    const repo = m[1] ?? ghRepo;
+    if (!repo) return null;
+    // GitHub redirects /issues/N to /pull/N for a PR, so one URL serves both.
+    const url = `https://github.com/${repo}/issues/${m[2]}`;
+    return { kind: "url", url, segments: segmentsOf(at, start, end) };
   }
   return null;
 }

@@ -44,6 +44,7 @@ import {
 } from "@/lib/shortcuts";
 import { openExternalUrl } from "@/lib/open-url";
 import { invoke } from "@/lib/tauri";
+import { uiAction } from "@/lib/ui-action";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -70,6 +71,7 @@ export function TerminalView({
   onTitle,
   onOpenPath,
   onRevealPath,
+  ghRepo,
   focusRequest,
 }: {
   termId: string;
@@ -80,6 +82,8 @@ export function TerminalView({
   onOpenPath?: (path: string, line: number | null) => void;
   /** Show a path's folder in the Files pane; absent, only the file manager is offered. */
   onRevealPath?: (path: string) => void;
+  /** The checkout's GitHub `owner/name`, so a bare `#123` links to it. */
+  ghRepo?: string;
   /** Bump to focus this pane's hidden input; absent/unchanged does nothing. */
   focusRequest?: number;
 }) {
@@ -92,6 +96,8 @@ export function TerminalView({
   onTitleRef.current = onTitle;
   const onOpenPathRef = useRef(onOpenPath);
   onOpenPathRef.current = onOpenPath;
+  const ghRepoRef = useRef(ghRepo);
+  ghRepoRef.current = ghRepo;
   // `termId` goes along so a relative path resolves against where this shell
   // has since `cd`'d, not its spawn `cwd`.
   const openPathInEditor = (link: Extract<TermLink, { kind: "path" }>) =>
@@ -110,7 +116,7 @@ export function TerminalView({
     scrollTo: (row: number) => void;
     repaint: () => void;
     focusTerm: () => void;
-    copy: () => void;
+    copy: (markdown?: boolean) => void;
     paste: () => void;
     selectAll: () => void;
     hasSelection: () => boolean;
@@ -503,7 +509,10 @@ export function TerminalView({
       const write = (data: string) => void invoke("term_write", { termId, data });
       const scroll = (delta: number | null) => void invoke("term_scroll", { termId, delta });
       // Written in Rust: navigator.clipboard is unreliable under WebKitGTK.
-      const copySelection = () => void invoke("term_copy", { termId });
+      const copySelection = (markdown = false) => {
+        if (markdown) uiAction("terminal.copy_markdown", "agentboard");
+        void invoke("term_copy", { termId, markdown });
+      };
 
       const onFrame = await listen<{ termId: string; frame: Frame }>("terminal://frame", (e) => {
         if (e.payload.termId === termId) applyFrame(e.payload.frame);
@@ -751,7 +760,7 @@ export function TerminalView({
         linkAtPoint: (offsetX, offsetY) => {
           const x = Math.max(0, Math.min(grid.cols - 1, Math.floor(offsetX / cellW)));
           const y = Math.max(0, Math.min(grid.rows - 1, Math.floor(offsetY / cellH)));
-          return linkAt(grid.lines, grid.cols, x, y);
+          return linkAt(grid.lines, grid.cols, x, y, ghRepoRef.current);
         },
         // Re-measure in place — no shell restart — and resize the PTY.
         setFontSize: (px) => {
@@ -854,7 +863,7 @@ export function TerminalView({
         const cell = cellOf(e);
         // Ctrl/Cmd+click opens a link; plain click keeps select/focus.
         if (e.ctrlKey || e.metaKey) {
-          const link = linkAt(grid.lines, grid.cols, cell.x, cell.y);
+          const link = linkAt(grid.lines, grid.cols, cell.x, cell.y, ghRepoRef.current);
           if (link) {
             if (link.kind === "url") void openExternalUrl(link.url);
             else bridgeRef.current?.openPath(link);
@@ -877,7 +886,8 @@ export function TerminalView({
           if (mouseGestureToProgram) return;
         }
         // A drag tracks on the window, surviving the pointer leaving here.
-        if (!dragging) setHoveredLink(linkAt(grid.lines, grid.cols, cell.x, cell.y));
+        if (!dragging)
+          setHoveredLink(linkAt(grid.lines, grid.cols, cell.x, cell.y, ghRepoRef.current));
       };
       const onWindowMouseMove = (e: MouseEvent) => {
         if (!dragging) return;
@@ -1067,6 +1077,9 @@ export function TerminalView({
           <ContextMenuItem disabled={!copyEnabled} onClick={() => bridgeRef.current?.copy()}>
             Copy
             <ContextMenuShortcut>{macKeymap() ? "⇧⌘C" : "Ctrl+Shift+C"}</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem disabled={!copyEnabled} onClick={() => bridgeRef.current?.copy(true)}>
+            Copy as Markdown
           </ContextMenuItem>
           <ContextMenuItem onClick={() => bridgeRef.current?.paste()}>Paste</ContextMenuItem>
           <ContextMenuItem onClick={() => bridgeRef.current?.selectAll()}>

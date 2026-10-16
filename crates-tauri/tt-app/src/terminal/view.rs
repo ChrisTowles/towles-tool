@@ -136,9 +136,10 @@ pub fn term_pointer(
     state.send(&term_id, VtInput::Pointer(ev))
 }
 
-/// User-initiated, so unlike OSC 52 it isn't focus-gated.
+/// User-initiated, so unlike OSC 52 it isn't focus-gated. `markdown` fences the
+/// selection as a code block (see [`tt_vt::fence`]).
 #[tauri::command]
-pub async fn term_copy(app: AppHandle, term_id: String) -> Result<String, String> {
+pub async fn term_copy(app: AppHandle, term_id: String, markdown: bool) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel::<Option<String>>(1);
         app.state::<TermState>().send_expecting_reply(&term_id, false, VtInput::Copy(reply_tx))?;
@@ -146,6 +147,8 @@ pub async fn term_copy(app: AppHandle, term_id: String) -> Result<String, String
             .recv_timeout(std::time::Duration::from_secs(2))
             .map(|text| text.unwrap_or_default())
             .map_err(|_| "terminal engine did not answer".to_string())?;
+        let text =
+            if markdown && !text.is_empty() { tt_vt::fence::markdown_fence(&text) } else { text };
         if !text.is_empty() {
             use tauri_plugin_clipboard_manager::ClipboardExt;
             tracing::info!(source = "terminal_copy", bytes = text.len(), "clipboard.write");

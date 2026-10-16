@@ -463,3 +463,33 @@ describe("linkLabel", () => {
     );
   });
 });
+
+describe("linkAt (GitHub refs)", () => {
+  const REPO = "ChrisTowles/towles-tool";
+
+  it("links a bare #N into the checkout's repo", () => {
+    const link = urlAt([row("fixed in #742, thanks")], COLS, 10, 0, REPO);
+    expect(link?.url).toBe(`https://github.com/${REPO}/issues/742`);
+    expect(link?.segments).toEqual([{ y: 0, start: 9, end: 12 }]);
+  });
+
+  it("leaves a bare #N inert without a repo", () => {
+    expect(linkAt([row("fixed in #742")], COLS, 10, 0)).toBeNull();
+  });
+
+  it("an owner/name#N names its own repo", () => {
+    const link = urlAt([row("see acme/widgets#7 too")], COLS, 6, 0, REPO);
+    expect(link?.url).toBe("https://github.com/acme/widgets/issues/7");
+  });
+
+  it("ignores # inside words, entities and anchors", () => {
+    for (const text of ["abc#12 x", "&#123; x", "C##12 x"]) {
+      expect(linkAt([row(text)], COLS, 4, 0, REPO)).toBeNull();
+    }
+  });
+
+  it("a URL fragment stays part of the URL", () => {
+    const link = urlAt([row("https://example.com/a#12")], COLS, 22, 0, REPO);
+    expect(link?.url).toBe("https://example.com/a#12");
+  });
+});

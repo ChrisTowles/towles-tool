@@ -897,6 +897,7 @@ export function AgentBoardScreen() {
                   sessionById={sessionById}
                   folderOf={folderOf}
                   folderByDir={folderByDir}
+                  repoByFolder={repoByFolder}
                   now={now}
                   actions={actions}
                   focusedPaneId={focusedPaneId}
