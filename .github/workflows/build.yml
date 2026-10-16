@@ -162,4 +162,4 @@ jobs:
             target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
