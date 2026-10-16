@@ -69,10 +69,16 @@ export function useBoardRequests(args: {
       } else if (req.kind === "reopen-task") {
         setActiveFolderDir(req.repoDir);
         ackFolder(req.repoDir);
-        taskCreation.openReopenForm(
+        taskCreation.openSeededForm(
           { name: req.repoName, dir: req.repoDir, key: req.repoKey, originUrl: req.originUrl },
-          req.taskId,
-          req.goal,
+          { taskId: req.taskId, goal: req.goal },
+        );
+      } else if (req.kind === "new-task-from-issue") {
+        setActiveFolderDir(req.repoDir);
+        ackFolder(req.repoDir);
+        taskCreation.openSeededForm(
+          { name: req.repoName, dir: req.repoDir, key: req.repoKey, originUrl: req.originUrl },
+          { issue: req.issue },
         );
       } else if (req.kind === "start-task") {
         // The MCP `task_start` tool.

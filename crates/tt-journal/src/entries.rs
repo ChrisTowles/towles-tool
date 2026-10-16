@@ -194,6 +194,30 @@ pub fn append_bullet_to_daily(
     Ok(info.full_path)
 }
 
+/// The bullets under `date`'s `## <date>` section of its daily note, as written.
+/// A note or section that doesn't exist yet is an empty day, not an error.
+pub fn daily_bullets(journal_settings: &JournalSettings, date: NaiveDate) -> Result<Vec<String>> {
+    let info = generate_journal_file_info(journal_settings, date, JournalType::DailyNotes, "");
+    match std::fs::read_to_string(&info.full_path) {
+        Ok(content) => Ok(section_bullets(&content, date)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn section_bullets(content: &str, date: NaiveDate) -> Vec<String> {
+    let header_prefix = format!("## {}", format_date(date));
+    content
+        .lines()
+        .skip_while(|l| !l.starts_with(&header_prefix))
+        .skip(1)
+        .take_while(|l| !l.starts_with("## "))
+        .filter_map(|l| l.trim_start().strip_prefix("- "))
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
 /// Insert a `- HH:MM …` bullet into `content` under today's `## <date>` day section.
 /// Pure string transformation, split out so it is trivially testable.
 fn insert_daily_line(content: &str, date: NaiveDate, new_line: &str) -> String {
@@ -579,6 +603,16 @@ mod tests {
 
     fn dt(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> NaiveDateTime {
         ymd(y, mo, d).and_time(NaiveTime::from_hms_opt(h, mi, 0).unwrap())
+    }
+
+    #[test]
+    fn section_bullets_reads_only_that_days_bullets() {
+        let content = "# Journal\n\n## 2026-06-29 Monday\n- 09:00 standup\n\n## 2026-06-30 Tuesday\nprose\n- 10:15 shipped #12\n  - 11:00 nested\n- \n\n## 2026-07-01 Wednesday\n- 08:00 later\n";
+        assert_eq!(
+            section_bullets(content, ymd(2026, 6, 30)),
+            ["10:15 shipped #12", "11:00 nested"]
+        );
+        assert!(section_bullets(content, ymd(2026, 7, 2)).is_empty());
     }
 
     #[test]

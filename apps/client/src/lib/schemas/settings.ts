@@ -110,6 +110,7 @@ const IssueCollectorSchema = z
   .object({
     enabled: z.boolean(),
     refreshMinutes: z.number(),
+    watchedLabels: z.array(z.string()),
   })
   .passthrough();
 

@@ -402,6 +402,9 @@ fn run_batch_blocking(app: &AppHandle, batch: Batch, calendar_period_ms: i64) {
         Batch::Issues { reuse_ms } => {
             let repos = tt_collect::tracked_repo_dirs();
             log_failure(tt_collect::collect_issues(&store, &repos, reuse_ms, now));
+            let labels =
+                tt_config::load().map(|s| s.collectors.issues.watched_labels).unwrap_or_default();
+            log_failure(tt_collect::collect_watched_issues(&store, &repos, &labels, reuse_ms, now));
         }
         Batch::Calendar(sources) => {
             // Token-cost guard: an interval's first tick fires at startup, so a relaunch

@@ -28,7 +28,10 @@ What sets this app apart. Summarised in the [README](../README.md). Biggest firs
 
 - **Cross-repo work board.** Board is a kanban of tasks spanning every watched
   repo. Each task links 0..N issues, 0..N PRs, and usually a worktree,
-  and done rolls up from GitHub PR state. Desktop has nothing like it. Its
+  and done rolls up from GitHub PR state. Issues carrying a watched label
+  (Settings → Collectors) sit above the lanes with a Start task button, and
+  "Landed today" lists the day's merged PRs, done tasks and journal bullets.
+  Desktop has nothing like it. Its
   "tasks pane" holds background subagents inside a single session, and no
   cross-repo surface exists.
 

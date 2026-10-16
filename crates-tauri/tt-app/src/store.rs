@@ -756,6 +756,15 @@ pub fn journal_log(app: AppHandle, state: State<StoreState>, text: String) -> Re
     Ok(())
 }
 
+/// Today's daily-note bullets, for the Board's "Landed today" view. Read-only.
+#[tauri::command]
+pub fn journal_today() -> Result<Vec<String>, String> {
+    let settings = tt_config::load().map_err(|e| format!("failed to load settings: {e}"))?;
+    let date = chrono::Local::now().date_naive();
+    tt_journal::entries::daily_bullets(&settings.journal_settings, date)
+        .map_err(|e| format!("journal read failed: {e}"))
+}
+
 /// `started` is `false` when a manual refresh was already in flight and this
 /// call was a no-op, so the frontend keeps its spinner off.
 #[derive(serde::Serialize)]
@@ -801,7 +810,8 @@ fn run_collect_now_blocking(app: &AppHandle) {
     let collectors = tt_config::load().map(|s| s.collectors).unwrap_or_default();
     let repos = tt_collect::tracked_repo_dirs();
     let slack = manual_slack_config(&collectors);
-    for summary in tt_collect::collect_manual(&store, &repos, slack.as_ref(), now_ms()) {
+    let labels = &collectors.issues.watched_labels;
+    for summary in tt_collect::collect_manual(&store, &repos, labels, slack.as_ref(), now_ms()) {
         if !summary.ok {
             eprintln!(
                 "collect-now: {} failed: {}",

@@ -228,6 +228,7 @@ fn issue(repo: &str, number: i64, updated: i64) -> IssueInput {
         number,
         title: format!("Issue {number}"),
         labels: vec!["bug".to_string()],
+        assignees: vec![],
         state: "open".to_string(),
         url: format!("https://github.com/{repo}/issues/{number}"),
         updated_ts: updated,
@@ -567,6 +568,49 @@ fn replace_issues_for_repos_preserves_other_repos_rows() {
     let issues = s.issues().unwrap();
     let repos: Vec<&str> = issues.iter().map(|i| i.repo.as_str()).collect();
     assert!(repos.contains(&"o/a") && repos.contains(&"o/b"));
+}
+
+#[test]
+fn issues_round_trip_assignees() {
+    let s = Store::open_in_memory().unwrap();
+    let mut i = issue("o/r", 1, 100);
+    i.assignees = vec!["octocat".to_string()];
+    s.replace_issues(&[i]).unwrap();
+    assert_eq!(s.issues().unwrap()[0].assignees, ["octocat"]);
+}
+
+#[test]
+fn watched_issues_are_their_own_cache() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_issues(&[issue("o/r", 1, 100)]).unwrap();
+    s.replace_watched_issues(&[issue("o/r", 2, 200), issue("o/b", 3, 300)]).unwrap();
+    assert_eq!(s.issues().unwrap().len(), 1, "watched rows never land in my issues");
+    let watched: Vec<i64> = s.watched_issues().unwrap().iter().map(|i| i.number).collect();
+    assert_eq!(watched, [3, 2]);
+    assert_eq!(s.snapshot().unwrap().watched_issues.len(), 2);
+
+    s.replace_watched_issues_for_repos(&["o/b".to_string()], &[]).unwrap();
+    assert_eq!(s.watched_issues().unwrap().len(), 1, "a scoped write leaves other repos alone");
+    s.replace_watched_issues(&[]).unwrap();
+    assert!(s.watched_issues().unwrap().is_empty());
+}
+
+#[test]
+fn v26_db_gains_the_issue_assignees_column() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    drop(Store::open(&path).unwrap());
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "ALTER TABLE issues DROP COLUMN assignees;
+         UPDATE meta SET value = '26' WHERE key = 'schema_version';
+         INSERT INTO issues (repo, number, title, labels, state, url, updated_ts)
+           VALUES ('o/r', 7, 't', '[]', 'open', 'u', 1);",
+    )
+    .unwrap();
+    drop(conn);
+    let s = Store::open(&path).unwrap();
+    assert!(s.issues().unwrap()[0].assignees.is_empty());
 }
 
 #[test]
@@ -1861,6 +1905,7 @@ fn clear_dismissals_removes_every_kind() {
         number: 118,
         title: "Flaky resize".to_string(),
         labels: vec![],
+        assignees: vec![],
         state: "open".to_string(),
         url: "https://github.com/octo/widgets/issues/118".to_string(),
         updated_ts: 50,

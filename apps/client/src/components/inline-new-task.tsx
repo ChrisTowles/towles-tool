@@ -226,19 +226,28 @@ function reviewGoal(pr: PullRequest): string {
   return `Review PR #${pr.number}: ${pr.title}`;
 }
 
+/** What a form opened on someone's behalf starts with: reopening a task binds its
+ * id and goal, starting from an issue seeds the issue. */
+export type TaskFormSeed = { taskId?: number; goal?: string; issue?: IssueItem };
+
 export function InlineNewTask({
   repo,
   onCancel,
   onSubmit,
   initialGoal,
+  initialIssue,
 }: {
   repo: NewTaskRepo;
   onCancel: () => void;
   onSubmit: (input: NewTaskSubmit) => void;
   /** Set when the form was opened to reopen a closed task, not start a new one. */
   initialGoal?: string;
+  /** Set when the form was opened from an issue: seeded as if it were picked. */
+  initialIssue?: IssueItem;
 }) {
-  const [goal, setGoal] = useState(initialGoal ?? "");
+  const [goal, setGoal] = useState(
+    initialIssue ? `${initialIssue.title} (#${initialIssue.number})` : (initialGoal ?? ""),
+  );
   const [images, setImages] = useState<PastedImage[]>([]);
   // Staged on paste, not at submit: an improver needs real paths to hand
   // `claude -p`, and staging once keeps create and suggest on the same files.
@@ -248,8 +257,10 @@ export function InlineNewTask({
   const [staging, setStaging] = useState(false);
   // The branch can't key the staging dir — it's still being edited on paste.
   const [draftScope] = useState(nextDraftScopeId);
-  const [branchEdit, setBranchEdit] = useState<string | null>(null);
-  const [titleEdit, setTitleEdit] = useState<string | null>(null);
+  const [branchEdit, setBranchEdit] = useState<string | null>(() =>
+    initialIssue ? branchFromIssue(initialIssue.number, initialIssue.title) : null,
+  );
+  const [titleEdit, setTitleEdit] = useState<string | null>(initialIssue?.title ?? null);
   const [base, setBase] = useState("");
   const [model, setModel] = useState<ModelChoice>(USE_DEFAULT);
   const [effort, setEffort] = useState<EffortChoice>(USE_DEFAULT);
@@ -278,7 +289,9 @@ export function InlineNewTask({
   );
   const [issues, setIssues] = useState<IssueItem[] | null>(null);
   const [issuesError, setIssuesError] = useState<string | null>(null);
-  const [selectedIssues, setSelectedIssues] = useState<IssueItem[]>([]);
+  const [selectedIssues, setSelectedIssues] = useState<IssueItem[]>(
+    initialIssue ? [initialIssue] : [],
+  );
   const [mode, setMode] = useState<"new" | "review">("new");
   const [prCheck, setPrCheck] = useState<PrCheck | null>(null);
   const reviewing = mode === "review";

@@ -171,7 +171,7 @@ pub(crate) const TASK_COLS: &str = "id, text, status, rank, created_at, complete
 /// Every read meaning *the user's board* carries this, so a [`TaskKind::Detected`] row never
 /// reaches the Board, Cockpit, rollup or MCP `task_list`; `rail_worktrees` reads both kinds.
 pub(crate) const TASK_KIND_FILTER: &str = "kind = 'task'";
-pub(crate) const ISSUE_COLS: &str = "i.repo, i.number, i.title, i.labels, i.state, i.url, i.updated_ts, COALESCE(d.dismissed_ts, 0)";
+pub(crate) const ISSUE_COLS: &str = "i.repo, i.number, i.title, i.labels, i.state, i.url, i.updated_ts, COALESCE(d.dismissed_ts, 0), i.assignees";
 pub(crate) const PR_COLS: &str = "p.repo, p.number, p.title, p.branch, p.state, p.checks, p.review_state, \
      p.url, p.updated_ts, COALESCE(d.dismissed_ts, 0), p.base_branch";
 pub(crate) const RUN_COLS: &str = "collector, ran_at, ok, message";
@@ -344,6 +344,7 @@ pub struct IssueItem {
     pub number: i64,
     pub title: String,
     pub labels: Vec<String>,
+    pub assignees: Vec<String>,
     pub state: String,
     pub url: String,
     pub updated_ts: i64,
@@ -421,6 +422,9 @@ pub struct Snapshot {
     pub events: Vec<CalEvent>,
     pub tasks: Vec<TaskItem>,
     pub issues: Vec<IssueItem>,
+    /// Open issues carrying a watched label, assigned to anyone.
+    #[serde(default)]
+    pub watched_issues: Vec<IssueItem>,
     pub prs: Vec<PrItem>,
     pub runs: Vec<CollectRun>,
     pub dms: Vec<DmItem>,
@@ -486,6 +490,9 @@ pub struct IssueInput {
     pub title: String,
     #[serde(default)]
     pub labels: Vec<String>,
+    /// GitHub logins.
+    #[serde(default)]
+    pub assignees: Vec<String>,
     pub state: String,
     pub url: String,
     pub updated_ts: i64,

@@ -206,6 +206,7 @@ function issue(overrides: Partial<IssueItem>): IssueItem {
     number: 1,
     title: "an issue",
     labels: [],
+    assignees: [],
     state: "open",
     url: "https://github.com/octo/widgets/issues/1",
     updatedTs: 0,

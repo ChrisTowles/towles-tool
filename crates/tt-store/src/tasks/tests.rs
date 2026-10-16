@@ -151,6 +151,7 @@ fn link_states_copy_from_the_collector_snapshot_and_skip_absent_refs() {
         number: 1,
         title: "i".to_string(),
         labels: Vec::new(),
+        assignees: Vec::new(),
         state: "closed".to_string(),
         url: "u1".to_string(),
         updated_ts: 1,

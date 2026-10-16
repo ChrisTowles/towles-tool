@@ -799,11 +799,14 @@ impl Default for SlackDmCollector {
 pub struct IssueCollector {
     pub enabled: bool,
     pub refresh_minutes: u64,
+    /// Open issues with any of these labels, assigned to anyone, are offered on the
+    /// Board as tasks to start. Empty asks GitHub nothing.
+    pub watched_labels: Vec<String>,
 }
 
 impl Default for IssueCollector {
     fn default() -> Self {
-        Self { enabled: true, refresh_minutes: 15 }
+        Self { enabled: true, refresh_minutes: 15, watched_labels: Vec::new() }
     }
 }
 

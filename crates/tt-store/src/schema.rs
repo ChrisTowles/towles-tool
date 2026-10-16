@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 27;
+pub(crate) const SCHEMA_VERSION: i64 = 28;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -211,6 +211,22 @@ CREATE TABLE IF NOT EXISTS suggest_spend (
 );
 ";
 
+/// v28: issues carrying a watched label, whoever they are assigned to — kept apart
+/// from `issues`, which is only ever the user's own.
+const SCHEMA_WATCHED_ISSUES_V28: &str = "\
+CREATE TABLE IF NOT EXISTS watched_issues (
+    repo TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    labels TEXT NOT NULL DEFAULT '[]',
+    assignees TEXT NOT NULL DEFAULT '[]',
+    state TEXT NOT NULL,
+    url TEXT NOT NULL,
+    updated_ts INTEGER NOT NULL,
+    PRIMARY KEY (repo, number)
+);
+";
+
 const SCHEMA_AGENTS_V21: &str = "\
 CREATE TABLE IF NOT EXISTS agent_sessions (
     agent TEXT PRIMARY KEY,
@@ -317,6 +333,8 @@ impl Store {
         self.migrate_pr_status_base_branch_v25()?;
         self.conn.execute_batch(SCHEMA_NOTES_V26)?;
         self.migrate_queue_snoozes_until_ci_v27()?;
+        self.migrate_issues_assignees_v28()?;
+        self.conn.execute_batch(SCHEMA_WATCHED_ISSUES_V28)?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -369,7 +387,7 @@ impl Store {
     fn migrate_collect_runs_v6(&self) -> Result<()> {
         self.conn.execute(
             "DELETE FROM collect_runs
-             WHERE collector NOT IN ('claude:calendar', 'issues', 'prs', 'ci', 'slack:dm')",
+             WHERE collector NOT IN ('claude:calendar', 'issues', 'issues:watched', 'prs', 'ci', 'slack:dm')",
             [],
         )?;
         Ok(())
@@ -555,6 +573,20 @@ impl Store {
         if !has_base {
             self.conn.execute_batch(
                 "ALTER TABLE pr_status ADD COLUMN base_branch TEXT NOT NULL DEFAULT '';",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn migrate_issues_assignees_v28(&self) -> Result<()> {
+        let has_assignees: bool = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('issues') WHERE name = 'assignees'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if !has_assignees {
+            self.conn.execute_batch(
+                "ALTER TABLE issues ADD COLUMN assignees TEXT NOT NULL DEFAULT '[]';",
             )?;
         }
         Ok(())
