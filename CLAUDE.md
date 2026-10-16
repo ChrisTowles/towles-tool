@@ -147,4 +147,4 @@ Full list: **[docs/CONVENTIONS.md](docs/CONVENTIONS.md)**. The ones that bite:
 - **No CLI-parity requirement.** The app is the primary product; each feature
   picks its natural surface, and the logic lands in a Tauri-free `crates/`
   library with unit tests. The port from the TypeScript CLI is **finished** and
-  selective, and finished.
+  selective.
