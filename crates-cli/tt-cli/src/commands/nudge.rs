@@ -11,7 +11,7 @@ use crate::ui;
 
 /// Touch `target`'s nudge file, naming the caller's session so only the app
 /// instance that owns this terminal acts on it — every instance watches the same
-/// machine-global dir. Bypasses the store deliberately: this runs inside a Claude
+/// machine-global dir — plus the cwd and trigger, so it sweeps only what changed. Bypasses the store deliberately: this runs inside a Claude
 /// Code hook's timeout budget, so it stays a filesystem touch rather than pay to
 /// open (and migrate) tt.db.
 pub fn run(args: NudgeArgs) -> i32 {
@@ -34,7 +34,12 @@ pub fn run(args: NudgeArgs) -> i32 {
         Ok(dir) => dir,
         Err(e) => return fail(target, session.as_deref(), trigger, "resolve_dir_failed", &e),
     };
-    match tt_collect::nudge::write(&dir, target, session.as_deref(), now_ms()) {
+    let note = tt_collect::nudge::Note {
+        session: session.clone(),
+        origin: std::env::current_dir().ok(),
+        trigger: trigger.map(str::to_string),
+    };
+    match tt_collect::nudge::write(&dir, target, &note, now_ms()) {
         Ok(()) => {
             tracing::info!(
                 nudge_target = target.key(),

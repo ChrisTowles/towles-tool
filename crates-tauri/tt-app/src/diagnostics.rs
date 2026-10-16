@@ -3,13 +3,10 @@
 //! parsed by `tt_ide::diagnostics` into the `getDiagnostics` wire shape and
 //! pushed to connected CLIs as `diagnostics_changed` staleness signals.
 //!
-//! Scheduling: refresh *requests* arrive from three places — a CLI connecting
-//! to a terminal's IDE server, the git-stat poll noticing a folder's working
-//! tree changed, and the manual `ide_diagnostics_refresh` command. Requests
-//! are debounced per folder and executed one folder at a time (a check run is
-//! real CPU; a burst of edits across tasks must not fan out into parallel
-//! full-workspace cargo checks). Folders with no *connected* Claude session
-//! are skipped entirely — no session, no reader, no run.
+//! Requests come from a CLI connecting (runs at once) and the git-stat poll
+//! seeing a tree change (waits out `tt_ide::check_backoff` while results repeat).
+//! Each is debounced per folder and run one folder at a time — a check is real
+//! CPU. A folder with no *connected* Claude session is skipped: no reader, no run.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -35,25 +32,32 @@ const TSCONFIG_CAP: usize = 4;
 pub struct DiagHub {
     /// Latest wire payload (`[{uri, diagnostics}]`) per folder.
     results: Mutex<HashMap<PathBuf, Value>>,
-    tx: UnboundedSender<PathBuf>,
+    backoff: Mutex<tt_ide::check_backoff::CheckBackoff>,
+    /// `(folder, now)`: `now` skips the backoff.
+    tx: UnboundedSender<(PathBuf, bool)>,
 }
 
 impl DiagHub {
     /// Start the manager task and hand back the shared handle (managed as
     /// Tauri state; terminal IDE servers query it per message).
     pub fn spawn(app: AppHandle) -> Arc<DiagHub> {
-        let (tx, mut rx) = unbounded_channel::<PathBuf>();
-        let hub = Arc::new(DiagHub { results: Mutex::new(HashMap::new()), tx });
+        let (tx, mut rx) = unbounded_channel::<(PathBuf, bool)>();
+        let hub = Arc::new(DiagHub {
+            results: Mutex::new(HashMap::new()),
+            backoff: Mutex::new(Default::default()),
+            tx,
+        });
         let task_hub = hub.clone();
         tauri::async_runtime::spawn(async move {
             use tokio::time::{Instant, sleep_until};
-            let mut pending: HashMap<PathBuf, Instant> = HashMap::new();
+            let mut pending: HashMap<PathBuf, (Instant, bool)> = HashMap::new();
             loop {
-                let next_due = pending.values().min().copied();
+                let next_due = pending.values().map(|(at, _)| *at).min();
                 tokio::select! {
                     request = rx.recv() => {
-                        let Some(folder) = request else { return };
-                        pending.insert(folder, Instant::now() + DEBOUNCE);
+                        let Some((folder, now)) = request else { return };
+                        let forced = now || pending.get(&folder).is_some_and(|(_, f)| *f);
+                        pending.insert(folder, (Instant::now() + DEBOUNCE, forced));
                     }
                     () = async {
                         match next_due {
@@ -62,13 +66,18 @@ impl DiagHub {
                         }
                     } => {
                         let now = Instant::now();
-                        let due: Vec<PathBuf> = pending
+                        let due: Vec<(PathBuf, bool)> = pending
                             .iter()
-                            .filter(|(_, deadline)| **deadline <= now)
-                            .map(|(folder, _)| folder.clone())
+                            .filter(|(_, (deadline, _))| *deadline <= now)
+                            .map(|(folder, (_, forced))| (folder.clone(), *forced))
                             .collect();
-                        for folder in due {
+                        for (folder, forced) in due {
                             pending.remove(&folder);
+                            let wait = task_hub.backoff_wait(&folder);
+                            if !forced && !wait.is_zero() {
+                                pending.insert(folder, (now + wait, false));
+                                continue;
+                            }
                             task_hub.run_folder(&app, folder).await;
                         }
                     }
@@ -78,9 +87,20 @@ impl DiagHub {
         hub
     }
 
-    /// Ask for a (debounced) refresh of `folder`'s diagnostics.
+    /// Ask for a (debounced) refresh of `folder`'s diagnostics after its tree changed.
     pub fn request(&self, folder: &Path) {
-        let _ = self.tx.send(folder.to_path_buf());
+        let _ = self.tx.send((folder.to_path_buf(), false));
+    }
+
+    /// Ask for a (debounced) refresh that skips the backoff — a reader wants it now.
+    pub fn request_now(&self, folder: &Path) {
+        let _ = self.tx.send((folder.to_path_buf(), true));
+    }
+
+    fn backoff_wait(&self, folder: &Path) -> Duration {
+        let now = tt_config::now_ms();
+        let allowed = self.backoff.lock().unwrap().next_allowed_ms(folder, now);
+        Duration::from_millis((allowed - now).max(0) as u64)
     }
 
     /// The folder's latest diagnostics in wire shape — what the IDE server
@@ -115,13 +135,16 @@ impl DiagHub {
         let mut uris: Vec<String> = wire_uris(&wire);
         {
             let mut results = self.results.lock().unwrap();
-            if let Some(previous) = results.get(&folder) {
+            let previous = results.get(&folder);
+            let changed = previous != Some(&wire);
+            if let Some(previous) = previous {
                 for uri in wire_uris(previous) {
                     if !uris.contains(&uri) {
                         uris.push(uri);
                     }
                 }
             }
+            self.backoff.lock().unwrap().record(&folder, changed, tt_config::now_ms());
             results.insert(folder.clone(), wire);
         }
         if !uris.is_empty() {

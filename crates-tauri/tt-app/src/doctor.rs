@@ -36,6 +36,22 @@ pub async fn doctor_recent_crashes() -> Result<Vec<tt_telemetry::CrashRecord>, S
     .map_err(|e| format!("crash read task failed: {e}"))?
 }
 
+/// Warnings and errors logged at least [`tt_telemetry::REPEAT_THRESHOLD`] times in
+/// the last day — a feature failing quietly. The app also polls this to toast each
+/// new one once.
+#[tauri::command]
+pub async fn doctor_repeated_errors() -> Result<Vec<tt_telemetry::RepeatedError>, String> {
+    let dir = tt_config::telemetry_dir().map_err(|e| e.to_string())?;
+    let since = (chrono::Utc::now() - chrono::Duration::hours(24))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+    tauri::async_runtime::spawn_blocking(move || {
+        tt_telemetry::read_repeated_errors(&dir, &since, tt_telemetry::REPEAT_THRESHOLD)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("repeated-error read task failed: {e}"))?
+}
+
 /// The WebView's half of crash capture: an uncaught error or unhandled
 /// rejection, written as the same `app.crash` event a Rust panic is.
 #[tauri::command]

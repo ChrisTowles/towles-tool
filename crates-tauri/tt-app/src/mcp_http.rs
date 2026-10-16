@@ -599,8 +599,11 @@ async fn serve_connection(
         .timer(hyper_util::rt::TokioTimer::new())
         .header_read_timeout(std::time::Duration::from_secs(30));
     if let Err(error) = builder.serve_connection(io, service).await {
-        // Client hangups are routine; debug keeps the detail without the noise.
-        tracing::debug!(%error, "mcp.http: connection ended");
+        // A header-read timeout is a client's idle keep-alive being closed — tens of
+        // thousands a day, so it isn't logged at all; other hangups stay at debug.
+        if !error.is_timeout() {
+            tracing::debug!(%error, "mcp.http: connection ended");
+        }
     }
 }
 

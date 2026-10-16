@@ -67,7 +67,25 @@ fn a_nudge_names_the_calling_session() {
     nudge(home.path(), "prs", Some("sess-abc")).assert().success();
 
     let note = std::fs::read_to_string(nudge_dir(home.path()).join("prs")).unwrap();
-    assert_eq!(tt_collect::nudge::session_in(&note), Some("sess-abc"));
+    assert_eq!(tt_collect::nudge::parse(&note).session.as_deref(), Some("sess-abc"));
+}
+
+#[test]
+fn a_nudge_carries_its_cwd_and_trigger() {
+    // The app sweeps only the repo holding the cwd, and the merged half only for a merge.
+    let home = TempDir::new().unwrap();
+    let (_guard, work) = canonical_temp();
+    nudge(home.path(), "prs", Some("sess-abc"))
+        .current_dir(&work)
+        .args(["--trigger", "pr:create"])
+        .assert()
+        .success();
+
+    let note = std::fs::read_to_string(nudge_dir(home.path()).join("prs")).unwrap();
+    let note = tt_collect::nudge::parse(&note);
+    assert_eq!(note.origin.as_deref(), Some(work.as_path()));
+    assert_eq!(note.trigger.as_deref(), Some("pr:create"));
+    assert!(!note.refreshes_merged());
 }
 
 #[test]
@@ -78,7 +96,7 @@ fn a_nudge_from_outside_an_app_terminal_names_nobody() {
     nudge(home.path(), "prs", None).assert().success();
 
     let note = std::fs::read_to_string(nudge_dir(home.path()).join("prs")).unwrap();
-    assert_eq!(tt_collect::nudge::session_in(&note), None);
+    assert_eq!(tt_collect::nudge::parse(&note).session, None);
 }
 
 /// Put `dirs` on the rail, and hand back a checkout that is deliberately *not*
