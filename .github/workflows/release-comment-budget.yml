@@ -57,6 +57,7 @@ jobs:
           name: packages-${{ matrix.name }}
           path: dist/*.tgz
           if-no-files-found: error
+          retention-days: 1
 
   publish-npm:
     needs: build
@@ -168,6 +169,7 @@ jobs:
           name: wheels-${{ matrix.name }}
           path: wheels/*.whl
           if-no-files-found: error
+          retention-days: 1
 
   publish-pypi:
     needs: wheels
