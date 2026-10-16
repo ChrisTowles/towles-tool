@@ -48,12 +48,10 @@ jobs:
             vt_or_app:
               - 'crates/tt-vt/**'
               - 'crates-tauri/tt-app/**'
-              # tt-jarvis and tt-pane are excluded from the plain `rust` job
-              # (GTK dev-deps, Bevy from a git fork), so the GTK-provisioned
-              # `rust-app` job is their ONLY coverage. Leaving them out of
-              # this filter would mean a change touching only those crates ran
-              # no Rust CI at all.
-              - 'crates/tt-jarvis/**'
+              # tt-pane is excluded from the plain `rust` job (GTK), so the
+              # GTK-provisioned `rust-app` job is its ONLY coverage. Leaving it
+              # out of this filter would mean a change touching only that crate
+              # ran no Rust CI at all.
               - 'crates-tauri/tt-pane/**'
               - 'Cargo.lock'
               - 'Cargo.toml'
@@ -116,28 +114,16 @@ jobs:
       # CI). Everything else — every other Tauri-free crate under crates/ plus
       # crates-cli/tt-cli — is covered here.
       #
-      # crates/tt-jarvis and crates-tauri/tt-pane are excluded for the same
-      # class of reason. tt-jarvis is Tauri-free and so *looks* like it belongs
-      # here, but its dev-dependencies pull in gtk for the cadence benchmark —
-      # and dev-dependencies cannot be optional — so `--all-targets` needs
-      # glib-2.0/GTK system libs this runner does not install. tt-pane needs both
-      # GTK and Tauri. Both are covered by the `rust-app` job, which provisions
-      # webkit2gtk/GTK.
+      # crates-tauri/tt-pane is excluded too: it needs both GTK and Tauri, so
+      # the `rust-app` job, which provisions webkit2gtk/GTK, covers it.
       - name: rustfmt
         run: cargo fmt --check
 
       - name: clippy
-        run: cargo clippy --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
-
-      # tt-jarvis as it is actually built everywhere else: `bevy` off, which
-      # leaves the frame-time maths and no fork to compile. Only the library, so
-      # none of the GTK dev-deps that keep it out of the step above are needed —
-      # seconds, and it is the one place this default configuration is linted.
-      - name: clippy (tt-jarvis, no renderer)
-        run: cargo clippy --profile ci -p tt-jarvis -- -D warnings
+        run: cargo clippy --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-pane --all-targets -- -D warnings
 
       - name: test
-        run: cargo test --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-jarvis --exclude tt-pane
+        run: cargo test --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-pane
         env:
           # comment-budget's npm wrapper tests need node to prove anything, and
           # skip themselves when it is missing. This turns that silence into a
@@ -199,9 +185,8 @@ jobs:
 
       # No exclude list at all, unlike the Linux jobs: they split around
       # webkit2gtk/GTK, which mac doesn't need (the shell links AppKit and
-      # WebKit from the SDK), and both GTK dependants — tt-pane's `gtk` and
-      # tt-jarvis's cadence-benchmark dev-deps — are already
-      # `cfg(target_os = "linux")` gated, so `--all-targets` never reaches them.
+      # WebKit from the SDK), and tt-pane's `gtk` is already
+      # `cfg(target_os = "linux")` gated, so `--all-targets` never reaches it.
       - name: clippy
         run: cargo clippy --profile ci --workspace --all-targets -- -D warnings
 
@@ -318,8 +303,7 @@ jobs:
       # off by default, so the steps before this one build the whole shell
       # without the fork. That makes these two steps the entire cost, hence the
       # `changes.bevy` gate: a PR that cannot affect the renderer skips them and
-      # the fork never gets built. Excluded from the plain `rust` job for the
-      # separate reason that tt-jarvis's cadence-benchmark dev-deps need GTK.
+      # the fork never gets built.
       - name: clippy (native pane)
         if: needs.changes.outputs.bevy == 'true'
         env:

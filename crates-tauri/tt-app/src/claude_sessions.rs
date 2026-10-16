@@ -5,7 +5,6 @@
 //! state so search keystrokes and the Insights tab never re-read the disk;
 //! only a single session's turn/tool breakdown re-parses, on demand.
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
@@ -22,16 +21,6 @@ use tt_claude_sessions::{
 const SESSION_LIMIT: usize = 500;
 const TOP_SESSIONS: usize = 50;
 const SEARCH_LIMIT: usize = 100;
-
-/// `~/.claude`, honoring `$HOME` so tests/multiple tasks can redirect it.
-fn claude_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude")
-}
-
-/// `~/.claude.json` — the CLI's global config, a sibling of `~/.claude/`, not inside it.
-fn claude_json_path() -> PathBuf {
-    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude.json")
-}
 
 /// The last scan, kept so search filters in memory. Keyed by its `days` window.
 struct CachedScan {
@@ -99,7 +88,7 @@ pub struct ClaudeSessionsSummary {
 }
 
 fn scan(days: f64) -> Result<Vec<SessionDetail>, String> {
-    let projects_dir = claude_dir().join("projects");
+    let projects_dir = tt_config::claude_dir().join("projects");
     if !projects_dir.exists() {
         return Err("No Claude projects directory found at ~/.claude/projects/".to_string());
     }
@@ -146,9 +135,11 @@ pub async fn claude_sessions_summary(
 /// populates that cache.
 #[tauri::command]
 pub async fn claude_usage_limits() -> Result<Option<UsageLimits>, String> {
-    tauri::async_runtime::spawn_blocking(|| read_cached_usage_limits(&claude_json_path()))
-        .await
-        .map_err(|e| format!("claude usage limits task panicked: {e}"))
+    tauri::async_runtime::spawn_blocking(
+        || read_cached_usage_limits(&tt_config::claude_json_path()),
+    )
+    .await
+    .map_err(|e| format!("claude usage limits task panicked: {e}"))
 }
 
 #[derive(Debug, Serialize)]
@@ -194,7 +185,7 @@ pub async fn claude_sessions_insights(
 pub async fn claude_sessions_breakdown(session_id: String) -> Result<SessionBreakdown, String> {
     tracing::info!("claude_sessions.breakdown_opened");
     tauri::async_runtime::spawn_blocking(move || {
-        let projects_dir = claude_dir().join("projects");
+        let projects_dir = tt_config::claude_dir().join("projects");
         let path = find_session_path(&projects_dir, &session_id)
             .map_err(|e| format!("Failed to search sessions: {e}"))?
             .ok_or_else(|| format!("Session {session_id} not found"))?;

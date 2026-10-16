@@ -74,8 +74,7 @@ unmeasurable on a desktop in use.
 
 The pane's framerate is **paced by the display** because both faster present
 modes flood the compositor and lose the Wayland connection —
-`tt-pane/src/render.rs` carries that decision and
-`tt-jarvis/examples/jarvis_demo.rs` the per-mode measurements.
+`tt-pane/src/render.rs` carries that decision.
 
 **`bevy_solari` does not build, and not for local reasons:** cargo `[patch]`
 applies only from the top-level workspace, so a git dependency does not

@@ -79,7 +79,7 @@ pub fn spawn() -> AgentsTx {
             let wait = rt
                 .batcher
                 .next_deadline()
-                .map(|d| Duration::from_millis((d - now_ms()).max(0) as u64))
+                .map(|d| Duration::from_millis((d - tt_config::now_ms()).max(0) as u64))
                 .unwrap_or(IDLE);
             tokio::select! {
                 event = rx.recv() => match event {
@@ -170,7 +170,7 @@ impl Runtime {
             Route::Ignore(why) => tracing::debug!(reason = why.reason(), "agent.ignored"),
             Route::To { agent, body } => {
                 let key = (agent, msg.thread().to_string());
-                let now = now_ms();
+                let now = tt_config::now_ms();
                 self.batcher.push(key, Item { ts: msg.ts, at_ms: now, text: body }, now);
             }
         }
@@ -178,7 +178,7 @@ impl Runtime {
 
     async fn flush(&mut self) {
         let Some(ctx) = self.ctx.clone() else { return };
-        for ((agent, thread), items) in self.batcher.due(now_ms()) {
+        for ((agent, thread), items) in self.batcher.due(tt_config::now_ms()) {
             let job = Job {
                 agent,
                 channel: ctx.channel.clone(),
@@ -202,9 +202,11 @@ impl Runtime {
         let Some(ctx) = self.refresh_ctx().await else {
             return;
         };
-        let due = blocking(|store| store.take_due_agent_reminders(now_ms()).unwrap_or_default())
-            .await
-            .unwrap_or_default();
+        let due = blocking(|store| {
+            store.take_due_agent_reminders(tt_config::now_ms()).unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default();
         for reminder in due {
             tracing::info!(agent = %reminder.agent, "agent.reminder_fired");
             let job = Job {
@@ -256,7 +258,7 @@ fn run_turn(ctx: &Ctx, def: &AgentDef, job: &Job) {
     react_each(ctx, &job.message_ts, QUEUED, false);
     react_each(ctx, &job.message_ts, WORKING, true);
     tracing::info!(agent = %def.name, inputs = job.inputs.len(), "agent.turn_started");
-    let now = now_ms();
+    let now = tt_config::now_ms();
     let timeout = Duration::from_secs(ctx.settings.turn_timeout_minutes.max(1) * 60);
     let result = match (tt_store::Store::open_default(), tt_config::agents_dir()) {
         (Ok(store), Ok(dir)) => {
@@ -272,7 +274,7 @@ fn run_turn(ctx: &Ctx, def: &AgentDef, job: &Job) {
     match tt_collect::post_message(&ctx.token, &job.channel, &text, &job.thread) {
         Ok(ts) => {
             if let Ok(store) = tt_store::Store::open_default() {
-                let _ = store.record_agent_post(&job.channel, &ts, &def.name, now_ms());
+                let _ = store.record_agent_post(&job.channel, &ts, &def.name, tt_config::now_ms());
                 let _ = store.claim_thread(&job.channel, &job.thread, &def.name);
             }
         }
@@ -319,8 +321,4 @@ async fn blocking<T: Send + 'static>(
     .await
     .ok()
     .flatten()
-}
-
-fn now_ms() -> i64 {
-    chrono::Local::now().timestamp_millis()
 }

@@ -28,6 +28,11 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Epoch ms of a file timestamp; `None` for one before the epoch.
+pub fn system_time_ms(t: std::time::SystemTime) -> Option<i64> {
+    t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_millis() as i64)
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("IO error: {0}")]
@@ -908,6 +913,34 @@ fn home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or(Error::NoHomeDir)
 }
 
+/// `~/.claude`, the one place it is computed. A missing home dir resolves
+/// against `.` rather than failing: every caller only reads from here.
+pub fn claude_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude")
+}
+
+/// `~/.claude.json`, the CLI's global config: a sibling of [`claude_dir`], not inside it.
+pub fn claude_json_path() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude.json")
+}
+
+/// Expands a leading `~` or `~/` (after trimming) to the home dir; `~user` and
+/// every other form pass through untouched.
+pub fn expand_tilde(raw: &str) -> PathBuf {
+    expand_tilde_with(raw, dirs::home_dir().as_deref())
+}
+
+fn expand_tilde_with(raw: &str, home: Option<&Path>) -> PathBuf {
+    let raw = raw.trim();
+    match (raw.strip_prefix('~'), home) {
+        (Some(""), Some(home)) => home.to_path_buf(),
+        (Some(rest), Some(home)) if rest.starts_with('/') => {
+            home.join(rest.trim_start_matches('/'))
+        }
+        _ => PathBuf::from(raw),
+    }
+}
+
 fn home_dir_string() -> String {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).to_string_lossy().to_string()
 }
@@ -935,12 +968,7 @@ enum Scope {
 
 const SCOPE_DIR: &str = "tasks";
 
-/// What [`SCOPE_DIR`] was called before the worktree-"slot"→"task" rename.
-const LEGACY_SCOPE_DIR: &str = "slots";
-
-/// The single place either unscoped base is derived, so the migration and
-/// [`instance_state_bases`] can't disagree. Deliberately does *not* call
-/// [`detect_scope`]: the migration runs inside it.
+/// The single place either unscoped base is derived.
 fn state_base_dirs() -> (Result<PathBuf>, Result<PathBuf>) {
     (
         dirs::data_dir().ok_or(Error::NoDataDir).map(|d| d.join(TOOL_NAME)),
@@ -948,25 +976,7 @@ fn state_base_dirs() -> (Result<PathBuf>, Result<PathBuf>) {
     )
 }
 
-/// One-time `slots/`→`tasks/` rename, only when the old dir exists and the new
-/// does not. A failure just means `tasks/` is created fresh, losing one
-/// checkout's ephemeral data — never the shared settings, un-nested at the base.
-fn ensure_state_layout_migrated() {
-    static MIGRATED: std::sync::Once = std::sync::Once::new();
-    MIGRATED.call_once(|| {
-        let (data, config) = state_base_dirs();
-        for base in [data, config].into_iter().flatten() {
-            let old = base.join(LEGACY_SCOPE_DIR);
-            let new = base.join(SCOPE_DIR);
-            if old.is_dir() && !new.exists() {
-                let _ = std::fs::rename(&old, &new);
-            }
-        }
-    });
-}
-
 fn detect_scope() -> Scope {
-    ensure_state_layout_migrated();
     match std::env::var(STATE_SCOPE_ENV) {
         Ok(v) if !v.trim().is_empty() => Scope::Forced(sanitize_scope(&v)),
         Ok(_) => Scope::None,
@@ -1017,7 +1027,6 @@ pub fn task_scope_from_dir(dir: &Path) -> Option<String> {
 /// Like [`detect_scope`], but the ambient cwd never scopes: the nudge writer
 /// runs wherever `gh` did, so cwd nesting would split it from its watchers.
 fn detect_forced_scope() -> Scope {
-    ensure_state_layout_migrated();
     match std::env::var(STATE_SCOPE_ENV) {
         Ok(v) if !v.trim().is_empty() => Scope::Forced(sanitize_scope(&v)),
         _ => Scope::None,
@@ -1322,6 +1331,16 @@ fn merge_json(base: &mut serde_json::Value, incoming: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn expand_tilde_only_expands_a_leading_home_marker() {
+        let home = Path::new("/home/u");
+        assert_eq!(expand_tilde_with("~", Some(home)), PathBuf::from("/home/u"));
+        assert_eq!(expand_tilde_with(" ~/code/p ", Some(home)), PathBuf::from("/home/u/code/p"));
+        assert_eq!(expand_tilde_with("~other/x", Some(home)), PathBuf::from("~other/x"));
+        assert_eq!(expand_tilde_with("/abs", Some(home)), PathBuf::from("/abs"));
+        assert_eq!(expand_tilde_with("~/x", None), PathBuf::from("~/x"));
+    }
+
     use super::*;
     use tempfile::TempDir;
 

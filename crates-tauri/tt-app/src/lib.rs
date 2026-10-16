@@ -11,7 +11,6 @@ mod claude_sessions;
 mod codeserver;
 mod diagnostics;
 mod doctor;
-mod gh_actions;
 mod ide;
 mod inbox;
 mod instance_lock;
@@ -812,8 +811,6 @@ pub fn run() {
             store::store_search_issues,
             store::store_collect_now,
             store::store_sync_repo,
-            gh_actions::cockpit_assign_issue,
-            gh_actions::cockpit_create_issue_branch,
             store::store_dm_dismiss,
             store::store_item_dismiss,
             store::store_dismissals_clear,

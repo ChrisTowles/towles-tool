@@ -4,10 +4,6 @@ version = "0.1.0"
 edition = "2021"
 description = "Bevy scene rendered into a surface it did not create — the native embedded pane"
 
-# Still excluded from the plain `rust` CI job even with `bevy` off: the cadence
-# benchmark's dev-dependencies pull gtk in unconditionally on Linux, and
-# dev-dependencies cannot be made optional. Coverage is the `rust-app` job.
-
 [dependencies]
 # NOTE: no direct `wgpu` dependency on purpose. We never name a wgpu type — the
 # handles cross via `raw-window-handle` alone — and declaring a wgpu version
@@ -60,19 +56,6 @@ features = [
   "wayland",
 ]
 
-[dev-dependencies]
-serde_json = { workspace = true }
-
-# Step 0 benchmark harness only — the production embedding lives in `tt-pane`
-# and reaches Wayland through GDK, not through its own connection.
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-# GTK **3**, not 4, despite crates.io marking gtk3-rs unmaintained: Tauri 2 on
-# Linux is GTK3 + WebKitGTK, so the cadence harness has to reproduce the real
-# host's toolkit. Used only by `bench_gtk_cadence`.
-gtk = "0.18"
-
 [features]
 # The renderer itself, and **off by default**. Bevy builds from a git fork and a
 # cold build of it dominates everything else in this workspace, while the pane it
@@ -83,39 +66,6 @@ gtk = "0.18"
 #
 #   cargo build -p tt-jarvis --features bevy
 bevy = ["dep:bevy", "dep:raw-window-handle"]
-
-# Opt-in gate for the harnesses that need Wayland/GTK.
-#
-# Their dependencies are already `cfg(target_os = "linux")`-scoped, but the
-# *examples* were not, and cargo cannot make an `[[example]]`
-# target-conditional. It will, however, skip one whose `required-features` are
-# absent — so these three stay unbuilt everywhere unless asked for, instead of
-# failing to compile on macOS:
-#
-#   cargo run -p tt-jarvis --features linux-harness --example jarvis_demo --release
-#
-# Without this, `cargo test -p tt-jarvis --all-targets` on a Mac breaks on a
-# crate whose library half is perfectly portable.
-linux-harness = ["bevy"]
-
-# `gate_report` is deliberately absent: it reads the harness's JSONL through
-# `stats` alone, so it builds — and stays lint-covered — with Bevy out of the
-# graph.
-[[example]]
-name = "bench_standalone"
-required-features = ["bevy"]
-
-[[example]]
-name = "bench_subsurface"
-required-features = ["linux-harness"]
-
-[[example]]
-name = "bench_gtk_cadence"
-required-features = ["linux-harness"]
-
-[[example]]
-name = "jarvis_demo"
-required-features = ["linux-harness"]
 
 [lints]
 workspace = true

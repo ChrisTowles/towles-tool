@@ -289,12 +289,12 @@ fn list_json_empty_journal_is_empty_array() {
 }
 
 #[test]
-fn open_last_no_open_prints_newest_absolute_path() {
+fn open_no_open_prints_newest_absolute_path() {
     let sb = sandbox();
     cmd(&sb).args(["journal", "note", "Older Note", "--no-open"]).assert().success();
     cmd(&sb).args(["journal", "meeting", "Newer Meeting", "--no-open"]).assert().success();
 
-    let output = cmd(&sb).args(["journal", "open", "--last", "--no-open"]).output().unwrap();
+    let output = cmd(&sb).args(["journal", "open", "--no-open"]).output().unwrap();
     assert!(output.status.success());
     let printed = String::from_utf8(output.stdout).unwrap();
     let line = printed.lines().next_back().unwrap().trim();

@@ -166,13 +166,7 @@ pub fn locate_transcript(
     claude_session_id: &str,
 ) -> Option<TranscriptRef> {
     let path = crate::watchers::claude_code::find_journal(projects_dir, cwd, claude_session_id)?;
-    let mtime_ms = std::fs::metadata(&path)
-        .ok()?
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_millis() as i64;
+    let mtime_ms = tt_config::system_time_ms(std::fs::metadata(&path).ok()?.modified().ok()?)?;
     Some(TranscriptRef { path, mtime_ms })
 }
 

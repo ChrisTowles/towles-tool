@@ -306,10 +306,6 @@ pub enum JournalCommands {
 
     /// Open the most recent journal entry in the editor
     Open {
-        /// Open the most recent entry (the default; accepted for explicitness)
-        #[arg(long)]
-        last: bool,
-
         /// Fuzzy-pick a recent entry from an interactive list (requires a TTY)
         #[arg(long)]
         pick: bool,

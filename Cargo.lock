@@ -9353,11 +9353,9 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "libc",
- "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
- "tracing",
  "tt-exec",
  "tungstenite",
  "wait-timeout",
@@ -9416,7 +9414,6 @@ dependencies = [
  "base64 0.22.1",
  "libc",
  "native-tls",
- "serde",
  "serde_json",
  "sha2",
  "tempfile",
@@ -9514,12 +9511,8 @@ name = "tt-jarvis"
 version = "0.1.0"
 dependencies = [
  "bevy",
- "gtk",
  "raw-window-handle",
  "serde",
- "serde_json",
- "wayland-client",
- "wayland-protocols",
 ]
 
 [[package]]

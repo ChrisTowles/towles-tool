@@ -41,12 +41,6 @@ impl Lockfile {
     }
 }
 
-/// The default lock directory (`~/.claude/ide`), honoring `CLAUDE_CONFIG_DIR`
-/// the way the CLI does. `home` is injected for testability.
-pub fn lock_dir(home: &Path) -> PathBuf {
-    home.join(".claude").join("ide")
-}
-
 fn lock_path(dir: &Path, port: u16) -> PathBuf {
     dir.join(format!("{port}.lock"))
 }

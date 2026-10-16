@@ -101,10 +101,8 @@ fn resolve_clicked_path(path: &str, cwd: Option<&str>) -> PathBuf {
 /// [`resolve_clicked_path`] against a base directory that is already a path,
 /// so a dir name the OS reported keeps its exact bytes.
 fn resolve_clicked_path_in(path: &str, base: Option<&Path>) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/")
-        && let Some(home) = dirs::home_dir()
-    {
-        return home.join(rest);
+    if path.starts_with("~/") {
+        return tt_config::expand_tilde(path);
     }
     let p = Path::new(path);
     if p.is_absolute() {

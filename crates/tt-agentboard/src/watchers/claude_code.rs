@@ -495,8 +495,7 @@ impl ClaudeCodeAgentWatcher {
 
     /// Real `~/.claude/projects`, admitting only agents in `scope`.
     pub fn with_defaults(scope: crate::procenv::InstanceScope) -> Self {
-        let projects_dir =
-            dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude").join("projects");
+        let projects_dir = tt_config::claude_dir().join("projects");
         Self::new(projects_dir, Box::new(move |pid| crate::procenv::in_scope(pid, &scope)))
     }
 

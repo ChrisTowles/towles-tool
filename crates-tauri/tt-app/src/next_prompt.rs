@@ -27,7 +27,7 @@ static WARM: LazyLock<Mutex<Option<Arc<Warm>>>> = LazyLock::new(Mutex::default);
 static BUILDING: LazyLock<Mutex<bool>> = LazyLock::new(Mutex::default);
 
 fn projects_dir() -> std::path::PathBuf {
-    dirs::home_dir().unwrap_or_else(|| ".".into()).join(".claude").join("projects")
+    tt_config::claude_dir().join("projects")
 }
 
 /// Rebuilds on a thread of its own: parsing a month of transcripts takes seconds, and the

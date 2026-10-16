@@ -151,10 +151,7 @@ fn read_meta(jsonl_path: &Path) -> SubagentMeta {
 }
 
 fn mtime_ms(meta: &std::fs::Metadata) -> Option<i64> {
-    meta.modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as i64)
+    meta.modified().ok().and_then(tt_config::system_time_ms)
 }
 
 #[cfg(test)]

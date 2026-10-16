@@ -8,9 +8,8 @@
 //!   graph walks, status, diffs, and patch identity. Start there; its module
 //!   docs cover what still shells out to `git` and why.
 //! - [`provision`] — `git init` / `git clone` a new repo onto disk.
-//! - [`branch_name`] — `feature/<n>-<slug>` from an issue (`branch-name.ts`).
-//! - [`task_assign`] — clean-tree/remote guard for assigning an issue to a
-//!   task checkout (the app's issue→task flow).
+//! - [`branch_name`] — branch-name slugging (`branch-name.ts`).
+//! - [`task_assign`] — remote URL to `owner/name` slug.
 
 pub mod branch_name;
 pub mod provision;
