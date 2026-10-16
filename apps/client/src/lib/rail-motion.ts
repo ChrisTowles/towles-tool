@@ -1,11 +1,12 @@
 /** Enter/exit motion for rail rows. The rail renders a backend snapshot, so a
- * removed row would unmount before CSS could run. `layout="position"`, not
- * `true`: the plain form scaleY-squashes text mid-resize. `overflow: hidden` is
- * exit-only, or the nested `sticky` repo headers become scroll-trapped. */
+ * removed row would unmount before CSS could run. A row grows in and collapses
+ * out, so its neighbours reflow with it frame by frame — no `layout`: the rail
+ * re-renders every tick and nests these three deep, and layout projection on
+ * top of a live reflow moves rows twice. `overflow: hidden` only mid-motion, or
+ * the nested `sticky` repo headers become scroll-trapped. */
 export const railRowMotion = {
-  layout: "position",
-  initial: { opacity: 0, x: -8 },
-  animate: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: -8, height: 0, overflow: "hidden" },
-  transition: { duration: 0.15 },
+  initial: { opacity: 0, height: 0, overflow: "hidden" },
+  animate: { opacity: 1, height: "auto", transitionEnd: { overflow: "visible" } },
+  exit: { opacity: 0, height: 0, overflow: "hidden" },
+  transition: { duration: 0.15, ease: "easeOut" },
 } as const;

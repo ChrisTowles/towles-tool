@@ -97,7 +97,7 @@ you're done, not something that calls you over. When the head of On you
 changes, `nextUpArrival` opens it only when nothing is open and nothing is typed
 in, else does nothing: no banner, no flash. Rows and lane headers are one flat
 `AnimatePresence` list, rows keyed by lane *and* checkout, so a row changing
-lane fades out where it was and in where it went while its neighbours ease
+lane fades out where it was, then in where it went, while its neighbours ease
 over — nothing slides across the list for the eye to chase; the head is just
 the first row of On you, with no hero treatment. The tree rail is the
 repo → checkout → session tree, and `lib/rail-nodes.ts` is its walk (the

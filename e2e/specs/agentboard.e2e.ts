@@ -106,7 +106,7 @@ describe("Agent Board", () => {
     await gotoRail("Tree");
     await waitForAnyDisplayed('[aria-label="Filter repos"]', "the tree's rail header");
     await gotoRail("Queue");
-    await waitForAnyDisplayed('[aria-label="New task"]', "the queue rail");
+    await waitForAnyDisplayed('[aria-label^="New task in "]', "the queue rail");
   });
 
   it("flips the rail from the keyboard", async () => {
