@@ -116,6 +116,14 @@ it that also matches `pass` (failing *below* the threshold) or its size (failing
 100%. The status bar polls `telemetry_rules_failing` for the count of failing
 rules and shows it in sky — chrome states the fact, the tab wears the red.
 
+**Crashes are records too.** `tt_telemetry::init` chains a panic hook that
+writes an `app.crash` event (`crash.kind = "panic"`, message, `file:line`,
+thread) before the default report, and the WebView sends uncaught errors and
+unhandled rejections through `crash_report` as the same event
+(`lib/crash-report.ts`, capped at 20 a session, repeats inside a minute
+dropped). The Doctor screen's **Recent crashes** panel reads back the last
+week of this checkout's log.
+
 ## Backend half: every user-gesture command emits its own event
 
 **Every `#[tauri::command]` triggered by an explicit user gesture must emit its

@@ -14,6 +14,7 @@
 mod agents;
 mod attention;
 mod builds;
+mod crash;
 mod dashboard;
 mod event_log;
 mod filter;
@@ -48,6 +49,7 @@ pub use builds::{
     BuildKey, BuildSnapshot, Delta, Direction, MIN_FOCUS_MS, Measures, PerHour, Unit, compare,
     snapshots,
 };
+pub use crash::{CRASH_EVENT, CrashRecord, cap_crash_text, read_crashes};
 pub use dashboard::{
     Bucket, BucketRow, DashboardFocus, DashboardSummary, DayProblems, DayWait, ExecutableProfile,
     GroupBy, HistogramBin, SeriesStat, SlowSpawn, summarize_dashboard,
@@ -68,6 +70,9 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
+
+/// The commit this binary was built from, `"unknown"` outside a git checkout.
+pub const BUILD_SHA: &str = env!("TT_BUILD_SHA");
 
 /// Set to `0`/`false` to skip the disk sink entirely (stderr logging still
 /// works). For contexts that must not write state at all.
@@ -117,7 +122,7 @@ fn resource(service: &str) -> Map<String, Value> {
             None => Value::Null,
         },
     );
-    attrs.insert(schema::FIELD_TT_BUILD_SHA.into(), Value::from(env!("TT_BUILD_SHA")));
+    attrs.insert(schema::FIELD_TT_BUILD_SHA.into(), Value::from(BUILD_SHA));
     attrs
 }
 
@@ -162,7 +167,9 @@ pub fn init(service: &str, default_level: &str) -> Result<()> {
         )
         .with(disk)
         .try_init()
-        .map_err(|_| Error::AlreadyInitialized)
+        .map_err(|_| Error::AlreadyInitialized)?;
+    crash::install_panic_hook();
+    Ok(())
 }
 
 #[cfg(test)]

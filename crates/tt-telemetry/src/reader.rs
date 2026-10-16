@@ -73,7 +73,7 @@ fn take_string(obj: &mut Map<String, Value>, key: &str) -> Option<String> {
     }
 }
 
-fn parse_line(line: &str) -> Option<TelemetryRecord> {
+pub(crate) fn parse_line(line: &str) -> Option<TelemetryRecord> {
     let value: Value = serde_json::from_str(line).ok()?;
     let Value::Object(mut obj) = value else {
         return None;

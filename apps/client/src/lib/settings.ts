@@ -8,6 +8,7 @@ import {
 import { invoke } from "./tauri";
 import { slugify } from "./slug";
 import type { Filter, RuleKind } from "./telemetry";
+import type { UpdateChannel } from "./update";
 
 /** Client-side view of the shared user settings (`crates/tt-config`), co-owned
  * by the TS CLI — so a save carries the whole object forward. */
@@ -275,6 +276,8 @@ export type UserSettings = {
   /** The tt Claude mod's end-of-turn copy offer, capped per day. Rust reads it
    * (`tt_config::ClipSuggestSettings`); unset keys take its defaults. */
   clipSuggest?: { enabled?: boolean; question?: string; model?: string; dailyBudgetUsd?: number };
+  /** Rust reads it (`tt_config::UpdatesSettings`); unset means the stable channel. */
+  updates?: { channel?: UpdateChannel };
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through
    * `ab_set_show_unmanaged_worktrees`, not by saving here. */

@@ -4,7 +4,7 @@ import { Button } from "@cloudflare/kumo";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { useWorkspace } from "@/lib/workspace";
-import { installUpdate, useUpdateAvailable, useUpdateProgress } from "@/lib/update";
+import { installUpdate, updateLabel, useUpdateAvailable, useUpdateProgress } from "@/lib/update";
 
 /** Full-width strip offering a newer release. Dismiss is session-only — no
  * persisted "skip this version", so it returns on relaunch until installed. */
@@ -21,15 +21,17 @@ export function UpdateBanner() {
     setInstalling(true);
     const result = await installUpdate();
     setInstalling(false);
-    if (result.isErr()) toast.error(`Couldn't install ${update.version} — ${result.error.message}`);
+    if (result.isErr()) {
+      toast.error(`Couldn't install ${updateLabel(update)} — ${result.error.message}`);
+    }
   };
 
   return (
     <div className="flex shrink-0 items-center gap-2.5 border-b border-l-2 border-l-info bg-info/5 px-3 py-1.5 text-xs">
       <SparkleIcon className="size-4 shrink-0 text-info" />
       <span className="text-kumo-default">
-        Towles Tool <span className="font-medium">{update.version}</span> is available — you're on{" "}
-        {update.currentVersion}
+        Towles Tool <span className="font-medium">{updateLabel(update)}</span> is available — you're
+        on {update.currentVersion}
       </span>
 
       <div className="flex-1" />

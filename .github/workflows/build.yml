@@ -17,8 +17,8 @@ on:
         required: false
         type: string
         default: ""
-      # Set by release.yml: tauri-action uploads the bundles, their signatures
-      # and latest.json to this (draft) release.
+      # tauri-action uploads the bundles, their signatures and latest.json to
+      # this release: release.yml's draft, or main-build.yml's rolling prerelease.
       release-id:
         required: false
         type: string

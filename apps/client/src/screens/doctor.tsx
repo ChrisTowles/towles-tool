@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowClockwiseIcon,
+  BugIcon,
   CheckCircleIcon,
   GitBranchIcon,
   KeyIcon,
@@ -13,7 +14,8 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { Button } from "@cloudflare/kumo";
-import { DoctorReportSchema } from "@/lib/schemas/doctor";
+import { CrashRecordListSchema, DoctorReportSchema, type CrashRecord } from "@/lib/schemas/doctor";
+import { fmtDuration } from "@/lib/format";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { useAsyncRefresh } from "@/lib/use-async-refresh";
@@ -53,12 +55,17 @@ type DoctorReport = {
 
 export function DoctorScreen() {
   const [report, setReport] = useState<DoctorReport | null>(null);
+  const [crashes, setCrashes] = useState<CrashRecord[]>([]);
   const [running, setRunning] = useState(true);
 
   const refresh = useAsyncRefresh(async () => {
     setRunning(true);
-    const run = await invoke<DoctorReport>("doctor_run", {}, { schema: DoctorReportSchema });
+    const [run, recent] = await Promise.all([
+      invoke<DoctorReport>("doctor_run", {}, { schema: DoctorReportSchema }),
+      invoke<CrashRecord[]>("doctor_recent_crashes", {}, { schema: CrashRecordListSchema }),
+    ]);
     setReport(run.unwrapOr(null));
+    setCrashes(recent.unwrapOr([]));
     setRunning(false);
   }, []);
 
@@ -123,6 +130,8 @@ export function DoctorScreen() {
                 />
               ))}
             </Panel>
+
+            <RecentCrashes crashes={crashes} />
 
             <Panel title="This checkout" icon={<GitBranchIcon className="size-4" />}>
               {report.checkout.map((c) => (
@@ -224,6 +233,68 @@ export function DoctorScreen() {
         </div>
       )}
     </div>
+  );
+}
+
+const CRASH_KIND_LABEL: Record<string, string> = {
+  panic: "Rust panic",
+  "webview-error": "UI error",
+  "unhandled-rejection": "UI rejection",
+};
+
+/** Not part of `allOk`: a past crash isn't a check failing now, and an old one
+ * would otherwise keep the screen amber for a week. */
+function RecentCrashes({ crashes }: { crashes: CrashRecord[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <Panel
+      title="Recent crashes"
+      note={crashes.length > 0 ? String(crashes.length) : undefined}
+      icon={<BugIcon className="size-4" />}
+    >
+      {crashes.length === 0 ? (
+        <Empty>No crashes in this checkout's log over the last 7 days.</Empty>
+      ) : (
+        crashes.map((c) => {
+          const key = `${c.ts}:${c.message}`;
+          const ago = fmtDuration(Math.max(0, Date.now() - Date.parse(c.ts)));
+          return (
+            <div key={key} className="flex items-start gap-3 px-3 py-2 text-sm">
+              <BugIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-medium">{CRASH_KIND_LABEL[c.kind] ?? c.kind}</span>
+                  <span className="shrink-0 font-mono text-xs text-kumo-subtle" title={c.ts}>
+                    {ago} ago{c.ttBuildSha ? ` · ${c.ttBuildSha.slice(0, 7)}` : ""}
+                  </span>
+                </div>
+                <div className="mt-0.5 break-words font-mono text-xs">{c.message}</div>
+                {c.location && (
+                  <div className="mt-0.5 truncate text-xs text-kumo-subtle">{c.location}</div>
+                )}
+                {c.stack && (
+                  <button
+                    type="button"
+                    className="mt-1 text-xs text-kumo-subtle underline-offset-2 hover:underline"
+                    onClick={() => {
+                      uiAction("doctor.crash_stack", "doctor", open === key ? "hide" : "show");
+                      setOpen(open === key ? null : key);
+                    }}
+                  >
+                    {open === key ? "Hide stack" : "Show stack"}
+                  </button>
+                )}
+                {c.stack && open === key && (
+                  <pre className="mt-1 max-h-48 overflow-auto rounded bg-kumo-tint p-2 text-mini whitespace-pre-wrap">
+                    {c.stack}
+                  </pre>
+                )}
+              </div>
+            </div>
+          );
+        })
+      )}
+    </Panel>
   );
 }
 

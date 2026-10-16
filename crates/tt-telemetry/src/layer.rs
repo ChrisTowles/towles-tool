@@ -6,6 +6,7 @@
 //! makes the log answerable after the fact: one line per subprocess, holding
 //! the command, where it ran, how long it took, and how it exited.
 
+use std::cell::Cell;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 
@@ -58,6 +59,15 @@ impl Visit for JsonVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
         self.0.insert(field.name().to_string(), Value::from(format!("{value:?}")));
     }
+}
+
+thread_local! {
+    static WRITING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Whether this thread is inside [`EventLogLayer::write`], holding the log's lock.
+pub(crate) fn writing_on_this_thread() -> bool {
+    WRITING.with(Cell::get)
 }
 
 /// A `tracing` layer that writes every event and every closed span to an
@@ -114,7 +124,9 @@ impl EventLogLayer {
             Ok(log) => log,
             Err(poisoned) => poisoned.into_inner(),
         };
+        WRITING.with(|w| w.set(true));
         log.append(&Value::Object(record), now);
+        WRITING.with(|w| w.set(false));
     }
 }
 

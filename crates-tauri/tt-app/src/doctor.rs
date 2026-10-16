@@ -20,3 +20,43 @@ pub async fn doctor_run(
     .await
     .map_err(|e| format!("doctor task failed: {e}"))
 }
+
+/// How far back the Doctor screen's crash panel looks.
+const CRASH_WINDOW_DAYS: usize = 7;
+const CRASH_LIMIT: usize = 20;
+
+/// This checkout's crashes over the last week, newest first.
+#[tauri::command]
+pub async fn doctor_recent_crashes() -> Result<Vec<tt_telemetry::CrashRecord>, String> {
+    let dir = tt_config::telemetry_dir().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        tt_telemetry::read_crashes(&dir, CRASH_WINDOW_DAYS, CRASH_LIMIT).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("crash read task failed: {e}"))?
+}
+
+/// The WebView's half of crash capture: an uncaught error or unhandled
+/// rejection, written as the same `app.crash` event a Rust panic is.
+#[tauri::command]
+pub fn crash_report(
+    kind: String,
+    message: String,
+    location: Option<String>,
+    stack: Option<String>,
+) {
+    let kind = match kind.as_str() {
+        "webview-error" | "unhandled-rejection" => kind,
+        _ => "webview-unknown".to_string(),
+    };
+    let message = tt_telemetry::cap_crash_text(message);
+    let location = location.map(tt_telemetry::cap_crash_text).unwrap_or_default();
+    let stack = stack.map(tt_telemetry::cap_crash_text).unwrap_or_default();
+    tracing::error!(
+        crash.kind = kind.as_str(),
+        crash.message = message.as_str(),
+        crash.location = location.as_str(),
+        crash.stack = stack.as_str(),
+        "app.crash"
+    );
+}

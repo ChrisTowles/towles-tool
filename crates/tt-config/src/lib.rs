@@ -386,6 +386,25 @@ impl Default for ClipSuggestSettings {
     }
 }
 
+/// Which builds an installed app updates itself to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    /// Published releases, newest semver wins.
+    #[default]
+    Stable,
+    /// The rolling `main-build` prerelease every push to main refreshes.
+    Main,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct UpdatesSettings {
+    pub channel: UpdateChannel,
+}
+
 /// How a [`TelemetryFilter`] compares a record's value with its own.
 /// `Gt`/`Lt` compare numerically when both sides parse as numbers and
 /// lexically otherwise; `Contains` is a case-insensitive substring.
@@ -965,6 +984,17 @@ pub struct UserSettings {
     /// Lenient for the same reason as `mcp`.
     #[serde(default, deserialize_with = "lenient_clip_suggest")]
     pub clip_suggest: ClipSuggestSettings,
+
+    /// Lenient for the same reason as `mcp`.
+    #[serde(default, deserialize_with = "lenient_updates")]
+    pub updates: UpdatesSettings,
+}
+
+fn lenient_updates<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<UpdatesSettings, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 fn lenient_telemetry<'de, D: serde::Deserializer<'de>>(
@@ -1023,6 +1053,7 @@ impl Default for UserSettings {
             next_prompt: NextPromptSettings::default(),
             telemetry: TelemetrySettings::default(),
             clip_suggest: ClipSuggestSettings::default(),
+            updates: UpdatesSettings::default(),
         }
     }
 }
@@ -1275,6 +1306,13 @@ pub fn agents_dir() -> Result<PathBuf> {
 pub fn dm_dismissals_path() -> Result<PathBuf> {
     Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
         .join("dm-dismissals.json"))
+}
+
+/// What the last self-update replaced, for rolling back. *Shared*: one
+/// installed bundle per machine, whichever checkout's settings screen asks.
+pub fn update_history_path() -> Result<PathBuf> {
+    Ok(shared_under(dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME))
+        .join("update-history.json"))
 }
 
 /// *Instance-scoped*, like the rest of a checkout's state.
@@ -1635,6 +1673,22 @@ mod tests {
 
         std::fs::write(&path, r#"{"mcp":{"port":9123}}"#).unwrap();
         assert_eq!(load_from(&path).unwrap().mcp.port, 9123);
+    }
+
+    #[test]
+    fn update_channel_defaults_stable_and_tolerates_junk() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("towles-tool.settings.json");
+        assert_eq!(UserSettings::default().updates.channel, UpdateChannel::Stable);
+        for bad in [r#"null"#, r#"{"channel":"beta"}"#, r#""main""#] {
+            std::fs::write(&path, format!(r#"{{"preferredEditor":"vim","updates":{bad}}}"#))
+                .unwrap();
+            let loaded = load_from(&path).unwrap();
+            assert_eq!(loaded.preferred_editor, "vim", "rest of the file still loads");
+            assert_eq!(loaded.updates.channel, UpdateChannel::Stable, "falls back for {bad}");
+        }
+        std::fs::write(&path, r#"{"updates":{"channel":"main"}}"#).unwrap();
+        assert_eq!(load_from(&path).unwrap().updates.channel, UpdateChannel::Main);
     }
 
     #[test]

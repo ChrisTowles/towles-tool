@@ -850,6 +850,8 @@ pub fn run() {
             telemetry::telemetry_prune,
             agentboard::ab_ensure_session,
             doctor::doctor_run,
+            doctor::doctor_recent_crashes,
+            doctor::crash_report,
             settings::settings_get,
             settings::settings_set,
             settings::settings_default_prompt_improvers,
@@ -881,6 +883,9 @@ pub fn run() {
             ide::ide_status,
             update::update_pending,
             update::update_install,
+            update::update_status,
+            update::update_check_now,
+            update::update_rollback,
         ])
         .run(context)
         .expect("error while running Towles Tool application");

@@ -2,7 +2,9 @@ name: Main build
 
 # Every push to main builds and signs the installers exactly as a release
 # would, so breakage surfaces on the commit that caused it rather than when a
-# release is cut. Each commit's bundles stay downloadable for 30 days.
+# release is cut. Each commit's bundles stay downloadable for 30 days, and they
+# replace the assets of the rolling `main-build` prerelease — the manifest an
+# installed app on the "every push to main" update channel polls.
 on:
   push:
     branches: [main]
@@ -13,7 +15,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release-id: ${{ steps.release.outputs.result }}
+    steps:
+      # A prerelease never becomes `releases/latest`, so the stable channel
+      # can't pick up a main build by accident.
+      - name: Find or create the main-build prerelease
+        id: release
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag = "main-build";
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              return data.id;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+            const { data } = await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: tag,
+              target_commitish: context.sha,
+              name: "Main build",
+              body: "Rolling build of the newest commit on main. The update channel's manifest is latest.json.",
+              prerelease: true,
+              make_latest: "false",
+            });
+            return data.id;
+
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -32,5 +69,27 @@ jobs:
       platform: ${{ matrix.platform }}
       name: ${{ matrix.name }}
       args: ${{ matrix.args }}
+      release-id: ${{ needs.prepare.outputs.release-id }}
       upload-artifacts: true
     secrets: inherit
+
+  # Main builds share a version, so installed apps tell them apart by the commit
+  # stamped into the manifest's notes. Only once every platform uploaded: a
+  # half-published build keeps the old commit and is offered to no one.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Stamp the commit into latest.json
+        run: |
+          gh release download main-build --pattern latest.json --dir dl --clobber
+          jq --arg sha "$GITHUB_SHA" '.notes = $sha' dl/latest.json > latest.json
+          gh release upload main-build latest.json --clobber
+
+      - name: Move the main-build tag to this commit
+        run: gh api -X PATCH "repos/$GH_REPO/git/refs/tags/main-build" -f sha="$GITHUB_SHA" -F force=true
