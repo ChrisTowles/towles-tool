@@ -25,7 +25,7 @@ type SharedGroupProps = Omit<
   | "onNewTask"
   | "onRecreateWorktree"
   | "taskFormOpen"
-  | "taskFormInitialGoal"
+  | "taskFormSeed"
   | "onCancelTaskForm"
   | "onSubmitTaskForm"
 >;
@@ -128,10 +128,10 @@ export function CheckoutTree({
               onNewTask={onNewTask}
               onRecreateWorktree={(folder) => onRecreateWorktree(repo, folder)}
               taskFormOpen={taskCreation.openTaskForms.has(repo.key)}
-              taskFormInitialGoal={taskCreation.reopenTasks.get(repo.key)?.goal}
+              taskFormSeed={taskCreation.formSeeds.get(repo.key)}
               onCancelTaskForm={() => taskCreation.closeTaskForm(repo.key)}
               onSubmitTaskForm={(input) => {
-                const reopening = taskCreation.reopenTasks.get(repo.key);
+                const seed = taskCreation.formSeeds.get(repo.key);
                 taskCreation.closeTaskForm(repo.key);
                 void taskCreation.createTask(
                   {
@@ -142,8 +142,8 @@ export function CheckoutTree({
                   },
                   {
                     ...input,
-                    taskId: reopening?.taskId,
-                    reopen: reopening !== undefined,
+                    taskId: seed?.taskId,
+                    reopen: seed?.taskId !== undefined,
                   },
                 );
               }}

@@ -5,6 +5,7 @@ import type {
   NewTaskRepo,
   NewTaskSubmit,
   TaskCreated,
+  TaskFormSeed,
 } from "@/components/inline-new-task";
 import type { StartClaudeTarget } from "@/lib/agentboard/actions";
 import { promptWithImages, type ClaudeLaunchOptions } from "@/lib/agentboard/claude-command";
@@ -24,11 +25,11 @@ type SetupRun = { warning: string | null; logPath: string | null };
 
 export type TaskCreation = {
   openTaskForms: Set<string>;
-  reopenTasks: Map<string, { taskId: number; goal: string }>;
+  formSeeds: Map<string, TaskFormSeed>;
   settingUpDirs: Map<string, number>;
   toggleTaskForm: (repo: NewTaskRepo) => void;
   closeTaskForm: (key: string) => void;
-  openReopenForm: (repo: NewTaskRepo, taskId: number, goal: string) => void;
+  openSeededForm: (repo: NewTaskRepo, seed: TaskFormSeed) => void;
   createTask: (
     repo: NewTaskRepo,
     input: NewTaskSubmit & { taskId?: number; reopen?: boolean },
@@ -68,9 +69,7 @@ export function useTaskCreation(args: {
   } = args;
 
   const [openTaskForms, setOpenTaskForms] = useState<Set<string>>(new Set());
-  const [reopenTasks, setReopenTasks] = useState<Map<string, { taskId: number; goal: string }>>(
-    new Map(),
-  );
+  const [formSeeds, setFormSeeds] = useState<Map<string, TaskFormSeed>>(new Map());
   const [settingUpDirs, setSettingUpDirs] = useState<Map<string, number>>(new Map());
 
   function toggleTaskForm(repo: NewTaskRepo) {
@@ -89,7 +88,7 @@ export function useTaskCreation(args: {
       next.delete(key);
       return next;
     });
-    setReopenTasks((prev) => {
+    setFormSeeds((prev) => {
       if (!prev.has(key)) return prev;
       const next = new Map(prev);
       next.delete(key);
@@ -97,9 +96,9 @@ export function useTaskCreation(args: {
     });
   }
 
-  function openReopenForm(repo: NewTaskRepo, taskId: number, goal: string) {
+  function openSeededForm(repo: NewTaskRepo, seed: TaskFormSeed) {
     if (railCollapsed) toggleRail();
-    setReopenTasks((prev) => new Map(prev).set(repo.key, { taskId, goal }));
+    setFormSeeds((prev) => new Map(prev).set(repo.key, seed));
     setOpenTaskForms((prev) => new Set(prev).add(repo.key));
   }
 
@@ -285,11 +284,11 @@ export function useTaskCreation(args: {
 
   return {
     openTaskForms,
-    reopenTasks,
+    formSeeds,
     settingUpDirs,
     toggleTaskForm,
     closeTaskForm,
-    openReopenForm,
+    openSeededForm,
     createTask,
   };
 }

@@ -513,6 +513,28 @@ export function collectorsSections(
             />
           ),
         },
+        {
+          label: "Watched labels",
+          keywords: ["label", "suggest", "start task", "triage"],
+          node: (
+            <FieldRow
+              label="Watched labels"
+              description="Open issues with any of these labels, assigned to anyone, show on the Board with a Start task button. Comma-separated; empty asks GitHub nothing."
+            >
+              <Input
+                aria-label="Watched issue labels"
+                placeholder="agent-ready, good first issue"
+                value={c.issues.watchedLabels.join(",")}
+                onChange={(e) =>
+                  setIssues({ watchedLabels: parseLabelList(e.target.value) }, typed)
+                }
+                onBlur={() => void flush()}
+                spellCheck={false}
+              />
+              <CollectorFreshness run={run("issues:watched")} now={now} />
+            </FieldRow>
+          ),
+        },
       ],
     },
     {
@@ -668,4 +690,10 @@ export function collectorsSections(
       ],
     },
   ];
+}
+
+/** Keeps a trailing empty entry so typing the comma before the next label sticks;
+ * the collector trims and drops blanks. */
+function parseLabelList(raw: string): string[] {
+  return raw.split(",").map((l, i, all) => (i === all.length - 1 ? l.trimStart() : l.trim()));
 }

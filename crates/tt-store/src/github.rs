@@ -6,6 +6,22 @@ use rusqlite::params;
 use crate::model::*;
 use crate::{Error, Result, Store};
 
+/// The two issue caches share one row shape: the user's own, and watched-label ones.
+#[derive(Clone, Copy)]
+enum IssueTable {
+    Mine,
+    Watched,
+}
+
+impl IssueTable {
+    fn name(self) -> &'static str {
+        match self {
+            IssueTable::Mine => "issues",
+            IssueTable::Watched => "watched_issues",
+        }
+    }
+}
+
 /// Insert every PR row — identical across all four `replace_*_prs*` paths; only
 /// the preceding delete differs. `OR REPLACE` because those deletes don't
 /// partition the table: a PR that reopened between sweeps survives both.
@@ -47,47 +63,61 @@ impl Store {
         repos: &[String],
         issues: &[IssueInput],
     ) -> Result<usize> {
-        let tx = self.conn.unchecked_transaction()?;
-        {
-            let mut del = tx.prepare("DELETE FROM issues WHERE repo = ?1")?;
-            for repo in repos {
-                del.execute(params![repo])?;
-            }
-            let mut stmt = tx.prepare(
-                "INSERT INTO issues (repo, number, title, labels, state, url, updated_ts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            )?;
-            for i in issues {
-                stmt.execute(params![
-                    i.repo,
-                    i.number,
-                    i.title,
-                    serde_json::to_string(&i.labels)?,
-                    i.state,
-                    i.url,
-                    i.updated_ts,
-                ])?;
-            }
-        }
-        tx.commit()?;
-        Ok(issues.len())
+        self.write_issue_table(IssueTable::Mine, Some(repos), issues)
     }
 
     /// Full-snapshot replace of issue rows.
     pub fn replace_issues(&self, issues: &[IssueInput]) -> Result<usize> {
+        self.write_issue_table(IssueTable::Mine, None, issues)
+    }
+
+    /// [`Self::replace_issues_for_repos`] for the watched-label cache.
+    pub fn replace_watched_issues_for_repos(
+        &self,
+        repos: &[String],
+        issues: &[IssueInput],
+    ) -> Result<usize> {
+        self.write_issue_table(IssueTable::Watched, Some(repos), issues)
+    }
+
+    /// [`Self::replace_issues`] for the watched-label cache; empty clears it.
+    pub fn replace_watched_issues(&self, issues: &[IssueInput]) -> Result<usize> {
+        self.write_issue_table(IssueTable::Watched, None, issues)
+    }
+
+    /// `repos: None` wipes the whole table first; `Some` only those repos' rows.
+    fn write_issue_table(
+        &self,
+        table: IssueTable,
+        repos: Option<&[String]>,
+        issues: &[IssueInput],
+    ) -> Result<usize> {
+        let name = table.name();
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute("DELETE FROM issues", [])?;
         {
-            let mut stmt = tx.prepare(
-                "INSERT INTO issues (repo, number, title, labels, state, url, updated_ts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            )?;
+            match repos {
+                None => {
+                    tx.execute(&format!("DELETE FROM {name}"), [])?;
+                }
+                Some(repos) => {
+                    let mut del = tx.prepare(&format!("DELETE FROM {name} WHERE repo = ?1"))?;
+                    for repo in repos {
+                        del.execute(params![repo])?;
+                    }
+                }
+            }
+            let mut stmt = tx.prepare(&format!(
+                "INSERT OR REPLACE INTO {name}
+                   (repo, number, title, labels, assignees, state, url, updated_ts)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+            ))?;
             for i in issues {
                 stmt.execute(params![
                     i.repo,
                     i.number,
                     i.title,
                     serde_json::to_string(&i.labels)?,
+                    serde_json::to_string(&i.assignees)?,
                     i.state,
                     i.url,
                     i.updated_ts,
@@ -261,6 +291,20 @@ impl Store {
         )
     }
 
+    /// Watched-label issue rows, newest update first. Dismissals share the `issue`
+    /// kind, so hiding one hides it on both surfaces.
+    pub fn watched_issues(&self) -> Result<Vec<IssueItem>> {
+        self.query_issues(
+            &format!(
+                "SELECT {ISSUE_COLS} FROM watched_issues i \
+                 LEFT JOIN item_dismissals d \
+                   ON d.kind = 'issue' AND d.repo = i.repo AND d.number = i.number \
+                 ORDER BY i.updated_ts DESC"
+            ),
+            [],
+        )
+    }
+
     /// A single cached issue row by `(repo, number)`, if the collector has seen it.
     pub fn get_issue(&self, repo: &str, number: i64) -> Result<Option<IssueItem>> {
         Ok(self
@@ -302,17 +346,21 @@ impl Store {
                 r.get::<_, String>(5)?,
                 r.get::<_, i64>(6)?,
                 r.get::<_, i64>(7)?,
+                r.get::<_, String>(8)?,
             ))
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (repo, number, title, labels_json, state, url, updated_ts, dismissed_ts) = row?;
+            let (repo, number, title, labels_json, state, url, updated_ts, dismissed_ts, assignees) =
+                row?;
             let labels: Vec<String> = serde_json::from_str(&labels_json)?;
+            let assignees: Vec<String> = serde_json::from_str(&assignees)?;
             out.push(IssueItem {
                 repo,
                 number,
                 title,
                 labels,
+                assignees,
                 state,
                 url,
                 updated_ts,

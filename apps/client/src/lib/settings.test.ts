@@ -84,7 +84,7 @@ function base(): UserSettings {
         sources: [],
       },
       prs: { enabled: true, refreshSeconds: 300, mergedRefreshMinutes: 15 },
-      issues: { enabled: true, refreshMinutes: 10 },
+      issues: { enabled: true, refreshMinutes: 10, watchedLabels: [] },
       slack: {
         enabled: false,
         token: "",

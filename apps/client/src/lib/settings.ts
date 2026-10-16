@@ -238,6 +238,8 @@ type PrCollector = {
 type IssueCollector = {
   enabled: boolean;
   refreshMinutes: number;
+  /** Open issues with any of these labels are offered on the Board as tasks to start. */
+  watchedLabels: string[];
 };
 
 type SlackDmCollector = {

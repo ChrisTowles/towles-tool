@@ -214,6 +214,46 @@ pub fn collect_issues(
     summary
 }
 
+/// Open issues carrying any of `labels` across `repo_dirs`, for the Board's "start
+/// a task" suggestions. No labels clears the cache without asking GitHub anything.
+pub fn collect_watched_issues(
+    store: &Store,
+    repo_dirs: &[PathBuf],
+    labels: &[String],
+    reuse_ms: i64,
+    now_ms: i64,
+) -> CollectSummary {
+    let labels = normalize_labels(labels);
+    if labels.is_empty() {
+        let cleared = store.replace_watched_issues(&[]).map(|_| 0).map_err(|e| e.to_string());
+        return finish(store, WATCHED_ISSUES, cleared.is_ok(), 0, cleared.err(), now_ms);
+    }
+    let repos = dedupe_repo_dirs(repo_dirs);
+    // The labels are part of the question: a changed list must not reuse an old answer.
+    let kind = format!("{WATCHED_ISSUES}:{}", labels.join(","));
+    let outcome = sweep_repos_shared(&repos, &kind, reuse_ms, now_ms, |dir| {
+        issues::collect_repo_watched_issues(dir, &labels)
+    });
+    let write = |all: &[tt_store::IssueInput], repos: Option<&[String]>| match repos {
+        None => store.replace_watched_issues(all),
+        Some(repos) => store.replace_watched_issues_for_repos(repos, all),
+    };
+    finish_sweep(store, WATCHED_ISSUES, outcome, write, |i| (i.repo.clone(), i.number), now_ms)
+}
+
+const WATCHED_ISSUES: &str = "issues:watched";
+
+/// Trimmed, blank-free and deduped, in the order given.
+fn normalize_labels(labels: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for label in labels.iter().map(|l| l.trim()).filter(|l| !l.is_empty()) {
+        if !out.iter().any(|seen| seen == label) {
+            out.push(label.to_string());
+        }
+    }
+    out
+}
+
 /// The Board↔GitHub read half for tasks: a targeted `gh <issue|pr> view` for every
 /// link *missing* from the snapshot, since absence is ambiguous and state is never
 /// inferred, then [`link_task_prs`]. Each stage logs and moves on. The PR half
@@ -771,11 +811,13 @@ fn finish_sweep<T, K: std::hash::Hash + Eq>(
 pub fn collect_manual(
     store: &Store,
     repo_dirs: &[PathBuf],
+    watched_labels: &[String],
     slack: Option<&SlackDmConfig>,
     now_ms: i64,
 ) -> Vec<CollectSummary> {
     let mut summaries = vec![
         collect_issues(store, repo_dirs, FETCH_NOW, now_ms),
+        collect_watched_issues(store, repo_dirs, watched_labels, FETCH_NOW, now_ms),
         collect_prs(store, repo_dirs, now_ms),
         collect_ci(store, repo_dirs, FETCH_NOW, now_ms),
     ];
@@ -1007,11 +1049,11 @@ mod tests {
     #[test]
     fn collect_manual_runs_issues_and_prs_but_never_calendar() {
         let store = Store::open_in_memory().unwrap();
-        let summaries = collect_manual(&store, &[], None, 1);
+        let summaries = collect_manual(&store, &[], &[], None, 1);
         let keys: Vec<&str> = summaries.iter().map(|s| s.collector.as_str()).collect();
         assert_eq!(
             keys,
-            ["issues", "prs", "ci"],
+            ["issues", "issues:watched", "prs", "ci"],
             "manual refresh runs issues + PRs + CI, skips calendar"
         );
         assert!(!keys.contains(&"claude:calendar"), "calendar is never manually triggered");
@@ -1026,11 +1068,28 @@ mod tests {
             watch_user_id: String::new(),
             watch_name: String::new(),
         };
-        let keys: Vec<String> = collect_manual(&store, &[], Some(&config), 1)
+        let keys: Vec<String> = collect_manual(&store, &[], &[], Some(&config), 1)
             .into_iter()
             .map(|s| s.collector)
             .collect();
-        assert_eq!(keys, ["issues", "prs", "ci", "slack:dm"]);
+        assert_eq!(keys, ["issues", "issues:watched", "prs", "ci", "slack:dm"]);
+    }
+
+    #[test]
+    fn collect_watched_issues_without_labels_clears_the_cache_offline() {
+        let store = Store::open_in_memory().unwrap();
+        store.replace_watched_issues(&[issue("o/a", 4)]).unwrap();
+        let blank = ["  ".to_string()];
+        let summary = collect_watched_issues(&store, &[PathBuf::from("/nope")], &blank, 0, 1);
+        assert!(summary.ok);
+        assert_eq!(summary.collector, "issues:watched");
+        assert!(store.watched_issues().unwrap().is_empty());
+    }
+
+    #[test]
+    fn normalize_labels_trims_drops_blanks_and_dedupes_in_order() {
+        let raw = [" ready ", "", "bug", "ready"].map(String::from);
+        assert_eq!(normalize_labels(&raw), ["ready", "bug"]);
     }
 
     #[test]
@@ -1305,6 +1364,7 @@ mod tests {
             number,
             title: format!("issue {number}"),
             labels: vec![],
+            assignees: vec![],
             state: "open".to_string(),
             url: format!("https://github.com/{repo}/issues/{number}"),
             updated_ts: 1,

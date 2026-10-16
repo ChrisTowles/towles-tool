@@ -17,7 +17,12 @@ import {
   type ViewPaneKind,
 } from "@/components/agentboard-pane-rows";
 import { SessionRow } from "@/components/agentboard-session-row";
-import { InlineNewTask, type NewTaskRepo, type NewTaskSubmit } from "@/components/inline-new-task";
+import {
+  InlineNewTask,
+  type NewTaskRepo,
+  type NewTaskSubmit,
+  type TaskFormSeed,
+} from "@/components/inline-new-task";
 import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import type { SessionActions } from "@/lib/agentboard/actions";
@@ -117,7 +122,7 @@ export function RepoGroup({
   onToggleUnmanaged,
   quietDirs,
   taskFormOpen,
-  taskFormInitialGoal,
+  taskFormSeed,
   onCancelTaskForm,
   onSubmitTaskForm,
 }: {
@@ -174,8 +179,8 @@ export function RepoGroup({
    * badge saying so. */
   quietDirs?: Set<string>;
   taskFormOpen: boolean;
-  /** Set when the form was opened to reopen a closed task, not to start one. */
-  taskFormInitialGoal?: string;
+  /** Set when the form was opened on someone's behalf: a reopen, or an issue. */
+  taskFormSeed?: TaskFormSeed;
   onCancelTaskForm: () => void;
   onSubmitTaskForm: (input: NewTaskSubmit) => void;
 }) {
@@ -381,10 +386,12 @@ export function RepoGroup({
         />
         {taskFormOpen && (
           <InlineNewTask
+            key={formSeedKey(taskFormSeed)}
             repo={{ name: repo.name, dir: folder.dir, key: repo.key }}
             onCancel={onCancelTaskForm}
             onSubmit={onSubmitTaskForm}
-            initialGoal={taskFormInitialGoal}
+            initialGoal={taskFormSeed?.goal}
+            initialIssue={taskFormSeed?.issue}
           />
         )}
         {!isCollapsed && sessionRows(folder, "pb-2")}
@@ -508,10 +515,12 @@ export function RepoGroup({
       </div>
       {taskFormOpen && (
         <InlineNewTask
+          key={formSeedKey(taskFormSeed)}
           repo={{ name: repo.name, dir: repo.folders[0].dir, key: repo.key }}
           onCancel={onCancelTaskForm}
           onSubmit={onSubmitTaskForm}
-          initialGoal={taskFormInitialGoal}
+          initialGoal={taskFormSeed?.goal}
+          initialIssue={taskFormSeed?.issue}
         />
       )}
       {/* Collapse test outside AnimatePresence: inside, collapsing a repo would
@@ -598,4 +607,10 @@ export function RepoGroup({
       )}
     </div>
   );
+}
+
+/** A new seed remounts an open form: its fields are seeded once, at mount. */
+function formSeedKey(seed: TaskFormSeed | undefined): string {
+  if (seed?.issue) return `issue:${seed.issue.repo}#${seed.issue.number}`;
+  return seed?.taskId !== undefined ? `task:${seed.taskId}` : "new";
 }

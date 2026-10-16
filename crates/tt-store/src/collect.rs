@@ -159,13 +159,14 @@ impl Store {
         )?;
         let tasks = self.all_tasks()?;
         let issues = self.issues()?;
+        let watched_issues = self.watched_issues()?;
         let prs = self.prs()?;
         let runs = self.runs()?;
         let dms = self.dms()?;
         let mcp_calls = self.mcp_calls(MCP_CALL_SNAPSHOT_LIMIT)?;
         let ci_runs = self.ci_runs()?;
         tx.commit()?;
-        Ok(Snapshot { events, tasks, issues, prs, runs, dms, mcp_calls, ci_runs })
+        Ok(Snapshot { events, tasks, issues, watched_issues, prs, runs, dms, mcp_calls, ci_runs })
     }
 
     fn query_dms(&self, sql: &str, params: impl rusqlite::Params) -> Result<Vec<DmItem>> {

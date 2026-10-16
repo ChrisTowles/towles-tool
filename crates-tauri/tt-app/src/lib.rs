@@ -823,6 +823,7 @@ pub fn run() {
             slack::slack_dm_file,
             slack::slack_list_users,
             store::journal_log,
+            store::journal_today,
             claude_sessions::claude_sessions_summary,
             claude_sessions::claude_usage_limits,
             claude_sessions::claude_sessions_search,

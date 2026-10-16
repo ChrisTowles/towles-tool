@@ -43,7 +43,7 @@ const valid = {
       sources: [{ id: "google", label: "Google (personal)", enabled: true, prompt: "list today" }],
     },
     prs: { enabled: true, refreshSeconds: 60, mergedRefreshMinutes: 15 },
-    issues: { enabled: true, refreshMinutes: 5 },
+    issues: { enabled: true, refreshMinutes: 5, watchedLabels: ["agent-ready"] },
     slack: {
       enabled: false,
       token: "",

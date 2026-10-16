@@ -126,6 +126,8 @@ export type IssueItem = {
   number: number;
   title: string;
   labels: string[];
+  /** GitHub logins. */
+  assignees: string[];
   state: string;
   url: string;
   updatedTs: number;
@@ -212,6 +214,8 @@ export type StoreSnapshot = {
   events: CalEvent[];
   tasks: TaskItem[];
   issues: IssueItem[];
+  /** Open issues carrying a watched label, assigned to anyone. */
+  watchedIssues: IssueItem[];
   prs: PrItem[];
   runs: CollectRun[];
   dms: DmItem[];
@@ -225,6 +229,7 @@ export const EMPTY_SNAPSHOT: StoreSnapshot = {
   events: [],
   tasks: [],
   issues: [],
+  watchedIssues: [],
   prs: [],
   runs: [],
   dms: [],
@@ -306,9 +311,23 @@ export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
         number: 118,
         title: "Flaky terminal resize on hidden panes",
         labels: ["bug"],
+        assignees: ["octocat"],
         state: "open",
         url: "https://github.com/octo/widgets/issues/118",
         updatedTs: now - 5 * 60 * MINUTE,
+        dismissedTs: 0,
+      },
+    ],
+    watchedIssues: [
+      {
+        repo: "octo/widgets",
+        number: 131,
+        title: "Board cards should show who owns an issue",
+        labels: ["agent-ready", "ui"],
+        assignees: [],
+        state: "open",
+        url: "https://github.com/octo/widgets/issues/131",
+        updatedTs: now - 2 * 60 * MINUTE,
         dismissedTs: 0,
       },
     ],
@@ -641,6 +660,8 @@ export const storeDismissalsClear = () => invoke<number>("store_dismissals_clear
 
 /** Append a line to today's journal note. */
 export const journalLog = (text: string) => invoke<void>("journal_log", { text });
+/** Today's daily-note bullets, as written. */
+export const journalToday = () => invoke<string[]>("journal_today");
 
 /** Force the issues/PRs/Slack collectors now — calendar excluded (it spends
  * claude tokens). The `boolean` is a domain answer, not success: `true` =

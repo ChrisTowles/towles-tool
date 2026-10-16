@@ -15,6 +15,8 @@ import { sessionCatchesEye, sessionLabel, sessionStatusText } from "@/lib/agentb
 import { useAgentboardState } from "@/lib/agentboard/state";
 import { Dot } from "@/components/agentboard-bits/status-dots";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
+import { IssueFacts, LandedTodayDialog, WatchedIssues } from "@/components/board-github-bits";
+import { issueIndex, issueKey, landedToday, suggestedIssues } from "@/lib/board-github";
 import { boardAgentStatus, type BoardAgentStatus } from "@/lib/board-agent-status";
 import { repoAccentStyles, repoIcon, type RepoIdentity } from "@/lib/repo-identity";
 import { useBoardGroupByRepo } from "@/lib/board-prefs";
@@ -26,6 +28,7 @@ import {
   storeAttachTaskPr,
   storeDetachTaskIssue,
   storeDetachTaskPr,
+  storeItemDismiss,
   storePromoteTaskToIssue,
   storeUnarchiveTask,
   taskDelete,
@@ -108,6 +111,7 @@ export function BoardScreen() {
     messages: string[];
   } | null>(null);
   const [filter, setFilter] = useState("");
+  const [landedOpen, setLandedOpen] = useState(false);
 
   // Board-scoped shortcuts (see lib/shortcuts.tsx for the registry). Gated on
   // the tab being active: this screen stays mounted while hidden, so without
@@ -140,6 +144,20 @@ export function BoardScreen() {
   // The cache carries settled PRs too, so the rail can badge one; "Attach PR…"
   // only ever offers a PR still worth attaching.
   const openPrs = useMemo(() => snapshot.prs.filter((p) => p.state === "open"), [snapshot.prs]);
+
+  const issuesByKey = useMemo(
+    () => issueIndex(snapshot.issues, snapshot.watchedIssues),
+    [snapshot.issues, snapshot.watchedIssues],
+  );
+  const watched = useMemo(
+    () => suggestedIssues(snapshot.watchedIssues, snapshot.tasks),
+    [snapshot.watchedIssues, snapshot.tasks],
+  );
+  // Recomputed per snapshot: "today" only needs to be as fresh as the data.
+  const landed = useMemo(
+    () => landedToday(snapshot.prs, snapshot.tasks, Date.now()),
+    [snapshot.prs, snapshot.tasks],
+  );
 
   // The promote-to-issue targets.
   const repos = useMemo(() => {
@@ -223,6 +241,37 @@ export function BoardScreen() {
       goal: task.text,
     });
     openTab("agentboard");
+  }
+
+  function railRepoForIssue(issue: IssueItem) {
+    const want = foldRepoKey(issue.repo);
+    return agentState.repos.find((r) => {
+      const key = ownerRepoFromOrigin(r.originUrl);
+      return key !== undefined && foldRepoKey(key) === want;
+    });
+  }
+
+  function startFromIssue(issue: IssueItem) {
+    const repo = railRepoForIssue(issue);
+    if (!repo) return;
+    uiAction("board.start_watched_issue", "board");
+    requestAgentboardNav({
+      kind: "new-task-from-issue",
+      repoDir: repo.dir,
+      repoName: repo.name,
+      repoKey: repo.key,
+      originUrl: repo.originUrl ?? undefined,
+      issue,
+    });
+    openTab("agentboard");
+  }
+
+  function dismissWatched(issue: IssueItem) {
+    uiAction("board.dismiss_watched_issue", "board");
+    void commit(
+      storeItemDismiss("issue", issue.repo, issue.number, issue.updatedTs),
+      "dismiss that issue",
+    );
   }
 
   function promote(id: number, repo: string) {
@@ -389,6 +438,18 @@ export function BoardScreen() {
               Archived · {archivedCount}
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="px-2 font-mono text-mini text-kumo-subtle"
+            title="Your PRs merged and tasks done since midnight, with today's journal"
+            onClick={() => {
+              setLandedOpen(true);
+              uiAction("board.landed_today", "board");
+            }}
+          >
+            Landed today · {landed.prs.length + landed.tasks.length}
+          </Button>
           {counts.done > 0 && (
             <Button
               variant="ghost"
@@ -458,6 +519,14 @@ export function BoardScreen() {
       ) : (
         <ScrollArea className="min-h-0 flex-1">
           <div ref={focusRef} className="min-w-[900px] p-3">
+            <WatchedIssues
+              issues={watched}
+              canStart={(issue) =>
+                railRepoForIssue(issue) ? null : `${issue.repo} isn't tracked on Agentboard`
+              }
+              onStart={startFromIssue}
+              onDismiss={dismissWatched}
+            />
             {/* One status header for the whole board — the columns are shared
                 across every lane, so repeating the labels per lane would be
                 mostly noise. Sticky so they stay readable while scrolling
@@ -536,6 +605,7 @@ export function BoardScreen() {
                                 agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
                                 onOpenSession={openSession}
                                 openIssues={snapshot.issues}
+                                issuesByKey={issuesByKey}
                                 openPrs={openPrs}
                                 onReopen={reopen}
                                 onPromote={promote}
@@ -561,6 +631,8 @@ export function BoardScreen() {
           </div>
         </ScrollArea>
       )}
+
+      <LandedTodayDialog open={landedOpen} onOpenChange={setLandedOpen} landed={landed} />
 
       <BlockedDeleteDialog
         open={blockedDelete != null}
@@ -661,6 +733,7 @@ function Card({
   agent,
   onOpenSession,
   openIssues,
+  issuesByKey,
   openPrs,
   onReopen,
   onPromote,
@@ -685,6 +758,8 @@ function Card({
   agent: BoardAgentStatus | null;
   onOpenSession: (folderDir: string, sessionId: string) => void;
   openIssues: IssueItem[];
+  /** Cached issue rows, for a linked issue's labels and assignees. */
+  issuesByKey: Map<string, IssueItem>;
   openPrs: PrItem[];
   /** Mints a fresh worktree bound to the task's existing id — both reopening a
    * closed task and starting a worktree-less "task only" one. */
@@ -1041,25 +1116,33 @@ function Card({
               archived
             </Badge>
           )}
-          {task.issues.map((link) => (
-            <a
-              key={`i${link.repo}#${link.number}`}
-              href={link.url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => {
-                e.preventDefault();
-                void openExternalUrl(link.url);
-              }}
-              title={`${link.repo}#${link.number} · ${link.state}`}
-              className={cn(
-                "font-mono text-mini text-muted-foreground hover:text-foreground hover:underline",
-                link.state === "closed" && "line-through opacity-60",
-              )}
-            >
-              #{link.number}
-            </a>
-          ))}
+          {task.issues.map((link) => {
+            const cached = issuesByKey.get(issueKey(link.repo, link.number));
+            return (
+              <span
+                key={`i${link.repo}#${link.number}`}
+                className="flex min-w-0 max-w-full items-baseline gap-1"
+              >
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void openExternalUrl(link.url);
+                  }}
+                  title={`${link.repo}#${link.number} · ${link.state}`}
+                  className={cn(
+                    "font-mono text-mini text-muted-foreground hover:text-foreground hover:underline",
+                    link.state === "closed" && "line-through opacity-60",
+                  )}
+                >
+                  #{link.number}
+                </a>
+                {cached && link.state !== "closed" && <IssueFacts issue={cached} />}
+              </span>
+            );
+          })}
           {task.prs.map((link) => {
             // Compact link chips stay muted unless something is settled or
             // wrong — running/passing/plain would be noise at this size.

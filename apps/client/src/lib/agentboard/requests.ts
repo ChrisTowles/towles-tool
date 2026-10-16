@@ -1,3 +1,4 @@
+import type { IssueItem } from "@/lib/data";
 import { invoke } from "@/lib/tauri";
 
 /** A cross-screen handoff — Agentboard may not be mounted when it's made. */
@@ -60,6 +61,15 @@ export type AgentboardNav =
       originUrl?: string;
       taskId: number;
       goal: string;
+    }
+  /** The Board's watched-issue "Start task": the new-task form, the issue picked. */
+  | {
+      kind: "new-task-from-issue";
+      repoDir: string;
+      repoName: string;
+      repoKey: string;
+      originUrl?: string;
+      issue: IssueItem;
     }
   /** No human at the form: mint the worktree and launch an agent immediately. */
   | {

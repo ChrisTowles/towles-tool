@@ -11,7 +11,7 @@ use tt_store::IssueInput;
 use crate::gh;
 
 /// The `--json` field set requested from `gh issue list`.
-const ISSUE_LIST_FIELDS: &str = "number,title,labels,state,url,updatedAt";
+const ISSUE_LIST_FIELDS: &str = "number,title,labels,assignees,state,url,updatedAt";
 
 /// Collect the open issues assigned to me for one repo dir.
 ///
@@ -38,6 +38,45 @@ pub(crate) fn collect_repo_issues(dir: &Path) -> Result<(String, Vec<IssueInput>
     )?;
     let issues = map_issue_list(&list, &repo);
     Ok((repo, issues))
+}
+
+/// Open issues in one repo carrying any of `labels`, whoever is assigned. `gh`
+/// ANDs repeated `--label`s, so it is one call per label, deduped by number.
+pub(crate) fn collect_repo_watched_issues(
+    dir: &Path,
+    labels: &[String],
+) -> Result<(String, Vec<IssueInput>), String> {
+    let repo = gh::repo_name_with_owner(dir)?;
+    let mut out: Vec<IssueInput> = Vec::new();
+    for label in labels {
+        let args = watched_issue_list_args(label);
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let list = gh::run_json(dir, &arg_refs)?;
+        for issue in map_issue_list(&list, &repo) {
+            if !out.iter().any(|seen| seen.number == issue.number) {
+                out.push(issue);
+            }
+        }
+    }
+    Ok((repo, out))
+}
+
+fn watched_issue_list_args(label: &str) -> Vec<String> {
+    [
+        "issue",
+        "list",
+        "--state",
+        "open",
+        "--label",
+        label,
+        "--limit",
+        gh::LIST_LIMIT,
+        "--json",
+        ISSUE_LIST_FIELDS,
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
 
 /// Targeted state fetch for one issue: the sweep only stores open-assigned
@@ -147,6 +186,7 @@ pub(crate) fn map_issue_list(list: &serde_json::Value, repo: &str) -> Vec<IssueI
                 number,
                 title: str_field(item, "title"),
                 labels: label_names(item),
+                assignees: assignee_logins(item),
                 state: str_field(item, "state").to_ascii_lowercase(),
                 url: str_field(item, "url"),
                 updated_ts: parse_iso_ms(
@@ -174,6 +214,18 @@ fn label_names(item: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn assignee_logins(item: &serde_json::Value) -> Vec<String> {
+    item.get("assignees")
+        .and_then(|v| v.as_array())
+        .map(|people| {
+            people
+                .iter()
+                .filter_map(|p| p.get("login").and_then(|v| v.as_str()).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Parse an RFC 3339 / ISO-8601 timestamp to epoch milliseconds; 0 on failure.
 fn parse_iso_ms(s: &str) -> i64 {
     chrono::DateTime::parse_from_rfc3339(s).map(|dt| dt.timestamp_millis()).unwrap_or(0)
@@ -190,6 +242,7 @@ mod tests {
             "number": 390,
             "title": "Refunds double-charge on retry",
             "labels": [{"name": "bug"}, {"name": "P1"}],
+            "assignees": [{"login": "octocat", "name": "Mona"}],
             "state": "OPEN",
             "url": "https://github.com/o/r/issues/390",
             "updatedAt": "2024-01-02T03:04:05Z"
@@ -201,6 +254,7 @@ mod tests {
         assert_eq!(i.number, 390);
         assert_eq!(i.title, "Refunds double-charge on retry");
         assert_eq!(i.labels, vec!["bug".to_string(), "P1".to_string()]);
+        assert_eq!(i.assignees, vec!["octocat".to_string()]);
         assert_eq!(i.state, "open");
         assert_eq!(i.url, "https://github.com/o/r/issues/390");
         assert_eq!(i.updated_ts, 1704164645000);
@@ -213,6 +267,14 @@ mod tests {
 
         let assigned = importable_issue_list_args(true);
         assert!(assigned.windows(2).any(|w| w == ["--assignee", "@me"]));
+    }
+
+    #[test]
+    fn watched_issue_list_args_asks_for_one_label_in_any_assignee() {
+        let args = watched_issue_list_args("agent-ready");
+        assert!(args.windows(2).any(|w| w == ["--label", "agent-ready"]));
+        assert!(args.windows(2).any(|w| w == ["--state", "open"]));
+        assert!(!args.iter().any(|a| a == "--assignee"));
     }
 
     #[test]
@@ -229,6 +291,7 @@ mod tests {
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].number, 7);
         assert!(issues[0].labels.is_empty());
+        assert!(issues[0].assignees.is_empty());
         // A non-array (e.g. gh error object) yields nothing rather than panicking.
         assert!(map_issue_list(&json!({"message": "boom"}), "o/r").is_empty());
     }
