@@ -73,6 +73,7 @@ function base(): UserSettings {
       templateDir: "",
     },
     promptImprovers: [],
+    taskTemplates: [],
     savedViews: [],
     savedQueries: [],
     telemetryRules: [],

@@ -25,7 +25,9 @@ import { IssueItem, storeGhIssuesList } from "@/lib/data";
 import { GoalEditor } from "@/components/goal-editor";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { referencedIssueNumbers } from "@/lib/goal-text";
-import { loadUserSettings, type PromptImprover } from "@/lib/settings";
+import { loadUserSettings, type PromptImprover, type TaskTemplate } from "@/lib/settings";
+import { TaskTemplateListSchema } from "@/lib/schemas/settings";
+import { composeGoal, withTemplateImprover } from "@/lib/task-templates";
 import {
   type BaseBranch,
   BaseBranchesSchema,
@@ -71,6 +73,9 @@ export type NewTaskRepo = {
   originUrl?: string | null;
 };
 
+/** A Select needs a value for "no template"; template ids are slugs, never this. */
+const NO_TEMPLATE = "__none__";
+
 /** Empty `prompt` makes the backend use `tt_tasks::DEFAULT_SUGGEST_INSTRUCTION`. */
 const FALLBACK_IMPROVER: PromptImprover = {
   id: "direct",
@@ -99,6 +104,8 @@ export type NewTaskSubmit = {
   launchClaude: boolean;
   /** Set for a review task: `task_create` checks out this PR's head instead. */
   pr: PullRequest | null;
+  /** The picked template's command, run after the repo's setup; "" for none. */
+  templateSetup: string;
 };
 
 /** Mirrors the Rust `TaskCreated` payload from `task_create`. */
@@ -265,6 +272,11 @@ export function InlineNewTask({
   const [model, setModel] = useState<ModelChoice>(USE_DEFAULT);
   const [effort, setEffort] = useState<EffortChoice>(USE_DEFAULT);
   const [improvers, setImprovers] = useState<PromptImprover[]>([FALLBACK_IMPROVER]);
+  const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [template, setTemplate] = useState<TaskTemplate | null>(null);
+  // The goal as it was before a template was applied, so picking another
+  // replaces the first's skeleton rather than stacking on it.
+  const [goalBeforeTemplate, setGoalBeforeTemplate] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   // On by default; unchecking is the "I just want the worktree" escape hatch.
   const [launchClaude, setLaunchClaude] = useState(true);
@@ -343,6 +355,20 @@ export function InlineNewTask({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<TaskTemplate[]>(
+      "task_templates",
+      { name: repo.name, dir: repo.dir },
+      { schema: TaskTemplateListSchema },
+    ).then((result) => {
+      if (!cancelled) setTemplates(result.unwrapOr([]));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo.name, repo.dir]);
+
   // Debounced preflight: legal ref, no colliding task name. Read-only, so it
   // can fire on every settled keystroke.
   useEffect(() => {
@@ -373,9 +399,10 @@ export function InlineNewTask({
 
   // Preferred get their own button, the rest sit under "More" — unless none are
   // preferred, where an empty row would be strictly worse.
-  const anyPreferred = improvers.some((i) => i.preferred);
-  const preferredImprovers = anyPreferred ? improvers.filter((i) => i.preferred) : improvers;
-  const otherImprovers = anyPreferred ? improvers.filter((i) => !i.preferred) : [];
+  const offered = withTemplateImprover(improvers, template?.improver);
+  const anyPreferred = offered.some((i) => i.preferred);
+  const preferredImprovers = anyPreferred ? offered.filter((i) => i.preferred) : offered;
+  const otherImprovers = anyPreferred ? offered.filter((i) => !i.preferred) : [];
   const improverDisabled =
     suggesting !== null || staging || (!goal.trim() && imagePaths.length === 0);
 
@@ -407,6 +434,18 @@ export function InlineNewTask({
       err: (e) => showError(e.message),
     });
     setSuggesting(null);
+  }
+
+  /** Fills the goal like an improver does, with the same Undo; "none" keeps it. */
+  function pickTemplate(id: string) {
+    const next = templates.find((t) => t.id === id) ?? null;
+    uiAction("task.template_picked", "agentboard", next?.id ?? "none");
+    setTemplate(next);
+    if (!next?.goal.trim()) return;
+    const typed = goalBeforeTemplate ?? goal;
+    setPreOverwrite({ goal, branchEdit, titleEdit });
+    setGoalBeforeTemplate(typed);
+    setGoal(composeGoal(next, typed));
   }
 
   function undoOverwrite() {
@@ -579,6 +618,7 @@ export function InlineNewTask({
       worktree: true,
       launchClaude,
       pr: prCheck.pr,
+      templateSetup: "",
     });
   }
 
@@ -628,6 +668,7 @@ export function InlineNewTask({
       worktree,
       launchClaude,
       pr: null,
+      templateSetup: template?.setup.trim() ?? "",
     });
   }
 
@@ -658,6 +699,19 @@ export function InlineNewTask({
         </div>
       </div>
       {reviewing && <ReviewPrPicker root={repo.dir} check={prCheck} onCheck={pickPr} />}
+      {!reviewing && templates.length > 0 && (
+        <Select
+          aria-label="Task template"
+          size="sm"
+          className="w-full"
+          value={template?.id ?? NO_TEMPLATE}
+          onValueChange={(v) => pickTemplate(v as string)}
+          items={[
+            { value: NO_TEMPLATE, label: "No template" },
+            ...templates.map((t) => ({ value: t.id, label: t.label || t.id })),
+          ]}
+        />
+      )}
       <GoalEditor
         autoFocus
         value={goal}

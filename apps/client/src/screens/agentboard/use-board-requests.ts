@@ -99,6 +99,7 @@ export function useBoardRequests(args: {
             worktree: true,
             launchClaude: true,
             pr: null,
+            templateSetup: "",
             taskId: req.taskId,
           },
         );

@@ -22,7 +22,7 @@ pub const SETUP_ENV_KEY: &str = "TT_TASK_SETUP";
 pub const TEARDOWN_ENV_KEY: &str = "TT_TASK_TEARDOWN";
 /// [`create_task`]'s pre-flight fetch is best-effort, so it fails fast on a slow network.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
-const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
+pub(crate) const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
 /// Past this a creation step is named with its duration — usually the environment's fault.
 const SLOW_STEP: Duration = Duration::from_secs(5);
 

@@ -13,6 +13,9 @@ const valid = {
   promptImprovers: [
     { id: "direct", label: "Direct", enabled: true, preferred: true, prompt: "Restate it." },
   ],
+  taskTemplates: [
+    { id: "bug", label: "Bug", repo: "", goal: "Reproduce first.", improver: "", setup: "" },
+  ],
   savedViews: [
     {
       id: "gh-failures",

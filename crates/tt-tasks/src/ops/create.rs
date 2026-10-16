@@ -35,6 +35,8 @@ pub struct CreateOpts {
     /// Run the setup step in the new task (declared `TT_TASK_SETUP` from the
     /// rendered `.env`, else lockfile-detected package-manager install).
     pub run_setup: bool,
+    /// A task template's command, run after setup when `run_setup` is set.
+    pub template_setup: Option<String>,
 }
 
 /// A step of [`create_task`] worth showing the user live, in the order they
@@ -365,6 +367,11 @@ pub fn create_task(
             let setup_warning = run_setup(&dir)?;
             note_if_slow(&mut warnings, "setup", setup_start.elapsed());
             if let Some(warning) = setup_warning {
+                warnings.push(warning);
+            }
+            if let Some(setup) = &opts.template_setup
+                && let Some(warning) = crate::presets::run_setup(&dir, setup)?
+            {
                 warnings.push(warning);
             }
         }

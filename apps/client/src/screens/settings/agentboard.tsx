@@ -38,6 +38,7 @@ import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/termina
 import { PALETTE } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { PromptImproversEditor } from "./collectors";
+import { TaskTemplatesEditor } from "./task-templates";
 import {
   CadenceRow,
   DEFAULT_COMPACT_RECOMMEND_PERCENT,
@@ -97,6 +98,18 @@ export function agentboardSections(
             onChange={(improvers, opts) =>
               update((s) => ({ ...s, promptImprovers: improvers }), opts)
             }
+            onCommit={() => void flush()}
+          />
+        ),
+      },
+      {
+        label: "Task templates",
+        keywords: ["template", "preset", "new task", "goal", "setup", "improver", "--template"],
+        node: (
+          <TaskTemplatesEditor
+            templates={settings.taskTemplates ?? []}
+            improvers={settings.promptImprovers ?? []}
+            onChange={(taskTemplates, opts) => update((s) => ({ ...s, taskTemplates }), opts)}
             onCommit={() => void flush()}
           />
         ),

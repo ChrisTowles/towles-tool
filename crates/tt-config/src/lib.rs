@@ -286,6 +286,23 @@ impl PromptImprover {
     }
 }
 
+/// A new-task preset: the goal it starts from, the improver it runs, and a command run
+/// after the repo's own setup. Empty fields mean "none"; an empty `repo` applies to every
+/// repo. None ship — they are the user's own.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct TaskTemplate {
+    pub id: String,
+    pub label: String,
+    /// Repo name or checkout dir, as the Agentboard rail shows it.
+    pub repo: String,
+    pub goal: String,
+    /// A [`PromptImprover::id`].
+    pub improver: String,
+    pub setup: String,
+}
+
 pub const DEFAULT_IMPROVER_DIRECT: &str = "Restate the task clearly and concisely in one sentence.";
 
 pub const DEFAULT_IMPROVER_CLARIFY: &str = "Restate the task in 2 to 3 sentences, making \
@@ -954,6 +971,8 @@ pub struct UserSettings {
 
     pub prompt_improvers: Vec<PromptImprover>,
 
+    pub task_templates: Vec<TaskTemplate>,
+
     /// The Telemetry Log tab's saved views; see [`SavedView::defaults`].
     pub saved_views: Vec<SavedView>,
     pub saved_queries: Vec<SavedQuery>,
@@ -1044,6 +1063,7 @@ impl Default for UserSettings {
             journal_settings: JournalSettings::default(),
             agentboard: AgentboardSettings::default(),
             prompt_improvers: PromptImprover::defaults(),
+            task_templates: Vec::new(),
             saved_views: SavedView::defaults(),
             saved_queries: SavedQuery::defaults(),
             telemetry_rules: TelemetryRule::defaults(),

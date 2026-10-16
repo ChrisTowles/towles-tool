@@ -48,6 +48,7 @@ tt task new "Do the thing" --repo myrepo --goal "..."   # goal shown on the Boar
 tt task new "Do the thing" --repo myrepo --status doing # Board column: backlog (default), doing or done — anything else is refused before a worktree is made
 tt task new --pr 123 --repo myrepo                     # review task: checks out PR #123's existing head branch (fork PRs as <owner>/<branch>)
 tt task new --issue 42 --repo myrepo                   # task for open issue #42 on feat/42-<slug>, titled after it, issue attached to the Board row (TITLE/-b override)
+tt task new "Fix login" --repo myrepo --template bug  # start from a task template (Settings → Agent Board): its goal leads --goal, its setup runs after the repo's; an unknown id lists the ones that apply
 tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>         # (Re)render a checkout's .env (or `primary`) — idempotent, keeps claims
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)

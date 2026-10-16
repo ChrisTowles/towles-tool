@@ -792,6 +792,7 @@ pub fn run() {
             task::task_delete,
             task::task_stop_port,
             task::task_run_setup,
+            task::task_templates,
             task::task_suggest,
             task::task_write_pasted_images,
             task::read_clipboard_image,

@@ -76,24 +76,32 @@ export type LandingSummary = {
   /** Same gate as {@link folderLanded}: only then is the full diff worth reading. */
   landed: boolean;
   text: string;
+  /** The PR's page, where GitHub shows the merge commit; only with a PR. */
+  url?: string;
 };
 
 /** The "Safe to delete" callout's lead, and what every close dialog leads with. */
 export function folderLandingSummary(
   folder: Pick<FolderData, "landed" | "comparedBase">,
-  pr: Pick<PrItem, "state" | "number"> | undefined,
+  pr: Pick<PrItem, "state" | "number" | "url"> | undefined,
 ): LandingSummary {
   const base = comparedBaseLabel(folder);
   const via = folder.landed ? `${folder.landed} into ${base}` : null;
   const landed = folderLanded(folder, pr);
   if (!pr) return { landed, text: via ?? `Not merged into ${base}` };
+  const { url } = pr;
   if (pr.state === "merged") {
-    return { landed, text: via ? `PR #${pr.number} merged, ${via}` : `PR #${pr.number} merged` };
+    return {
+      landed,
+      text: via ? `PR #${pr.number} merged, ${via}` : `PR #${pr.number} merged`,
+      url,
+    };
   }
   const state = pr.state === "open" ? "open" : `${pr.state}, unmerged`;
   return {
     landed,
     text: via ? `PR #${pr.number} ${state}, ${via}` : `PR #${pr.number} ${state}, not in ${base}`,
+    url,
   };
 }
 

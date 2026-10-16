@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  ArrowSquareOutIcon,
   FileMagnifyingGlassIcon,
   GitCommitIcon,
   GraphIcon,
@@ -14,6 +15,8 @@ import {
   type TaskBlockerKind,
   stoppablePort,
 } from "@/lib/agentboard/landing";
+import { openExternalUrl } from "@/lib/open-url";
+import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
 /** Exhaustive over `TaskBlockerKind`, so a guard added in Rust fails the build
@@ -39,6 +42,7 @@ function BlockerIcon({ kind, losesWork }: { kind: string; losesWork: boolean }) 
 /** Where the branch stands, atop every close dialog — the same line the
  * header's "Safe to delete" callout leads with. */
 export function LandingLine({ landing }: { landing: LandingSummary }) {
+  const { url } = landing;
   return (
     <p
       className={cn(
@@ -53,6 +57,20 @@ export function LandingLine({ landing }: { landing: LandingSummary }) {
         {landing.landed ? "✓" : "○"}
       </span>
       <span className="min-w-0 wrap-anywhere text-kumo-default">{landing.text}</span>
+      {url && (
+        <button
+          type="button"
+          className="ml-auto inline-flex shrink-0 items-center gap-1 text-primary hover:underline"
+          title={url}
+          onClick={() => {
+            uiAction("task.landing_open_pr", "agentboard");
+            void openExternalUrl(url);
+          }}
+        >
+          View on GitHub
+          <ArrowSquareOutIcon className="size-3" aria-hidden />
+        </button>
+      )}
     </p>
   );
 }

@@ -212,7 +212,12 @@ pub async fn task_create(
     dir: String,
 ) -> Result<TaskCreated, String> {
     let source = task_source(source)?;
-    let opts = CreateOpts { root: Some(PathBuf::from(root)), source, run_setup: false };
+    let opts = CreateOpts {
+        root: Some(PathBuf::from(root)),
+        source,
+        run_setup: false,
+        template_setup: None,
+    };
     let now_ms = tt_config::now_ms();
     // Claimed before the first step, so the row is never on the rail mute.
     set_phase(&app, |p| p.creating(&dir, "starting"));
@@ -313,6 +318,16 @@ pub async fn task_write_pasted_images(
     .map_err(|e| e.to_string())
 }
 
+/// The task templates the new-task form offers for this repo, in settings order.
+#[tauri::command]
+pub fn task_templates(name: String, dir: String) -> Result<Vec<tt_config::TaskTemplate>, String> {
+    let settings = tt_config::load().map_err(|e| format!("failed to load settings: {e}"))?;
+    Ok(tt_tasks::presets::for_repo(&settings.task_templates, &name, &dir)
+        .into_iter()
+        .cloned()
+        .collect())
+}
+
 /// A setup run's answer: the retry-able warning, and where its full output went.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -323,7 +338,10 @@ pub struct SetupRun {
 
 /// `TT_TASK_SETUP` or lockfile detection. `task_create` deliberately doesn't run it.
 #[tauri::command]
-pub async fn task_run_setup(dir: String) -> Result<SetupRun, String> {
+pub async fn task_run_setup(
+    dir: String,
+    template_setup: Option<String>,
+) -> Result<SetupRun, String> {
     use tracing::Instrument as _;
 
     let span = tracing::info_span!(
@@ -334,7 +352,17 @@ pub async fn task_run_setup(dir: String) -> Result<SetupRun, String> {
     async move {
         let result = tauri::async_runtime::spawn_blocking(move || {
             let dir = PathBuf::from(dir);
-            let warning = ops::run_setup(&dir).map_err(|e| e.to_string())?;
+            let mut warning = ops::run_setup(&dir).map_err(|e| e.to_string())?;
+            // The template's step runs even when the repo's warned: it's the user's own.
+            if let Some(setup) = template_setup.as_deref().filter(|s| !s.trim().is_empty())
+                && let Some(extra) =
+                    tt_tasks::presets::run_setup(&dir, setup).map_err(|e| e.to_string())?
+            {
+                warning = Some(match warning {
+                    Some(repo) => format!("{repo}\n{extra}"),
+                    None => extra,
+                });
+            }
             let log_path = ops::setup_log_path(&dir)
                 .filter(|path| path.is_file())
                 .map(|path| path.to_string_lossy().to_string());
