@@ -37,6 +37,7 @@ export function BoardDialogs({
     prompt: string;
     onPromptChange: (prompt: string) => void;
     onCommit: () => void;
+    onCancel: () => void;
   };
 }) {
   return (
@@ -101,7 +102,11 @@ export function BoardDialogs({
         prompt={startClaude.prompt}
         onPromptChange={startClaude.onPromptChange}
         onCommit={startClaude.onCommit}
-        onOpenChange={closeOnFalse(startClaude.onCommit)}
+        // Dismissing a fresh start launches with what's typed; dismissing a
+        // start-over keeps the running agent, since that one kills it first.
+        onOpenChange={closeOnFalse(
+          startClaude.target?.restart ? startClaude.onCancel : startClaude.onCommit,
+        )}
       />
     </>
   );

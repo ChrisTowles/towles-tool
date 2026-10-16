@@ -987,6 +987,10 @@ export function AgentBoardScreen() {
           prompt: spawn.startClaudePrompt,
           onPromptChange: spawn.setStartClaudePrompt,
           onCommit: spawn.commitStartClaude,
+          onCancel: () => {
+            spawn.setStartClaudeTarget(null);
+            spawn.setStartClaudePrompt("");
+          },
         }}
       />
       <LandQueueDialog

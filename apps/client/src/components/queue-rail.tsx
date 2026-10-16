@@ -562,7 +562,8 @@ function QueueRow({
   );
 }
 
-/** One of a row's verbs, beside the snooze presets and in their voice. */
+/** One of a row's verbs, beside the snooze presets and in their voice: an icon,
+ * since the row's title already competes with the presets for the width. */
 function RowVerb({
   label,
   title,
@@ -580,10 +581,9 @@ function RowVerb({
       aria-label={label ?? title}
       title={title}
       onClick={onClick}
-      className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none [&>svg]:size-3.5"
+      className="flex items-center rounded-md px-1 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none [&>svg]:size-3.5"
     >
       {icon}
-      {label}
     </button>
   );
 }
