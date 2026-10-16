@@ -10,9 +10,6 @@ browser — both exercising real Rust IPC (`app_task`, `settings_get`,
 - **Regression suite** (`bun run e2e`) — WebdriverIO specs that spawn a fresh
   window, run, and exit. CI-style pass/fail. See **[Regression suite](#regression-suite-webdriverio)** below.
 
-Both are the automated counterpart to the manual runbook in
-[../docs/UI-SCREENSHOTS.md](../docs/UI-SCREENSHOTS.md).
-
 ## Live drive
 
 Open a persistent, automatable window and leave it up:

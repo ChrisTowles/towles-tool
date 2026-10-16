@@ -47,20 +47,18 @@ export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "no_shell"];
 /** Soft by design — the queue is somewhere you go, not something that calls
  * you. A row changing lane fades out where it was and fades in where it went
  * (it is keyed by lane too) rather than sliding across the list for the eye to
- * chase, and the rows around it ease over in the time it takes. */
+ * chase, and the rows around it reflow with its height. The arrival waits out
+ * the departure, so the same row is never on screen twice; no `layout`, which
+ * re-measured on every tick and slid rows against the height change. */
 const queueRowMotion = {
-  layout: "position",
   initial: { opacity: 0, height: 0 },
-  animate: { opacity: 1, height: "auto" },
-  exit: { opacity: 0, height: 0 },
+  animate: {
+    opacity: 1,
+    height: "auto",
+    transition: { duration: 0.35, delay: 0.25, ease: "easeInOut" },
+  },
+  exit: { opacity: 0, height: 0, transition: { duration: 0.25, ease: "easeInOut" } },
   style: { overflow: "hidden" },
-  transition: { duration: 0.9, ease: "easeInOut", layout: { duration: 0.9, ease: "easeInOut" } },
-} as const;
-
-/** What a lane change can't do: a lane header holds still. */
-const laneHeaderMotion = {
-  layout: "position",
-  transition: { layout: { duration: 0.9, ease: "easeInOut" } },
 } as const;
 
 /** A wait reason's word, tinted rather than filled: it says what kind of wait
@@ -229,18 +227,18 @@ export function QueueRail({
             if (items.length === 0) return [];
             const isFolded = folded.has(lane);
             const header = (
-              <motion.button
-                key={`lane:${lane}`}
-                {...laneHeaderMotion}
-                type="button"
-                onClick={() => onToggleLane(lane)}
-                aria-expanded={!isFolded}
-                data-testid="queue-lane"
-                className="flex w-full items-center gap-1 px-3 pt-3 pb-1 text-left text-xs font-medium tracking-wide text-kumo-subtle uppercase hover:text-kumo-default"
-              >
-                {isFolded ? <CaretRightIcon size={12} /> : <CaretDownIcon size={12} />}
-                {LANE_TITLE[lane]} · {items.length}
-              </motion.button>
+              <motion.div key={`lane:${lane}`} {...queueRowMotion}>
+                <button
+                  type="button"
+                  onClick={() => onToggleLane(lane)}
+                  aria-expanded={!isFolded}
+                  data-testid="queue-lane"
+                  className="flex w-full items-center gap-1 px-3 pt-3 pb-1 text-left text-xs font-medium tracking-wide text-kumo-subtle uppercase hover:text-kumo-default"
+                >
+                  {isFolded ? <CaretRightIcon size={12} /> : <CaretDownIcon size={12} />}
+                  {LANE_TITLE[lane]} · {items.length}
+                </button>
+              </motion.div>
             );
             if (isFolded) return [header];
             return [

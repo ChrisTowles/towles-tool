@@ -1,0 +1,23 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths: ["**/*.md", "scripts/check-md-links.mjs", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["**/*.md", "scripts/check-md-links.mjs", ".github/workflows/docs.yml"]
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  links:
+    name: Markdown links resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: node scripts/check-md-links.mjs

@@ -61,11 +61,14 @@ until its animation ends.
 Nothing else has that luxury. The rail renders a backend snapshot, so a removed
 row is simply absent from the next payload and React unmounts it before any CSS
 can run. That case uses `motion`: `<AnimatePresence>` holds the departed row on
-screen and `layout` slides the survivors in, configured from
-`lib/rail-motion.ts` — spread it rather than hand-rolling per-row variants. The
-queue rail is the one exception, with slow (0.9s) fades of its own in
-`queue-rail.tsx`: its rows move on agents' schedule rather than yours, so motion
-there has to stay below the threshold of pulling your eye.
+screen while it collapses, and its neighbours reflow with the height, configured
+from `lib/rail-motion.ts` — spread it rather than hand-rolling per-row variants.
+**No `layout` on rail rows**: the rails re-render every tick and nest presence
+lists three deep, and projection on top of a height reflow moves rows twice. The
+queue rail is the one exception, with slower fades of its own in
+`queue-rail.tsx`, the arrival waiting out the departure: its rows move on
+agents' schedule rather than yours, so motion there has to stay below the
+threshold of pulling your eye.
 
 Deliberately **not** yaak's `<LazyMotion strict>` + `m.*`, which splits motion
 into its own chunk only when every `AnimatePresence` consumer is lazily imported

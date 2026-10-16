@@ -143,9 +143,7 @@ do both when the change touches the app. Skip it for changes with nothing in
 the app to look at (CLI-only, docs-only, crate-internal refactors with no
 `tt-app`/`apps/client` surface).
 
-> The binary is **`tt`**. The `ttr` → `tt` cutover from the TypeScript CLI
-> happened 2026-07-13 — hard cutover, no `ttr` alias left behind (see
-> [docs/CUTOVER.md](CUTOVER.md)).
+> The binary is **`tt`**; the `ttr` → `tt` cutover was hard, with no alias.
 
 ## The CI variant of the Rust checks
 

@@ -9,8 +9,7 @@ use std::time::Instant;
 use super::render::render_task_env;
 use super::{
     FETCH_TIMEOUT, OpsError, Result, TaskRoot, base_branch, discover_root, effective_origin_base,
-    fast_forward_base_if_behind, git_checkout, git_checkout_timeout, note_if_slow, run_setup,
-    validate_branch_name,
+    fast_forward_base_if_behind, git, note_if_slow, run_setup, validate_branch_name,
 };
 use crate::issue::{self, Issue};
 use crate::pr::{self, PullRequest};
@@ -219,11 +218,11 @@ fn add_pr_worktree(
     let existed = super::branch_exists(&sr.checkout, branch);
     let head = format!("refs/pull/{}/head:refs/heads/{branch}", pr.number);
     let tracking = format!("+refs/heads/{0}:refs/remotes/origin/{0}", pr.head_branch);
-    let mut args = vec!["fetch", "--quiet", "origin", head.as_str()];
+    let mut refspecs = vec![head.as_str()];
     if !pr.cross_repository {
-        args.push(tracking.as_str());
+        refspecs.push(tracking.as_str());
     }
-    let fetched = git_checkout(&sr.checkout, &args)?;
+    let fetched = git(tt_git::cli::fetch_refspecs(&sr.checkout, &refspecs))?;
     if !fetched.ok() {
         return Err(OpsError::Git(format!(
             "could not fetch PR #{} into {branch}:
@@ -232,7 +231,7 @@ fn add_pr_worktree(
             fetched.stderr.trim()
         )));
     }
-    let added = git_checkout(&sr.checkout, &["worktree", "add", dir, branch])?;
+    let added = git(tt_git::cli::worktree_add(&sr.checkout, dir, branch))?;
     if !added.ok() {
         if !existed {
             let _ = super::repo_at(&sr.checkout).map(|repo| repo.delete_branch(branch));
@@ -250,7 +249,7 @@ fn add_pr_worktree(
         ));
     } else {
         let upstream = format!("origin/{}", pr.head_branch);
-        let set = git_checkout(&sr.checkout, &["branch", "--set-upstream-to", &upstream, branch]);
+        let set = tt_git::cli::set_upstream(&sr.checkout, branch, &upstream);
         if !set.as_ref().is_ok_and(|out| out.ok()) {
             warnings.push(format!("{branch} was checked out without tracking {upstream}"));
         }
@@ -273,10 +272,10 @@ pub fn create_task(
     }
     let mut warnings = Vec::new();
     on_phase(CreatePhase::Fetching);
-    let _ = git_checkout(&sr.checkout, &["worktree", "prune"]);
+    let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
 
     let fetch_start = Instant::now();
-    match git_checkout_timeout(&sr.checkout, &["fetch", "--quiet", "origin"], FETCH_TIMEOUT) {
+    match tt_git::cli::fetch_origin(&sr.checkout, false, FETCH_TIMEOUT) {
         Ok(out) if out.ok() => {}
         Ok(out) => warnings
             .push(format!("fetch failed (offline?) — using local refs: {}", out.stderr.trim())),
@@ -309,7 +308,7 @@ pub fn create_task(
         Some(pr) => add_pr_worktree(&sr, pr, &branch, &dir_s, &mut warnings)?,
         None => {
             let add_result =
-                git_checkout(&sr.checkout, &["worktree", "add", "-b", &branch, &dir_s, &base])?;
+                git(tt_git::cli::worktree_add_new_branch(&sr.checkout, &dir_s, &branch, &base))?;
             if !add_result.ok() {
                 return Err(OpsError::Git(format!(
                     "git worktree add failed:\n{}",
@@ -384,7 +383,8 @@ pub fn create_task(
     })();
 
     created.inspect_err(|_| {
-        let _ = git_checkout(&sr.checkout, &["worktree", "remove", "--force", &dir_s]);
+        let _ =
+            tt_git::cli::worktree_remove(&sr.checkout, &dir_s, true, tt_git::cli::DEFAULT_TIMEOUT);
         let _ = fs::remove_dir_all(Path::new(&dir_s));
         // A branch this create made is deleted too, or the retry dies on
         // "branch already exists" after e.g. fixing a template error. A PR
@@ -400,12 +400,7 @@ mod tests {
     use super::*;
 
     fn git(dir: &Path, args: &[&str]) -> String {
-        let dir = dir.to_str().unwrap();
-        let mut full = vec!["-C", dir, "-c", "user.name=T", "-c", "user.email=t@t"];
-        full.extend_from_slice(args);
-        let out = tt_exec::run("git", &full).unwrap();
-        assert!(out.ok(), "git {full:?} failed: {}", out.stderr);
-        out.stdout.trim().to_string()
+        tt_git::testing::git(dir, args)
     }
 
     /// An origin with PR #7 on `feat/x`, and a clone of it as the task root.

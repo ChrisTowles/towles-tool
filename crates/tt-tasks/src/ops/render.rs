@@ -87,7 +87,7 @@ pub fn render_task_env(
 
     // A failed resolution degrades to the live `.env` scan alone rather than
     // failing the render; warned about where the registry write happens below.
-    let registry_path = port_registry_path(&sr.checkout);
+    let registry_path = port_registry_path(&sr.checkout, None);
 
     let env_path = dir.join(".env");
     let old_text = fs::read_to_string(&env_path).unwrap_or_default();
