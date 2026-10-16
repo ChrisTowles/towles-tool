@@ -160,42 +160,48 @@ fn a_foreign_listener_on_a_claimed_port_blocks_removal() {
     assert!(!dir.exists());
 }
 
-/// A dev server started inside the task is the task's own: removal stops it instead of
-/// refusing. Its own process group, as a shell job would have — the stop signals the group.
+// `cfg(test)` so the spawn check reads the real child below as test code.
+#[cfg(test)]
 #[cfg(target_os = "linux")]
-#[test]
-fn the_tasks_own_listener_is_stopped_not_a_blocker() {
-    use std::os::unix::process::CommandExt;
-    let has = |bin: &str| {
-        std::process::Command::new("which").arg(bin).output().is_ok_and(|o| o.status.success())
-    };
-    if !has("lsof") || !has("python3") {
-        return;
-    }
-    let (_tmp, sr) = repo_with_origin();
-    let dir = add_task(&sr, "feat-a", "feat/a");
-    let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
-    fs::write(dir.join(".env"), format!("UI_PORT={port}\n")).unwrap();
-    let script = format!(
-        "import socket,time;s=socket.socket();s.bind(('127.0.0.1',{port}));s.listen();time.sleep(30)"
-    );
-    let mut child = std::process::Command::new("python3")
-        .args(["-c", &script])
-        .current_dir(&dir)
-        .process_group(0)
-        .spawn()
-        .unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !crate::ops::port_occupied(port) && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
+mod own_listener {
+    use super::*;
 
-    let done = removed(remove(&sr, "feat-a", false).0);
-    let _ = child.kill();
-    let _ = child.wait();
+    /// A dev server started inside the task is the task's own: removal stops it instead of
+    /// refusing. Its own process group, as a shell job would have — the stop signals the group.
+    #[test]
+    fn the_tasks_own_listener_is_stopped_not_a_blocker() {
+        use std::os::unix::process::CommandExt;
+        let has = |bin: &str| {
+            std::process::Command::new("which").arg(bin).output().is_ok_and(|o| o.status.success())
+        };
+        if !has("lsof") || !has("python3") {
+            return;
+        }
+        let (_tmp, sr) = repo_with_origin();
+        let dir = add_task(&sr, "feat-a", "feat/a");
+        let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+        fs::write(dir.join(".env"), format!("UI_PORT={port}\n")).unwrap();
+        let script = format!(
+            "import socket,time;s=socket.socket();s.bind(('127.0.0.1',{port}));s.listen();time.sleep(30)"
+        );
+        let mut child = std::process::Command::new("python3")
+            .args(["-c", &script])
+            .current_dir(&dir)
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !crate::ops::port_occupied(port) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
 
-    assert!(mentions(&done.messages, "this task's own"), "{:?}", done.messages);
-    assert!(!dir.exists());
+        let done = removed(remove(&sr, "feat-a", false).0);
+        let _ = child.kill();
+        let _ = child.wait();
+
+        assert!(mentions(&done.messages, "this task's own"), "{:?}", done.messages);
+        assert!(!dir.exists());
+    }
 }
 
 #[test]
