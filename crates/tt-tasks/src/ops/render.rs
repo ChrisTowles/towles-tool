@@ -148,6 +148,14 @@ pub fn render_task_env(
         warnings.push(format!("could not update the port registry: {e}"));
     }
 
+    for pool in &outcome.low_pools {
+        warnings.push(format!(
+            "{} port pool {}-{} has {} port(s) left — widen the range in .env.example \
+             before new tasks fail to claim one",
+            pool.key, pool.lo, pool.hi, pool.free
+        ));
+    }
+
     // A manual `.env.local` pin bypasses the claim system entirely, and nothing
     // else ever surfaces the collision — the pin silently wins at launch and
     // the two servers fight over the port at runtime.

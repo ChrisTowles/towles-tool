@@ -751,6 +751,7 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
                 "branch": s.branch,
                 "why": s.why,
             })).collect::<Vec<_>>(),
+            "prunedBranches": report.pruned_branches,
             "sweptStateDirs": report.swept_state_dirs.iter()
                 .map(|p| p.display().to_string()).collect::<Vec<_>>(),
             "sweptPortRegistries": report.swept_port_registries.iter()
@@ -780,6 +781,13 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
     for task in &report.kept {
         println!("kept {} ({}): {}", task.name, task.branch, task.why.join("; "));
     }
+    if !report.pruned_branches.is_empty() {
+        let verb = if dry_run { "would delete" } else { "deleted" };
+        println!("{verb} landed branches no worktree has checked out:");
+        for branch in &report.pruned_branches {
+            println!("  {branch}");
+        }
+    }
     if !report.swept_state_dirs.is_empty() {
         let verb = if dry_run { "would sweep" } else { "swept" };
         println!("{verb} stale instance state:");
@@ -805,6 +813,7 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         );
     }
     if report.removed.is_empty()
+        && report.pruned_branches.is_empty()
         && report.swept_state_dirs.is_empty()
         && report.swept_port_registries.is_empty()
         && prunes.is_empty()

@@ -101,6 +101,18 @@ fn a_branch_already_merged_reports_it_landed() {
     let task = removed(remove(&sr, "feat-a", false).0);
     assert!(task.landed);
     assert!(mentions(&task.messages, "feat/a is merged into main — nothing outstanding"));
+    assert!(mentions(&task.messages, "deleted branch feat/a"));
+    assert!(!git(&sr.checkout, &["branch", "--list", "feat/a"]).contains("feat/a"));
+}
+
+#[test]
+fn a_task_that_never_committed_takes_its_empty_branch_with_it() {
+    let (_tmp, sr) = repo_with_origin();
+    add_task(&sr, "feat-a", "feat/a");
+
+    let task = removed(remove(&sr, "feat-a", false).0);
+    assert!(mentions(&task.messages, "deleted branch feat/a"));
+    assert!(!git(&sr.checkout, &["branch", "--list", "feat/a"]).contains("feat/a"));
 }
 
 #[test]
@@ -410,4 +422,27 @@ fn clean_sweeps_state_dirs_of_removed_checkouts_of_this_repo_only() {
     assert!(scope_parent.join("repo").is_dir());
     assert!(!scope_parent.join("repo-feat-gone").exists());
     assert!(report.live_scopes.contains(&"repo-feat-live".to_string()));
+}
+
+#[test]
+fn clean_prunes_landed_branches_no_worktree_holds_and_keeps_the_rest() {
+    let (_tmp, sr) = repo_with_origin();
+    let shipped = add_task(&sr, "feat-shipped", "feat/shipped");
+    commit(&shipped, "shipped");
+    let unshipped = add_task(&sr, "feat-unshipped", "feat/unshipped");
+    fs::write(unshipped.join("wip.txt"), "wip").unwrap();
+    git(&unshipped, &["add", "wip.txt"]);
+    commit(&unshipped, "never merged");
+    for dir in [&shipped, &unshipped] {
+        git(&sr.checkout, &["worktree", "remove", &dir.to_string_lossy()]);
+    }
+    git(&sr.checkout, &["merge", "-q", "--no-ff", "-m", "merge", "feat/shipped"]);
+    git(&sr.checkout, &["branch", "feat/empty"]);
+
+    assert_eq!(clean(&sr, true).pruned_branches, ["feat/empty", "feat/shipped"]);
+    assert!(git(&sr.checkout, &["branch", "--list", "feat/shipped"]).contains("shipped"));
+
+    assert_eq!(clean(&sr, false).pruned_branches, ["feat/empty", "feat/shipped"]);
+    let branches = git(&sr.checkout, &["branch", "--list", "feat/*"]);
+    assert_eq!(branches.trim(), "feat/unshipped");
 }

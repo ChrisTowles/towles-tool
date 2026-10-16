@@ -28,7 +28,7 @@ tt task env primary                       # same, for the main checkout
 tt task ports [--probe <port>] [--json]   # repo's port picture: every checkout's claims + registry, each probed for a listener
 tt task sync [<name>] [--json]            # record the worktree's current branch on its board task
 tt task rm <name> [--force]               # guarded removal + docker cleanup
-tt task clean [--dry-run]                 # rm every merged/gone task + sweep stale state
+tt task clean [--dry-run]                 # rm every merged/gone task, prune landed branches, sweep stale state
 ```
 
 **Claude Code's own worktree surfaces are not tasks.** `claude --worktree`,
@@ -74,7 +74,10 @@ Rules when working in a task:
   default). After a `git switch -c` inside a task the folder keeps its name;
   `tt task sync` (or the rail's `⎇ was …` badge) records the new branch. A task whose PR merged is done — `tt task rm` it (or
   `tt task clean`, which finds every merged/gone task); commits reachable
-  from no branch or remote block removal by design.
+  from no branch or remote block removal by design. Removal deletes the
+  branch only when content proves its work landed or it has no commits —
+  never on a bare `[gone]` upstream — and `clean` applies the same test to
+  local branches no worktree has checked out.
 - **Ports come from the rendered `.env`** — `.env.example` is the template
   (`${tt:port A-B}` pool claims, `${tt:task-name}`, `${tt:var NAME}`; a repo
   without tokens uses the `.claude/task-env.template` sidecar, and a repo

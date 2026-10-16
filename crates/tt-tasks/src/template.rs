@@ -41,6 +41,24 @@ pub struct RenderOutcome {
     pub text: String,
     pub claimed: Vec<(String, u16)>,
     pub reused: Vec<(String, u16)>,
+    /// Each `${tt:port A-B}` pool close enough to running out that the next few
+    /// tasks would hit [`TemplateError::PoolExhausted`].
+    pub low_pools: Vec<PoolUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolUsage {
+    pub key: String,
+    pub lo: u16,
+    pub hi: u16,
+    pub free: usize,
+}
+
+/// A pool warns once at most two ports, or a tenth of it, remain unclaimed. A
+/// pool of a handful of ports is a deliberate pin, never a shortage.
+fn pool_running_low(lo: u16, hi: u16, free: usize) -> bool {
+    let size = usize::from(hi - lo) + 1;
+    size > 4 && free <= (size / 10).max(2)
 }
 
 /// Render `template` for one task. `existing` is the task's current `.env`
@@ -102,6 +120,12 @@ pub fn render(
                     &mut port_free,
                 )
                 .ok_or(TemplateError::PoolExhausted { line: line_no, lo, hi })?;
+                let taken = sibling_claims.union(&session).filter(|p| (lo..=hi).contains(*p));
+                let free = usize::from(hi - lo) + 1 - taken.count();
+                if pool_running_low(lo, hi, free) {
+                    let key = key.clone().unwrap_or_default();
+                    out.low_pools.push(PoolUsage { key, lo, hi, free });
+                }
                 match port {
                     Picked::Reused(p) => {
                         out.reused.push((key.clone().unwrap_or_default(), p));
@@ -245,6 +269,22 @@ mod tests {
     fn pool_exhaustion_is_a_hard_error() {
         let err = render_ok("A=${tt:port 5000-5001}\n", &[], &[5000, 5001]).unwrap_err();
         assert_eq!(err, TemplateError::PoolExhausted { line: 1, lo: 5000, hi: 5001 });
+    }
+
+    #[test]
+    fn a_pool_near_exhaustion_is_reported_and_a_roomy_one_is_not() {
+        let siblings: Vec<u16> = (6000..6007).collect();
+        let out =
+            render_ok("A=${tt:port 6000-6009}\nB=${tt:port 7000-7009}\n", &[], &siblings).unwrap();
+        assert!(out.text.contains("A=6007"));
+        let low = PoolUsage { key: "A".into(), lo: 6000, hi: 6009, free: 2 };
+        assert_eq!(out.low_pools, [low]);
+    }
+
+    #[test]
+    fn a_tiny_pool_is_a_pin_and_never_warns() {
+        let out = render_ok("A=${tt:port 3000-3000}\n", &[], &[]).unwrap();
+        assert!(out.low_pools.is_empty());
     }
 
     #[test]
