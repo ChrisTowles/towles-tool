@@ -3,6 +3,7 @@ import { folderBusy } from "@/lib/agentboard/folder";
 import { folderRemovableTask } from "@/lib/agentboard/landing";
 import { isAgent } from "@/lib/agentboard/session";
 import type { AgWindow, FolderData, Selected, SessionData } from "@/lib/agentboard/types";
+import { openDiffView } from "@/lib/diff-view";
 import { openNoteDialog } from "@/lib/inbox";
 import type { QueueItem } from "@/lib/schemas/queue";
 import type { RailView } from "@/lib/screens";
@@ -74,6 +75,14 @@ export function boardShortcuts(c: BoardShortcutContext): Record<string, Chord> {
     "ab-close-pane": c.closeFocusedPane,
     "ab-toggle-files": () => {
       if (activeFolderDir) c.openFiles(activeFolderDir);
+    },
+    "ab-quick-diff": () => {
+      if (!activeFolder) return;
+      openDiffView({
+        dir: activeFolder.dir,
+        label: activeFolder.name,
+        baseBranch: activeFolder.comparedBase || null,
+      });
     },
     "ab-toggle-rail": c.toggleRail,
     "ab-rail-view": () => c.setRailView(c.tree ? "queue" : "tree"),

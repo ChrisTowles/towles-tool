@@ -753,5 +753,58 @@ pub fn branch_diff(dir: &str, base_branch: Option<&str>) -> Option<BranchDiff> {
     })
 }
 
+/// One file of [`branch_diff`] as hunks, for the read-only quick view.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePatch {
+    pub hunks: Vec<PatchHunk>,
+    pub binary: bool,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchHunk {
+    pub old_start: u32,
+    pub new_start: u32,
+    /// Each line led by git's sigil: ` `, `+` or `-`.
+    pub lines: Vec<String>,
+}
+
+/// `path` against the same merge-base [`branch_diff`] lists it against.
+pub fn file_patch(
+    dir: &str,
+    base_branch: Option<&str>,
+    path: &str,
+    old_path: Option<&str>,
+) -> Option<FilePatch> {
+    let repo = open_repo(dir)?;
+    let compared_base = resolve_base_ref(&repo, dir, base_branch);
+    let boundary =
+        repo.merge_base(&compared_base, "HEAD").map(|id| id.to_string()).unwrap_or(compared_base);
+    let patch = repo.file_patch(&boundary, path, old_path).ok()?;
+    let hunks = patch
+        .hunks
+        .into_iter()
+        .map(|h| PatchHunk {
+            old_start: h.old_start,
+            new_start: h.new_start,
+            lines: h
+                .lines
+                .into_iter()
+                .map(|l| {
+                    let sigil = match l.kind {
+                        tt_git::repo::LineKind::Context => ' ',
+                        tt_git::repo::LineKind::Added => '+',
+                        tt_git::repo::LineKind::Removed => '-',
+                    };
+                    format!("{sigil}{}", l.text)
+                })
+                .collect(),
+        })
+        .collect();
+    Some(FilePatch { hunks, binary: patch.binary, truncated: patch.truncated })
+}
+
 #[cfg(test)]
 mod tests;

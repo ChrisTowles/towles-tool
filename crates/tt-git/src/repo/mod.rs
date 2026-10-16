@@ -15,11 +15,13 @@ use std::sync::Mutex;
 
 mod diff;
 mod graph;
+mod hunks;
 mod patch;
 mod status;
 
 pub use diff::{Changes, CommitStat, DiffTotals, FileChange, UntrackedCap};
 
+pub use hunks::{FilePatch, Hunk, HunkLine, LineKind};
 pub use patch::PatchId;
 pub use status::{StatusEntry, StatusSummary};
 

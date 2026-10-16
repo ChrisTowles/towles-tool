@@ -90,6 +90,27 @@ fn branch_diff_lists_files_since_the_merge_base_and_flags_uncommitted_ones() {
 }
 
 #[test]
+fn file_patch_diffs_against_the_merge_base_not_the_moved_base() {
+    let root = tempfile::TempDir::new().unwrap();
+    let repo = root.path();
+    init_repo_with(repo, "1\n");
+    git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+    git(repo, &["checkout", "--quiet", "-b", "feature"]);
+    std::fs::write(repo.join("f.txt"), "1\n2\n").unwrap();
+    git(repo, &["commit", "--quiet", "-am", "first"]);
+    git(repo, &["checkout", "--quiet", "main"]);
+    std::fs::write(repo.join("f.txt"), "0\n1\n").unwrap();
+    git(repo, &["commit", "--quiet", "-am", "base moved"]);
+    git(repo, &["update-ref", "refs/remotes/origin/main", "main"]);
+    git(repo, &["checkout", "--quiet", "feature"]);
+
+    let patch = file_patch(repo.to_str().unwrap(), None, "f.txt", None).unwrap();
+    assert_eq!(patch.hunks.len(), 1);
+    assert_eq!(patch.hunks[0].lines, vec![" 1", "+2"]);
+    assert!(file_patch("", None, "f.txt", None).is_none());
+}
+
+#[test]
 fn commit_stats_empty_for_non_repo_or_blank_dir() {
     let root = tempfile::TempDir::new().unwrap();
     assert!(commit_stats(root.path().to_str().unwrap(), None).is_empty());

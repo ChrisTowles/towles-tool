@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { ArrowClockwiseIcon, CheckIcon, GitCommitIcon, PencilIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, CheckIcon, GitCommitIcon, GitDiffIcon, PencilIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@cloudflare/kumo";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Hint } from "@/components/hint";
 import { toast } from "@/lib/toast";
 import { comparedBaseLabel, gitCheckedLabel } from "@/lib/agentboard/folder";
+import { openDiffView } from "@/lib/diff-view";
 import type { CommitStat, FolderData } from "@/lib/agentboard/types";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { withHint } from "@/lib/shortcuts";
@@ -387,6 +388,21 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           {withHint("Opens the files pane", "ab-toggle-files")}.
         </p>
         <CommitBreakdownPreview commits={commits} stats={stats} base={base} />
+        <button
+          type="button"
+          onClick={() => {
+            uiAction("diff_view.open", "agentboard", "chip");
+            openDiffView({
+              dir,
+              label: dir.slice(dir.lastIndexOf("/") + 1),
+              baseBranch: comparedBase || null,
+            });
+          }}
+          className="mt-2 flex items-center gap-1 rounded-md px-1 text-mini text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+        >
+          <GitDiffIcon className="size-3" />
+          {withHint("Quick diff, file by file", "ab-quick-diff")}
+        </button>
       </HoverCardContent>
     </HoverCard>
   );
