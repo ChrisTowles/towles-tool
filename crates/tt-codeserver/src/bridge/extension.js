@@ -54,9 +54,21 @@ async function openClaudeSession(sessionId) {
   await vscode.commands.executeCommand("claude-vscode.editor.open", sessionId);
 }
 
+// The Explorer only reveals what the workspace contains, and says nothing when
+// asked for anything else — so that is refused here, where it can be reported.
+async function revealInExplorer(folder, target) {
+  const uri = vscode.Uri.file(target);
+  if (vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath !== folder.fsPath) {
+    throw new Error(`${target} is outside this checkout`);
+  }
+  await vscode.commands.executeCommand("workbench.view.explorer");
+  await vscode.commands.executeCommand("revealInExplorer", uri);
+}
+
 async function run(folder, request) {
   if (request.type === "changes") return showChanges(await repository(folder));
   if (request.type === "claude-session") return openClaudeSession(request.sessionId);
+  if (request.type === "reveal") return revealInExplorer(folder, request.path);
   throw new Error(`unknown request: ${request.type}`);
 }
 

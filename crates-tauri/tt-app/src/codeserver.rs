@@ -256,6 +256,21 @@ pub async fn code_server_open_claude_session(
     .map_err(|e| format!("code-server open-claude-session task failed: {e}"))?
 }
 
+/// Select `path` in the Explorer of `dir`'s workbench, its folder expanded —
+/// through the bridge, since code-server's CLI only opens editors.
+#[tauri::command]
+pub async fn code_server_reveal_in_explorer(dir: String, path: String) -> Result<(), String> {
+    let bridge_dir = tt_config::code_server_bridge_dir();
+    let folder = PathBuf::from(&dir);
+    let target = folder.join(&path);
+    tracing::debug!(dir = %dir, path = %path, "code_server.reveal_in_explorer");
+    tauri::async_runtime::spawn_blocking(move || {
+        bridge::reveal_in_explorer(&bridge_dir, &folder, &target).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("code-server reveal-in-explorer task failed: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Popup, popup_route};

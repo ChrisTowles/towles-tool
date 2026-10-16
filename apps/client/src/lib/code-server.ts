@@ -32,6 +32,11 @@ export function codeServerReveal(dir: string, path: string, line: number | null)
   return invoke<null>("code_server_reveal", { dir, path, line });
 }
 
+/** Select `path` (checkout-relative) in the Explorer of `dir`'s workbench. */
+export function codeServerRevealInExplorer(dir: string, path: string) {
+  return invoke<null>("code_server_reveal_in_explorer", { dir, path });
+}
+
 /** Resume ended Claude session `sessionId` in the Claude Code panel of `dir`'s workbench. */
 export function codeServerOpenClaudeSession(dir: string, sessionId: string) {
   return invoke<null>("code_server_open_claude_session", { dir, sessionId });

@@ -49,6 +49,21 @@ pub fn term_open_path(
         .map_err(|e| format!("Failed to launch {editor}: {e}"))
 }
 
+/// Show a clicked path in the OS file manager — its folder, with it selected.
+#[tauri::command]
+pub fn term_reveal_path(
+    state: State<TermState>,
+    path: String,
+    cwd: Option<String>,
+    term_id: Option<String>,
+) -> Result<(), String> {
+    let full = resolve_open_target(&state, &path, cwd.as_deref(), term_id.as_deref()).ok_or_else(
+        || format!("No such file: {}", resolve_clicked_path(&path, cwd.as_deref()).display()),
+    )?;
+    tauri_plugin_opener::reveal_item_in_dir(&full)
+        .map_err(|e| format!("Couldn't show {} in the file manager: {e}", full.display()))
+}
+
 /// [`resolve_open_target`] for the caller that routes a clicked link into the
 /// app's own files pane rather than an editor.
 #[tauri::command]

@@ -91,7 +91,7 @@ import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/la
 import { buildJumpRecall, type JumpRecall } from "@/lib/jump-recall";
 import type { PreviewRequest } from "@/lib/preview-artifact";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
-import { codeServerOpenClaudeSession } from "@/lib/code-server";
+import { codeServerOpenClaudeSession, codeServerRevealInExplorer } from "@/lib/code-server";
 import { invoke } from "@/lib/tauri";
 import type { OpenFileRequest } from "@/lib/ide";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
@@ -559,6 +559,26 @@ export function AgentBoardScreen() {
       [dir]: { path: target, line, nonce: nextOpenFileNonce() },
     }));
     openFiles(dir);
+  }
+
+  // "Open folder in files": the link's folder in the workbench's Explorer, the
+  // link selected. One outside the checkout has no Explorer row to land on, so
+  // it goes to the OS file manager instead.
+  async function revealTerminalPath(dir: string, termId: string, path: string) {
+    uiAction("terminal.link_reveal_in_files", "agentboard");
+    const resolved = (
+      await invoke<string | null>("term_resolve_path", { path, cwd: dir, termId })
+    ).unwrapOr(null);
+    const target = resolved && filesPaneTarget(dir, resolved);
+    if (target == null || target.startsWith("/")) {
+      void invoke("term_reveal_path", { path, cwd: dir, termId });
+      return;
+    }
+    openFiles(dir);
+    const revealed = await codeServerRevealInExplorer(dir, target);
+    if (revealed.isErr() && !NotInTauri.is(revealed.error)) {
+      toast.error(`Couldn't show ${target} in files — ${errorMessage(revealed.error)}`);
+    }
   }
 
   // A BEL or OSC 9/777 — Claude Code's "needs your input".
@@ -1784,6 +1804,7 @@ export function AgentBoardScreen() {
                   onExit={handleExit}
                   onTitle={onTitle}
                   onOpenTerminalPath={openTerminalPath}
+                  onRevealTerminalPath={revealTerminalPath}
                   onRemovePane={closePane}
                   columns={columns}
                 />
