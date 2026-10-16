@@ -389,7 +389,7 @@ fn cmd_env(name: &str, root: Option<&Path>) -> Result<(), String> {
 
 fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), String> {
     let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
-    let _ = ops::git_checkout(&sr.checkout, &["worktree", "prune"]);
+    let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
     let mut checkouts: Vec<(String, std::path::PathBuf, bool)> =
         vec![("primary".to_string(), sr.checkout.clone(), true)];
     checkouts.extend(sr.tasks().into_iter().map(|(name, dir)| (name, dir, false)));

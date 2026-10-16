@@ -604,8 +604,11 @@ pub fn fetch_all(dirs: &[String]) {
 }
 
 fn fetch_origin(dir: &str) {
-    let full = ["-C", dir, "fetch", "--quiet", "origin"];
-    let _ = tt_exec::run_with_timeout("git", &full, std::time::Duration::from_secs(20));
+    let _ = tt_git::cli::fetch_origin(
+        std::path::Path::new(dir),
+        false,
+        std::time::Duration::from_secs(20),
+    );
 }
 
 /// The repo's shared `.git` dir, used to dedup fetches. Empty for a non-repo dir.
@@ -624,21 +627,14 @@ fn other_worktrees(repo: &tt_git::repo::Repo, dir: &str) -> Vec<String> {
         .collect()
 }
 
-/// One of two places this module spawns `git` (gitoxide's worktree API is read-only).
+/// gitoxide's worktree API is read-only, so this goes through [`tt_git::cli`].
 /// `prune` runs either way: a failed remove leaves a stale entry.
 pub fn prune_stale_worktree(owner_dir: &str, worktree_dir: &str) -> bool {
-    let git = |args: &[&str]| {
-        let mut full = vec!["-C", owner_dir];
-        full.extend_from_slice(args);
-        tt_exec::run_with_timeout_env(
-            "git",
-            &full,
-            tt_exec::GIT_NON_INTERACTIVE_ENV,
-            std::time::Duration::from_secs(10),
-        )
-    };
-    let removed = git(&["worktree", "remove", "--force", worktree_dir]).is_ok_and(|out| out.ok());
-    let _ = git(&["worktree", "prune"]);
+    let owner = std::path::Path::new(owner_dir);
+    let timeout = std::time::Duration::from_secs(10);
+    let removed =
+        tt_git::cli::worktree_remove(owner, worktree_dir, true, timeout).is_ok_and(|out| out.ok());
+    let _ = tt_git::cli::worktree_prune(owner, timeout);
     // The cached handle would hold an object database open against a dead directory.
     tt_git::repo::forget(std::path::Path::new(worktree_dir));
     removed

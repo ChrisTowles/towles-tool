@@ -10,6 +10,17 @@ import { execFileSync } from "node:child_process";
 
 const SPAWN_RE = /\b(?:tokio::process::Command|process::Command|Command)::new\b/;
 
+// `tt_exec::run("git", …)` and friends skip SPAWN_RE but still break the rule
+// that only tt-git runs git. The program literal may sit on its own line.
+const GIT_SPAWN_RE = /\b(?:Command::new|(?:tt_exec::)?run\w*)\(\s*"git"/g;
+
+// Production crates other than tt-git may not spawn `git` at all; the build
+// script can't depend on tt-git.
+/** @param {string} path */
+function mayRunGit(path) {
+  return path.startsWith("crates/tt-git/") || path === "crates/tt-telemetry/build.rs";
+}
+
 // Exact prod files that legitimately hold a raw detached spawn paired with a
 // `record_detached_spawn` call. Verified in the 2026-07 CI audit; keep in sync
 // if a new detached-spawn site is added (it must call record_detached_spawn).
@@ -99,18 +110,36 @@ function rsFiles() {
 }
 
 const violations = [];
+const gitViolations = [];
 const paths = rsFiles();
 const testOnlyFiles = testOnlyModuleFiles(paths);
 for (const path of paths) {
-  if (isAllowedPath(path) || testOnlyFiles.has(path)) continue;
-  const lines = readFileSync(path, "utf8").split("\n");
+  if (testOnlyFiles.has(path) || /(^|\/)tests\//.test(path)) continue;
+  const text = readFileSync(path, "utf8");
+  const lines = text.split("\n");
   const gated = testGatedLines(lines);
+  if (!mayRunGit(path)) {
+    for (const m of text.matchAll(GIT_SPAWN_RE)) {
+      const line = text.slice(0, m.index).split("\n").length;
+      if (!gated.has(line)) gitViolations.push(`${path}:${line}: ${lines[line - 1].trim()}`);
+    }
+  }
+  if (isAllowedPath(path)) continue;
   for (let i = 0; i < lines.length; i++) {
     const scrubbed = scrub(lines[i]);
     if (SPAWN_RE.test(scrubbed) && !gated.has(i + 1)) {
       violations.push(`${path}:${i + 1}: ${lines[i].trim()}`);
     }
   }
+}
+
+if (gitViolations.length > 0) {
+  console.error(
+    "`git` spawned outside crates/tt-git.\n" +
+      "Add a typed function to tt_git::cli (or tt_git::repo) and call that instead.\n",
+  );
+  for (const v of gitViolations) console.error("  " + v);
+  process.exit(1);
 }
 
 if (violations.length > 0) {
