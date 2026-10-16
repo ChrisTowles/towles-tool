@@ -23,7 +23,7 @@ import { NowProvider } from "@/lib/now";
 import { TaskQueueProvider } from "@/lib/queue";
 import { QueueNextShortcut } from "@/components/queue-rail";
 import { StoreSnapshotProvider } from "@/lib/store-snapshot";
-import { SCREENS } from "@/lib/screens";
+import { NAV_ORDER, SCREENS } from "@/lib/screens";
 import { useShortcutCoachSetting } from "@/lib/shortcut-coach";
 import { ShortcutHelpHost, useShortcuts, type ShortcutScope } from "@/lib/shortcuts";
 import { WorkspaceProvider, useWorkspace } from "@/lib/workspace";
@@ -66,9 +66,7 @@ function Shortcuts() {
           if (idx !== -1) openTab(openTabs[(idx - 1 + openTabs.length) % openTabs.length]);
         },
       };
-      // Register only the tab-jump bindings that map to an open tab, so an
-      // unused digit falls through instead of being swallowed as a no-op.
-      openTabs.slice(0, 9).forEach((id, i) => {
+      NAV_ORDER.slice(0, 9).forEach((id, i) => {
         handlers[`tab-${i + 1}`] = () => openTab(id);
       });
       return handlers;

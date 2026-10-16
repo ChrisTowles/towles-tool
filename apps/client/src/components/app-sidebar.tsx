@@ -9,7 +9,7 @@ import { useNow } from "@/lib/now";
 import { NAV_SECTIONS, SCREENS } from "@/lib/screens";
 import { Kbd } from "@/components/ui/kbd";
 import { ShortcutBadge } from "@/components/hint";
-import { shortcutAria, shortcutHint, tabShortcutId } from "@/lib/shortcuts";
+import { shortcutAria, shortcutHint, screenShortcutId } from "@/lib/shortcuts";
 import { useWorkspace } from "@/lib/workspace";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
@@ -26,7 +26,7 @@ function useAgentRollup() {
 }
 
 export function AppSidebar() {
-  const { activeTab, openTab, openTabs } = useWorkspace();
+  const { activeTab, openTab } = useWorkspace();
   const rollup = useAgentRollup();
   const { snapshot } = useStoreSnapshot();
   const slackUnread = dmsNeedingAttention(snapshot).length > 0;
@@ -42,10 +42,9 @@ export function AppSidebar() {
               const active = activeTab === id;
               const showBadge = id === "agentboard" && rollup.total > 0;
               const showSlackDot = id === "slack" && slackUnread;
-              // `mod+1…9` address open tabs by position, so the digit exists
-              // only once this screen *is* one — and it is the row's last
-              // resort for the trailing slot, yielding to any live count.
-              const tabId = tabShortcutId(openTabs, id);
+              // The digit is the row's last resort for the trailing slot,
+              // yielding to any live count.
+              const tabId = screenShortcutId(id);
               return (
                 <Button
                   key={id}
@@ -105,7 +104,7 @@ export function AppSidebar() {
 /** The Agentboard rollup rides along as a corner badge, so collapsing the
  * sidebar never hides "something needs you". */
 export function AppSidebarIcons() {
-  const { activeTab, openTab, openTabs } = useWorkspace();
+  const { activeTab, openTab } = useWorkspace();
   const rollup = useAgentRollup();
   const { snapshot } = useStoreSnapshot();
   const badgeColor = rollupAlertColor(rollup);
@@ -122,7 +121,7 @@ export function AppSidebarIcons() {
               const active = activeTab === id;
               const showBadge = id === "agentboard" && rollup.total > 0;
               const showSlackDot = id === "slack" && slackUnread;
-              const tabId = tabShortcutId(openTabs, id);
+              const tabId = screenShortcutId(id);
               return (
                 <Tooltip
                   key={id}

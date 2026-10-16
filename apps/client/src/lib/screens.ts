@@ -134,6 +134,9 @@ export const NAV_SECTIONS: { label: string; screens: ScreenId[] }[] = [
   { label: "App", screens: ["settings"] },
 ];
 
+/** Sidebar order, top-down — what `mod+1…9` address, so Agent Board is always `mod+1`. */
+export const NAV_ORDER: readonly ScreenId[] = NAV_SECTIONS.flatMap((s) => s.screens);
+
 /** Agent Board's two rails over the same panes: tasks worked one at a time, or
  * every repo → checkout → session by place. */
 export type RailView = "queue" | "tree";
