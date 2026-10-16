@@ -10,7 +10,6 @@ export type SubagentInfo = {
   contextUsed?: number | null;
 };
 
-/** Live details from the transcript tail; only the fields the UI renders. */
 export type AgentEventDetails = {
   model?: string | null;
   contextUsed?: number | null;
@@ -52,7 +51,6 @@ export type SessionData = {
   working: boolean;
   agentState?: AgentEvent | null;
   agents: AgentEvent[];
-  /** Echo of the launch prompt, so the rail's tooltip can explain the session. */
   purpose?: string | null;
   portDrift?: PortDrift[];
 };
@@ -141,7 +139,6 @@ export type CommitStat = {
 export type BranchDiffFile = {
   path: string;
   oldPath: string | null;
-  /** git's name-status letter, `?` for untracked. */
   status: string;
   linesAdded: number;
   linesRemoved: number;
@@ -155,7 +152,6 @@ export type BranchDiff = {
   comparedBase: string;
   commits: CommitStat[];
   files: BranchDiffFile[];
-  /** An untracked directory was too large to list, so `files` is a floor. */
   capped: boolean;
 };
 
@@ -163,15 +159,12 @@ export type BranchDiff = {
  * merely discovered by `git worktree list`. */
 export type RepoData = {
   key: string;
-  /** Also embedded in `key`, as a field so readers never parse it back out. */
   dir: string;
   name: string;
   originUrl?: string | null;
   folders: FolderData[];
   needs: number;
-  /** The chosen icon, style and pinned color; absent fields take the defaults. */
   meta?: RepoMeta;
-  /** The resolved color: the pin, else the one the backend dealt this repo. */
   color: string;
 };
 
