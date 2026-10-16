@@ -222,6 +222,7 @@ fn tools_list_is_exactly_the_task_pane_attention_calendar_and_mod_families() {
             "task_sync",
             "task_delete",
             "task_done",
+            "task_diff",
             "task_start",
             "preview_file",
             "file_open",
@@ -981,6 +982,83 @@ fn drifting_task() -> (tempfile::TempDir, std::path::PathBuf, Dispatcher, i64) {
     let (root, dir_s) = (checkout.to_str().unwrap(), dir.to_str().unwrap());
     store.set_task_worktree(task.id, root, None, Some("feat/old"), Some(dir_s)).unwrap();
     (tmp, dir, Dispatcher::new(store, TEST_VERSION), task.id)
+}
+
+/// Two task worktrees off one checkout: both edit `shared.rs`, each edits one file of its own.
+fn sibling_tasks() -> (tempfile::TempDir, std::path::PathBuf, Dispatcher, i64, i64) {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkout = tmp.path().join("repo");
+    std::fs::create_dir_all(&checkout).unwrap();
+    git(&checkout, &["init", "-q", "-b", "main"]);
+    std::fs::write(checkout.join("shared.rs"), "base\n").unwrap();
+    git(&checkout, &["add", "."]);
+    git(&checkout, &["commit", "-q", "-m", "x"]);
+    let store = seeded_store();
+    let mut ids = Vec::new();
+    let mut dirs = Vec::new();
+    for name in ["alpha", "beta"] {
+        let dir = checkout.join(format!(".claude/worktrees/{name}"));
+        let branch = format!("feat/{name}");
+        git(
+            &checkout,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                &branch,
+                dir.to_str().unwrap(),
+            ],
+        );
+        std::fs::write(dir.join("shared.rs"), format!("{name}\n")).unwrap();
+        std::fs::write(dir.join(format!("{name}.rs")), "x\n").unwrap();
+        git(&dir, &["add", "."]);
+        git(&dir, &["commit", "-q", "-m", name]);
+        let task = store.add_task(name, "doing", None, None, NOW).unwrap();
+        let (root, dir_s) = (checkout.to_str().unwrap(), dir.to_str().unwrap());
+        store.set_task_worktree(task.id, root, None, Some(&branch), Some(dir_s)).unwrap();
+        ids.push(task.id);
+        dirs.push(dir);
+    }
+    (tmp, dirs.remove(0), Dispatcher::new(store, TEST_VERSION), ids[0], ids[1])
+}
+
+#[test]
+fn task_diff_lists_siblings_and_the_files_both_sides_changed() {
+    let (_tmp, alpha, mut dispatcher, alpha_id, beta_id) = sibling_tasks();
+    let result = call_tool(&mut dispatcher, "task_diff", json!({ "dir": alpha.to_str().unwrap() }));
+
+    let mine: Vec<&str> = result["mine"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["path"].as_str())
+        .collect();
+    assert_eq!(mine, vec!["alpha.rs", "shared.rs"]);
+    let tasks = result["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 1, "the caller's own task is left out: {result}");
+    assert_eq!(tasks[0]["id"], beta_id);
+    assert_ne!(tasks[0]["id"], alpha_id);
+    assert_eq!(tasks[0]["branch"], "feat/beta");
+    assert_eq!(tasks[0]["base"], "main");
+    assert_eq!(tasks[0]["overlap"], json!(["shared.rs"]));
+}
+
+#[test]
+fn task_diff_without_dir_lists_every_task_with_no_overlap() {
+    let (_tmp, _alpha, mut dispatcher, _, _) = sibling_tasks();
+    let result = call_tool(&mut dispatcher, "task_diff", json!({}));
+    assert_eq!(result["mine"], Value::Null);
+    let tasks = result["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 2);
+    assert!(tasks.iter().all(|t| t["overlap"] == json!([])));
+}
+
+#[test]
+fn task_diff_needs_an_absolute_dir() {
+    let mut dispatcher = dispatcher();
+    let message = call_tool_err(&mut dispatcher, "task_diff", json!({ "dir": "relative/path" }));
+    assert!(message.contains("absolute"), "{message}");
 }
 
 #[test]

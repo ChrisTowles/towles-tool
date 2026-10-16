@@ -119,7 +119,8 @@ hook/skill/MCP entry goes:
 **[docs/PLUGIN-DISTRIBUTION.md](docs/PLUGIN-DISTRIBUTION.md)**. **Any change to
 `tt task`'s surface — a new/renamed subcommand, env-template token, or lifecycle
 guarantee — must update `packages/app/skills/towles-tool/SKILL.md` (and
-`task-onboarding/SKILL.md` if it affects onboarding) in the same PR**: those
+`task-onboarding/SKILL.md` if it affects onboarding) in the same PR** — `tt-cli`'s
+skill tests fail on an undocumented subcommand, flag or `${tt:…}` token: those
 skills are what a session reads when asked about `tt task`.
 
 ## Conventions
