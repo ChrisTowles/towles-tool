@@ -38,7 +38,9 @@ into its terminals beside `TT_MCP_PORT`: Claude Code otherwise probes
 `server/discover` on HTTP only behind a remote feature flag. Tools: `task_list`, `task_status`, `task_create`
 (a #339 board task in a tracked repo's swimlane, same store path as the
 app's `store_add_task`), `task_summary`, `task_sync` (re-read a task
-worktree's branch onto its row after a `git switch`), `task_start`, `task_delete`,
+worktree's branch onto its row after a `git switch`), `task_diff` (each other open
+task's changes since its fork point, plus `overlap` with the caller's own when it
+passes `dir` — `tt_tasks::overlap`), `task_start`, `task_delete`,
 `task_done` (`/done` as one call, below),
 `preview_file`, `file_open`, `needs_you` (the queue's On-you rows — agent waits, red CI, PRs to land — with
 the chip's `why`, read through `AttentionHost`),

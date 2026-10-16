@@ -434,4 +434,60 @@ mod tests {
         }
         assert_eq!(seen.len(), CASES.len());
     }
+
+    /// The skill is what a session reads about `tt task`, so the surface can't change without it:
+    /// every subcommand and long flag must appear in it, and every `tt task <x>` it shows must exist.
+    #[test]
+    fn the_towles_tool_skill_covers_the_whole_tt_task_surface() {
+        use clap::CommandFactory;
+        const SKILL: &str = include_str!("../../../packages/app/skills/towles-tool/SKILL.md");
+        const GLOBAL: &[&str] = &["help", "verbose", "config-dir"];
+
+        let cli = Cli::command();
+        let task = cli.find_subcommand("task").expect("a task group");
+        let mut missing = Vec::new();
+        let mut known = HashSet::new();
+        for sub in task.get_subcommands().filter(|s| !s.is_hide_set()) {
+            known.insert(sub.get_name().to_string());
+            known.extend(sub.get_all_aliases().map(str::to_string));
+            if !SKILL.contains(&format!("tt task {}", sub.get_name())) {
+                missing.push(format!("`tt task {}`", sub.get_name()));
+            }
+            for long in
+                sub.get_arguments().filter(|a| !a.is_hide_set()).filter_map(|a| a.get_long())
+            {
+                if !GLOBAL.contains(&long) && !SKILL.contains(&format!("--{long}")) {
+                    missing.push(format!("`tt task {} --{long}`", sub.get_name()));
+                }
+            }
+        }
+        let stale: Vec<&str> = SKILL
+            .match_indices("tt task ")
+            .filter_map(|(at, needle)| {
+                let rest = &SKILL[at + needle.len()..];
+                let word = rest.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')).next()?;
+                (!word.is_empty() && !known.contains(word)).then_some(word)
+            })
+            .collect();
+        assert!(
+            missing.is_empty() && stale.is_empty(),
+            "packages/app/skills/towles-tool/SKILL.md is out of step with `tt task` — undocumented: \
+             {missing:?}; names no subcommand: {stale:?}"
+        );
+    }
+
+    /// Template tokens belong to onboarding: that skill is where a repo's `.env.example` is written.
+    #[test]
+    fn the_task_onboarding_skill_names_every_env_template_token() {
+        const SKILL: &str = include_str!("../../../packages/app/skills/task-onboarding/SKILL.md");
+        let missing: Vec<&&str> = tt_tasks::template::TOKENS
+            .iter()
+            .filter(|token| !SKILL.contains(&format!("${{tt:{token}")))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "packages/app/skills/task-onboarding/SKILL.md never shows these `${{tt:…}}` tokens: \
+             {missing:?}"
+        );
+    }
 }

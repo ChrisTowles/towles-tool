@@ -70,6 +70,51 @@ struct TaskStarting {
     branch: String,
 }
 
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+#[schemars(rename_all = "camelCase")]
+struct ChangedFile {
+    path: String,
+    /// git's name-status letter, `?` for untracked.
+    status: String,
+    lines_added: i64,
+    lines_removed: i64,
+    uncommitted: bool,
+}
+
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+#[schemars(rename_all = "camelCase")]
+struct CheckoutChanges {
+    base: String,
+    files: Vec<ChangedFile>,
+    capped: bool,
+}
+
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+#[schemars(rename_all = "camelCase")]
+struct SiblingChanges {
+    id: i64,
+    text: String,
+    branch: Option<String>,
+    dir: String,
+    base: String,
+    files: Vec<ChangedFile>,
+    capped: bool,
+    /// Paths the caller's checkout changed too; empty without `dir`.
+    overlap: Vec<String>,
+}
+
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+#[schemars(rename_all = "camelCase")]
+struct TaskDiff {
+    /// The caller's own changes; `null` without `dir`.
+    mine: Option<CheckoutChanges>,
+    tasks: Vec<SiblingChanges>,
+}
+
 /// Whether the pane was placed by the caller's own terminal session or by matching the path.
 #[derive(JsonSchema)]
 #[allow(dead_code)]
@@ -257,6 +302,7 @@ pub fn schema_for(name: &str) -> Option<Value> {
         "task_sync" => schema::<TaskSynced>(),
         "task_delete" | "task_done" => schema::<TaskDeleted>(),
         "task_start" => schema::<TaskStarting>(),
+        "task_diff" => schema::<TaskDiff>(),
         "preview_file" => schema::<PreviewShowing>(),
         "file_open" => schema::<FileOpening>(),
         "needs_you" => schema::<NeedsYou>(),

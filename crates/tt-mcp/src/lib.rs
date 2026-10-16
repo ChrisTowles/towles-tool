@@ -11,7 +11,7 @@
 //! admission checks guard against a web page POSTing to `127.0.0.1`.
 
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use chrono::{Local, NaiveDate, TimeZone};
@@ -392,6 +392,7 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("task_delete", "Delete task", Effect::Destroy),
     ("task_done", "Finish task", Effect::Destroy),
     ("task_start", "Start task", Effect::Write),
+    ("task_diff", "Sibling task changes", Effect::Read),
     ("preview_file", "Preview file", Effect::Read),
     ("file_open", "Open file", Effect::Read),
     ("needs_you", "Sessions needing you", Effect::Read),
@@ -691,6 +692,7 @@ impl Dispatcher {
             "task_delete" => self.task_delete(args),
             "task_done" => self.task_done(args, now_ms),
             "task_start" => self.task_start(args),
+            "task_diff" => self.task_diff(args),
             "preview_file" => self.preview_file(args, ctx),
             "file_open" => self.file_open(args, ctx),
             "needs_you" => self.needs_you(ctx),
@@ -1185,6 +1187,16 @@ impl Dispatcher {
     /// The board task bound to the checkout containing `dir`. Walks up, since a session's cwd
     /// can sit below its worktree root; a main checkout matches nothing, which is the answer.
     fn task_for_checkout(&self, dir: &str) -> Result<tt_store::TaskItem, String> {
+        self.find_task_for_checkout(dir)?.ok_or_else(|| {
+            format!(
+                "no board task is bound to {dir} — this is a main checkout or a worktree the \
+                 board never tracked, so there is no task to finish here"
+            )
+        })
+    }
+
+    /// The task whose bound worktree contains `dir`, closed rows included.
+    fn find_task_for_checkout(&self, dir: &str) -> Result<Option<tt_store::TaskItem>, String> {
         let given = Path::new(dir);
         if !given.is_absolute() {
             return Err(format!("dir must be an absolute path, got {dir:?}"));
@@ -1196,14 +1208,70 @@ impl Dispatcher {
                 if let Some(task) =
                     self.store.task_for_worktree_dir(&key).map_err(|e| e.to_string())?
                 {
-                    return Ok(task);
+                    return Ok(Some(task));
                 }
             }
         }
-        Err(format!(
-            "no board task is bound to {dir} — this is a main checkout or a worktree the board \
-             never tracked, so there is no task to finish here"
-        ))
+        Ok(None)
+    }
+
+    /// Every other open task's changes against its base, and which of them `dir` also touches.
+    /// With `dir`, only tasks of the same repo are listed and the caller's own task is left out.
+    fn task_diff(&self, args: &Value) -> Result<Value, String> {
+        use tt_tasks::overlap::{changes_since_base, overlap, task_base};
+
+        let dir = args.get("dir").and_then(Value::as_str).map(str::trim).filter(|d| !d.is_empty());
+        let caller = dir.map(|d| self.find_task_for_checkout(d)).transpose()?.flatten();
+        let caller_root: Option<PathBuf> = match (&caller, dir) {
+            (Some(task), _) => task.worktree.as_ref().map(|w| PathBuf::from(&w.repo_root)),
+            (None, Some(d)) => tt_tasks::main_checkout_for(Path::new(d))
+                .map(Path::to_path_buf)
+                .or_else(|| tt_git::repo::discover_root(Path::new(d))),
+            (None, None) => None,
+        };
+        let same_dir = |a: &Path, b: &Path| {
+            a == b || std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok()
+        };
+        let mine = dir.and_then(|d| {
+            let root = caller_root.as_deref().unwrap_or(Path::new(d));
+            changes_since_base(Path::new(d), &task_base(Path::new(d), root))
+        });
+
+        let mut tasks = Vec::new();
+        for task in self.store.open_tasks().map_err(|e| e.to_string())? {
+            if caller.as_ref().is_some_and(|c| c.id == task.id) {
+                continue;
+            }
+            let Some(worktree) = task.worktree.as_ref() else {
+                continue;
+            };
+            let Some(task_dir) = worktree.dir.as_deref().map(Path::new).filter(|d| d.is_dir())
+            else {
+                continue;
+            };
+            let root = Path::new(&worktree.repo_root);
+            if caller_root.as_deref().is_some_and(|r| !same_dir(r, root)) {
+                continue;
+            }
+            let Some(changes) = changes_since_base(task_dir, &task_base(task_dir, root)) else {
+                continue;
+            };
+            let shared =
+                mine.as_ref().map(|m| overlap(&m.files, &changes.files)).unwrap_or_default();
+            tasks.push(json!({
+                "id": task.id,
+                "text": task.text,
+                "branch": worktree.branch,
+                "dir": task_dir.to_string_lossy(),
+                "base": changes.base,
+                "files": changes.files,
+                "capped": changes.capped,
+                "overlap": shared,
+            }));
+        }
+        // Most collisions first: those are the ones worth reading before a rebase.
+        tasks.sort_by_key(|t| std::cmp::Reverse(t["overlap"].as_array().map_or(0, Vec::len)));
+        Ok(json!({ "mine": mine, "tasks": tasks }))
     }
 }
 
@@ -1585,6 +1653,16 @@ pub fn tool_definitions() -> Value {
                     "summary": { "type": "string", "description": "What shipped, for the card that outlives the worktree: the PR number and merge commit, what CI said, anything still open. A few short lines." },
                 },
                 "required": ["dir", "summary"],
+            },
+        },
+        {
+            "name": "task_diff",
+            "description": "What every other open task's checkout has changed against its base (committed and uncommitted, from the fork point), so you can spot a sibling editing the files you are. Pass `dir` to list only tasks of your repo, leave your own task out, and get `overlap`: the paths both of you changed, tasks with the most overlap first. Read-only. For a full patch, run `git diff` in the returned `dir` against `base`.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "dir": { "type": "string", "description": "Absolute path of your checkout — `git rev-parse --show-toplevel`. Omitted: every open task across repos, with no overlap." },
+                },
             },
         },
         {

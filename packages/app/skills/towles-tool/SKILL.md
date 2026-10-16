@@ -62,6 +62,20 @@ PR was fixed up or rebased before merging, `PR merged`: a merged PR's head — c
 or one a force-push replaced — reaches the local tip. Commits added after that merge
 still read as unlanded.
 
+More flags:
+
+- `new`: `-b`/`--branch` names the branch (default: slugged title), `--base <REF>`
+  the ref it branches from (default: the main checkout's branch), `--notes` free-form
+  context stored on the Board row, `--json` prints the created task.
+- `ls --stale [DAYS]` keeps only tasks with no unlanded commits in that many days
+  (default 7) and adds an AGE column.
+- `rm --force` skips the guards (each skip is printed); `rm --outcome done|abandoned`
+  sets what the closed Board row records (default: done if the work landed).
+- `clean --dry-run` reports what it would remove without touching anything.
+- `nudge --trigger <label>` tags the telemetry event only (e.g. `pr:create`).
+- Every subcommand except `nudge` takes `--root <DIR>` for a checkout other than the
+  one containing cwd; `ls`, `sync`, `ports`, `clean` and `new` take `--json`.
+
 `nudge` is for hooks and scripts, not for you to run by hand — the app polls
 these collectors on its own cadence anyway. It routes by `TT_SESSION_ID`, so
 it reaches the app instance that opened the terminal it runs in; from a

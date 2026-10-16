@@ -13,6 +13,9 @@ use thiserror::Error;
 
 use crate::envfile;
 
+/// Every `${tt:<name> …}` token [`render`] accepts, for the skill that documents them.
+pub const TOKENS: &[&str] = &["port", "task-name", "base", "var"];
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TemplateError {
     #[error("line {line}: port pool {lo}-{hi} exhausted — widen the range in the template")]
@@ -209,6 +212,19 @@ mod tests {
 
     fn ctx() -> TaskContext<'static> {
         TaskContext { task_name: "task-migrate", base_branch: "main" }
+    }
+
+    #[test]
+    fn tokens_lists_exactly_what_render_accepts() {
+        let line = |token: &str| match token {
+            "port" => "A=${tt:port 3000-3009}\n".to_string(),
+            "var" => "A=1\nB=${tt:var A}\n".to_string(),
+            other => format!("A=${{tt:{other}}}\n"),
+        };
+        for token in TOKENS {
+            assert!(render_ok(&line(token), &[], &[]).is_ok(), "{token} is listed but refused");
+        }
+        assert!(render_ok("A=${tt:nope}\n", &[], &[]).is_err());
     }
 
     fn render_ok(

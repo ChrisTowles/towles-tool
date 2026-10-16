@@ -9,7 +9,7 @@ Points at the desktop app's own MCP server (`crates/tt-mcp`, served over
 loopback HTTP by `tt-app`), so any session with this plugin enabled gets these
 tools without manual `claude mcp add` setup:
 
-- **Board** — `task_list`, `task_status` (reads), `task_create`, `task_summary`,
+- **Board** — `task_list`, `task_status`, `task_diff` (reads), `task_create`, `task_summary`,
   `task_sync`, `task_start`, `task_delete` and `task_done` (writes). `task_create` adds a board card only; `task_start` is
   what turns one into work in progress — it mints the task's git worktree and
   launches a Claude session in it on the task's goal and notes. It answers
@@ -23,7 +23,10 @@ tools without manual `claude mcp add` setup:
   to confirm the work. It records only — closing the task and removing the
   worktree stay the user's call. `task_sync` records the branch a task's
   worktree is on now — call it after a `git switch -c` inside the task, so the
-  card and PR auto-linking follow the new branch.
+  card and PR auto-linking follow the new branch. `task_diff` lists what every
+  other open task has changed since it forked from its base; pass your checkout
+  as `dir` and it narrows to your repo and adds `overlap`, the files you and
+  that task both touched — worth a look before a rebase or a shared refactor.
 - **Preview** — `preview_file`. Puts a file you wrote on screen in the
   app's Preview pane, beside the terminal you're running in: the way to hand
   back something worth *looking at* — a plan laid out for a decision, a table of

@@ -18,6 +18,7 @@ pub mod issue;
 pub mod landed;
 pub mod layout;
 pub mod ops;
+pub mod overlap;
 pub mod pasted;
 pub mod ports;
 pub mod pr;
