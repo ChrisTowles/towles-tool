@@ -3,7 +3,7 @@
 // comes in well under it. Run after `vite build`: `bun run check:bundle`.
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, extname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -49,7 +49,7 @@ function measure() {
   return sizes;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const measured = measure();
   if (process.argv.includes("--write")) {
     // Rounded up to whole KiB so another zlib build's byte-level drift can't fail CI.
