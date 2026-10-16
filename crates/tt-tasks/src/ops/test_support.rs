@@ -2,18 +2,11 @@
 //! injected per test (`ports_dir`), never resolved from the environment.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::TaskRoot;
 
-pub(super) fn git(dir: &Path, args: &[&str]) -> String {
-    let dir = dir.to_str().unwrap();
-    let mut full = vec!["-C", dir, "-c", "user.name=T", "-c", "user.email=t@t"];
-    full.extend_from_slice(args);
-    let out = tt_exec::run("git", &full).unwrap();
-    assert!(out.ok(), "git {full:?} failed: {}", out.stderr);
-    out.stdout.trim().to_string()
-}
+pub(super) use tt_git::testing::git;
 
 /// A clone of a bare `origin` with one commit on `main`; `.env` is git-ignored so a
 /// rendered task `.env` doesn't count as a dirty tree.

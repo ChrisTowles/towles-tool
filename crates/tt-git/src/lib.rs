@@ -16,3 +16,5 @@ pub mod branch_name;
 pub mod provision;
 pub mod repo;
 pub mod task_assign;
+#[cfg(feature = "test-support")]
+pub mod testing;
