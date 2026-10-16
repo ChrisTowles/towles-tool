@@ -32,6 +32,15 @@ type WorkspaceState = {
 const WorkspaceContext = createContext<WorkspaceState | null>(null);
 
 const SIDEBAR_COLLAPSED_KEY = "tt-sidebar-collapsed";
+const RAIL_VIEW_KEY = "tt-rail-view";
+
+function storedRailView(): RailView {
+  try {
+    return localStorage.getItem(RAIL_VIEW_KEY) === "queue" ? "queue" : "tree";
+  } catch {
+    return "tree";
+  }
+}
 
 const restored = loadWorkspaceTabs(
   localStorage.getItem(ACTIVE_TAB_KEY),
@@ -51,8 +60,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) !== "false",
   );
-  // Every launch opens on the tree; a switch to the queue lasts the session.
-  const [railView, setRailView] = useState<RailView>("tree");
+  // Remembered: whichever rail you left is the one you work from.
+  const [railView, setRailView] = useState<RailView>(storedRailView);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [zen, setZen] = useState(false);
 
@@ -61,6 +70,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
     localStorage.setItem(OPEN_TABS_KEY, JSON.stringify(openTabs));
   }, [activeTab, openTabs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RAIL_VIEW_KEY, railView);
+    } catch {
+      // Unremembered, the rail still works — it just opens on the tree.
+    }
+  }, [railView]);
 
   const openTab = useCallback((id: ScreenId) => {
     setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]));

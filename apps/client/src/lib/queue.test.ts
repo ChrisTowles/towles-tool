@@ -8,6 +8,7 @@ import {
   nextItem,
   nextUpArrival,
   onYouHead,
+  parseFoldedLanes,
   railRows,
   rowForFolder,
   stepRow,
@@ -227,5 +228,18 @@ describe("queue actions", () => {
     expect(restartable(item(1, { reason: "unblock" }))).toBe(true);
     expect(restartable(item(1, { reason: "unblock", sessionId: null }))).toBe(false);
     expect(restartable(item(1))).toBe(false);
+  });
+});
+
+describe("parseFoldedLanes", () => {
+  it("restores stored folds and drops lanes that no longer exist", () => {
+    expect(parseFoldedLanes(JSON.stringify(["idle", "gone"]))).toEqual(new Set(["idle"]));
+    expect(parseFoldedLanes(JSON.stringify([]))).toEqual(new Set());
+  });
+
+  it("leaves the default to the caller when nothing valid is stored", () => {
+    expect(parseFoldedLanes(null)).toBeNull();
+    expect(parseFoldedLanes("{nope")).toBeNull();
+    expect(parseFoldedLanes(JSON.stringify({ idle: true }))).toBeNull();
   });
 });

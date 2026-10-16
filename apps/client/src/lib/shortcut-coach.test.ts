@@ -1,72 +1,80 @@
 import { describe, expect, it } from "vitest";
 import {
   FLUENT_USES,
-  MAX_NUDGES_PER_SESSION,
-  NUDGE_COOLDOWN_MS,
+  NUDGE_AFTER_CLICKS,
+  STEP_GAP_MS,
   emptyCoachState,
   keyboardUsesToday,
-  noteNudge,
-  shouldNudge,
+  noteClick,
+  noteStep,
+  parseCoachState,
 } from "./shortcut-coach";
 
 const ctx = { enabled: true, keyboardUsesToday: 0 };
-const NOW = 1_700_000_000_000;
 
-describe("shouldNudge", () => {
-  it("coaches the first click on a binding", () => {
-    expect(shouldNudge(emptyCoachState(), "sidebar", NOW, ctx)).toBe(true);
+function clicks(n: number, id = "ab-new-session", c = ctx) {
+  let state = emptyCoachState();
+  const nudges: boolean[] = [];
+  for (let i = 0; i < n; i++) {
+    const r = noteClick(state, id, c);
+    state = r.state;
+    nudges.push(r.nudge);
+  }
+  return { state, nudges };
+}
+
+describe("noteClick", () => {
+  it("tips once, on the third click, and never again", () => {
+    const { nudges } = clicks(10);
+    expect(nudges.indexOf(true)).toBe(NUDGE_AFTER_CLICKS - 1);
+    expect(nudges.filter(Boolean)).toHaveLength(1);
   });
 
-  it("stays quiet for the rest of the cooldown, then speaks again", () => {
-    const state = noteNudge(emptyCoachState(), "sidebar", NOW);
-    expect(shouldNudge(state, "sidebar", NOW + NUDGE_COOLDOWN_MS - 1, ctx)).toBe(false);
-    expect(shouldNudge(state, "sidebar", NOW + NUDGE_COOLDOWN_MS, ctx)).toBe(true);
+  it("counts per binding", () => {
+    const { state } = clicks(NUDGE_AFTER_CLICKS);
+    expect(noteClick(state, "ab-close-pane", ctx).nudge).toBe(false);
   });
 
-  it("cools down per binding, not globally", () => {
-    const state = noteNudge(emptyCoachState(), "sidebar", NOW);
-    expect(shouldNudge(state, "settings", NOW, ctx)).toBe(true);
-  });
-
-  it("gives up after the session's budget, whatever the binding", () => {
-    let state = emptyCoachState();
-    for (let i = 0; i < MAX_NUDGES_PER_SESSION; i++) state = noteNudge(state, `id-${i}`, NOW);
-    expect(shouldNudge(state, "never-nudged", NOW, ctx)).toBe(false);
+  it("is silent when the setting is off, and still tips later once it's on", () => {
+    const off = clicks(NUDGE_AFTER_CLICKS, "zen", { ...ctx, enabled: false });
+    expect(off.nudges.some(Boolean)).toBe(false);
+    expect(noteClick(off.state, "zen", ctx).nudge).toBe(true);
   });
 
   /** Clicking a shortcut you demonstrably know is a choice, not a lapse. */
   it("says nothing about a binding already driven from the keyboard today", () => {
-    const fluent = { ...ctx, keyboardUsesToday: FLUENT_USES };
-    expect(shouldNudge(emptyCoachState(), "sidebar", NOW, fluent)).toBe(false);
-    expect(shouldNudge(emptyCoachState(), "sidebar", NOW, { ...ctx, keyboardUsesToday: 2 })).toBe(
-      true,
-    );
+    const fluent = clicks(5, "zen", { ...ctx, keyboardUsesToday: FLUENT_USES });
+    expect(fluent.nudges.some(Boolean)).toBe(false);
   });
+});
 
-  it("is silent when the setting is off", () => {
-    expect(shouldNudge(emptyCoachState(), "sidebar", NOW, { ...ctx, enabled: false })).toBe(false);
+describe("noteStep", () => {
+  it("counts a quick run and restarts after a pause", () => {
+    let run = { count: 0, at: 0 };
+    run = noteStep(run, 10_000);
+    run = noteStep(run, 10_500);
+    expect(run.count).toBe(2);
+    run = noteStep(run, 10_500 + STEP_GAP_MS + 1);
+    expect(run.count).toBe(1);
+  });
+});
+
+describe("parseCoachState", () => {
+  it("round-trips and degrades malformed input to empty", () => {
+    const { state } = clicks(NUDGE_AFTER_CLICKS);
+    expect(parseCoachState(JSON.stringify(state))).toEqual(state);
+    expect(parseCoachState("{nope")).toEqual(emptyCoachState());
+    expect(parseCoachState(null)).toEqual(emptyCoachState());
+    expect(parseCoachState(JSON.stringify({ nudged: [1, "zen"] })).nudged).toEqual(["zen"]);
   });
 });
 
 describe("keyboardUsesToday", () => {
-  const score = {
-    today: {
-      byShortcut: [
-        { id: "sidebar", shortcut: 4 },
-        { id: "settings", shortcut: 0 },
-      ],
-    },
-  };
+  const score = { today: { byShortcut: [{ id: "sidebar", shortcut: 4 }] } };
 
-  it("reads the day's keyboard count for a binding", () => {
+  it("reads the day's keyboard count for a binding, zero when unseen", () => {
     expect(keyboardUsesToday(score, "sidebar")).toBe(4);
-    expect(keyboardUsesToday(score, "settings")).toBe(0);
-  });
-
-  /** Before the first poll lands there's no evidence of fluency, so the coach
-   * should be free to speak rather than assume the user is expert. */
-  it("is zero with no score yet and for an unseen binding", () => {
-    expect(keyboardUsesToday(null, "sidebar")).toBe(0);
     expect(keyboardUsesToday(score, "zen")).toBe(0);
+    expect(keyboardUsesToday(null, "sidebar")).toBe(0);
   });
 });

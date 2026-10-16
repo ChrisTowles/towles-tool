@@ -3,7 +3,7 @@ import { toast } from "@/lib/toast";
 import { latestKeyboardScore } from "@/lib/keyboard-score";
 import type { ScreenId } from "@/lib/screens";
 import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
-import { SHORTCUTS, shortcutHint } from "@/lib/shortcuts";
+import { SHORTCUTS, modifierHint, shortcutHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 
 /**
@@ -11,38 +11,45 @@ import { uiAction } from "@/lib/ui-action";
  * binding may call {@link mouseAction} — a near-twin scores as a miss and lies.
  */
 
-export const NUDGE_COOLDOWN_MS = 60_000;
-
-export const MAX_NUDGES_PER_SESSION = 100;
+/** Clicks before the one tip: the third use is a habit forming, not a stray click. */
+export const NUDGE_AFTER_CLICKS = 3;
 
 export const FLUENT_USES = 10;
 
-/** What the coach remembers within one app run. Nothing is persisted — a
- * reminder that survives restarts would be a scolding backlog. */
+/** Consecutive rail steps, each within this of the last, that earn the jump tip. */
+const STEP_RUN = 3;
+export const STEP_GAP_MS = 1500;
+
+/** Persisted, so each binding's tip is shown once ever — a reminder that repeats
+ * is a scolding, and one that never comes is a shortcut nobody learns. */
 export type CoachState = {
-  nudgedAt: Record<string, number>;
-  shown: number;
+  clicks: Record<string, number>;
+  nudged: string[];
 };
 
-export const emptyCoachState = (): CoachState => ({ nudgedAt: {}, shown: 0 });
+export const emptyCoachState = (): CoachState => ({ clicks: {}, nudged: [] });
 
-/** Quiet unless the binding's own cooldown has passed, the session is under
- * its ceiling, and today's log doesn't already show fluency with it. */
-export function shouldNudge(
+/** Count a click; nudge exactly once, on the {@link NUDGE_AFTER_CLICKS}th, unless
+ * today's log already shows the binding driven from the keyboard. */
+export function noteClick(
   state: CoachState,
   id: string,
-  now: number,
   ctx: { enabled: boolean; keyboardUsesToday: number },
-): boolean {
-  if (!ctx.enabled) return false;
-  if (state.shown >= MAX_NUDGES_PER_SESSION) return false;
-  if (ctx.keyboardUsesToday >= FLUENT_USES) return false;
-  const last = state.nudgedAt[id];
-  return last === undefined || now - last >= NUDGE_COOLDOWN_MS;
+): { state: CoachState; nudge: boolean } {
+  const clicks = (state.clicks[id] ?? 0) + 1;
+  const counted = { ...state, clicks: { ...state.clicks, [id]: clicks } };
+  const nudge =
+    ctx.enabled &&
+    clicks >= NUDGE_AFTER_CLICKS &&
+    !state.nudged.includes(id) &&
+    ctx.keyboardUsesToday < FLUENT_USES;
+  return { state: nudge ? { ...counted, nudged: [...state.nudged, id] } : counted, nudge };
 }
 
-export function noteNudge(state: CoachState, id: string, now: number): CoachState {
-  return { nudgedAt: { ...state.nudgedAt, [id]: now }, shown: state.shown + 1 };
+/** Rail stepping one row at a time: a run of {@link STEP_RUN} quick steps is a
+ * jump the digits would make in one key. */
+export function noteStep(run: { count: number; at: number }, now: number) {
+  return { count: now - run.at <= STEP_GAP_MS ? run.count + 1 : 1, at: now };
 }
 
 export function keyboardUsesToday(
@@ -52,7 +59,38 @@ export function keyboardUsesToday(
   return score?.today.byShortcut.find((s) => s.id === id)?.shortcut ?? 0;
 }
 
-let state = emptyCoachState();
+const COACH_KEY = "tt-shortcut-coach";
+
+export function parseCoachState(raw: string | null): CoachState {
+  try {
+    const v = raw ? (JSON.parse(raw) as Partial<CoachState>) : null;
+    if (!v || typeof v !== "object") return emptyCoachState();
+    const clicks = v.clicks && typeof v.clicks === "object" ? v.clicks : {};
+    const nudged = Array.isArray(v.nudged) ? v.nudged.filter((x) => typeof x === "string") : [];
+    return { clicks, nudged };
+  } catch {
+    return emptyCoachState();
+  }
+}
+
+function load(): CoachState {
+  try {
+    return parseCoachState(localStorage.getItem(COACH_KEY));
+  } catch {
+    return emptyCoachState();
+  }
+}
+
+function save(s: CoachState): void {
+  try {
+    localStorage.setItem(COACH_KEY, JSON.stringify(s));
+  } catch {
+    // A tip shown twice beats a click that throws.
+  }
+}
+
+let state: CoachState | null = null;
+let stepRun = { count: 0, at: 0 };
 let enabled = true;
 
 export const DEFAULT_SHORTCUT_COACH = true;
@@ -86,12 +124,29 @@ export function mouseAction(id: string, screen: ScreenId): void {
 
   uiAction(`mouse.${id}`, screen);
 
-  const now = Date.now();
-  if (!shouldNudge(state, id, now, { enabled, keyboardUsesToday: uses(id) })) return;
-  state = noteNudge(state, id, now);
-  toast(`${shortcutHint(id)} does that`, {
-    description: shortcut.description,
-    timeout: 4000,
+  const r = noteClick(state ?? load(), id, { enabled, keyboardUsesToday: uses(id) });
+  state = r.state;
+  save(state);
+  if (!r.nudge) return;
+  uiAction("coach.tip", screen, id);
+  toast(`Tip: ${shortcutHint(id)}`, { description: shortcut.description, timeout: 6000 });
+}
+
+const JUMP_TIP = "ab-jump-session-1";
+
+/** Call on every one-row rail step; a quick run of them earns the one-time
+ * "hold to number the rail" tip. */
+export function railStep(screen: ScreenId): void {
+  stepRun = noteStep(stepRun, Date.now());
+  if (!enabled || stepRun.count < STEP_RUN) return;
+  const s = state ?? load();
+  if (s.nudged.includes(JUMP_TIP)) return;
+  state = { ...s, nudged: [...s.nudged, JUMP_TIP] };
+  save(state);
+  uiAction("coach.tip", screen, JUMP_TIP);
+  toast(`Tip: hold ${modifierHint(JUMP_TIP)} to number the rail`, {
+    description: "Then press a digit to jump straight to that row.",
+    timeout: 6000,
   });
 }
 

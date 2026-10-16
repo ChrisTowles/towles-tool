@@ -169,6 +169,18 @@ export const LANES = [
   "no_shell",
 ] as const satisfies readonly Lane[];
 
+/** Stored folded lanes, unknown names dropped; `null` when nothing valid is stored,
+ * so the caller's default applies. */
+export function parseFoldedLanes(raw: string | null): Set<Lane> | null {
+  try {
+    const v: unknown = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(v)) return null;
+    return new Set(LANES.filter((l) => v.includes(l)));
+  } catch {
+    return null;
+  }
+}
+
 /** The rail's rows top-down, folded lanes skipped — what the cursor and the
  * 1–9 jump digits walk. The backend already sorts by lane. */
 export function railRows(queue: TaskQueue, folded: ReadonlySet<Lane>): QueueItem[] {

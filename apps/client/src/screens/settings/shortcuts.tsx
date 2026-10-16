@@ -31,7 +31,7 @@ export function ShortcutCoachRow({
     <ToggleRow
       id="shortcut_coach"
       label="Shortcut coach"
-      description="When you click something a keyboard shortcut also does, show a one-line reminder of the keys. Your keyboard-vs-mouse streak is tracked either way — see Telemetry → Keyboard."
+      description="The third time you click something a shortcut also does, show its keys once — never again for that action. Stepping the rail row by row earns one tip about the jump digits. Your keyboard-vs-mouse streak is tracked either way — see Telemetry → Keyboard."
       checked={settings.agentboard?.shortcutCoach ?? DEFAULT_SHORTCUT_COACH}
       onCheckedChange={(v) =>
         update((s) => ({ ...s, agentboard: { ...s.agentboard, shortcutCoach: v } }))
