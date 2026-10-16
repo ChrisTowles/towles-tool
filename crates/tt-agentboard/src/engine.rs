@@ -192,7 +192,7 @@ pub fn collect_agent_snapshot(
         .collect();
     // A session started since the cached CLI call, read from the file the CLI
     // lists it from, so it needn't wait out the cache.
-    let sessions_dir = dirs::home_dir().unwrap_or_default().join(".claude").join("sessions");
+    let sessions_dir = tt_config::claude_dir().join("sessions");
     let mut covered: HashSet<String> = tt_session_by_thread.values().cloned().collect();
     let mut unlisted = Vec::new();
     for proc in crate::procenv::scan_session_agents(shell_pids, scope) {
@@ -240,8 +240,7 @@ impl AgentScanJob {
 impl Engine {
     /// `scope` picks which app instances' agents this host reports.
     pub fn new(scope: InstanceScope) -> Self {
-        let projects_dir =
-            dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude").join("projects");
+        let projects_dir = tt_config::claude_dir().join("projects");
         let repos_path = default_repos_path();
 
         let settings = tt_config::load().unwrap_or_default();

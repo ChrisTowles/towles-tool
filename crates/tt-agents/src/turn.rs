@@ -1,7 +1,7 @@
 //! One agent turn: the `claude -p` argv that locks it down, the prompt it sees, and the
 //! reply it must answer with.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Deserialize;
 use thiserror::Error;
@@ -80,20 +80,13 @@ impl Turn<'_> {
             args.extend(["--model".into(), self.agent.model.clone()]);
         }
         for dir in &self.agent.dirs {
-            args.push(format!("--add-dir={}", expand_home(dir).display()));
+            args.push(format!("--add-dir={}", tt_config::expand_tilde(dir).display()));
         }
         if !self.agent.allow.is_empty() {
             let settings = serde_json::json!({ "permissions": { "allow": self.agent.allow } });
             args.extend(["--settings".into(), settings.to_string()]);
         }
         args
-    }
-}
-
-fn expand_home(dir: &str) -> PathBuf {
-    match (dir.strip_prefix("~/"), std::env::var_os("HOME")) {
-        (Some(rest), Some(home)) => Path::new(&home).join(rest),
-        _ => PathBuf::from(dir),
     }
 }
 

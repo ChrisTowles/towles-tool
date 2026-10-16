@@ -58,7 +58,7 @@ pub(crate) fn claim_lock_path(checkout: &Path) -> PathBuf {
 /// The file stays on disk on purpose: unlinking it on drop reopens the classic
 /// race that leaves two "holders" locking different inodes at one path.
 pub(crate) struct ClaimLock {
-    _file: fs::File,
+    file: fs::File,
 }
 
 impl ClaimLock {
@@ -76,7 +76,7 @@ impl ClaimLock {
             .map_err(|e| OpsError::Io(format!("cannot open {}: {e}", path.display())))?;
         for _ in 0..100 {
             match file.try_lock() {
-                Ok(()) => return Ok(Self { _file: file }),
+                Ok(()) => return Ok(Self { file }),
                 Err(std::fs::TryLockError::WouldBlock) => {
                     std::thread::sleep(Duration::from_millis(100));
                 }
@@ -86,6 +86,14 @@ impl ClaimLock {
             }
         }
         Err(OpsError::LockTimeout(path.display().to_string()))
+    }
+}
+
+// Unlock explicitly rather than on close: a child forked by another thread holds a
+// copy of this fd until it execs, and the flock lives as long as any copy does.
+impl Drop for ClaimLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
     }
 }
 

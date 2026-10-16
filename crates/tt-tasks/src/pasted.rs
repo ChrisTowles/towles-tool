@@ -186,11 +186,11 @@ pub fn prune(base: &Path, now_ms: u64) -> std::io::Result<usize> {
         let Ok(modified) = meta.modified() else {
             continue;
         };
-        let Ok(since_epoch) = modified.duration_since(std::time::UNIX_EPOCH) else {
+        let Some(modified_ms) = tt_config::system_time_ms(modified) else {
             continue;
         };
         // The caller's clock, not `elapsed()`, so tests can inject the cutoff.
-        let age_ms = now_ms.saturating_sub(since_epoch.as_millis() as u64);
+        let age_ms = now_ms.saturating_sub(modified_ms as u64);
         if age_ms > MAX_AGE_MS && std::fs::remove_dir_all(entry.path()).is_ok() {
             removed += 1;
         }
@@ -277,8 +277,7 @@ mod tests {
 
     /// Wall-clock ms, matching what the app passes as `now_ms`.
     fn now_ms() -> u64 {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
-            as u64
+        tt_config::now_ms() as u64
     }
 
     #[test]

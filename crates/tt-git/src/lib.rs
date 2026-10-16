@@ -7,13 +7,13 @@
 //! - [`cli`] — the typed `git` subprocess operations (fetch, worktree writes).
 //! - [`repo`] — in-process git (cache, refs, graph walks, status, diffs, patch identity).
 //! - [`provision`] — `git init` / `git clone` a new repo onto disk.
-//! - [`branch_name`] — `feature/<n>-<slug>` from an issue.
-//! - [`task_assign`] — clean-tree/remote guard for assigning an issue to a task checkout.
+//! - [`branch_name`] — branch-name slugging.
+//! - [`remote`] — remote URL to `owner/name` slug.
 
 pub mod branch_name;
 pub mod cli;
 pub mod provision;
+pub mod remote;
 pub mod repo;
-pub mod task_assign;
 #[cfg(feature = "test-support")]
 pub mod testing;

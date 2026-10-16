@@ -306,13 +306,6 @@ pub fn ab_add_repo(state: State<Ab>, path: String) {
     state.emit.notify_one();
 }
 
-fn expand_home(parent: &str) -> std::path::PathBuf {
-    match (parent.trim().strip_prefix("~"), dirs::home_dir()) {
-        (Some(rest), Some(home)) => home.join(rest.trim_start_matches('/')),
-        _ => std::path::PathBuf::from(parent.trim()),
-    }
-}
-
 async fn provision_and_track(
     state: State<'_, Ab>,
     make: impl FnOnce() -> tt_git::repo::Result<std::path::PathBuf> + Send + 'static,
@@ -333,7 +326,7 @@ pub async fn ab_create_repo(
     parent: String,
     name: String,
 ) -> Result<String, String> {
-    let parent = expand_home(&parent);
+    let parent = tt_config::expand_tilde(&parent);
     provision_and_track(state, move || tt_git::provision::init_repo(&parent, &name)).await
 }
 
@@ -348,7 +341,7 @@ pub async fn ab_clone_repo(
     let (url, default_name) = tt_git::provision::parse_clone_source(&source)
         .ok_or_else(|| format!("\"{}\" isn't owner/repo or a clone URL", source.trim()))?;
     let name = name.filter(|n| !n.trim().is_empty()).unwrap_or(default_name);
-    let parent = expand_home(&parent);
+    let parent = tt_config::expand_tilde(&parent);
     provision_and_track(state, move || tt_git::provision::clone_repo(&url, &parent, name.trim()))
         .await
 }
@@ -425,13 +418,6 @@ pub struct RepoCandidate {
     pub active: bool,
 }
 
-fn expand_tilde(raw: &str, home: Option<&std::path::Path>) -> std::path::PathBuf {
-    match (raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~")), home) {
-        (Some(rest), Some(home)) => home.join(rest),
-        _ => std::path::PathBuf::from(raw),
-    }
-}
-
 /// Repos under `roots` ∪ `existing`, named relative to their root (bare dir
 /// outside every root). Split from `ab_discover_repos` for testing.
 fn build_repo_candidates(existing: &[String], roots: &[std::path::PathBuf]) -> Vec<RepoCandidate> {
@@ -475,7 +461,7 @@ pub fn ab_discover_repos(state: State<Ab>) -> Vec<RepoCandidate> {
     let roots: Vec<std::path::PathBuf> = if configured.is_empty() {
         home.iter().map(|h| h.join("code")).collect()
     } else {
-        configured.iter().map(|r| expand_tilde(r, home.as_deref())).collect()
+        configured.iter().map(|r| tt_config::expand_tilde(r)).collect()
     };
     build_repo_candidates(&existing, &roots)
 }

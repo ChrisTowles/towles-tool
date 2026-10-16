@@ -43,9 +43,7 @@ pub fn run(command: JournalCommands, config_dir: Option<&Path>) -> i32 {
             note_like(config_dir, JournalType::Meeting, title, no_open)
         }
         JournalCommands::Jot { text } => jot(config_dir, text),
-        JournalCommands::Open { last: _, pick, r#type, no_open } => {
-            open(config_dir, pick, r#type, no_open)
-        }
+        JournalCommands::Open { pick, r#type, no_open } => open(config_dir, pick, r#type, no_open),
         JournalCommands::List { r#type, limit, sort, json } => {
             list(config_dir, r#type, limit, sort, json)
         }

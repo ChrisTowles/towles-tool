@@ -267,10 +267,7 @@ pub async fn preview_write_feedback(
     images: Vec<PastedImage>,
 ) -> Result<Vec<String>, String> {
     let base = tt_config::pasted_images_dir();
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    let now_ms = tt_config::now_ms() as u64;
     tauri::async_runtime::spawn_blocking(move || {
         let scope = pasted::scope_name(&repo, &format!("preview-{now_ms}"));
         let paths = pasted::write_images(&base, &scope, &images, now_ms)?;

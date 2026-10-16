@@ -213,10 +213,7 @@ pub async fn task_create(
 ) -> Result<TaskCreated, String> {
     let source = task_source(source)?;
     let opts = CreateOpts { root: Some(PathBuf::from(root)), source, run_setup: false };
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
+    let now_ms = tt_config::now_ms();
     // Claimed before the first step, so the row is never on the rail mute.
     set_phase(&app, |p| p.creating(&dir, "starting"));
     let progress_app = app.clone();
@@ -305,10 +302,7 @@ pub async fn task_write_pasted_images(
     images: Vec<PastedImage>,
 ) -> Result<Vec<String>, String> {
     let base = tt_config::pasted_images_dir();
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+    let now_ms = tt_config::now_ms() as u64;
     tauri::async_runtime::spawn_blocking(move || {
         let scope = pasted::scope_name(&repo, &branch);
         pasted::write_images(&base, &scope, &images, now_ms)

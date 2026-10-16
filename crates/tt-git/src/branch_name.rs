@@ -1,11 +1,5 @@
 //! Branch-name generation.
 
-/// Build a branch name `feature/<number>-<slug>` from an issue number and
-/// title; the slug rules are [`slug`].
-pub fn create_branch_name_from_issue(number: u64, title: &str) -> String {
-    format!("feature/{number}-{}", slug(title))
-}
-
 /// Lowercase, trim, anything outside `[0-9a-zA-Z_-]` to `-`, collapse runs,
 /// strip trailing `-`. The character class is ASCII-only, matching the TS
 /// byte-for-byte. Shared rather than re-derived: `tt-tasks`' suggestion
@@ -32,68 +26,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basic_title() {
-        assert_eq!(
-            create_branch_name_from_issue(
-                4,
-                "Long Issue Title - with a lot of words     and stuff "
-            ),
-            "feature/4-long-issue-title-with-a-lot-of-words-and-stuff"
-        );
-    }
-
-    #[test]
-    fn special_characters() {
-        assert_eq!(
-            create_branch_name_from_issue(123, "Fix bug: @user reported $100 issue!"),
-            "feature/123-fix-bug-user-reported-100-issue"
-        );
-    }
-
-    #[test]
-    fn only_numbers() {
-        assert_eq!(create_branch_name_from_issue(42, "123 456"), "feature/42-123-456");
-    }
-
-    #[test]
-    fn trims_trailing_dashes() {
-        assert_eq!(create_branch_name_from_issue(7, "Update docs ---"), "feature/7-update-docs");
-    }
-
-    #[test]
-    fn unicode_characters() {
-        assert_eq!(
-            create_branch_name_from_issue(99, "Fix für Übersetzung"),
-            "feature/99-fix-f-r-bersetzung"
-        );
-    }
-
-    #[test]
-    fn empty_ish_title() {
-        assert_eq!(create_branch_name_from_issue(1, "   "), "feature/1-");
-    }
-
-    #[test]
-    fn underscores_preserved() {
-        assert_eq!(
-            create_branch_name_from_issue(50, "snake_case_title"),
-            "feature/50-snake_case_title"
-        );
-    }
-
-    #[test]
-    fn brackets_and_parens_keep_leading_dash() {
-        assert_eq!(
-            create_branch_name_from_issue(33, "[Bug] Fix (critical) issue"),
-            "feature/33--bug-fix-critical-issue"
-        );
-    }
-
-    #[test]
-    fn collapses_consecutive_dashes() {
-        assert_eq!(
-            create_branch_name_from_issue(15, "Fix   multiple    spaces"),
-            "feature/15-fix-multiple-spaces"
-        );
+    fn slug_folds_punctuation_and_runs() {
+        assert_eq!(slug("Fix bug: @user reported $100 issue!"), "fix-bug-user-reported-100-issue");
+        assert_eq!(slug("  Update docs ---"), "update-docs");
+        assert_eq!(slug("Fix für Übersetzung"), "fix-f-r-bersetzung");
+        assert_eq!(slug("snake_case_title"), "snake_case_title");
     }
 }

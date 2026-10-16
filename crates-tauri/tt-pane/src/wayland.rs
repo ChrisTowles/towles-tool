@@ -1,5 +1,4 @@
-//! Wayland embedding: a `wl_subsurface` of the Tauri window's own toplevel. Ported from
-//! `tt-jarvis`'s `bench_gtk_cadence` harness.
+//! Wayland embedding: a `wl_subsurface` of the Tauri window's own toplevel.
 //!
 //! **Why we adopt GDK's connection rather than opening our own:** subsurface parentage
 //! is **per-client**, so a surface can only be made a child of another on the same

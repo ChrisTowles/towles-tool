@@ -287,63 +287,6 @@ impl Repo {
         Ok(platform.excluded_kind().is_some())
     }
 
-    /// The stash is the reflog of `refs/stash`, so an empty count and a
-    /// missing ref are the same answer: nothing stashed.
-    pub fn stash_count(&self) -> usize {
-        let Ok(Some(stash)) = self.repo.try_find_reference("refs/stash") else {
-            return 0;
-        };
-        stash.log_iter().all().ok().flatten().map(|log| log.flatten().count()).unwrap_or(0)
-    }
-
-    /// `git checkout -b <branch>` for the one case this workspace performs it in: a
-    /// checkout the caller has already verified is **clean**. That precondition is
-    /// what makes this two ref writes rather than a checkout — the commit is already
-    /// checked out. A caller with a dirty tree must not use it.
-    pub fn create_branch_at_head(&self, branch: &str) -> Result<()> {
-        let head = self.head_id().ok_or_else(|| GitError::NoSuchRev("HEAD".to_string()))?;
-        let full = format!("refs/heads/{branch}");
-        if self.has_rev(&full) {
-            return Err(GitError::Read(format!("branch {branch} already exists")));
-        }
-        let name = gix::refs::FullName::try_from(full.as_str())
-            .map_err(|e| GitError::Read(e.to_string()))?;
-        self.repo
-            .edit_reference(gix::refs::transaction::RefEdit {
-                change: gix::refs::transaction::Change::Update {
-                    log: gix::refs::transaction::LogChange {
-                        mode: gix::refs::transaction::RefLog::AndReference,
-                        force_create_reflog: false,
-                        message: "branch: Created from HEAD".into(),
-                    },
-                    expected: gix::refs::transaction::PreviousValue::MustNotExist,
-                    new: gix::refs::Target::Object(head),
-                },
-                name: name.clone(),
-                deref: false,
-            })
-            .map_err(|e| GitError::Read(e.to_string()))?;
-        // Symbolic, exactly as a checkout leaves it — an object target here
-        // would detach HEAD instead.
-        self.repo
-            .edit_reference(gix::refs::transaction::RefEdit {
-                change: gix::refs::transaction::Change::Update {
-                    log: gix::refs::transaction::LogChange {
-                        mode: gix::refs::transaction::RefLog::AndReference,
-                        force_create_reflog: false,
-                        message: format!("checkout: moving to {branch}").into(),
-                    },
-                    expected: gix::refs::transaction::PreviousValue::Any,
-                    new: gix::refs::Target::Symbolic(name),
-                },
-                name: gix::refs::FullName::try_from("HEAD")
-                    .map_err(|e| GitError::Read(e.to_string()))?,
-                deref: false,
-            })
-            .map_err(|e| GitError::Read(e.to_string()))?;
-        Ok(())
-    }
-
     /// The main worktree first, then each linked one: [`gix::Repository::worktrees`]
     /// covers *linked* worktrees only, and dropping the main checkout would stop
     /// pulling a tracked task's primary into the Folder Rail.
@@ -522,41 +465,6 @@ mod tests {
         assert!(git.is_ignored(".env").expect("rules load"));
         assert!(!git.is_ignored("README.md").expect("rules load"));
         assert!(!git.is_ignored("src/main.rs").expect("rules load"));
-    }
-
-    #[test]
-    fn stash_count_matches_git_stash_list() {
-        let repo = TestRepo::new();
-        let git = Repo::open(repo.path()).expect("open");
-        assert_eq!(git.stash_count(), 0);
-
-        repo.write("README.md", "hello\nchanged\n");
-        repo.git(&["stash", "push", "-q", "-m", "one"]);
-        repo.write("README.md", "hello\nagain\n");
-        repo.git(&["stash", "push", "-q", "-m", "two"]);
-
-        let expected = repo.git(&["stash", "list"]).lines().count();
-        assert_eq!(Repo::open(repo.path()).expect("open").stash_count(), expected);
-        assert_eq!(expected, 2, "fixture sanity");
-    }
-
-    #[test]
-    fn create_branch_at_head_switches_like_checkout_b() {
-        let repo = TestRepo::new();
-        Repo::open(repo.path()).expect("open").create_branch_at_head("feat/new").expect("create");
-
-        // Ask git itself: the point is the state a real checkout is left in.
-        assert_eq!(repo.git(&["rev-parse", "--abbrev-ref", "HEAD"]), "feat/new");
-        assert_eq!(repo.rev_parse("feat/new"), repo.rev_parse("main"));
-        assert_eq!(repo.git(&["status", "--porcelain"]), "", "the tree must be untouched");
-    }
-
-    #[test]
-    fn create_branch_at_head_refuses_an_existing_branch() {
-        let repo = TestRepo::new();
-        let git = Repo::open(repo.path()).expect("open");
-        assert!(git.create_branch_at_head("main").is_err());
-        assert_eq!(repo.git(&["rev-parse", "--abbrev-ref", "HEAD"]), "main");
     }
 
     #[test]

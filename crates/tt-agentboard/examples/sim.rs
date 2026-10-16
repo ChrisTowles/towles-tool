@@ -59,7 +59,7 @@ fn default_telemetry() -> Option<PathBuf> {
 }
 
 fn record(start: i64, end: i64, telemetry: Option<&Path>) -> Scenario {
-    let projects = dirs::home_dir().unwrap().join(".claude/projects");
+    let projects = tt_config::claude_dir().join("projects");
     let resolved = telemetry.map(|d| resolved_statuses(d, start, end)).unwrap_or_default();
     let mut by_cwd: BTreeMap<String, (JournalReplay, Vec<SimSession>)> = BTreeMap::new();
     for project in std::fs::read_dir(&projects).into_iter().flatten().flatten() {

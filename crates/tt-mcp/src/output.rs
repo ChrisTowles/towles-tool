@@ -4,27 +4,27 @@
 //! build `serde_json::Value`s, and the test helpers in `lib.rs` validate every result of
 //! every test against the schema here, which is what keeps the two honest.
 
-// Derived from, never constructed: the fields exist for `JsonSchema` alone.
-#![allow(dead_code)]
-
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use serde_json::Value;
 use tt_store::{AgentNote, BranchResync, CalEvent, TaskItem};
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct TaskList {
     tasks: Vec<TaskItem>,
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct OneTask {
     task: TaskItem,
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct TaskSynced {
     task: TaskItem,
@@ -33,6 +33,7 @@ struct TaskSynced {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "lowercase")]
 enum DeleteStatus {
     Deleted,
@@ -40,6 +41,7 @@ enum DeleteStatus {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct TaskDeleted {
     status: DeleteStatus,
@@ -52,12 +54,14 @@ struct TaskDeleted {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "lowercase")]
 enum Starting {
     Starting,
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct TaskStarting {
     status: Starting,
@@ -68,6 +72,7 @@ struct TaskStarting {
 
 /// Whether the pane was placed by the caller's own terminal session or by matching the path.
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "lowercase")]
 enum Routed {
     Session,
@@ -75,12 +80,14 @@ enum Routed {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "lowercase")]
 enum Showing {
     Showing,
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct PreviewShowing {
     status: Showing,
@@ -90,12 +97,14 @@ struct PreviewShowing {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "lowercase")]
 enum Opening {
     Opening,
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct FileOpening {
     status: Opening,
@@ -104,6 +113,7 @@ struct FileOpening {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct Waiting {
     session: String,
@@ -115,18 +125,21 @@ struct Waiting {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct NeedsYou {
     sessions: Vec<Waiting>,
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "lowercase")]
 enum SummonStatus {
     Summoning,
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct Summoning {
     status: SummonStatus,
@@ -135,6 +148,7 @@ struct Summoning {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct CalendarToday {
     events: Vec<CalEvent>,
@@ -142,6 +156,7 @@ struct CalendarToday {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct CalendarNext {
     /// `null` when nothing is scheduled; `minutesUntil` and `live` come only with an event.
@@ -152,6 +167,7 @@ struct CalendarNext {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct CalendarWritten {
     source: String,
@@ -164,6 +180,7 @@ struct CalendarWritten {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct InboxTaken {
     notes: Vec<AgentNote>,
@@ -172,6 +189,7 @@ struct InboxTaken {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct InboxAcked {
     acked: i64,
@@ -190,6 +208,7 @@ fn number_or_null(_: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema:
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct NextPrompt {
     /// `null` when the model could not tell, or today's budget is spent.
@@ -203,6 +222,7 @@ struct NextPrompt {
 }
 
 #[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct Recorded {
     recorded: bool,

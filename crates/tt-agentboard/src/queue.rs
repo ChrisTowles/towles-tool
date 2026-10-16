@@ -243,7 +243,7 @@ fn base_item(
         repo: repo
             .origin_url
             .as_deref()
-            .and_then(tt_git::task_assign::repo_slug_from_remote_preserving_case)
+            .and_then(tt_git::remote::repo_slug_from_remote_preserving_case)
             .unwrap_or_else(|| repo.name.clone()),
         branch: folder.branch.clone(),
         folder_dir: folder.dir.clone(),

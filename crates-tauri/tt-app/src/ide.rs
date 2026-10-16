@@ -75,7 +75,7 @@ impl Shared {
 pub struct IdeServer {
     port: u16,
     shared: Arc<Shared>,
-    lock_dir: Option<PathBuf>,
+    lock_dir: PathBuf,
     task: tauri::async_runtime::JoinHandle<()>,
 }
 
@@ -98,12 +98,10 @@ impl IdeServer {
             .port();
 
         let auth_token = new_auth_token();
-        let lock_dir = dirs::home_dir().map(|home| tt_ide::lockfile::lock_dir(&home));
-        if let Some(dir) = &lock_dir {
-            let lockfile = tt_ide::Lockfile::new(std::process::id(), &cwd, IDE_NAME, &auth_token);
-            tt_ide::lockfile::write(dir, port, &lockfile)
-                .map_err(|e| format!("failed to write IDE lockfile: {e}"))?;
-        }
+        let lock_dir = lock_dir();
+        let lockfile = tt_ide::Lockfile::new(std::process::id(), &cwd, IDE_NAME, &auth_token);
+        tt_ide::lockfile::write(&lock_dir, port, &lockfile)
+            .map_err(|e| format!("failed to write IDE lockfile: {e}"))?;
 
         let shared = Arc::new(Shared {
             term_id,
@@ -148,9 +146,7 @@ impl IdeServer {
 impl Drop for IdeServer {
     fn drop(&mut self) {
         self.task.abort();
-        if let Some(dir) = &self.lock_dir {
-            tt_ide::lockfile::remove(dir, self.port);
-        }
+        tt_ide::lockfile::remove(&self.lock_dir, self.port);
     }
 }
 
@@ -339,11 +335,15 @@ fn emit_status(app: &AppHandle, shared: &Arc<Shared>) {
 /// elsewhere the sweep is skipped — the CLI's own pid check covers it.
 pub fn sweep_stale_lockfiles() {
     #[cfg(target_os = "linux")]
-    if let Some(home) = dirs::home_dir() {
-        let dir = tt_ide::lockfile::lock_dir(&home);
+    {
         let alive = |pid: u32| Path::new(&format!("/proc/{pid}")).exists();
-        tt_ide::lockfile::sweep_stale(&dir, IDE_NAME, &alive);
+        tt_ide::lockfile::sweep_stale(&lock_dir(), IDE_NAME, &alive);
     }
+}
+
+/// `~/.claude/ide`, where the CLI looks for IDE lockfiles.
+fn lock_dir() -> PathBuf {
+    tt_config::claude_dir().join("ide")
 }
 
 /// Initial state only; live updates ride the `ide://status` event.
