@@ -24,6 +24,8 @@ pub struct RemoveOpts {
     /// Skip guards (each skip lands in [`RemovedTask::messages`]) and force
     /// worktree removal.
     pub force: bool,
+    /// Port-ledger dir; `None` is the shared one (`tt_config::task_ports_dir`).
+    pub ports_dir: Option<PathBuf>,
 }
 
 /// A step of [`remove_task`] worth showing the user live, in the order they
@@ -167,7 +169,7 @@ pub fn remove_task(
         on_phase(RemovePhase::RemovingWorktree);
         remove_dir(&dir)?;
         let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
-        if let Ok(path) = port_registry_path(&sr.checkout) {
+        if let Ok(path) = port_registry_path(&sr.checkout, opts.ports_dir.as_deref()) {
             release_task_ports(&sr.checkout, &path, &name);
         }
         state_cleanup(state_scope.as_deref(), &mut messages);
@@ -268,7 +270,7 @@ pub fn remove_task(
         }
     }
     let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
-    if let Ok(path) = port_registry_path(&sr.checkout) {
+    if let Ok(path) = port_registry_path(&sr.checkout, opts.ports_dir.as_deref()) {
         release_task_ports(&sr.checkout, &path, &name);
     }
     state_cleanup(state_scope.as_deref(), &mut messages);
@@ -399,6 +401,8 @@ pub struct CleanOpts {
     pub dry_run: bool,
     /// Parents of per-scope instance-state dirs to sweep. Empty = skip it.
     pub scope_parents: Vec<PathBuf>,
+    /// Port-ledger dir to sweep; `None` is the shared one.
+    pub ports_dir: Option<PathBuf>,
 }
 
 /// A task `clean` removed (or, on dry-run, would remove).
@@ -538,7 +542,12 @@ pub fn clean_tasks(
             });
             continue;
         }
-        let rm = RemoveOpts { root: Some(sr.checkout.clone()), name: name.clone(), force: false };
+        let rm = RemoveOpts {
+            root: Some(sr.checkout.clone()),
+            name: name.clone(),
+            force: false,
+            ports_dir: opts.ports_dir.clone(),
+        };
         match remove_task(&rm, &mut |_| {}) {
             Ok(RemoveOutcome::Removed(r)) => {
                 let mut messages = r.messages;
@@ -595,7 +604,7 @@ pub fn clean_tasks(
     // filename hash. Machine-wide by design — a deleted repo can't sweep
     // itself, so any repo's `clean` tidies the whole ledger dir.
     let mut swept_port_registries = Vec::new();
-    if let Ok(ports_dir) = tt_config::task_ports_dir()
+    if let Some(ports_dir) = opts.ports_dir.clone().or_else(|| tt_config::task_ports_dir().ok())
         && let Ok(entries) = fs::read_dir(&ports_dir)
     {
         for entry in entries.flatten() {
@@ -682,3 +691,6 @@ fn docker_cleanup(task_name: &str, dir: &Path, messages: &mut Vec<String>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

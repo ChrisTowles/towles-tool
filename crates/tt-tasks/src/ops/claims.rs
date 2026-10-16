@@ -130,9 +130,13 @@ pub struct PortRegistry {
     pub ports: BTreeMap<u16, PortClaim>,
 }
 
-pub(crate) fn port_registry_path(checkout: &Path) -> Result<PathBuf> {
-    let dir = tt_config::task_ports_dir()
-        .map_err(|e| OpsError::Io(format!("cannot resolve the port registry dir: {e}")))?;
+/// `ports_dir` overrides the shared ledger dir, so tests never touch the real one.
+pub(crate) fn port_registry_path(checkout: &Path, ports_dir: Option<&Path>) -> Result<PathBuf> {
+    let dir = match ports_dir {
+        Some(dir) => dir.to_path_buf(),
+        None => tt_config::task_ports_dir()
+            .map_err(|e| OpsError::Io(format!("cannot resolve the port registry dir: {e}")))?,
+    };
     Ok(dir.join(checkout_keyed_filename(checkout, PORT_REGISTRY_FILE)))
 }
 
@@ -238,6 +242,10 @@ pub struct PortStatus {
 /// merged with the registry, each probed for a listener. Read-only — it neither
 /// locks nor self-heals, so status surfaces can't perturb the ledger.
 pub fn port_report(sr: &TaskRoot) -> Vec<PortStatus> {
+    port_report_in(sr, None)
+}
+
+pub(crate) fn port_report_in(sr: &TaskRoot, ports_dir: Option<&Path>) -> Vec<PortStatus> {
     let mut rows: BTreeMap<u16, PortStatus> = BTreeMap::new();
 
     for dir in sr.checkouts() {
@@ -260,7 +268,7 @@ pub fn port_report(sr: &TaskRoot) -> Vec<PortStatus> {
         }
     }
 
-    if let Ok(path) = port_registry_path(&sr.checkout) {
+    if let Ok(path) = port_registry_path(&sr.checkout, ports_dir) {
         let registry = load_port_registry(&path);
         let primary = sr.checkout.file_name().and_then(|n| n.to_str());
         for (port, claim) in registry.ports {
@@ -316,3 +324,6 @@ pub(crate) fn release_task_ports(checkout: &Path, path: &Path, task: &str) {
         tracing::info!(target: "tt_tasks::claims", task, "task.ports_released");
     }
 }
+
+#[cfg(test)]
+mod tests;

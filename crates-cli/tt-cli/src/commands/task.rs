@@ -590,7 +590,12 @@ fn cmd_rm(
 ) -> Result<(), String> {
     let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
     let dir = sr.task_dir(name);
-    let opts = RemoveOpts { root: root.map(Path::to_path_buf), name: name.to_string(), force };
+    let opts = RemoveOpts {
+        root: root.map(Path::to_path_buf),
+        name: name.to_string(),
+        force,
+        ports_dir: None,
+    };
     // clap's value_parser guarantees the spelling; parse never fails here.
     let outcome = outcome.and_then(tt_store::TaskOutcome::parse);
     // The name came from the command line, so a missing worktree is a typo to report.
@@ -700,6 +705,7 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         root: root.map(Path::to_path_buf),
         dry_run,
         scope_parents: bases.scope_parents().to_vec(),
+        ports_dir: None,
     };
     let report =
         ops::clean_tasks(&opts, tt_config::task_scope_from_dir).map_err(|e| e.to_string())?;
