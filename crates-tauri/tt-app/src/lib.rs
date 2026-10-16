@@ -729,6 +729,7 @@ pub fn run() {
             queue::queue_move,
             queue::queue_snooze,
             queue::queue_unsnooze,
+            queue::queue_land,
             sim::sim_status,
             sim::sim_control,
             agentboard::ab_mark_seen,

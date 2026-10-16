@@ -27,6 +27,8 @@ import { toggled } from "./agentboard/helpers";
 import { PaneGrid } from "./agentboard/pane-grid";
 import { RailHeader } from "./agentboard/rail-header";
 import { railNavigation } from "./agentboard/rail-navigation";
+import { LandQueueDialog } from "./agentboard/land-dialog";
+import { useQueueActions } from "./agentboard/queue-actions";
 import { defaultTaskRepo, RailNewTask } from "./agentboard/rail-new-task";
 import { RailPanel } from "./agentboard/rail-panel";
 import { selectionActions, type RailSnapshot } from "./agentboard/selection-actions";
@@ -524,9 +526,12 @@ export function AgentBoardScreen() {
   // The rail's new-task form, for one repo: a queue chip or a tree `+` picks it,
   // the shortcut takes the default. Opening again closes it.
   const [railTaskRepoKey, setRailTaskRepoKey] = useState<string | null>(null);
+  // Set only by a fork, and cleared with the form.
+  const [railTaskBase, setRailTaskBase] = useState<string | undefined>(undefined);
 
   function openRailNewTask(repoKey?: string) {
     if (railCollapsed) toggleRail();
+    setRailTaskBase(undefined);
     if (railTaskRepoKey !== null && repoKey === undefined) {
       setRailTaskRepoKey(null);
       return;
@@ -568,6 +573,22 @@ export function AgentBoardScreen() {
     );
   }
 
+  const queueActions = useQueueActions({
+    shownQueueItems: shownQueue.items,
+    sessionById,
+    tasks: snapshot.tasks,
+    repoByFolder,
+    openBrowser: browserPane ? openBrowser : undefined,
+    selectFolder,
+    actions,
+    setStartClaudePrompt: spawn.setStartClaudePrompt,
+    openFork: (repoKey, base) => {
+      if (railCollapsed) toggleRail();
+      setRailTaskRepoKey(repoKey);
+      setRailTaskBase(base);
+    },
+  });
+
   useBoardRequests({
     selectSession,
     withLiveSession: spawn.withLiveSession,
@@ -605,6 +626,8 @@ export function AgentBoardScreen() {
           collapseWholeRail: nav.collapseWholeRail,
           moveQueueCursor: nav.moveQueueCursor,
           setSnoozeId,
+          queueActions: queueActions.actions,
+          folderByDir,
           focusActiveTerminal: nav.focusActiveTerminal,
           splitIntoWindow,
         }),
@@ -639,6 +662,9 @@ export function AgentBoardScreen() {
         worktreeDelete.deleteWtOutcome,
         worktreeDelete.blockedDelete,
         worktreeDelete.deleteBusy,
+        folderByDir,
+        snapshot.tasks,
+        browserPane,
       ],
     ),
     "agentboard",
@@ -651,10 +677,15 @@ export function AgentBoardScreen() {
   const newTaskForm = railTaskRepo && (
     <RailNewTask
       repo={railTaskRepo}
-      onCancel={() => setRailTaskRepoKey(null)}
+      base={railTaskBase}
+      onCancel={() => {
+        setRailTaskRepoKey(null);
+        setRailTaskBase(undefined);
+      }}
       onSubmit={(repo, input) => {
         localStorage.setItem(LAST_TASK_REPO_KEY, repo.key);
         setRailTaskRepoKey(null);
+        setRailTaskBase(undefined);
         void taskCreation.createTask(
           {
             name: repo.name,
@@ -774,8 +805,10 @@ export function AgentBoardScreen() {
         const closing = railTaskRepoKey === repo.key;
         uiAction("agentboard.new_task_chip", "agentboard", closing ? "close" : "open");
         setRailTaskRepoKey(closing ? null : repo.key);
+        setRailTaskBase(undefined);
       }}
       newTaskForm={newTaskForm}
+      queueActions={queueActions.actions}
     />
   );
 
@@ -954,7 +987,19 @@ export function AgentBoardScreen() {
           prompt: spawn.startClaudePrompt,
           onPromptChange: spawn.setStartClaudePrompt,
           onCommit: spawn.commitStartClaude,
+          onCancel: () => {
+            spawn.setStartClaudeTarget(null);
+            spawn.setStartClaudePrompt("");
+          },
         }}
+      />
+      <LandQueueDialog
+        rows={queueActions.landRows}
+        busy={queueActions.landBusy}
+        onOpenChange={(isOpen) => {
+          if (!isOpen && !queueActions.landBusy) queueActions.setLandRows(null);
+        }}
+        onConfirm={() => void queueActions.confirmLand()}
       />
     </div>
   );

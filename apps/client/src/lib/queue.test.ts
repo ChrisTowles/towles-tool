@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  ciLogUrl,
   cycleQueue,
+  landable,
+  restartable,
   filterQueue,
   nextItem,
   nextUpArrival,
@@ -182,5 +185,47 @@ describe("nextUpArrival", () => {
   });
   it("opens a new head when nothing is open", () => {
     expect(nextUpArrival(dir(1), head, idle)).toBe("open");
+  });
+});
+
+const pr = (over: Partial<NonNullable<QueueItem["pr"]>> = {}) => ({
+  repo: "o/r",
+  number: 9,
+  url: "https://github.com/o/r/pull/9",
+  state: "open",
+  checks: "passing",
+  reviewState: "approved",
+  ...over,
+});
+
+const run = (url: string, updatedMs: number) => ({
+  workflow: "CI",
+  url,
+  conclusion: "failure",
+  updatedMs,
+});
+
+describe("queue actions", () => {
+  it("lands only a task's open PR that is approved and green", () => {
+    expect(landable(item(1, { pr: pr() }))).toBe(true);
+    expect(landable(item(1, { pr: pr({ reviewState: "" }) }))).toBe(false);
+    expect(landable(item(1, { pr: pr({ checks: "pending" }) }))).toBe(false);
+    expect(landable(item(1, { pr: pr({ state: "merged" }) }))).toBe(false);
+    expect(landable(item(1, { taskId: null, pr: pr() }))).toBe(false);
+    expect(landable(item(1))).toBe(false);
+  });
+
+  it("reads a red row's newest failing run, else its PR's checks", () => {
+    expect(ciLogUrl(item(1, { ci: [run("old", 1), run("new", 2)] }))).toBe("new");
+    expect(ciLogUrl(item(1, { pr: pr({ checks: "failing" }) }))).toBe(
+      "https://github.com/o/r/pull/9/checks",
+    );
+    expect(ciLogUrl(item(1, { pr: pr() }))).toBeNull();
+  });
+
+  it("restarts only an errored agent that has a session", () => {
+    expect(restartable(item(1, { reason: "unblock" }))).toBe(true);
+    expect(restartable(item(1, { reason: "unblock", sessionId: null }))).toBe(false);
+    expect(restartable(item(1))).toBe(false);
   });
 });

@@ -243,6 +243,7 @@ export function InlineNewTask({
   onSubmit,
   initialGoal,
   initialIssue,
+  initialBase,
 }: {
   repo: NewTaskRepo;
   onCancel: () => void;
@@ -251,6 +252,8 @@ export function InlineNewTask({
   initialGoal?: string;
   /** Set when the form was opened from an issue: seeded as if it were picked. */
   initialIssue?: IssueItem;
+  /** Set when forking a task: branch from its branch rather than the default. */
+  initialBase?: string;
 }) {
   const [goal, setGoal] = useState(
     initialIssue ? `${initialIssue.title} (#${initialIssue.number})` : (initialGoal ?? ""),
@@ -268,7 +271,7 @@ export function InlineNewTask({
     initialIssue ? branchFromIssue(initialIssue.number, initialIssue.title) : null,
   );
   const [titleEdit, setTitleEdit] = useState<string | null>(initialIssue?.title ?? null);
-  const [base, setBase] = useState("");
+  const [base, setBase] = useState(initialBase ?? "");
   const [model, setModel] = useState<ModelChoice>(USE_DEFAULT);
   const [effort, setEffort] = useState<EffortChoice>(USE_DEFAULT);
   const [improvers, setImprovers] = useState<PromptImprover[]>([FALLBACK_IMPROVER]);

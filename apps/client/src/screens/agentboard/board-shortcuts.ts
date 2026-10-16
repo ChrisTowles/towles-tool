@@ -7,6 +7,7 @@ import { openDiffView } from "@/lib/diff-view";
 import { openNoteDialog } from "@/lib/inbox";
 import type { QueueItem } from "@/lib/schemas/queue";
 import type { RailView } from "@/lib/screens";
+import type { QueueRowActions } from "./queue-actions";
 import type { WorktreeDelete } from "./use-worktree-delete";
 
 type Chord = () => boolean | void;
@@ -21,6 +22,7 @@ export type BoardShortcutContext = {
   selected: Selected;
   sessionById: Map<string, SessionData>;
   ringItem: QueueItem | undefined;
+  folderByDir: ReadonlyMap<string, FolderData>;
   shownQueueItems: readonly QueueItem[];
   worktreeDelete: Pick<
     WorktreeDelete,
@@ -40,6 +42,7 @@ export type BoardShortcutContext = {
   collapseWholeRail: (collapse: boolean) => boolean;
   moveQueueCursor: (step: 1 | -1) => boolean;
   setSnoozeId: (folderDir: string) => void;
+  queueActions: QueueRowActions;
   focusActiveTerminal: () => boolean;
   splitIntoWindow: () => void;
 };
@@ -115,6 +118,16 @@ export function boardShortcuts(c: BoardShortcutContext): Record<string, Chord> {
             if (!ringItem?.reason || ringItem.snoozed) return false;
             c.setSnoozeId(ringItem.folderDir);
           },
+          "queue-close": () => {
+            const folder = ringItem && c.folderByDir.get(ringItem.folderDir);
+            if (!folder || !folderRemovableTask(folder) || folderBusy(folder)) return false;
+            c.requestDeleteWorktree(folder.dir, folder.name);
+          },
+          // Before ci-log: its shift-less `l` would take Shift+L too.
+          "queue-land": () => c.queueActions.landAll(),
+          "queue-ci-log": () => (ringItem ? c.queueActions.openCiLog(ringItem) : false),
+          "queue-restart": () => (ringItem ? c.queueActions.restart(ringItem) : false),
+          "queue-fork": () => (ringItem ? c.queueActions.fork(ringItem) : false),
           // Before rank-up: a shift-less spec also matches Alt+Shift+↑, and the
           // first matching handler wins.
           "queue-rank-top": rerank("top"),
