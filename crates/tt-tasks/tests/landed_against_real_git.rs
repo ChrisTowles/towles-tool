@@ -362,10 +362,8 @@ fn a_squash_resolved_differently_from_the_branch_fails_safe() {
     commit(dir, "base.txt", "branch");
     run(dir, &["checkout", "-q", "main"]);
     commit(dir, "base.txt", "main");
-    let _ = std::process::Command::new("git")
-        .args(["merge", "--squash", "feat/conflict"])
-        .current_dir(dir)
-        .output();
+    // Conflicts by design, so the exit status is not checked.
+    tt_git::testing::git_output(dir, &["merge", "--squash", "feat/conflict"]);
     std::fs::write(dir.join("base.txt"), "main and branch").unwrap();
     run(dir, &["add", "-A"]);
     run(dir, &["commit", "-qm", "squashed with a resolution (#1)"]);
