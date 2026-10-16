@@ -33,6 +33,24 @@ const summary: DashboardSummary = {
   ],
   focus: { focusedMs: 3_600_000, longestMs: 1_800_000 },
   notifications: { fired: 3, skipped: 1 },
+  durationHistogram: [
+    { label: "<100ms", upperMs: 100, count: 3 },
+    { label: "≥2m", upperMs: null, count: 1 },
+  ],
+  slowest: [
+    {
+      ts: "2026-08-29T10:00:00Z",
+      executable: "gh",
+      durationMs: 45_000,
+      outcome: "timed_out",
+      workingDirectory: "/code/repo",
+    },
+  ],
+  problemsByDay: [
+    { day: "2026-08-29", records: 6, warnings: 2, errors: 1, failedSpawns: 2 },
+    { day: "2026-08-30", records: 4, warnings: 0, errors: 0, failedSpawns: 0 },
+  ],
+  topProblems: [{ key: "gh rate limited", count: 2 }],
 };
 
 const noop = () => {};
@@ -56,6 +74,10 @@ describe("DashboardTab", () => {
     expect(screen.getByText("50.0%")).toBeInTheDocument();
     expect(screen.getByText("max 45s", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("1h")).toBeInTheDocument();
+    expect(screen.getByText("gh rate limited")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("2026-08-29T10:00:00Z · /code/repo · timed_out"));
+    expect(onOpenLog).toHaveBeenCalledWith({ day: "2026-08-29", executable: "gh" });
+    onOpenLog.mockClear();
 
     // Testing-library's `getByTitle` only sees a `<title>` directly under `<svg>`.
     const bar = [...document.querySelectorAll("rect")].find((r) =>

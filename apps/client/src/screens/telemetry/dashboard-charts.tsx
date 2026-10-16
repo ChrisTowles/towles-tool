@@ -323,3 +323,90 @@ export function SeriesLegend({
     </div>
   );
 }
+
+export type Column = {
+  key: string;
+  /** Under the bar; empty skips the tick. */
+  label: string;
+  /** Bottom-up; each segment carries its own hover text. */
+  segments: { value: number; color: string; title: string }[];
+  /** Over the bar; empty for none. */
+  caption: string;
+};
+
+/** Vertical bars on one shared scale, optionally stacked, with a surface gap
+ * between segments. The categorical histogram and per-day counts share it. */
+const columnTotal = (c: Column) => c.segments.reduce((n, s) => n + s.value, 0);
+
+export function ColumnBars({ columns, label }: { columns: Column[]; label: string }) {
+  const max = Math.max(1, ...columns.map(columnTotal));
+  const step = (WAIT_W - PAD.left - PAD.right) / Math.max(1, columns.length);
+  const barW = Math.max(4, Math.min(28, step - 6));
+  const plotH = WAIT_H - PAD.top - PAD.bottom;
+
+  return (
+    <svg
+      viewBox={`0 0 ${WAIT_W} ${WAIT_H}`}
+      className={svgProps.className}
+      role="img"
+      aria-label={label}
+    >
+      <g className="stroke-border" strokeWidth={0.5}>
+        <line x1={PAD.left} x2={WAIT_W - PAD.right} y1={PAD.top + plotH} y2={PAD.top + plotH} />
+      </g>
+      {columns.map((c, i) => {
+        const x = PAD.left + step * i + (step - barW) / 2;
+        let y = PAD.top + plotH;
+        return (
+          <g key={c.key}>
+            {c.segments.map((s, si) => {
+              const h = (s.value / max) * plotH;
+              y -= h;
+              return h > 0 ? (
+                <rect
+                  key={si}
+                  x={x}
+                  y={y + (si > 0 ? 1 : 0)}
+                  width={barW}
+                  height={Math.max(0, h - (si > 0 ? 1 : 0))}
+                  rx={1.5}
+                  fill={s.color}
+                >
+                  <title>{s.title}</title>
+                </rect>
+              ) : null;
+            })}
+            <text
+              x={x + barW / 2}
+              y={PAD.top + plotH - (columnTotal(c) / max) * plotH - 3}
+              fontSize={8}
+              textAnchor="middle"
+              className="fill-muted-foreground"
+            >
+              {c.caption}
+            </text>
+            <text
+              x={x + barW / 2}
+              y={WAIT_H - 5}
+              fontSize={8}
+              textAnchor="middle"
+              className="fill-muted-foreground"
+            >
+              {c.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** The `i`th series' color — the same assignment every chart here uses. */
+export function seriesColorAt(index: number): string {
+  return seriesColor("", index);
+}
+
+/** `MM-DD` under a per-day bar, thinned to every other day past eight. */
+export function dayTick(day: string, i: number, n: number): string {
+  return n > 8 && i % 2 === 1 ? "" : day.slice(5);
+}

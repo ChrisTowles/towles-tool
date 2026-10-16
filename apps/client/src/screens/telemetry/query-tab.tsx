@@ -10,7 +10,14 @@ import { Button, DropdownMenu, Input, InputArea } from "@cloudflare/kumo";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Empty } from "@/components/store-bits";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { nextSavedQueryId, useUserSettings, type SavedQuery } from "@/lib/settings";
+import {
+  defaultSavedQueries,
+  nextSavedQueryId,
+  useUserSettings,
+  withMissingSavedQueries,
+  type SavedQuery,
+} from "@/lib/settings";
+import { toast } from "@/lib/toast";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutKeys, useShortcuts } from "@/lib/shortcuts";
 import {
@@ -117,6 +124,26 @@ export function QueryTab() {
     uiAction("telemetry.query_saved", "telemetry", "new");
   }
 
+  async function addExamples() {
+    const defaults = await defaultSavedQueries();
+    if (defaults.isErr()) {
+      if (!NotInTauri.is(defaults.error)) toast.error(errorMessage(defaults.error));
+      return;
+    }
+    const before = settings?.savedQueries.length ?? 0;
+    const merged = withMissingSavedQueries(settings?.savedQueries ?? [], defaults.value);
+    uiAction("telemetry.query_saved", "telemetry", "examples");
+    if (merged.length === before) {
+      toast.success("Every built-in example is already here");
+      return;
+    }
+    update((s) => ({
+      ...s,
+      savedQueries: withMissingSavedQueries(s.savedQueries, defaults.value),
+    }));
+    toast.success(`Added ${merged.length - before} example queries`);
+  }
+
   function rename(id: string, label: string) {
     setRenaming(null);
     const trimmed = label.trim();
@@ -188,6 +215,16 @@ export function QueryTab() {
           {shown.length === 0 && (
             <Empty inline>{queries.length === 0 ? "No saved queries." : "No match."}</Empty>
           )}
+        </div>
+        <div className="border-t border-kumo-hairline p-1.5">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="w-full justify-start text-kumo-subtle"
+            onClick={() => void addExamples()}
+          >
+            Add built-in examples
+          </Button>
         </div>
       </aside>
 

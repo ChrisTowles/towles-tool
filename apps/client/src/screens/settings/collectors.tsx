@@ -16,6 +16,7 @@ import {
   type UserSettings,
 } from "@/lib/settings";
 import { uiAction } from "@/lib/ui-action";
+import { TelemetryStorageRow } from "./telemetry-log";
 import { TelemetryRulesEditor } from "./telemetry-rules";
 import {
   CadenceRow,
@@ -616,6 +617,36 @@ export function collectorsSections(
               onCommit={() => void flush()}
             />
           ),
+        },
+      ],
+    },
+    {
+      heading: "Telemetry log",
+      keywords: ["telemetry", "log", "retention", "days", "disk", "prune", "jsonl"],
+      rows: [
+        {
+          label: "Keep",
+          keywords: ["retention", "days", "history"],
+          node: (
+            <CadenceRow
+              label="Keep"
+              description="Daily event-log files kept (1–365); older ones are deleted at rollover. The app reads it at startup."
+              value={settings.telemetry?.retainDays ?? 14}
+              unit="days"
+              onValue={(n) =>
+                update(
+                  (s) => ({ ...s, telemetry: { ...s.telemetry, retainDays: Math.min(365, n) } }),
+                  typed,
+                )
+              }
+              onCommit={() => void flush()}
+            />
+          ),
+        },
+        {
+          label: "On disk",
+          keywords: ["size", "files", "prune", "delete"],
+          node: <TelemetryStorageRow flush={flush} />,
         },
       ],
     },

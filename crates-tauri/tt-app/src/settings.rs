@@ -44,6 +44,12 @@ pub fn settings_default_telemetry_rules() -> Vec<tt_config::TelemetryRule> {
 }
 
 #[tauri::command]
+pub fn settings_default_saved_queries() -> Vec<tt_config::SavedQuery> {
+    tracing::info!("settings.default_saved_queries");
+    tt_config::SavedQuery::defaults()
+}
+
+#[tauri::command]
 pub fn settings_set(settings: UserSettings, signal: State<SettingsSignal>) -> Result<(), String> {
     tt_config::save_merge(&settings).map_err(|e| format!("failed to save settings: {e}"))?;
     tracing::info!("settings.saved");

@@ -18,7 +18,8 @@ use serde::Serialize;
 
 use crate::TelemetryRecord;
 use crate::attention::{
-    NotificationSummary, SPAWN_SPAN, field_str, pair_focus, parse_ts, summarize_notifications,
+    Count, NotificationSummary, SPAWN_SPAN, event_name, field_str, pair_focus, parse_ts,
+    summarize_notifications,
 };
 
 /// Series kept apart in the bucket breakdown; everything past the top five by
@@ -29,6 +30,17 @@ const OTHER: &str = "other";
 
 /// Executables profiled individually (duration percentiles); the tail is noise.
 const TOP_EXECUTABLES: usize = 10;
+
+/// Individual spawns listed in the slow tail.
+const SLOWEST: usize = 10;
+
+/// Warning/error messages ranked by count; the rest of the long tail is the Log tab's.
+const TOP_PROBLEMS: usize = 8;
+
+/// Upper bounds (exclusive) of the spawn-duration histogram's bins; a final
+/// open-ended bin catches everything past the last. Log-ish spacing, since a
+/// `git status` and a `cargo build` differ by four orders of magnitude.
+const HISTOGRAM_BOUNDS_MS: [i64; 6] = [100, 500, 1_000, 5_000, 30_000, 120_000];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,6 +98,43 @@ pub struct DashboardSummary {
     pub wait_by_day: Vec<DayWait>,
     pub focus: DashboardFocus,
     pub notifications: NotificationSummary,
+    /// Finished spawns by duration, one bin per [`HISTOGRAM_BOUNDS_MS`] step.
+    pub duration_histogram: Vec<HistogramBin>,
+    /// The range's slowest finished spawns, slowest first.
+    pub slowest: Vec<SlowSpawn>,
+    /// One row per requested day, empty days included.
+    pub problems_by_day: Vec<DayProblems>,
+    /// Warning and error records by message, most frequent first.
+    pub top_problems: Vec<Count>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistogramBin {
+    pub label: String,
+    /// Exclusive upper bound; `None` on the open-ended last bin.
+    pub upper_ms: Option<i64>,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlowSpawn {
+    pub ts: String,
+    pub executable: String,
+    pub duration_ms: i64,
+    pub outcome: String,
+    pub working_directory: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayProblems {
+    pub day: String,
+    pub records: usize,
+    pub warnings: usize,
+    pub errors: usize,
+    pub failed_spawns: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -290,6 +339,7 @@ pub fn summarize_dashboard(
         .collect();
 
     let pairing = pair_focus(records, records.last().map(|r| r.ts.as_str()));
+    let finished: Vec<&Spawn<'_>> = spawns.iter().filter(|s| s.duration_ms.is_some()).collect();
 
     DashboardSummary {
         days: days.to_vec(),
@@ -306,7 +356,108 @@ pub fn summarize_dashboard(
             longest_ms: pairing.sessions.iter().map(|s| s.duration_ms).max().unwrap_or(0),
         },
         notifications: summarize_notifications(records),
+        duration_histogram: histogram(&finished),
+        slowest: slowest(&finished),
+        problems_by_day: problems_by_day(days, records, &spawns),
+        top_problems: top_problems(records),
     }
+}
+
+fn histogram_label(bound: i64) -> String {
+    if bound < 1_000 {
+        format!("<{bound}ms")
+    } else if bound < 60_000 {
+        format!("<{}s", bound / 1_000)
+    } else {
+        format!("<{}m", bound / 60_000)
+    }
+}
+
+fn histogram(finished: &[&Spawn<'_>]) -> Vec<HistogramBin> {
+    let mut bins: Vec<HistogramBin> = HISTOGRAM_BOUNDS_MS
+        .iter()
+        .map(|&bound| HistogramBin {
+            label: histogram_label(bound),
+            upper_ms: Some(bound),
+            count: 0,
+        })
+        .collect();
+    let last = HISTOGRAM_BOUNDS_MS[HISTOGRAM_BOUNDS_MS.len() - 1];
+    bins.push(HistogramBin {
+        label: format!("≥{}", histogram_label(last).trim_start_matches('<')),
+        upper_ms: None,
+        count: 0,
+    });
+    for spawn in finished {
+        let ms = spawn.duration_ms.unwrap_or(0);
+        let index =
+            HISTOGRAM_BOUNDS_MS.iter().position(|&b| ms < b).unwrap_or(HISTOGRAM_BOUNDS_MS.len());
+        bins[index].count += 1;
+    }
+    bins
+}
+
+fn slowest(finished: &[&Spawn<'_>]) -> Vec<SlowSpawn> {
+    let mut ranked: Vec<&&Spawn<'_>> = finished.iter().collect();
+    ranked.sort_by(|a, b| {
+        b.duration_ms.cmp(&a.duration_ms).then_with(|| a.record.ts.cmp(&b.record.ts))
+    });
+    ranked
+        .into_iter()
+        .take(SLOWEST)
+        .map(|spawn| SlowSpawn {
+            ts: spawn.record.ts.clone(),
+            executable: executable_name(spawn.record).to_string(),
+            duration_ms: spawn.duration_ms.unwrap_or(0),
+            outcome: field_str(spawn.record, "outcome").unwrap_or("").to_string(),
+            working_directory: field_str(spawn.record, "process.working_directory")
+                .unwrap_or("")
+                .to_string(),
+        })
+        .collect()
+}
+
+fn problems_by_day(
+    days: &[String],
+    records: &[TelemetryRecord],
+    spawns: &[Spawn<'_>],
+) -> Vec<DayProblems> {
+    let empty = |day: &str| DayProblems {
+        day: day.to_string(),
+        records: 0,
+        warnings: 0,
+        errors: 0,
+        failed_spawns: 0,
+    };
+    let mut rows: BTreeMap<String, DayProblems> =
+        days.iter().map(|d| (d.clone(), empty(d))).collect();
+    for record in records {
+        let row = rows.entry(record.day().to_string()).or_insert_with(|| empty(record.day()));
+        row.records += 1;
+        match record.level.as_str() {
+            "WARN" => row.warnings += 1,
+            "ERROR" => row.errors += 1,
+            _ => {}
+        }
+    }
+    for spawn in spawns.iter().filter(|s| s.failed) {
+        if let Some(row) = rows.get_mut(spawn.record.day()) {
+            row.failed_spawns += 1;
+        }
+    }
+    rows.into_values().collect()
+}
+
+fn top_problems(records: &[TelemetryRecord]) -> Vec<Count> {
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for record in records.iter().filter(|r| r.level == "WARN" || r.level == "ERROR") {
+        *counts.entry(event_name(record)).or_default() += 1;
+    }
+    let mut ranked: Vec<Count> =
+        counts.into_iter().map(|(key, count)| Count { key: key.to_string(), count }).collect();
+    ranked.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(&b.key)));
+    ranked.truncate(TOP_PROBLEMS);
+    ranked
 }
 
 /// Nearest-rank percentile of an ascending slice; see the module docs.
@@ -481,6 +632,81 @@ mod tests {
         // "f" (5) and the taskless record (1) both fold.
         assert_eq!(row.last().unwrap().count, 6);
         assert_eq!(summary.by_executable[0].name, "git");
+    }
+
+    #[test]
+    fn histogram_bins_finished_spawns_and_skips_detached() {
+        let records = vec![
+            span("2026-07-25T10:00:00+00:00", "git", 5, "ok"),
+            span("2026-07-25T10:00:01+00:00", "git", 100, "ok"),
+            span("2026-07-25T10:00:02+00:00", "gh", 2_000, "ok"),
+            span("2026-07-25T10:00:03+00:00", "cargo", 600_000, "ok"),
+            detached("2026-07-25T10:00:04+00:00", "zsh"),
+        ];
+        let summary =
+            summarize_dashboard(&days(&["2026-07-25"]), &records, Bucket::Day, GroupBy::Executable);
+
+        let labels: Vec<&str> =
+            summary.duration_histogram.iter().map(|b| b.label.as_str()).collect();
+        assert_eq!(labels, vec!["<100ms", "<500ms", "<1s", "<5s", "<30s", "<2m", "≥2m"]);
+        let counts: Vec<usize> = summary.duration_histogram.iter().map(|b| b.count).collect();
+        assert_eq!(counts, vec![1, 1, 0, 1, 0, 0, 1]);
+        assert_eq!(summary.duration_histogram.last().unwrap().upper_ms, None);
+    }
+
+    #[test]
+    fn slowest_lists_the_tail_slowest_first() {
+        let records = vec![
+            span("2026-07-25T10:00:00+00:00", "git", 5, "ok"),
+            span("2026-07-25T10:00:01+00:00", "gh", 9_000, "timed_out"),
+            span("2026-07-25T10:00:02+00:00", "cargo", 60_000, "ok"),
+        ];
+        let summary =
+            summarize_dashboard(&days(&["2026-07-25"]), &records, Bucket::Day, GroupBy::Executable);
+
+        let order: Vec<(&str, i64)> =
+            summary.slowest.iter().map(|s| (s.executable.as_str(), s.duration_ms)).collect();
+        assert_eq!(order, vec![("cargo", 60_000), ("gh", 9_000), ("git", 5)]);
+        assert_eq!(summary.slowest[1].outcome, "timed_out");
+        assert_eq!(summary.slowest[0].working_directory, "/repo");
+    }
+
+    #[test]
+    fn problems_count_warnings_errors_and_failed_spawns_per_day() {
+        let mut warn = event("2026-07-26T09:00:00+00:00", "gh rate limited", json!({}));
+        warn.level = "WARN".into();
+        let mut error = event("2026-07-26T09:01:00+00:00", "task_suggest", json!({}));
+        error.level = "ERROR".into();
+        let mut warn_again = warn.clone();
+        warn_again.ts = "2026-07-26T09:02:00+00:00".into();
+        let records = vec![
+            span("2026-07-25T10:00:00+00:00", "gh", 5, "non_zero_exit"),
+            warn,
+            error,
+            warn_again,
+        ];
+        let summary = summarize_dashboard(
+            &days(&["2026-07-25", "2026-07-26", "2026-07-27"]),
+            &records,
+            Bucket::Day,
+            GroupBy::Executable,
+        );
+
+        let rows: Vec<(&str, usize, usize, usize, usize)> = summary
+            .problems_by_day
+            .iter()
+            .map(|d| (d.day.as_str(), d.records, d.warnings, d.errors, d.failed_spawns))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("2026-07-25", 1, 0, 0, 1),
+                ("2026-07-26", 3, 2, 1, 0),
+                ("2026-07-27", 0, 0, 0, 0),
+            ]
+        );
+        assert_eq!(summary.top_problems[0], Count { key: "gh rate limited".into(), count: 2 });
+        assert_eq!(summary.top_problems[1].key, "task_suggest");
     }
 
     #[test]

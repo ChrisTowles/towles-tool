@@ -77,23 +77,58 @@ impl EventLog {
     }
 
     fn prune(&self) {
-        let mut files = match fs::read_dir(&self.dir) {
-            Ok(entries) => entries
-                .flatten()
-                .map(|entry| entry.path())
-                .filter(|path| is_event_log(path))
-                .collect::<Vec<_>>(),
-            Err(_) => return,
-        };
-        if files.len() <= self.retain_days {
-            return;
-        }
-        files.sort();
-        let stale = files.len() - self.retain_days;
-        for path in files.into_iter().take(stale) {
-            let _ = fs::remove_file(path);
+        let _ = prune_dir(&self.dir, self.retain_days);
+    }
+}
+
+/// The event-log files in `dir`, oldest first.
+fn event_logs(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut files: Vec<PathBuf> = fs::read_dir(dir)?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|p| is_event_log(p))
+        .collect();
+    files.sort();
+    Ok(files)
+}
+
+/// Delete all but the newest `retain_days` event-log files in `dir`, returning
+/// how many went. Only our own `events-<date>.jsonl` files are ever touched.
+pub fn prune_dir(dir: &Path, retain_days: usize) -> std::io::Result<usize> {
+    let files = event_logs(dir)?;
+    let stale = files.len().saturating_sub(retain_days.max(1));
+    let mut removed = 0;
+    for path in files.into_iter().take(stale) {
+        if fs::remove_file(path).is_ok() {
+            removed += 1;
         }
     }
+    Ok(removed)
+}
+
+/// What the event log occupies on disk.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogStorage {
+    pub files: usize,
+    pub bytes: u64,
+    pub oldest: Option<String>,
+    pub newest: Option<String>,
+}
+
+pub fn storage(dir: &Path) -> std::io::Result<LogStorage> {
+    let files = match event_logs(dir) {
+        Ok(files) => files,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(e),
+    };
+    let date = |p: Option<&PathBuf>| p.and_then(|p| event_log_date(p)).map(str::to_string);
+    Ok(LogStorage {
+        files: files.len(),
+        bytes: files.iter().filter_map(|p| fs::metadata(p).ok()).map(|m| m.len()).sum(),
+        oldest: date(files.first()),
+        newest: date(files.last()),
+    })
 }
 
 /// The `%Y-%m-%d` date `path` holds, if it's one of our own rotated log
@@ -204,5 +239,23 @@ mod tests {
         log.append(&record("b"), at("2026-07-18"));
 
         assert!(bystander.exists(), "pruning must only delete our own rotated logs");
+    }
+
+    #[test]
+    fn prune_dir_keeps_the_newest_and_storage_reports_what_is_left() {
+        let dir = tempfile::tempdir().unwrap();
+        for date in ["2026-07-01", "2026-07-02", "2026-07-03"] {
+            fs::write(dir.path().join(format!("events-{date}.jsonl")), "{}\n").unwrap();
+        }
+        fs::write(dir.path().join("notes.txt"), "keep me").unwrap();
+
+        assert_eq!(prune_dir(dir.path(), 2).unwrap(), 1);
+        let left = storage(dir.path()).unwrap();
+        assert_eq!(left.files, 2);
+        assert_eq!(left.bytes, 6);
+        assert_eq!(left.oldest.as_deref(), Some("2026-07-02"));
+        assert_eq!(left.newest.as_deref(), Some("2026-07-03"));
+        assert!(dir.path().join("notes.txt").exists());
+        assert_eq!(storage(&dir.path().join("missing")).unwrap().files, 0);
     }
 }

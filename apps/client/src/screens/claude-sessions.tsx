@@ -49,7 +49,7 @@ import { uiAction } from "@/lib/ui-action";
 import { useClipboardCopy } from "@/lib/use-clipboard-copy";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
-import { fmtTokens } from "@/lib/format";
+import { fmtTokens, fmtUsd } from "@/lib/format";
 
 /** Surface a failed sessions read. Silent outside the Tauri shell, where every
  * command fails identically and the screen already says so. */
@@ -126,15 +126,6 @@ function cssPx(name: string): number {
 /** A font stack from `index.css` (`--font-sans`), so a canvas sets the app's face. */
 function cssFont(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
-
-/** Estimated dollar cost. Sub-cent figures round to `<$0.01` rather than `$0.00`
- * so a nonzero session never reads as free. */
-function formatCost(n: number): string {
-  if (n > 0 && n < 0.01) return "<$0.01";
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
-  if (n >= 100) return `$${n.toFixed(0)}`;
-  return `$${n.toFixed(2)}`;
 }
 
 /** Bumps whenever `<html>`'s class actually flips (light/dark), so chart color
@@ -266,7 +257,7 @@ function DayStackChart({ days, colors }: { days: LedgerDay[]; colors: Map<string
             const cost = days[first.dataIndex]?.costUsd ?? 0;
             return (
               `<div><b>${first.axisValue}</b></div>${lines}` +
-              `<div style="margin-top:2px;opacity:.75">Est. cost <b>${formatCost(cost)}</b></div>`
+              `<div style="margin-top:2px;opacity:.75">Est. cost <b>${fmtUsd(cost)}</b></div>`
             );
           },
         },
@@ -308,7 +299,7 @@ function DayStackChart({ days, colors }: { days: LedgerDay[]; colors: Map<string
               position: "top",
               color: muted,
               fontSize: cssPx("--text-mini"),
-              formatter: (p: { dataIndex: number }) => formatCost(days[p.dataIndex]?.costUsd ?? 0),
+              formatter: (p: { dataIndex: number }) => fmtUsd(days[p.dataIndex]?.costUsd ?? 0),
             },
           },
         ],
@@ -349,7 +340,7 @@ function RankedBarChart({
           formatter: (p: { marker: string; name: string; value: number; dataIndex: number }) =>
             `<div>${p.marker} <b>${p.name}</b></div>` +
             `<div>${p.value.toLocaleString()} tokens</div>` +
-            `<div style="opacity:.75">Est. cost <b>${formatCost(bars[p.dataIndex]?.costUsd ?? 0)}</b></div>`,
+            `<div style="opacity:.75">Est. cost <b>${fmtUsd(bars[p.dataIndex]?.costUsd ?? 0)}</b></div>`,
         },
         xAxis: {
           type: "value",
@@ -382,7 +373,7 @@ function RankedBarChart({
               position: "right",
               color: muted,
               formatter: (p: { value: number; dataIndex: number }) =>
-                `${fmtTokens(p.value)} · ${formatCost(bars[p.dataIndex]?.costUsd ?? 0)}`,
+                `${fmtTokens(p.value)} · ${fmtUsd(bars[p.dataIndex]?.costUsd ?? 0)}`,
             },
           },
         ],
@@ -1121,7 +1112,7 @@ function SessionTable({ sessions, searching }: { sessions: ClaudeSession[]; sear
                   {fmtTokens(s.cacheCreationTokens)}
                 </td>
                 <td className="py-1.5 pr-3 text-right font-mono text-xs text-foreground">
-                  {formatCost(s.costUsd)}
+                  {fmtUsd(s.costUsd)}
                 </td>
                 <td className="py-1.5 pl-3 text-right">
                   <SessionButtons session={s} />
@@ -1352,7 +1343,7 @@ export function ClaudeSessionsScreen() {
               <StatTile label="Cache write" value={fmtTokens(totals.cacheCreationTokens)} />
               <StatTile
                 label="Est. cost"
-                value={formatCost(totals.costUsd)}
+                value={fmtUsd(totals.costUsd)}
                 detail="approx · per-model rates"
               />
             </div>

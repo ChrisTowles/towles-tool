@@ -14,8 +14,8 @@ use std::sync::Mutex;
 use chrono::{Duration, Utc};
 use tt_telemetry::query::{EventDb, QueryResult};
 use tt_telemetry::{
-    AttentionSummary, Bucket, BuildKey, BuildSnapshot, DashboardSummary, Delta, GroupBy,
-    KeyboardDay, KeyboardScore, Rule, RuleScore, TelemetryRecord,
+    AgentsSummary, AttentionSummary, Bucket, BuildKey, BuildSnapshot, DashboardSummary, Delta,
+    GroupBy, KeyboardDay, KeyboardScore, LogStorage, Rule, RuleScore, TelemetryRecord,
 };
 
 fn telemetry_dir() -> Result<PathBuf, String> {
@@ -331,4 +331,55 @@ pub async fn telemetry_rules_failing() -> Result<usize, String> {
     })
     .await
     .map_err(|e| format!("telemetry rules task panicked: {e}"))?
+}
+
+/// The Agents tab: the app's own model spend and each checkout's agent time over
+/// the last `days` UTC days.
+#[tauri::command]
+pub async fn telemetry_agents(days: u32) -> Result<AgentsSummary, String> {
+    let dir = telemetry_dir()?;
+    let days = i64::from(days).clamp(1, KEYBOARD_WINDOW_DAYS);
+    tauri::async_runtime::spawn_blocking(move || {
+        let dates = utc_days_back(days);
+        let records = tt_telemetry::read_days(&dir, &dates).map_err(|e| e.to_string())?;
+        Ok(tt_telemetry::summarize_agents(&dates, &records))
+    })
+    .await
+    .map_err(|e| format!("telemetry agents task panicked: {e}"))?
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryStorage {
+    #[serde(flatten)]
+    pub storage: LogStorage,
+    pub retain_days: usize,
+}
+
+/// What the event log occupies and how much of it the settings keep.
+#[tauri::command]
+pub async fn telemetry_storage() -> Result<TelemetryStorage, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let retain_days = tt_config::load().unwrap_or_default().telemetry.retain_days();
+        let storage = tt_telemetry::storage(&dir).map_err(|e| e.to_string())?;
+        Ok(TelemetryStorage { storage, retain_days })
+    })
+    .await
+    .map_err(|e| format!("telemetry storage task panicked: {e}"))?
+}
+
+/// Apply the saved retention now rather than at the next day's rollover.
+#[tauri::command]
+pub async fn telemetry_prune() -> Result<TelemetryStorage, String> {
+    let dir = telemetry_dir()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let retain_days = tt_config::load().unwrap_or_default().telemetry.retain_days();
+        let removed = tt_telemetry::prune_dir(&dir, retain_days).map_err(|e| e.to_string())?;
+        let storage = tt_telemetry::storage(&dir).map_err(|e| e.to_string())?;
+        tracing::info!(removed, retain_days, bytes = storage.bytes, "telemetry.pruned");
+        Ok(TelemetryStorage { storage, retain_days })
+    })
+    .await
+    .map_err(|e| format!("telemetry prune task panicked: {e}"))?
 }
