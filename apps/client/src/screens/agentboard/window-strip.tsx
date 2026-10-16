@@ -1,3 +1,4 @@
+import { Kbd } from "@/components/ui/kbd";
 import { useState } from "react";
 import { PlusIcon } from "@phosphor-icons/react";
 import type { AgWindow, WindowsPayload } from "@/lib/agentboard/types";
@@ -148,6 +149,10 @@ export function WindowStrip(props: {
           className={ADD_CLASS}
         >
           <PlusIcon className="size-3 text-agent" /> session
+          {/* On the button, not only the hover: a key you never see is one you never press. */}
+          <Kbd aria-hidden className="ml-1 h-4 opacity-60">
+            {shortcutHint("ab-new-session")}
+          </Kbd>
         </button>
       </Hint>
       {hasFocusedPane && (

@@ -1,4 +1,5 @@
 import { Tabs } from "@cloudflare/kumo";
+import { Kbd } from "@/components/ui/kbd";
 import { ListNumbersIcon, TreeStructureIcon } from "@phosphor-icons/react";
 import type { RailView } from "@/lib/screens";
 import { mouseAction } from "@/lib/shortcut-coach";
@@ -41,6 +42,9 @@ export function RailViewToggle({
           ),
         }))}
       />
+      <Kbd aria-hidden className="ml-auto opacity-60">
+        {shortcutHint("ab-rail-view")}
+      </Kbd>
     </div>
   );
 }

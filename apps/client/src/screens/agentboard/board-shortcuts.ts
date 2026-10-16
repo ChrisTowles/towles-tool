@@ -9,6 +9,7 @@ import type { QueueItem } from "@/lib/schemas/queue";
 import type { RailView } from "@/lib/screens";
 import type { QueueRowActions } from "./queue-actions";
 import type { WorktreeDelete } from "./use-worktree-delete";
+import { railStep } from "@/lib/shortcut-coach";
 
 type Chord = () => boolean | void;
 
@@ -51,6 +52,10 @@ export type BoardShortcutContext = {
  * chord to the platform. */
 export function boardShortcuts(c: BoardShortcutContext): Record<string, Chord> {
   const { activeFolder, activeFolderDir, ringItem, worktreeDelete } = c;
+  const step = (direction: "up" | "down") => {
+    railStep("agentboard");
+    return c.focusByArrow(direction);
+  };
   const rerank = (direction: "up" | "down" | "top") => () => {
     if (ringItem) void rerankQueueItem(c.shownQueueItems, ringItem, direction);
   };
@@ -98,10 +103,10 @@ export function boardShortcuts(c: BoardShortcutContext): Record<string, Chord> {
         () => c.jumpToHotkey(i + 1),
       ]),
     ),
-    "ab-focus-up": () => c.focusByArrow("up"),
-    "ab-focus-down": () => c.focusByArrow("down"),
-    "ab-focus-up-bracket": () => c.focusByArrow("up"),
-    "ab-focus-down-bracket": () => c.focusByArrow("down"),
+    "ab-focus-up": () => step("up"),
+    "ab-focus-down": () => step("down"),
+    "ab-focus-up-bracket": () => step("up"),
+    "ab-focus-down-bracket": () => step("down"),
     "ab-focus-left": () => c.focusByArrow("left"),
     "ab-focus-right": () => c.focusByArrow("right"),
     // Each rail's own chords, and only while it's up: Alt+Shift+↑ is the

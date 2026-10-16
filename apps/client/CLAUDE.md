@@ -55,8 +55,8 @@ a bad spec or duplicate id, so a typo'd shortcut fails the build. Every binding
 that fires records `shortcut.<id>`, and every *click target doing the same thing
 as a binding* must record `mouse.<id>` via `mouseAction(id, screen)`
 (`lib/shortcut-coach.ts`) instead of a plain `uiAction` — that pair is the whole
-input to the keyboard-habit score (`tt-telemetry/src/keyboard.rs`) and the "⌘B
-does that" toast. Only exact twins: a near-twin scored as a missed keystroke
+input to the keyboard-habit score (`tt-telemetry/src/keyboard.rs`) and the one-time
+"Tip: ⌘B" toast (third click, once ever per binding, persisted). Only exact twins: a near-twin scored as a missed keystroke
 makes the number lie, and palette items score as neither. `allowInEditable` is
 likewise two-sided, working only if the owning component *also* checks
 `matchesEditableOverride` to yield the keystroke rather than consume it

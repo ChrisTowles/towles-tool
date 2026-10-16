@@ -56,6 +56,7 @@ import {
   filterQueue,
   nextUpArrival,
   onYouHead,
+  parseFoldedLanes,
   railRows,
   rowForFolder,
   useTaskQueue,
@@ -83,6 +84,16 @@ const LAST_TASK_REPO_KEY = "tt-agentboard-last-task-repo";
  * is every repo → checkout → session, walked by place. Either way,
  * picking a row puts its terminals and panes beside it, and the panes, shells
  * and selection are the same ones. Agent status is reported, never re-rendered. */
+const FOLDED_LANES_KEY = "tt-queue-folded-lanes";
+
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 export function AgentBoardScreen() {
   const state = useAgentboardState();
   const { snapshot } = useStoreSnapshot();
@@ -113,7 +124,16 @@ export function AgentBoardScreen() {
   // yesterday's repos is a queue with work missing and no memory of why.
   const [repoFilter, setRepoFilter] = useState<ReadonlySet<string>>(() => new Set());
   const railEdges = useScrollEdges();
-  const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(() => new Set(FOLDED_BY_DEFAULT));
+  const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(
+    () => parseFoldedLanes(readStored(FOLDED_LANES_KEY)) ?? new Set(FOLDED_BY_DEFAULT),
+  );
+  useEffect(() => {
+    try {
+      localStorage.setItem(FOLDED_LANES_KEY, JSON.stringify([...foldedLanes]));
+    } catch {
+      // Unremembered folds just reopen at the default next launch.
+    }
+  }, [foldedLanes]);
   // The checkout whose snooze menu is open — `z` opens it from the keyboard.
   const [snoozeId, setSnoozeId] = useState<string | null>(null);
   // The nonce lets a re-request of the *same* session still fire.
