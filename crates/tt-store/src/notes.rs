@@ -1,4 +1,4 @@
-//! Notes the user sent an agent from the app, and the next-prompt suggester's spend.
+//! Notes the user sent an agent from the app, and the Claude mod's model spend.
 //! Only the app writes a note; the Claude mod in the addressed session leases it over
 //! MCP, hands it to the model, then acks it.
 
@@ -7,6 +7,22 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{Result, Store};
+
+/// Each of the mod's model questions keeps its own daily budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpendLedger {
+    NextPrompt,
+    Clip,
+}
+
+impl SpendLedger {
+    fn table(self) -> &'static str {
+        match self {
+            SpendLedger::NextPrompt => "suggest_spend",
+            SpendLedger::Clip => "clip_spend",
+        }
+    }
+}
 
 /// Delivered notes older than this are swept on the next add.
 const DELIVERED_KEEP_MS: i64 = 7 * 24 * 60 * 60 * 1000;
@@ -156,23 +172,19 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// What the suggester has spent on `day` (the caller's local `YYYY-MM-DD`).
-    pub fn suggest_spend(&self, day: &str) -> Result<f64> {
-        Ok(self
-            .conn
-            .query_row("SELECT cost_usd FROM suggest_spend WHERE day = ?1", params![day], |r| {
-                r.get(0)
-            })
-            .optional()?
-            .unwrap_or(0.0))
+    /// What `ledger` has spent on `day` (the caller's local `YYYY-MM-DD`).
+    pub fn model_spend(&self, ledger: SpendLedger, day: &str) -> Result<f64> {
+        let sql = format!("SELECT cost_usd FROM {} WHERE day = ?1", ledger.table());
+        Ok(self.conn.query_row(&sql, params![day], |r| r.get(0)).optional()?.unwrap_or(0.0))
     }
 
-    pub fn add_suggest_spend(&self, day: &str, cost_usd: f64) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO suggest_spend (day, calls, cost_usd) VALUES (?1, 1, ?2)
+    pub fn add_model_spend(&self, ledger: SpendLedger, day: &str, cost_usd: f64) -> Result<()> {
+        let sql = format!(
+            "INSERT INTO {} (day, calls, cost_usd) VALUES (?1, 1, ?2)
              ON CONFLICT(day) DO UPDATE SET calls = calls + 1, cost_usd = cost_usd + excluded.cost_usd",
-            params![day, cost_usd],
-        )?;
+            ledger.table()
+        );
+        self.conn.execute(&sql, params![day, cost_usd])?;
         Ok(())
     }
 }
@@ -230,10 +242,14 @@ mod tests {
     #[test]
     fn spend_accumulates_per_day() {
         let store = Store::open_in_memory().unwrap();
-        assert_eq!(store.suggest_spend("2026-10-15").unwrap(), 0.0);
-        store.add_suggest_spend("2026-10-15", 0.25).unwrap();
-        store.add_suggest_spend("2026-10-15", 0.5).unwrap();
-        assert!((store.suggest_spend("2026-10-15").unwrap() - 0.75).abs() < 1e-9);
-        assert_eq!(store.suggest_spend("2026-10-16").unwrap(), 0.0);
+        let next = SpendLedger::NextPrompt;
+        assert_eq!(store.model_spend(next, "2026-10-15").unwrap(), 0.0);
+        store.add_model_spend(next, "2026-10-15", 0.25).unwrap();
+        store.add_model_spend(next, "2026-10-15", 0.5).unwrap();
+        assert!((store.model_spend(next, "2026-10-15").unwrap() - 0.75).abs() < 1e-9);
+        assert_eq!(store.model_spend(next, "2026-10-16").unwrap(), 0.0);
+        assert_eq!(store.model_spend(SpendLedger::Clip, "2026-10-15").unwrap(), 0.0);
+        store.add_model_spend(SpendLedger::Clip, "2026-10-15", 0.1).unwrap();
+        assert!((store.model_spend(next, "2026-10-15").unwrap() - 0.75).abs() < 1e-9);
     }
 }

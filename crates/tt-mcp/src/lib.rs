@@ -22,7 +22,7 @@ pub mod port;
 mod suggest;
 
 pub use inbox::InboxHost;
-pub use suggest::{SuggestAnswer, SuggestHost, SuggestRequest};
+pub use suggest::{ClipAnswer, ClipOffer, ClipRequest, SuggestAnswer, SuggestHost, SuggestRequest};
 
 use serde_json::{Value, json};
 use tt_store::{EventInput, McpCallInput, Store};
@@ -262,6 +262,8 @@ pub struct Dispatcher {
     calendar_sources: Option<Vec<String>>,
     /// Test hook: keeps `next_prompt` off the real settings file.
     next_prompt_settings: Option<tt_config::NextPromptSettings>,
+    /// Test hook: keeps `clip_suggest` off the real settings file.
+    clip_settings: Option<tt_config::ClipSuggestSettings>,
 }
 
 /// What the transport knows that the body cannot say: which app terminal the agent sits in
@@ -401,6 +403,8 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("inbox_ack", "Acknowledge delivered notes", Effect::Replace),
     ("next_prompt", "Suggest the next prompt", Effect::Read),
     ("next_prompt_taken", "Record a taken suggestion", Effect::Write),
+    ("clip_suggest", "Suggest what to copy", Effect::Read),
+    ("clip_copied", "Record a copied offer", Effect::Write),
 ];
 
 /// Why a tool call produced no result — [`Dispatcher::tools_call`] says what each becomes.
@@ -464,6 +468,7 @@ impl Dispatcher {
             suggest_host: None,
             calendar_sources: None,
             next_prompt_settings: None,
+            clip_settings: None,
         }
     }
 
@@ -507,6 +512,13 @@ impl Dispatcher {
     #[cfg(test)]
     fn with_next_prompt_settings(mut self, settings: tt_config::NextPromptSettings) -> Dispatcher {
         self.next_prompt_settings = Some(settings);
+        self
+    }
+
+    /// Test hook — see [`Dispatcher::clip_settings`].
+    #[cfg(test)]
+    fn with_clip_settings(mut self, settings: tt_config::ClipSuggestSettings) -> Dispatcher {
+        self.clip_settings = Some(settings);
         self
     }
 
@@ -690,6 +702,8 @@ impl Dispatcher {
             "inbox_ack" => self.inbox_ack(args, now_ms, ctx),
             "next_prompt" => self.next_prompt(args, now_ms, ctx),
             "next_prompt_taken" => self.next_prompt_taken(args),
+            "clip_suggest" => self.clip_suggest(args, now_ms, ctx),
+            "clip_copied" => self.clip_copied(args),
             _ => return Err(ToolError::Unknown),
         };
         result.map_err(ToolError::Failed)
@@ -1706,6 +1720,30 @@ pub fn tool_definitions() -> Value {
                     "edited": { "type": "boolean", "description": "Whether they changed it before sending." },
                 },
                 "required": ["edited"],
+            },
+        },
+        {
+            "name": "clip_suggest",
+            "description": "For the towles-tool Claude mod only; agents never call it. Asks one context-free model question for which strings of the agent's last message the user would copy, within their daily budget.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "answer": { "type": "string", "description": "The agent's last message." },
+                    "taskId": { "type": "integer", "description": "The session's board task, for its goal." },
+                },
+                "required": ["answer"],
+            },
+        },
+        {
+            "name": "clip_copied",
+            "description": "For the towles-tool Claude mod only; agents never call it. Records that the user copied an offered string.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "index": { "type": "integer", "description": "Which offer, from 0; absent when all were copied." },
+                    "count": { "type": "integer", "description": "How many strings went to the clipboard." },
+                },
+                "required": ["count"],
             },
         },
     ]);

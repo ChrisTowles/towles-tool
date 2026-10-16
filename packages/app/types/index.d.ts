@@ -19,6 +19,9 @@ export type InboxNote = { id: number; body: string; images: string[] }
 /** The last finished turn, as `/next` asks about it. */
 export type TurnLog = { tools: string[]; commands: string[]; answer: string }
 
+/** One string the end-of-turn clipboard question offers, verbatim from the agent's message. */
+export type ClipOffer = { label: string; text: string }
+
 declare module 'claude-code' {
   interface PluginState {
     'towles-tool-app': {
@@ -32,6 +35,8 @@ declare module 'claude-code' {
       /** What `/next` proposed, until a prompt is sent. */
       suggestion: string | null
       asking: boolean
+      /** What the last turn offered to copy; cleared when the next turn starts. */
+      clips: ClipOffer[]
     }
   }
 }

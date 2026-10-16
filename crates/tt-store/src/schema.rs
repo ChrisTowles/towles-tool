@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 28;
+pub(crate) const SCHEMA_VERSION: i64 = 29;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -227,6 +227,15 @@ CREATE TABLE IF NOT EXISTS watched_issues (
 );
 ";
 
+/// v29: the clip suggester's own daily spend ledger.
+const SCHEMA_CLIP_SPEND_V29: &str = "\
+CREATE TABLE IF NOT EXISTS clip_spend (
+    day TEXT PRIMARY KEY,
+    calls INTEGER NOT NULL,
+    cost_usd REAL NOT NULL
+);
+";
+
 const SCHEMA_AGENTS_V21: &str = "\
 CREATE TABLE IF NOT EXISTS agent_sessions (
     agent TEXT PRIMARY KEY,
@@ -335,6 +344,7 @@ impl Store {
         self.migrate_queue_snoozes_until_ci_v27()?;
         self.migrate_issues_assignees_v28()?;
         self.conn.execute_batch(SCHEMA_WATCHED_ISSUES_V28)?;
+        self.conn.execute_batch(SCHEMA_CLIP_SPEND_V29)?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",

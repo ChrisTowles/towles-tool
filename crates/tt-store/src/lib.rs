@@ -32,7 +32,7 @@ mod tasks;
 
 pub use agents::{AgentReminder, AgentSession, TurnOutcome};
 pub use model::*;
-pub use notes::{AgentNote, NoteDelivery, NoteSource};
+pub use notes::{AgentNote, NoteDelivery, NoteSource, SpendLedger};
 
 #[derive(Debug, Error)]
 pub enum Error {

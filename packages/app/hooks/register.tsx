@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, McpToolResult, Register } from 'claude-code'
 
-import type { InboxNote, Snapshot } from '../types'
+import type { ClipOffer, InboxNote, Snapshot } from '../types'
 import {
   SERVER,
   checksToast,
@@ -13,6 +13,7 @@ import {
   taskFor,
   untilLabel,
 } from './band'
+import { COPY_ALL_GAP_MS, clipAnswer, clipLabel, offersFrom } from './clip'
 import { type Appended, midTurnText, promptText, remember, stranded, unseen } from './inbox'
 import { parkArgs } from './park'
 import { emptyLog, logTool, taken, withAnswer } from './suggest'
@@ -24,12 +25,13 @@ const seenNotes = atom({ plugin: 'towles-tool-app', key: 'seenNotes' } as const,
 const lastTurn = atom({ plugin: 'towles-tool-app', key: 'lastTurn' } as const, null)
 const suggestion = atom({ plugin: 'towles-tool-app', key: 'suggestion' } as const, null)
 const asking = atom({ plugin: 'towles-tool-app', key: 'asking' } as const, false)
+const clips = atom({ plugin: 'towles-tool-app', key: 'clips' } as const, [] as ClipOffer[])
 
 const REFRESH_MS = 60_000
 const INBOX_MS = 3_000
 const SUGGEST_DELAY_MS = 250
 /** The tools only this mod calls: the model is kept off them. */
-const MOD_ONLY = /^mcp__plugin_towles-tool-app_towles-tool__(inbox_|next_prompt)/
+const MOD_ONLY = /^mcp__plugin_towles-tool-app_towles-tool__(inbox_|next_prompt|clip_)/
 
 /** A tool's result as JSON: the structured result when the server declares one, else its text. */
 function payload(result: McpToolResult): unknown {
@@ -157,6 +159,43 @@ async function askNext($: EngineInterface): Promise<string> {
   }
 }
 
+/** A turn's question, so a late answer to an older turn never replaces a newer one's. */
+let clipTurn = 0
+
+/** One model call per finished turn; the app skips it for prose and past the budget. */
+async function askClip($: EngineInterface, answer: string) {
+  const turn = ++clipTurn
+  try {
+    const task = (await read($, snapshot))?.task
+    const raw = await call<unknown>($, 'clip_suggest', {
+      answer: clipAnswer(answer),
+      ...(task ? { taskId: task.id } : {}),
+    })
+    if (turn !== clipTurn) return
+    await update($, clips, () => offersFrom(raw))
+  } catch {
+    // App closed or the call failed: nothing is offered.
+  }
+}
+
+type Surface = Parameters<EngineInterface['ui']['copy']>[0]['surface']
+
+/** Several go one at a time, apart, so the clipboard manager keeps each in order. */
+async function copyOffers($: EngineInterface, offers: ClipOffer[], surface: Surface, index?: number) {
+  let copied = 0
+  for (const [i, offer] of offers.entries()) {
+    if (i > 0) await new Promise<void>(done => $.clock.after(COPY_ALL_GAP_MS, done))
+    if ((await $.ui.copy({ text: offer.text, surface })).isCopied) copied++
+  }
+  if (!copied) {
+    $.ui.toast('Nothing reached the clipboard.')
+    return
+  }
+  $.ui.toast(offers.length === 1 ? `Copied ${clipLabel(offers[0]!)}` : `Copied ${copied}, in order`)
+  const args = { count: copied, ...(index === undefined ? {} : { index }) }
+  void call($, 'clip_copied', args).catch(() => {})
+}
+
 async function park($: EngineInterface, args: string): Promise<string> {
   const idea = args.trim() || (await $.ui.selection())?.text || ''
   const task = (await read($, snapshot))?.task ?? null
@@ -222,6 +261,8 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
+      clipTurn++
+      await update($, clips, () => [])
       busy = true
       step = -1
       appended = []
@@ -250,17 +291,21 @@ export const register: Register = on => {
     appended = []
     await update($, lastTurn, () => withAnswer(log, e.answer))
     for (const a of missed) await submitNotes($, a.notes)
+    if (e.reason === 'answer') void askClip($, e.answer)
     await refresh($)
     void takeInbox($)
     return ran
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
     const snap = await read($, snapshot)
-    if (e.props.hasSurvey || !snap || (!snap.task && !snap.meeting)) return next(e)
+    const offers = e.props.isWorking ? [] : await read($, clips)
+    if ((!snap || (!snap.task && !snap.meeting)) && !offers.length) return next(e)
 
     const { Box, Text, Button } = $.ui.resolve(e)
-    const { task, meeting } = snap
+    const task = snap?.task ?? null
+    const meeting = snap?.meeting ?? null
     const soon = !!meeting && (meeting.live || meeting.minutesUntil <= 15)
     const canSuggest = !e.props.isWorking && !!(await read($, lastTurn))
     return (
@@ -281,6 +326,27 @@ export const register: Register = on => {
         {canSuggest && (
           <Button key="next" hotkey="n" plain dimColor onPress={() => void askNext($)}>
             next prompt
+          </Button>
+        )}
+        {offers.map((offer, i) => (
+          <Button
+            key={`clip:${i}`}
+            hotkey={String(i + 1)}
+            plain
+            onPress={press => void copyOffers($, [offer], press.surface, i)}
+          >
+            copy {clipLabel(offer)}
+          </Button>
+        ))}
+        {offers.length > 1 && (
+          <Button
+            key="clip:all"
+            hotkey="a"
+            plain
+            dimColor
+            onPress={press => void copyOffers($, offers, press.surface)}
+          >
+            copy all
           </Button>
         )}
       </Box>

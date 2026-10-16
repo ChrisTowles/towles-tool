@@ -234,6 +234,8 @@ fn tools_list_is_exactly_the_task_pane_attention_calendar_and_mod_families() {
             "inbox_ack",
             "next_prompt",
             "next_prompt_taken",
+            "clip_suggest",
+            "clip_copied",
         ]
     );
 }
@@ -1766,6 +1768,42 @@ impl SuggestHost for FakeSuggest {
             cost_usd: Some(self.0),
         })
     }
+
+    fn clip(&self, request: ClipRequest) -> Result<ClipAnswer, String> {
+        let offer = ClipOffer { label: request.goal.unwrap_or_default(), text: request.answer };
+        Ok(ClipAnswer { items: vec![offer], cost_usd: Some(self.0) })
+    }
+}
+
+fn clip_budgeted(cost: f64, budget: f64, enabled: bool) -> Dispatcher {
+    dispatcher().with_suggest_host(Box::new(FakeSuggest(cost))).with_clip_settings(
+        tt_config::ClipSuggestSettings { daily_budget_usd: budget, enabled, ..Default::default() },
+    )
+}
+
+#[test]
+fn clip_suggest_offers_the_hosts_items_until_the_budget_is_spent() {
+    let mut dispatcher = clip_budgeted(0.5, 1.0, true);
+    let task = dispatcher.store.add_task("t", "doing", None, Some("ship it"), NOW).unwrap();
+    let args = json!({ "answer": "`cargo test`", "taskId": task.id });
+    let first = call_tool(&mut dispatcher, "clip_suggest", args.clone());
+    assert_eq!(first["items"], json!([{ "label": "ship it", "text": "`cargo test`" }]));
+    assert_eq!(first["skipped"], Value::Null);
+    call_tool(&mut dispatcher, "clip_suggest", args.clone());
+    let over = call_tool(&mut dispatcher, "clip_suggest", args);
+    assert_eq!(over["items"], json!([]));
+    assert_eq!(over["skipped"], "budget");
+    let day = suggest::local_day(NOW);
+    let next = dispatcher.store.model_spend(tt_store::SpendLedger::NextPrompt, &day).unwrap();
+    assert_eq!(next, 0.0, "clip spend leaves /next's budget alone");
+}
+
+#[test]
+fn clip_suggest_turned_off_asks_nothing() {
+    let mut dispatcher = clip_budgeted(0.5, 1.0, false);
+    let off = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": "`x`" }));
+    assert_eq!(off["skipped"], "disabled");
+    assert_eq!(call_tool(&mut dispatcher, "clip_copied", json!({ "count": 2 }))["recorded"], true);
 }
 
 fn budgeted(cost: f64, budget: f64) -> Dispatcher {
