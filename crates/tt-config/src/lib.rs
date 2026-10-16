@@ -1200,6 +1200,13 @@ pub fn task_ports_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("task-ports"))
 }
 
+/// Each task's last setup output. *Shared*: the CLI and every app instance
+/// write and read the same file for one task, whichever checkout ran setup.
+pub fn task_setup_logs_dir() -> Result<PathBuf> {
+    let base = dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME);
+    Ok(shared_under(base).join("task-setup-logs"))
+}
+
 /// Reaches scopes *other than* the running process's, which
 /// [`data_dir`]/[`agentboard_dir`] can't. Ignores an auto-detected scope; a
 /// *forced* [`STATE_SCOPE_ENV`] still nests both so tests stay off the real tree.

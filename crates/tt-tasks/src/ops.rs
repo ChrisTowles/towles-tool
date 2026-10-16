@@ -447,17 +447,48 @@ pub fn run_setup(dir: &Path) -> Result<Option<String>> {
         return Ok(None);
     };
     let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
-    let warning = match tt_exec::run_in_dir_with_timeout(&argv[0], &args, dir, SETUP_TIMEOUT) {
+    let result = tt_exec::run_in_dir_with_timeout(&argv[0], &args, dir, SETUP_TIMEOUT);
+    let log = setup_log_path(dir).filter(|path| write_setup_log(path, &argv, &result).is_ok());
+    let see_log = log.map(|path| format!("\nfull output: {}", path.display())).unwrap_or_default();
+    let warning = match result {
         Ok(out) if out.ok() => None,
         Ok(out) => Some(format!(
-            "setup `{}` failed (exit {}) — task kept, fix and re-run it\n{}",
+            "setup `{}` failed (exit {}) — task kept, fix and re-run it\n{}{see_log}",
             argv.join(" "),
             out.exit_code,
             out.stderr.trim()
         )),
-        Err(e) => Some(format!("setup `{}` failed — task kept: {e}", argv.join(" "))),
+        Err(e) => Some(format!("setup `{}` failed — task kept: {e}{see_log}", argv.join(" "))),
     };
     Ok(warning)
+}
+
+/// Where `dir`'s last setup run wrote its output, kept outside the worktree so
+/// it never dirties the tree the removal guard inspects.
+pub fn setup_log_path(dir: &Path) -> Option<PathBuf> {
+    let logs = tt_config::task_setup_logs_dir().ok()?;
+    Some(logs.join(claims::checkout_keyed_filename(dir, "setup.log")))
+}
+
+fn write_setup_log(
+    path: &Path,
+    argv: &[String],
+    result: &tt_exec::Result<tt_exec::Output>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let body = match result {
+        Ok(out) => format!(
+            "$ {}\nexit {}\n\n--- stdout ---\n{}\n--- stderr ---\n{}\n",
+            argv.join(" "),
+            out.exit_code,
+            out.stdout,
+            out.stderr
+        ),
+        Err(e) => format!("$ {}\nfailed to run: {e}\n", argv.join(" ")),
+    };
+    fs::write(path, body)
 }
 
 /// Run `dir`'s declared teardown while it still exists. `Ok(Some)` is a warning: a stuck

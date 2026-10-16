@@ -313,10 +313,17 @@ pub async fn task_write_pasted_images(
     .map_err(|e| e.to_string())
 }
 
-/// `TT_TASK_SETUP` or lockfile detection; `Ok(Some)` carries the retry-able
-/// warning. `task_create` deliberately doesn't run it.
+/// A setup run's answer: the retry-able warning, and where its full output went.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupRun {
+    warning: Option<String>,
+    log_path: Option<String>,
+}
+
+/// `TT_TASK_SETUP` or lockfile detection. `task_create` deliberately doesn't run it.
 #[tauri::command]
-pub async fn task_run_setup(dir: String) -> Result<Option<String>, String> {
+pub async fn task_run_setup(dir: String) -> Result<SetupRun, String> {
     use tracing::Instrument as _;
 
     let span = tracing::info_span!(
@@ -325,15 +332,20 @@ pub async fn task_run_setup(dir: String) -> Result<Option<String>, String> {
         outcome = tracing::field::Empty,
     );
     async move {
-        let result =
-            tauri::async_runtime::spawn_blocking(move || ops::run_setup(&PathBuf::from(dir)))
-                .await
-                .map_err(|e| format!("worktree task failed: {e}"))?
-                .map_err(|e| e.to_string());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let dir = PathBuf::from(dir);
+            let warning = ops::run_setup(&dir).map_err(|e| e.to_string())?;
+            let log_path = ops::setup_log_path(&dir)
+                .filter(|path| path.is_file())
+                .map(|path| path.to_string_lossy().to_string());
+            Ok(SetupRun { warning, log_path })
+        })
+        .await
+        .map_err(|e| format!("worktree task failed: {e}"))?;
         // Three endings: a failed setup still leaves a usable task (hence `Ok`).
         let outcome = match &result {
-            Ok(None) => "ok",
-            Ok(Some(_)) => "warned",
+            Ok(SetupRun { warning: None, .. }) => "ok",
+            Ok(_) => "warned",
             Err(_) => "err",
         };
         tracing::Span::current().record("outcome", outcome);

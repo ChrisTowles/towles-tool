@@ -40,20 +40,22 @@ export function subscribeSummon(reposNow: () => RepoData[], onRouted: () => void
       const toastId = toast.info(folder ? `${folder.name} needs you` : "An agent needs you", {
         description: reason ?? undefined,
         timeout: 0,
-        action:
+        actions:
           folder && session
-            ? {
-                label: "Go",
-                onClick: () => {
-                  uiAction("summon.go", "agentboard");
-                  requestAgentboardNav({
-                    kind: "session",
-                    folderDir: folder.dir,
-                    sessionId: session,
-                  });
-                  onRouted();
+            ? [
+                {
+                  label: "Go",
+                  onClick: () => {
+                    uiAction("summon.go", "agentboard");
+                    requestAgentboardNav({
+                      kind: "session",
+                      folderDir: folder.dir,
+                      sessionId: session,
+                    });
+                    onRouted();
+                  },
                 },
-              }
+              ]
             : undefined,
       });
       toasts.set(id, toastId);

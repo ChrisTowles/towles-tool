@@ -182,11 +182,15 @@ fn lifecycle_new_env_ls_rm() {
     assert_eq!(listed[0]["primary"], true);
     assert_eq!(listed[0]["branch"], "main");
 
+    let other = task_dir(&checkout, "fix-other");
+    std::fs::write(other.join("wip.txt"), "wip").unwrap();
+    tt_git::testing::git(&other, &["add", "wip.txt"]);
+    tt_git::testing::git(&other, &["commit", "-q", "-m", "unlanded"]);
     tt().args(["task", "rm", "fix-other", "--root", &root_s]).assert().success();
-    assert!(!task_dir(&checkout, "fix-other").exists());
+    assert!(!other.exists());
     assert!(
         tt_git::testing::git(&checkout, &["branch", "--list", "fix/other"]).contains("fix/other"),
-        "removing a task never deletes its branch"
+        "removing a task keeps a branch holding unlanded work"
     );
 
     tt().args(["task", "rm", "primary", "--root", &root_s])

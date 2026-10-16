@@ -7,18 +7,18 @@ export const toastManager = createKumoToastManager();
 type ToastOptions = {
   description?: string;
   timeout?: number;
-  /** One trailing button, e.g. a retry. */
-  action?: { label: string; onClick: () => void };
+  /** Trailing buttons, e.g. a retry. */
+  actions?: { label: string; onClick: () => void }[];
 };
 type Variant = "default" | "success" | "error" | "info";
 
 function show(variant: Variant) {
-  return (title: string, { action, ...options }: ToastOptions = {}) =>
+  return (title: string, { actions, ...options }: ToastOptions = {}) =>
     toastManager.add({
       title,
       variant,
       ...options,
-      actions: action ? [{ children: action.label, onClick: action.onClick }] : undefined,
+      actions: actions?.map((a) => ({ children: a.label, onClick: a.onClick })),
     });
 }
 

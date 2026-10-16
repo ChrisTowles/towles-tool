@@ -14,7 +14,13 @@ import { storeAttachTaskPr, storeSetTaskStatus, storeTaskSetWorktree } from "@/l
 import { NotInTauri } from "@/lib/errors";
 import { TaskCreatedSchema } from "@/lib/schemas/task";
 import { invoke } from "@/lib/tauri";
+import { requestAgentboardNav } from "@/lib/agentboard/requests";
+import { nextOpenFileNonce } from "@/lib/agentboard/windows";
+import { uiAction } from "@/lib/ui-action";
 import { createTaskForSubmit } from "./helpers";
+
+/** Mirrors `SetupRun` in `task.rs`. */
+type SetupRun = { warning: string | null; logPath: string | null };
 
 export type TaskCreation = {
   openTaskForms: Set<string>;
@@ -114,29 +120,42 @@ export function useTaskCreation(args: {
   // Setup can fail without invalidating the task — give it a one-click retry.
   async function retrySetup(dir: string) {
     markSetupRunning(dir);
-    const result = await invoke<string | null>("task_run_setup", { dir });
+    const result = await invoke<SetupRun>("task_run_setup", { dir });
     clearSetupRunning(dir);
     result.match({
-      ok: (warning) => {
-        if (warning) toast(warning, { action: retryAction(dir) });
+      ok: (run) => {
+        if (run.warning) toast(run.warning, { actions: setupActions(dir, run) });
         else toast("setup succeeded");
       },
       err: (e) => toast(e.message),
     });
   }
 
-  function retryAction(dir: string) {
-    return { label: "Retry", onClick: () => void retrySetup(dir) };
+  function setupActions(dir: string, run: SetupRun) {
+    const retry = { label: "Retry", onClick: () => void retrySetup(dir) };
+    const { logPath } = run;
+    if (!logPath) return [retry];
+    const openLog = () => {
+      uiAction("agentboard.setup_log_open", "agentboard");
+      requestAgentboardNav({
+        kind: "show-file",
+        folderDir: dir,
+        path: logPath,
+        title: "setup log",
+        nonce: nextOpenFileNonce(),
+      });
+    };
+    return [retry, { label: "Open log", onClick: openLog }];
   }
 
   // The pane opens as soon as the worktree exists; setup runs after it.
   function runSetupInBackground(dir: string) {
     markSetupRunning(dir);
-    void invoke<string | null>("task_run_setup", { dir }).then((result) => {
+    void invoke<SetupRun>("task_run_setup", { dir }).then((result) => {
       clearSetupRunning(dir);
       result.match({
-        ok: (warning) => {
-          if (warning) toast(warning, { action: retryAction(dir) });
+        ok: (run) => {
+          if (run.warning) toast(run.warning, { actions: setupActions(dir, run) });
         },
         err: (e) => toast(e.message),
       });

@@ -159,6 +159,7 @@ pub fn remove_task(
             release_task_ports(&sr.checkout, &path, &name);
         }
         state_cleanup(state_scope.as_deref(), &mut messages);
+        remove_setup_log(&dir);
         return Ok(RemoveOutcome::Removed(RemovedTask {
             name,
             dir,
@@ -200,10 +201,14 @@ pub fn remove_task(
         .and_then(|repo| repo.head_branch())
         .filter(|b| !b.is_empty());
     let mut landed = false;
+    let mut doomed_branch = None;
     if let Some(branch) = &branch {
         let refs = base_refs(&sr.checkout);
         if *branch != refs.base {
             let work = work_state(&refs, &dir, &format!("refs/heads/{branch}"), dirty, unreachable);
+            if branch_is_disposable(&work) {
+                doomed_branch = Some(branch.clone());
+            }
             match (work.unlanded, work.landed) {
                 (0, Some(via)) => {
                     landed = true;
@@ -256,10 +261,14 @@ pub fn remove_task(
         }
     }
     let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
+    if let Some(branch) = doomed_branch {
+        messages.push(delete_branch_message(&sr.checkout, &branch));
+    }
     if let Ok(path) = port_registry_path(&sr.checkout, opts.ports_dir.as_deref()) {
         release_task_ports(&sr.checkout, &path, &name);
     }
     state_cleanup(state_scope.as_deref(), &mut messages);
+    remove_setup_log(&dir);
     Ok(RemoveOutcome::Removed(RemovedTask {
         name,
         dir,
@@ -267,6 +276,29 @@ pub fn remove_task(
         messages,
         landed,
     }))
+}
+
+/// Deleting the branch loses nothing: it added no commits of its own, or a
+/// content check proves every one reached the base. A bare `[gone]` upstream is
+/// not proof — the remote may have been deleted unmerged.
+fn branch_is_disposable(work: &crate::landed::WorkState) -> bool {
+    work.unlanded == 0
+        && (work.total_commits == 0 || work.landed.is_some_and(|via| via.is_content_proof()))
+}
+
+fn delete_branch_message(checkout: &Path, branch: &str) -> String {
+    match super::repo_at(checkout)
+        .and_then(|repo| repo.delete_branch(branch).map_err(|e| OpsError::Git(e.to_string())))
+    {
+        Ok(()) => format!("deleted branch {branch}"),
+        Err(_) => format!("could not delete branch {branch} — remove it with `git branch -D`"),
+    }
+}
+
+fn remove_setup_log(dir: &Path) {
+    if let Some(path) = super::setup_log_path(dir) {
+        let _ = fs::remove_file(path);
+    }
 }
 
 /// No `.git` entry and no registration in the primary: a directory a past
@@ -408,6 +440,9 @@ pub struct CleanReport {
     pub dry_run: bool,
     pub removed: Vec<FinishedTask>,
     pub kept: Vec<KeptTask>,
+    /// Local branches no worktree has checked out whose work is provably in
+    /// the base — what removals that predate branch deletion left behind.
+    pub pruned_branches: Vec<String>,
     pub swept_state_dirs: Vec<PathBuf>,
     /// Port-registry files swept because their checkout no longer exists — the
     /// one leak the load-time prune can't reach, since nothing ever renders a
@@ -526,20 +561,11 @@ pub fn clean_tasks(
         };
         match remove_task(&rm, &mut |_| {}) {
             Ok(RemoveOutcome::Removed(r)) => {
-                let mut messages = r.messages;
-                match crate::ops::repo_at(&sr.checkout).and_then(|repo| {
-                    repo.delete_branch(&branch).map_err(|e| OpsError::Git(e.to_string()))
-                }) {
-                    Ok(()) => messages.push(format!("deleted branch {branch}")),
-                    Err(_) => messages.push(format!(
-                        "could not delete branch {branch} — remove it with `git branch -D`"
-                    )),
-                }
                 removed.push(FinishedTask {
                     name,
                     branch,
                     reason: reason.clone(),
-                    messages,
+                    messages: r.messages,
                     dir: r.dir,
                     checkout: r.checkout,
                 });
@@ -550,6 +576,8 @@ pub fn clean_tasks(
             Err(e) => keep(name, branch, vec![e.to_string()]),
         }
     }
+
+    let pruned_branches = prune_landed_branches(&sr.checkout, &refs, opts.dry_run, &mut warnings);
 
     // Sweep per-scope instance state whose checkout no longer exists — the
     // dirs `tt task rm` never touches. If the checkout itself has no scope,
@@ -610,11 +638,45 @@ pub fn clean_tasks(
         dry_run: opts.dry_run,
         removed,
         kept,
+        pruned_branches,
         swept_state_dirs,
         swept_port_registries,
         live_scopes,
         warnings,
     })
+}
+
+fn prune_landed_branches(
+    checkout: &Path,
+    refs: &super::BaseRefs,
+    dry_run: bool,
+    warnings: &mut Vec<String>,
+) -> Vec<String> {
+    let Ok(repo) = super::repo_at(checkout) else {
+        return Vec::new();
+    };
+    let checked_out: BTreeSet<String> = repo
+        .worktrees()
+        .iter()
+        .filter_map(|wt| super::repo_at(Path::new(&wt.dir)).ok()?.head_branch())
+        .collect();
+    let mut pruned = Vec::new();
+    for branch in repo.local_branches() {
+        if branch == refs.base || checked_out.contains(&branch) {
+            continue;
+        }
+        let work = work_state(refs, checkout, &format!("refs/heads/{branch}"), 0, 0);
+        if !branch_is_disposable(&work) {
+            continue;
+        }
+        if !dry_run && let Err(e) = repo.delete_branch(&branch) {
+            warnings.push(format!("could not delete branch {branch}: {e}"));
+            continue;
+        }
+        pruned.push(branch);
+    }
+    pruned.sort();
+    pruned
 }
 
 /// Whether a docker container owned by this task publishes `port`.
