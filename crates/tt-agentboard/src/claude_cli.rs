@@ -2,11 +2,6 @@
 //! sessions: which processes are up, and the pid, cwd, session id and start
 //! time of each. Its `status` is deliberately not read — it sits behind the
 //! cache below, so busy/not-busy comes from the journal and the PTY instead.
-//!
-//! The parse is pure and fixture-tested; the fetch is a thin subprocess
-//! wrapper with a process-wide cache: the host fetches once per 2s scan, off the
-//! engine lock, for the watcher and the agent snapshot; the ~170ms CLI call is
-//! gated to roughly once a minute by [`crate::watchers::claude_code::CLI_CACHE_TTL_MS`].
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -17,15 +12,12 @@ use std::time::{Duration, Instant};
 pub struct CliAgent {
     pub pid: i32,
     pub cwd: String,
-    /// `interactive` or `background`.
     pub kind: Option<String>,
     pub started_at: Option<i64>,
     pub session_id: String,
     pub name: Option<String>,
 }
 
-/// Parse the CLI's JSON array. Tolerant: entries missing pid/sessionId are
-/// skipped; unknown fields ignored.
 pub fn parse_agents(json: &str) -> Vec<CliAgent> {
     let Ok(entries) = serde_json::from_str::<Vec<serde_json::Value>>(json) else {
         return Vec::new();
@@ -58,9 +50,6 @@ pub fn read_session_file(sessions_dir: &Path, pid: i32) -> Option<CliAgent> {
 const CLI_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// One scan's result. **An empty `agents` means nothing unless `ok`** — the
-/// two were the same value for a long time, so a `claude` that could not run at
-/// all read exactly like a quiet machine, and 628 consecutive failures over
-/// eighteen days looked from the board like "no agents running".
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AgentScan {
     pub agents: Vec<CliAgent>,
@@ -73,8 +62,6 @@ impl AgentScan {
         Self { agents: Vec::new(), ok: false }
     }
 
-    /// `Ok` only when a good scan does not list `session_id`: a failed scan
-    /// proves nothing either way.
     pub fn ensure_session_ended(&self, session_id: &str) -> Result<(), &'static str> {
         if !self.ok {
             return Err("couldn't ask `claude` whether this session is still running");
@@ -93,13 +80,9 @@ pub fn fetch_agents() -> AgentScan {
     scan_from(tt_exec::run_with_timeout("claude", &["agents", "--all", "--json"], CLI_TIMEOUT))
 }
 
-/// The subprocess result read as a scan — split out from [`fetch_agents`] so
-/// every failure branch is reachable from a test without a real `claude`.
 fn scan_from(result: tt_exec::Result<tt_exec::Output>) -> AgentScan {
     match result {
         Ok(out) if out.ok() => {
-            // Distinguish "parsed, no live sessions" from "output wasn't a JSON
-            // array at all" — only the latter is a parse failure worth warning on.
             if serde_json::from_str::<Vec<serde_json::Value>>(&out.stdout).is_err() {
                 log::warn!("claude agents scan: could not parse CLI output as JSON");
                 return AgentScan::failed();
@@ -150,9 +133,6 @@ static CACHE: Mutex<Option<ScanCache>> = Mutex::new(None);
 /// [`fetch_agents`] behind a process-wide cache: at most one CLI call per
 /// `ttl`. All agentboard consumers share the same snapshot.
 ///
-/// A failed scan is cached too, on a doubling TTL — otherwise a `claude` that
-/// cannot start is respawned on every tick forever, which is exactly what the
-/// telemetry caught.
 pub fn fetch_agents_cached(ttl: Duration) -> AgentScan {
     let mut failures = 0;
     {
@@ -170,8 +150,6 @@ pub fn fetch_agents_cached(ttl: Duration) -> AgentScan {
     scan
 }
 
-/// Consecutive failed scans right now — 0 whenever the last one succeeded.
-/// What the board reads to say "agent status unavailable" out loud.
 pub fn consecutive_scan_failures() -> u32 {
     CACHE.lock().unwrap().as_ref().map_or(0, |entry| entry.failures)
 }
@@ -192,8 +170,6 @@ mod tests {
         assert!(scan_from(out(1, "")).ensure_session_ended("gone").is_err());
     }
 
-    /// The bug this whole type exists for: for eighteen days the scan exited 1
-    /// on every call, and the board read that as a quiet machine.
     #[test]
     fn a_failed_scan_is_not_an_empty_one() {
         let empty = scan_from(out(0, "[]"));

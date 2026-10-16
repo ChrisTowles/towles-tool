@@ -510,7 +510,7 @@ mod tests {
     }
 
     /// A slashed branch name in a packed repo has no `refs/heads/<prefix>`
-    /// directory, so registering its ref used to fail and leave the watch set.
+    /// directory, so registering its ref must not fail and leave the watch set.
     #[test]
     fn multi_file_notifier_registers_a_file_whose_parent_does_not_exist_yet() {
         let root = tempfile::tempdir().unwrap();

@@ -6,12 +6,10 @@
 //! that nothing can crop by title (Wayland refuses a client its own position).
 //!
 //! **Fullscreen on a chosen output answers both.** The window owns a whole monitor, so its
-//! geometry *is* its rect — known, stable, croppable — and it forces the window
-//! unoccluded, which matters: an occluded Wayland surface gets no frame callbacks, so a
-//! vsync-paced pane stalls rather than slowing and shows a stale frame while the code is
-//! healthy. The output picked is the *test* monitor (`x > 0`), never the primary. The
-//! command stays in the handler list unconditionally, so the *body* refuses without the
-//! `wdio` feature.
+//! geometry *is* its rect, and it is forced unoccluded (an occluded Wayland surface gets no
+//! frame callbacks, so a vsync-paced pane shows a stale frame). The output picked is the
+//! *test* monitor (`x > 0`), never the primary.
+
 use serde::Serialize;
 
 /// Where the window ended up, in the compositor's global coordinate space —
@@ -23,21 +21,12 @@ pub struct MonitorRect {
     pub y: i32,
     pub width: i32,
     pub height: i32,
-    /// Connector name (`HDMI-A-2`), for the log line — matching `cosmic-randr`.
     pub monitor: String,
-    /// False when the machine has only one monitor and the window had to
-    /// fullscreen over the primary. The capture is still valid; the caller may
-    /// want to say out loud that it covered the user's screen.
     pub is_test_monitor: bool,
-    /// Whether the window is now fullscreen (false after a restore call).
     pub fullscreen: bool,
 }
 
 /// Fullscreen the automated window on the test monitor (or restore it).
-///
-/// Returns the rect to crop a desktop screenshot to. GTK is main-thread-only,
-/// so the work is marshalled there the same way `tt_pane::commands` does it —
-/// a command body runs on a worker pool.
 #[tauri::command]
 pub async fn wdio_place_on_test_monitor(
     window: tauri::WebviewWindow,
@@ -65,9 +54,6 @@ fn place(window: &tauri::WebviewWindow, fullscreen: bool) -> Result<MonitorRect,
         .ok_or_else(|| "the GTK window has no screen".to_string())?
         .display();
 
-    // The test monitor is the one that doesn't start at the origin. The primary
-    // always does, so this is the same "x > 0" rule the benchmarks use, and it
-    // degrades to the primary on a single-monitor machine rather than failing.
     let count = display.n_monitors();
     let mut chosen = 0;
     let mut is_test_monitor = false;
@@ -90,9 +76,7 @@ fn place(window: &tauri::WebviewWindow, fullscreen: bool) -> Result<MonitorRect,
     if fullscreen {
         let screen =
             GtkWindowExt::screen(&win).ok_or_else(|| "the GTK window has no screen".to_string())?;
-        // `fullscreen_on_monitor` is the only way a Wayland client reaches a
-        // *chosen* output — it cannot position its own toplevel, and Tauri's
-        // `set_fullscreen` targets whichever monitor the window is already on.
+        // The only way a Wayland client reaches a *chosen* output.
         win.fullscreen_on_monitor(&screen, chosen);
     } else {
         win.unfullscreen();

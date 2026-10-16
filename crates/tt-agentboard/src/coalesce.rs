@@ -1,6 +1,6 @@
 //! Burst coalescing for needs-you desktop notifications.
 //!
-//! Several agents going idle together used to ping once each. [`Coalescer`]
+//! Several agents going idle together would ping once each. [`Coalescer`]
 //! holds edges for a short window opened by the first one, then releases them
 //! as a single batch. Time is passed in, never read, and the host owns the
 //! timer: [`Coalescer::push`] says when to come back, [`Coalescer::take_due`]

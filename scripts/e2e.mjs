@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-// Orchestrates the WebdriverIO E2E run against the *real* Tauri shell: build
-// with the `wdio` cargo feature (skip with --no-build), serve the wdio-enabled
-// frontend, run wdio against the launched app's WebView, tear Vite down. Ports
-// come from the rendered `.env`/`.env.local`, never hardcoded: TT_DEV_PORT for
-// Vite, TT_E2E_WEBDRIVER_PORT (else TT_DEV_PORT + 3000) for the WebDriver.
+// Orchestrates the WebdriverIO E2E run against the *real* Tauri shell: build with the `wdio`
+// cargo feature (skip with --no-build), serve the frontend, run wdio, tear Vite down. Ports
+// come from the rendered `.env`/`.env.local`: TT_DEV_PORT, TT_E2E_WEBDRIVER_PORT.
 import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
@@ -86,7 +84,6 @@ function cleanup() {
     try {
       process.kill(-vite.pid); // kill the detached process group
     } catch {
-      /* already gone */
     }
     vite = undefined;
   }
@@ -97,8 +94,6 @@ async function main() {
 
   if (!noBuild) {
     console.log("[e2e] building app with --features wdio …");
-    // Bake devUrl to the dev port so the WebView we navigate to is a trusted
-    // Tauri origin — otherwise IPC invokes are rejected ("not allowed").
     const built = run("cargo", ["build", "-p", "tt-app", "--features", "wdio"], {
       env: {
         ...process.env,
@@ -135,18 +130,11 @@ async function main() {
   const ran = run("bunx", ["wdio", "run", "e2e/wdio.conf.ts"], {
     env: {
       ...process.env,
-      // Forced scope = full state isolation (shared stores included) — the
-      // spawned app can never read or write the real settings/repos files.
       TT_STATE_SCOPE: `e2e-${path.basename(repoRoot)}`,
       TT_DEV_PORT: String(devPort),
       TT_E2E_WEBDRIVER_PORT: String(wdPort),
-      // The service's execute/mock channel (DirectEvalClient) reads the eval
-      // server port from TAURI_WEBDRIVER_PORT (default 4445); align it with the
-      // embedded server port or browser.tauri.execute() hits the wrong port.
       TAURI_WEBDRIVER_PORT: String(wdPort),
       TAURI_WEBVIEW_AUTOMATION: "true",
-      // The e2e suite is a hands-off verification run — don't let the
-      // spawned window steal OS focus.
       TT_NO_FOCUS_STEAL: "1",
     },
   });

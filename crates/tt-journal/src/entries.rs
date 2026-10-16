@@ -1,8 +1,6 @@
 //! Template scaffolding, content creation, listing, and search.
 //!
-//! Ports `templates.ts`, `list.ts`, and `search.ts`. The default template strings are
-//! copied verbatim from `getDefault*Template` in `templates.ts`. As in the TS CLI, an
-//! external template file in `template_dir` (written on first run) takes precedence over
+//! An external template file in `template_dir` (written on first run) takes precedence over
 //! the built-in fallback string.
 
 use crate::tokens::generate_journal_file_info;
@@ -242,12 +240,12 @@ fn insert_daily_line(content: &str, date: NaiveDate, new_line: &str) -> String {
     lines.join("\n")
 }
 
-/// Build meeting content. Ports `createMeetingContent`.
+/// Build meeting content.
 ///
-/// NOTE: the TS built-in fallback string carries trailing spaces on a few lines
+/// NOTE: the built-in fallback string carries trailing spaces on a few lines
 /// (`**Attendees:** `, `- `, `- [ ] `) that the on-disk default template does not. Since
 /// `ensure_templates_exist` always writes the (trailing-space-free) template first, the
-/// fallback is normally unreachable — but we preserve the quirk for a faithful port.
+/// fallback is normally unreachable.
 pub fn create_meeting_content(
     title: &str,
     dt: NaiveDateTime,
@@ -295,8 +293,7 @@ pub fn create_note_content(title: &str, dt: NaiveDateTime, template_dir: Option<
 
 // Listing and classification
 
-/// Recursively collect all `.md` files under `dir`. Ports `collectMarkdownFiles`.
-/// Directory entries are sorted for deterministic output (the TS relies on OS order).
+/// Recursively collect all `.md` files under `dir`, sorted for deterministic output.
 pub fn collect_markdown_files(dir: &Path) -> Vec<PathBuf> {
     let mut results = Vec::new();
     let mut entries: Vec<PathBuf> = match std::fs::read_dir(dir) {

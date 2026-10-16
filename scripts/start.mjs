@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-// Builds tt-app in release mode and runs the binary directly — no installer
-// bundling. Debug builds (`bun run dev`) are fine for iterating, but their
-// unoptimized terminal rendering + IPC path is visibly laggy under everyday use
-// once several worktree tasks + agent sessions are running at once. The "just
-// run it fast" counterpart to `bun run dev`.
+// Builds tt-app in release mode and runs the binary directly, no installer bundling: debug
+// builds (`bun run dev`) are visibly laggy with several tasks running.
 import { spawn, spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -18,17 +15,12 @@ const repoRoot = path.resolve(
 
 const isMac = process.platform === "darwin";
 
-// macOS reads an app's name and icon from the Info.plist of the `.app` its
-// executable sits in; a bare binary has neither, so the Dock shows the generic
-// Unix-executable icon. The `app` bundle target is only a copy of the same
-// release binary plus resources — no dmg, no installer — and launching from
-// inside it keeps stdio inherited. Other platforms skip bundling entirely.
+// macOS takes an app's name and icon from the Info.plist of its `.app`, so the `app` bundle
+// target is built and launched from inside (stdio stays inherited). Other platforms skip it.
 const bundleArgs = isMac ? ["--bundles", "app"] : ["--no-bundle"];
 
-// One `tt` on PATH serves every checkout, so it drifts to whichever worktree
-// installed it last and the plugin's hooks break on a flag that build predates.
-// Warm this is a ~1s fingerprint check; `--force` because the version rarely
-// moves, and its own target dir because sharing the app's thrashes both.
+// One `tt` on PATH serves every checkout, so it drifts to whichever worktree installed it last.
+// `--force` because the version rarely moves, and its own target dir because sharing thrashes both.
 const install = spawnSync(
   "cargo",
   [
@@ -53,8 +45,6 @@ const build = spawnSync(
   withBevyFeature(["build", ...bundleArgs]),
   { stdio: "inherit", cwd: repoRoot, shell: process.platform === "win32" },
 );
-// A build that ran and failed already printed why; one that never launched
-// (no `tauri` on PATH) would otherwise exit 1 with nothing on screen.
 if (build.error) {
   console.error(`[start] ${new SpawnFailed({ command: "tauri", cause: build.error }).message}`);
   process.exit(1);
@@ -69,8 +59,6 @@ const bin = isMac ? macAppBinary() : path.join(
 );
 
 /**
- * Both the bundle and the executable it holds are named after `productName`,
- * which lives in tauri.conf.json — read them off disk rather than restate it.
  * @returns {string}
  */
 function macAppBinary() {

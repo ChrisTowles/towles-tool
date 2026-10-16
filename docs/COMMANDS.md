@@ -176,3 +176,23 @@ CI compiles the fork in exactly one place — the `rust-app` job's two "native
 pane" steps — and only when a change can affect it (`crates/tt-jarvis/**`,
 `crates-tauri/tt-pane/**`, or a workspace/lockfile/toolchain file). Every other
 job, and every release build, is Bevy-free.
+
+## Root `package.json` notes
+
+JSON has no comments, so the reasons behind its non-obvious fields live here.
+
+- **Node `>=24`** stays a prerequisite although Bun is the package manager and
+  script runner: `scripts/*.mjs` and the WebdriverIO e2e suite run on Node.
+- **`trustedDependencies` is deliberately empty.** `bun install` blocks
+  edgedriver's postinstall (an Edge WebDriver download); e2e drives WebKitGTK
+  via `webkit2gtk-driver`, so the "Blocked 1 postinstall" line is expected.
+  Don't `bun pm trust` it.
+- **`overrides` force past a parent's stale pin; drop each when upstream
+  catches up.** `@wdio/native-utils` 2.5.0 fixes `@wdio/tauri-service`'s broken
+  exact pin. The `@codingame/monaco-vscode-*` tree must dedupe to one copy, or
+  two `CommandsRegistry` instances both register
+  `editor.action.measureExtHostLatency` and crash. The rest hold `bun audit`
+  at 0 (advisory fixes a parent's range blocks): `minimatch` ^10 breaks
+  `mocha --ignore` (CLI-only; wdio drives mocha programmatically), and
+  `@puppeteer/browsers` 3.x drops the vulnerable proxy-agent subtree wdio's ^2
+  pulls in, since the suite never downloads a browser.

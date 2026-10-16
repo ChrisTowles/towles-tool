@@ -17,15 +17,9 @@ use raw_window_handle::{
 
 #[cfg(target_os = "macos")]
 pub use raw_window_handle::{AppKitDisplayHandle, AppKitWindowHandle};
-/// Re-exported so embedders (`tt-pane`) build handles from *this* crate's
-/// `raw-window-handle`: two majors in the tree are two distinct `RawWindowHandle` types,
-/// and the handle would silently fail to cross into Bevy.
 pub use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 pub use raw_window_handle::{WaylandDisplayHandle, WaylandWindowHandle};
 
-/// Raw handles for a surface owned by someone else. The `Send + Sync` asserted below is a
-/// real claim about the platform layer: the surface is created and destroyed on the main
-/// thread, and the render thread only ever *presents* to it.
 #[derive(Debug, Clone, Copy)]
 pub struct ForeignSurface {
     window: RawWindowHandle,
@@ -61,9 +55,6 @@ impl HasDisplayHandle for ForeignSurface {
     }
 }
 
-/// Physical pixels, origin at the top-left of the host window's client area. The scale
-/// conversion happens once, in Rust, at the IPC boundary — rounding in the frontend
-/// desyncs the surface from its placeholder by a pixel under fractional scaling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PaneRect {
     pub x: i32,
@@ -73,8 +64,6 @@ pub struct PaneRect {
 }
 
 impl PaneRect {
-    /// Convert a CSS-pixel rect from the frontend into physical pixels. Width and height
-    /// clamp to 1: wgpu rejects a zero-sized swapchain, and a pane mid-layout measures 0.
     pub fn from_css(x: f64, y: f64, width: f64, height: f64, scale: f64) -> Self {
         Self {
             x: (x * scale).round() as i32,
@@ -84,8 +73,6 @@ impl PaneRect {
         }
     }
 
-    /// Flip to AppKit's bottom-left origin, given the host content view's height in the
-    /// same units. Kept here so both origins are written down in one place.
     pub fn to_bottom_left_origin(self, host_height: u32) -> Self {
         Self { y: host_height as i32 - self.y - self.height as i32, ..self }
     }
@@ -109,7 +96,6 @@ mod tests {
 
     #[test]
     fn fractional_scaling_rounds_rather_than_truncates() {
-        // COSMIC's default fractional scale; truncating here shows up as a seam.
         let r = PaneRect::from_css(0.0, 0.0, 100.0, 100.0, 1.25);
         assert_eq!(r.width, 125);
         assert_eq!(r.height, 125);
@@ -124,7 +110,6 @@ mod tests {
 
     #[test]
     fn negative_position_is_preserved() {
-        // A pane scrolled above its container has negative y; clamping is the caller's call.
         let r = PaneRect::from_css(-50.0, -30.0, 100.0, 100.0, 1.0);
         assert_eq!(r.x, -50);
         assert_eq!(r.y, -30);

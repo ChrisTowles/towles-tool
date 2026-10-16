@@ -4,10 +4,6 @@
 //! `~/.config/towles-tool/agentboard/sessions.json`, so a session that was used
 //! survives restarts (its PTY is respawned lazily) — see [`SessionStore::drop_never_used`]
 //! for the one nothing ever ran in, which does not.
-//!
-//! Sits beside `repos.json` (same per-file, not-in-shared-settings pattern; see
-//! [`crate::repos`]). Path-parameterized so tests use a tempdir; `now_ms` is
-//! injected rather than read from the clock.
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
@@ -74,10 +70,7 @@ struct SessionsConfig {
 pub struct SessionStore {
     path: Option<PathBuf>,
     folders: HashMap<String, Vec<SessionRecord>>,
-    /// Per-folder monotonic add counter (names + id salt); see
-    /// [`SessionsConfig`].
     next_seq: HashMap<String, usize>,
-    /// Folder dirs mutated since the last successful `save()`.
     dirty: HashSet<String>,
 }
 
@@ -97,12 +90,10 @@ impl SessionStore {
         Self { path, folders, next_seq, dirty: HashSet::new() }
     }
 
-    /// The persisted records for a folder (empty slice if none yet).
     pub fn sessions_for(&self, dir: &str) -> &[SessionRecord] {
         self.folders.get(dir).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    /// Every folder with its session records (for listing/inspection).
     pub fn iter(&self) -> impl Iterator<Item = (&str, &[SessionRecord])> {
         self.folders.iter().map(|(dir, list)| (dir.as_str(), list.as_slice()))
     }
@@ -171,7 +162,6 @@ impl SessionStore {
         record
     }
 
-    /// Rename the session with `id` (in any folder). Returns whether it changed.
     pub fn rename(&mut self, id: &str, new_name: &str) -> bool {
         for (dir, list) in self.folders.iter_mut() {
             if let Some(rec) = list.iter_mut().find(|r| r.id == id) {
@@ -221,7 +211,6 @@ impl SessionStore {
         false
     }
 
-    /// Remove the session with `id`. Returns whether it was removed.
     pub fn remove(&mut self, id: &str) -> bool {
         for (dir, list) in self.folders.iter_mut() {
             let before = list.len();
@@ -234,7 +223,6 @@ impl SessionStore {
         false
     }
 
-    /// Drop records for folders no longer in `dirs` (called after a repo removal).
     pub fn prune(&mut self, dirs: &HashSet<String>) -> bool {
         let removed: Vec<String> =
             self.folders.keys().filter(|dir| !dirs.contains(*dir)).cloned().collect();
@@ -285,8 +273,6 @@ impl SessionStore {
     }
 }
 
-/// Load the folder→sessions map and next-seq counters from `path` (empty on
-/// missing/corrupt).
 fn load(path: &Path) -> (HashMap<String, Vec<SessionRecord>>, HashMap<String, usize>) {
     let Ok(text) = std::fs::read_to_string(path) else {
         return (HashMap::new(), HashMap::new());
@@ -322,7 +308,6 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "shell 1");
         assert_eq!(list[0].created_at, 1000);
-        // Idempotent once seeded.
         assert!(!store.ensure_default("/r/a", 2000));
         assert_eq!(store.sessions_for("/r/a").len(), 1);
     }
@@ -357,7 +342,6 @@ mod tests {
         assert_eq!(store.sessions_for("/r/agent").len(), 1);
         assert_eq!(store.sessions_for("/r/mixed").len(), 1);
         assert_eq!(store.sessions_for("/r/mixed")[0].id, mixed.id);
-        // Nothing left to drop, and the forgotten folder starts over at one.
         assert!(!store.drop_never_used());
         assert_eq!(store.add("/r/untouched", None, 3).name, "shell 1");
     }
@@ -370,7 +354,6 @@ mod tests {
         assert_eq!(a.name, "shell 1");
         assert_eq!(b.name, "shell 2");
         assert_ne!(a.id, b.id);
-        // Different folder, same time/seq → still distinct (dir is hashed in).
         let c = store.add("/r/b", None, 1);
         assert_ne!(a.id, c.id);
     }
@@ -388,14 +371,11 @@ mod tests {
 
     #[test]
     fn add_remove_add_in_same_millisecond_yields_distinct_ids() {
-        // An id reuse here would let a stale agent-event/PTY-exit race
-        // attribute to the "new" pane instead of the session that produced it.
         let mut store = SessionStore::new(None);
         let a = store.add("/r/a", None, 7);
         assert!(store.remove(&a.id));
         let b = store.add("/r/a", None, 7);
         assert_ne!(a.id, b.id);
-        // Explicitly named adds consume a sequence too — same guarantee.
         let c = store.add("/r/a", Some("build"), 7);
         assert!(store.remove(&c.id));
         let d = store.add("/r/a", Some("build"), 7);
@@ -431,12 +411,9 @@ mod tests {
             store.sessions_for("/r/a")[0].purpose.as_deref(),
             Some("ship the checkout flow")
         );
-        // Unchanged write reports false.
         assert!(!store.set_purpose(&rec.id, Some("ship the checkout flow")));
-        // Blank/None clears it.
         assert!(store.set_purpose(&rec.id, Some("   ")));
         assert_eq!(store.sessions_for("/r/a")[0].purpose, None);
-        // Unknown id is a no-op.
         assert!(!store.set_purpose("nope", Some("x")));
     }
 
@@ -452,10 +429,8 @@ mod tests {
             Some("claude-1")
         );
 
-        // Same link on a later tick: no rewrite of the shared file requested.
         assert!(!store.note_agent(&rec.id, "claude-1"));
 
-        // A different Claude session in the same pane replaces the link.
         assert!(store.note_agent(&rec.id, "claude-2"));
         assert_eq!(
             store.sessions_for("/r/a")[0].last_claude_session_id.as_deref(),

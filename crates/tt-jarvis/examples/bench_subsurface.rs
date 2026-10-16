@@ -4,24 +4,11 @@
 //! entire question the gate asks: does output the compositor must blend into a
 //! parent, rather than potentially scan out directly, cost frames?
 //!
-//! ```sh
-//! cargo run -p tt-jarvis --features linux-harness --example bench_subsurface -- --width 800 --height 600 --no-vsync
-//! ```
-//!
-//! The parent is a bare `xdg_toplevel` this file creates — no GTK, no WebKit — so a
-//! regression can only be the subsurface. Commit *cadence* is a separate question,
-//! answered by `bench_gtk_cadence`. Result on an RTX 3060: within noise of the
-//! standalone baseline (median −1.1%, −1.7% at two sizes).
 
-// Shares the baseline's argument parsing verbatim so the two hosts can never
-// drift on what `--frames`/`--grid` mean. Pulling the file in as a module also
-// pulls in its `main`/reporting systems, which this binary does not call.
 #[path = "bench_standalone.rs"]
 #[allow(dead_code)]
 mod harness;
 
-// The same host the `jarvis_demo` runs on, so what was measured here and what
-// is demonstrated there are the same embedding.
 #[path = "common/wayland_host.rs"]
 #[allow(dead_code)]
 mod wayland_host;

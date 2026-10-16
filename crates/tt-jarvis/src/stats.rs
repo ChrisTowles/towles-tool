@@ -5,19 +5,11 @@
 //! FPS on purpose: a mean hides exactly the failure this looks for, a pane that
 //! matches the baseline on average but stalls whenever the compositor and the render
 //! loop disagree about who owns the frame. That reads as stutter.
-//!
-//! p99 is a *sustained* stutter detector — over a 3600-frame run it describes the
-//! worst 36 frames, so a pane hitching every other second shows up plainly while one
-//! isolated stall doesn't move it at all. That's what `max_us` is for. Both are
-//! reported; only median and p99 gate, since a lone spike is as likely the OS
-//! scheduler as the compositor.
 
 use serde::{Deserialize, Serialize};
 
 /// A recorded run: every frame's duration, in microseconds.
 ///
-/// Microseconds rather than `Duration` so the samples stay `Copy`, sortable and
-/// cheap to accumulate in the render loop's hot path.
 #[derive(Debug, Default, Clone)]
 pub struct FrameLog {
     samples_us: Vec<u32>,
@@ -31,14 +23,12 @@ pub struct FrameStats {
     pub p99_us: u32,
     pub min_us: u32,
     pub max_us: u32,
-    /// Derived from the median, not the mean — see the module docs.
     pub fps_median: f64,
 }
 
 /// The verdict of comparing an embedded run against a standalone baseline.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Comparison {
-    /// Positive = the pane is *slower* than the baseline.
     pub median_regression_pct: f64,
     pub p99_regression_pct: f64,
     pub median_within_budget: bool,
@@ -55,8 +45,6 @@ impl FrameLog {
         Self::default()
     }
 
-    /// Pre-size for a run of roughly `frames` frames, to keep reallocation out
-    /// of the loop being measured.
     pub fn with_capacity(frames: usize) -> Self {
         Self { samples_us: Vec::with_capacity(frames) }
     }
@@ -171,8 +159,6 @@ mod tests {
 
     #[test]
     fn p99_picks_the_tail_not_the_body() {
-        // 2% of frames stalling: the median must not notice, the p99 must.
-        // This is the whole reason the gate has two thresholds.
         let mut samples = vec![1_000u32; 98];
         samples.extend([100_000, 100_000]);
         let stats = log_of(&samples).stats().unwrap();
@@ -182,12 +168,6 @@ mod tests {
 
     #[test]
     fn a_single_outlier_in_a_hundred_does_not_move_p99() {
-        // Not a bug — nearest-rank p99 over 100 samples is the 99th value, and
-        // one bad frame in 100 is by definition a p99.9 event, not a p99 one.
-        // Pinned so nobody "fixes" the percentile to make a lone spike visible:
-        // `max_us` is what reports isolated stalls, and inflating p99 to catch
-        // them would make the gate fire on a single scheduler hiccup during a
-        // 3600-frame run.
         let mut samples = vec![1_000u32; 99];
         samples.push(100_000);
         let stats = log_of(&samples).stats().unwrap();

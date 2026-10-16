@@ -6,7 +6,7 @@
 //!
 //! Three concerns overlap in the env block, in this order: the shell's declared
 //! *identity*, this instance's own vars *scrubbed* so a nested `bun run dev`
-//! can't collide with the outer one (#39), then the *stamps* pointing a Claude
+//! can't collide with the outer one, then the *stamps* pointing a Claude
 //! session here at this pane's IDE server and this window's MCP port.
 
 use std::io::{Read, Write};
@@ -31,7 +31,7 @@ const MAX_SCROLLBACK: usize = 10_000;
 const INPUT_QUEUE_CAP: usize = 1024;
 
 /// Claude Code picks its notification channel from a fixed list of terminals, so
-/// OSC 777 used to arrive only when the app started from a Ghostty window.
+/// OSC 777 arrives only from a Ghostty terminal, so the app claims that identity.
 /// `ghostty` is honest — this VT engine *is* libghostty — while `TERM` stays
 /// generic, since `xterm-ghostty` terminfo isn't on every machine.
 const TERMINAL_IDENTITY_ENV: [(&str, &str); 3] = [

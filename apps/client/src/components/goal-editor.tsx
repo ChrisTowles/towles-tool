@@ -211,9 +211,8 @@ export function GoalEditor({
           </div>
         )}
       </div>
-      {/* Persistent, because the placeholder that used to carry this vanishes
-          on the first keystroke — which is exactly when someone is composing a
-          goal and might want to reference an issue. */}
+      {/* Persistent: a placeholder would vanish on the first keystroke, which is exactly
+          when someone composing a goal might want to reference an issue. */}
       <p className="flex items-center gap-1.5 text-mini text-kumo-subtle">
         <button
           type="button"

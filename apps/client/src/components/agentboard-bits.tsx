@@ -555,8 +555,7 @@ export function PortDriftBadge({ drift }: { drift: PortDrift[] }) {
 }
 
 /** Which branch every git stat here was measured against, and the one place to
- * retarget it — the override used to live in the diff pane's header, and every
- * count in this row is measured from it. Click to edit, blank to auto-detect. */
+ * retarget it. Click to edit, blank to auto-detect. */
 export function ComparedBaseBadge({
   folder,
 }: {

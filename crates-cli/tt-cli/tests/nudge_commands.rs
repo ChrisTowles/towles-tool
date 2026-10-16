@@ -82,8 +82,7 @@ fn a_nudge_from_outside_an_app_terminal_names_nobody() {
 }
 
 /// Put `dirs` on the rail, and hand back a checkout that is deliberately *not*
-/// this repo — no `crates/tt-config` anywhere, the shape the old shell-side
-/// guard could not recognise.
+/// this repo — no `crates/tt-config` anywhere.
 fn track_repos(home: &Path, dirs: &[&Path]) {
     let agentboard = home.join(".config").join(tt_config::TOOL_NAME).join("agentboard");
     std::fs::create_dir_all(&agentboard).unwrap();
@@ -94,10 +93,8 @@ fn track_repos(home: &Path, dirs: &[&Path]) {
     std::fs::write(agentboard.join("repos.json"), config.to_string()).unwrap();
 }
 
-/// The bug this flag exists for: every repo on the rail *except* this one was
-/// dropped in silence, because the guard used to be a shell walk looking for a
-/// `crates/tt-config` ancestor. A `gh pr create` in any of them, run outside an
-/// app terminal, never reached the app.
+/// A `gh pr create` in any repo on the rail, run outside an app terminal, must still reach
+/// the app.
 #[test]
 fn only_if_tracked_nudges_from_a_tracked_repo_that_is_not_this_one() {
     let (_guard, home) = canonical_temp();
@@ -174,8 +171,7 @@ fn a_nudge_from_inside_a_checkout_still_lands_in_the_machine_global_dir() {
     // The regression that ate real nudges: the writer runs wherever the `gh`
     // mutation happened while the app watches a single dir, so any cwd-derived
     // scoping splits the two. `env_remove` (not the forced-empty scope `cli_cmd`
-    // sets) is the point: this exercises the ambient-cwd path from inside a fake
-    // checkout that would previously have derived a scope.
+    // sets) is the point: this exercises the ambient-cwd path from inside a fake checkout.
     let home = TempDir::new().unwrap();
     let checkout = home.path().join("repo");
     std::fs::create_dir_all(checkout.join("crates").join("tt-config")).unwrap();

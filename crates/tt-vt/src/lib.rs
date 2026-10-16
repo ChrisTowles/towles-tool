@@ -221,8 +221,7 @@ mod tests {
     fn kitty_disambiguate_encodes_shift_enter() {
         let mut e = engine(40, 5);
         // Even in legacy mode ghostty's encoder disambiguates Shift+Enter,
-        // using xterm's CSI 27 (modifyOtherKeys-style) form — already better
-        // than the old frontend encoder, which sent a bare \r.
+        // using xterm's CSI 27 (modifyOtherKeys-style) form.
         let shift_enter = KeyEvent { shift: true, ..key_press("Enter", "Enter") };
         assert_eq!(encoded(&mut e, &shift_enter), b"\x1b[27;2;13~");
 
@@ -494,9 +493,8 @@ mod tests {
     #[test]
     fn hard_newline_does_not_set_the_wrap_flag() {
         let mut e = engine(10, 4);
-        // Row 0 fills every column but ends with a real newline — exactly
-        // the case the old "text reaches the last column" heuristic got
-        // wrong by joining unrelated rows.
+        // Row 0 fills every column but ends with a real newline: a "text reaches the last
+        // column" heuristic would wrongly join unrelated rows.
         e.feed(b"0123456789\r\nnext line");
         let frame = e.render().expect("render").expect("first frame");
 
@@ -549,7 +547,7 @@ mod tests {
         assert!(e.render().expect("render").is_none(), "engine is clean");
 
         // A re-shown pane asks for a full repaint even though nothing is
-        // dirty — the frame must exist, be full, and carry every row (#47).
+        // dirty — the frame must exist, be full, and carry every row.
         e.request_full();
         let frame = e.render().expect("render").expect("forced frame");
         assert!(frame.full);

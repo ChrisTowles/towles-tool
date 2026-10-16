@@ -1,16 +1,12 @@
 //! GitHub/git helper domain logic shared by the app and the task machinery.
 //!
-//! This crate is Tauri-free, and [`repo`] reads repositories in-process via
-//! `gix` rather than parsing a `git` subprocess; only [`provision`] spawns one. The rest is pure decision logic that takes
-//! data and returns data, unit-testable without `gh` or a terminal.
+//! This crate is Tauri-free, and [`repo`] reads repositories in-process via `gix`;
+//! only [`provision`] spawns a `git` subprocess.
 //!
-//! - [`repo`] — in-process git: the per-folder [`repo::RepoCache`], refs,
-//!   graph walks, status, diffs, and patch identity. Start there; its module
-//!   docs cover what still shells out to `git` and why.
+//! - [`repo`] — in-process git (cache, refs, graph walks, status, diffs, patch identity).
 //! - [`provision`] — `git init` / `git clone` a new repo onto disk.
-//! - [`branch_name`] — `feature/<n>-<slug>` from an issue (`branch-name.ts`).
-//! - [`task_assign`] — clean-tree/remote guard for assigning an issue to a
-//!   task checkout (the app's issue→task flow).
+//! - [`branch_name`] — `feature/<n>-<slug>` from an issue.
+//! - [`task_assign`] — clean-tree/remote guard for assigning an issue to a task checkout.
 
 pub mod branch_name;
 pub mod provision;

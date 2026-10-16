@@ -7,11 +7,6 @@
 //! - [`usage_totals`] — token accounting deduplicated by `message.id` +
 //!   `requestId`, including cache-read/creation volume.
 //! - Typed content accessors ([`Content::text_blocks`], [`Content::tool_uses`]).
-//!
-//! Read by `tt-claude-sessions` (batch analysis) and `tt-agentboard` (the live
-//! engine); the live-gathering concerns stay there, only the schema/parse
-//! knowledge is here. Everything is tolerant (all fields optional, malformed lines
-//! skipped, unreadable files → empty) and deterministic — no clock, no `$HOME`.
 
 pub mod cwd;
 pub mod models;

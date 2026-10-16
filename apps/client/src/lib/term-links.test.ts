@@ -135,8 +135,8 @@ describe("linkAt (urls)", () => {
   });
 
   it("does not join a full-width row ended by a real newline", () => {
-    // Text fills every column but the engine says it was not soft-wrapped —
-    // exactly the case the old last-column heuristic mis-joined.
+    // Text fills every column but the engine says it was not soft-wrapped — a
+    // last-column heuristic would mis-join it.
     const full = `x`.repeat(COLS - "https://example.com/a".length) + "https://example.com/a";
     expect(full.length).toBe(COLS);
     const lines = [row(full), row("unrelated.rs:1 text")];

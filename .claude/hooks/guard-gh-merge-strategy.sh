@@ -3,12 +3,9 @@
 # reject, and names the strategies that actually work.
 #
 # Why: which strategies a repo permits is *mutable remote state*, so this hook
-# reads it live via `gh repo view` rather than hardcoding it. The previous
-# version baked in "rebase only" (true when written against PR #332); the repo
-# later became squash-only, and the stale hook then blocked the one strategy
-# that worked while recommending the one GitHub rejects -- see issue #348. Any
-# guard that asserts a remote setting from memory drifts the moment it changes,
-# so the check has to be the query, not a comment citing one.
+# reads it live via `gh repo view` rather than hardcoding it. A guard that asserts a
+# remote setting from memory drifts the moment it changes, so the check has to be the
+# query, not a comment citing one.
 #
 # Fails open everywhere: an unparseable payload, a missing `gh`, a network
 # blip, or an unreadable response all allow the command through. A guardrail

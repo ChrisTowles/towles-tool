@@ -4,12 +4,6 @@
 //! this is the scene the pane is actually *for*. It runs forever, has no frame
 //! budget and no exit condition, and is written to look like something worth
 //! putting in a window.
-//!
-//! Everything animates off [`Time::elapsed_secs`] rather than accumulating
-//! per-frame deltas, so the loop is a pure function of elapsed time. A dropped
-//! or long frame changes nothing about where the rings are — which matters here,
-//! because this scene will eventually run at whatever cadence the compositor
-//! gives it, not at a fixed step.
 
 use bevy::camera::Hdr;
 use bevy::color::palettes::basic::WHITE;
@@ -56,11 +50,9 @@ pub fn capture_frame_after(app: &mut App, path: impl Into<String>, after_secs: f
     );
 }
 
-/// Independent rotation rates per axis, in radians/sec.
 #[derive(Component)]
 struct Ring {
     rate: Vec3,
-    /// Phase offset so the rings don't all pass through alignment together.
     phase: f32,
 }
 
@@ -93,7 +85,6 @@ fn spawn(
     let cyan = materials.add(glow(CYAN));
     let amber = materials.add(glow(AMBER));
 
-    // Three concentric torus rings on different axes.
     let ring_specs = [
         (1.90, 0.012, Vec3::new(0.00, 0.55, 0.00), 0.0),
         (1.45, 0.016, Vec3::new(0.42, 0.00, 0.18), 1.1),
@@ -122,7 +113,6 @@ fn spawn(
         ));
     }
 
-    // The core.
     commands.spawn((
         Mesh3d(meshes.add(Sphere::new(0.42))),
         MeshMaterial3d(cyan.clone()),

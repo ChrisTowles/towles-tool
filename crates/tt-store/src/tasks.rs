@@ -1,5 +1,5 @@
 //! Kanban tasks and their GitHub links: create/move/close/archive, the
-//! issue/PR link tables, and the worktree binding (#339's unit of work).
+//! issue/PR link tables, and the worktree binding.
 
 use std::path::Path;
 

@@ -1,13 +1,9 @@
 //! Removing a worktree task and everything bound to it — the sequence, in one
-//! place. A task is three things (#339): a board row, a git worktree, and what
+//! place. A task is three things: a board row, a git worktree, and what
 //! the host attached to that directory, so the *order* is policy, not detail:
-//!
-//! 1. guards run with everything still alive, so a refusal costs nothing;
-//! 2. the host tears down what it owns (PTYs, rail state);
-//! 3. the worktree leaves disk;
-//! 4. the dir is untracked from `repos.json` — skip it and the `prs`/`issues`
-//!    collectors retry `gh`/`git` against a dead path forever;
-//! 5. the board row is **closed last**, recording a [`tt_store::TaskOutcome`].
+//! guards first, then host teardown, the worktree, the `repos.json` untrack
+//! (skip it and the `prs`/`issues` collectors retry a dead path forever), and
+//! the board row **closed last**, recording a [`tt_store::TaskOutcome`].
 //!
 //! It needs all three at once, so neither `tt-tasks` (cycle) nor `tt-app` can host it.
 
@@ -21,18 +17,12 @@ use tt_tasks::ops::{self, RemoveOpts, RemoveOutcome, RemovePhase};
 /// default to nothing, so the CLI implements none of them.
 pub trait RemovalHooks {
     /// A step is starting, so a UI can show it rather than one static label.
-    ///
-    /// [`RemovePhase::StoppingSessions`] fires once the guards have passed (or
-    /// been forced), which is where the app kills the folder's PTYs — so a
-    /// *refused* removal never costs a live Claude session.
     fn on_phase(&mut self, _phase: RemovePhase) {}
 
-    /// The worktree is gone from disk; the app drops the folder's session,
-    /// window and pane records here.
     ///
     /// **Two directories' cached git state go stale, not one**: `dir`'s own and
     /// the *owner* checkout's, whose cached worktree listing still names `dir`.
-    /// Invalidating only one once put a deleted task's row back on the rail.
+    /// Invalidating only one leaves a deleted task's row on the rail.
     /// Returns progress notes, ordered as this step ran.
     fn after_removal(&mut self, _dir: &Path) -> Vec<String> {
         Vec::new()
@@ -99,8 +89,6 @@ pub struct TaskRemoval<'a> {
     pub dir: &'a Path,
     /// The tracked-repo list to untrack `dir` from.
     pub repos_path: &'a Path,
-    /// `None` skips step 5 — a real state for a caller that can't resolve which
-    /// per-checkout store owns the row.
     pub rows: Option<&'a dyn BoardRows>,
     /// Recorded on the board row at step 5 — see [`CloseAs`].
     pub outcome: CloseAs,
@@ -109,10 +97,8 @@ pub struct TaskRemoval<'a> {
     pub on_missing: MissingDir,
 }
 
-/// The outcome step 5 records.
 #[derive(Debug, Clone, Copy)]
 pub enum CloseAs {
-    /// The user said which — recorded as given.
     Chosen(TaskOutcome),
     /// A headless guess from the row's own evidence (merged PR, done status),
     /// overruled to done when git proves the branch landed: a squash merge whose
@@ -136,8 +122,6 @@ pub enum Outcome {
         name: String,
         messages: Vec<String>,
     },
-    /// The guards refused. **Nothing was removed** — not the worktree, not the
-    /// bindings, not the row — so the caller can surface the reasons and retry.
     Blocked {
         name: String,
         blocked: Vec<RmBlocked>,
@@ -158,13 +142,10 @@ pub fn remove_bindings(
     let dir_s = dir.to_string_lossy().to_string();
     let mut messages = Vec::new();
 
-    // A task worktree is never a `repos.json` entry (see `RowRecord`'s doc), so
-    // this only fires on a legacy file written before that rule.
     if let Ok((_, true)) = crate::repos::remove_repo_persisted(repos_path, &dir_s) {
         messages.push("untracked from the agentboard rail".to_string());
     }
 
-    // Last: the worktree is gone, so this can no longer strand anything on disk.
     if let Some(note) = rows.and_then(|rows| rows.close_task_for_worktree(&dir_s, outcome, now_ms))
     {
         messages.push(note);
@@ -184,7 +165,6 @@ pub fn remove_task_and_bindings(
 ) -> Result<Outcome, ops::OpsError> {
     let mut messages = Vec::new();
     let name;
-    // A gone directory has no branch left to probe, so only the row's evidence counts.
     let mut landed = false;
 
     let bindings_only =
@@ -263,7 +243,6 @@ mod tests {
         assert!(notes.iter().any(|n| n.contains("untracked")), "{notes:?}");
         assert!(notes.iter().any(|n| n.contains("closed board task")), "{notes:?}");
         assert!(store.task_for_worktree_dir(dir).unwrap().is_none(), "the binding went");
-        // …but the row survives as the record, closed with the outcome.
         let row = store.task_by_id(id).unwrap();
         assert_eq!(row.outcome.as_deref(), Some("abandoned"));
         assert_eq!(row.status, "doing", "abandoned freezes the status");
@@ -272,7 +251,6 @@ mod tests {
         assert_eq!(left, vec!["/repos/other".to_string()], "only this task's path was untracked");
     }
 
-    /// The rail's normal case, not an error — it still has to be untracked.
     #[test]
     fn remove_bindings_untracks_a_worktree_with_no_board_row() {
         let tmp = tempfile::tempdir().unwrap();
@@ -287,7 +265,6 @@ mod tests {
         assert!(crate::repos::load_repos(&path).is_empty());
     }
 
-    /// A caller with no store still gets the untrack — the half it *can* do.
     #[test]
     fn remove_bindings_without_a_store_still_untracks() {
         let tmp = tempfile::tempdir().unwrap();
@@ -299,7 +276,6 @@ mod tests {
         assert_eq!(notes, vec!["untracked from the agentboard rail".to_string()]);
     }
 
-    /// Silent, not an error: `tt task clean` runs this for every task it sweeps.
     #[test]
     fn remove_bindings_is_quiet_when_there_is_nothing_to_clean() {
         let tmp = tempfile::tempdir().unwrap();
@@ -354,7 +330,6 @@ mod tests {
         assert!(crate::repos::load_repos(&path).is_empty());
     }
 
-    /// The same missing dir named on a command line: a typo must be reported.
     #[test]
     fn fail_on_missing_reports_the_unknown_task() {
         let tmp = tempfile::tempdir().unwrap();
@@ -382,8 +357,6 @@ mod tests {
         assert!(matches!(error, ops::OpsError::NoSuchTask { .. }), "{error}");
     }
 
-    /// Rows are found by the dir they are bound to, so a different worktree's
-    /// removal can never take one.
     #[test]
     fn remove_bindings_leaves_another_worktrees_row_alone() {
         let tmp = tempfile::tempdir().unwrap();

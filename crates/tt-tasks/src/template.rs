@@ -6,12 +6,6 @@
 //! - `${tt:task-name}` — the checkout directory basename, e.g. `task-migrate`
 //! - `${tt:base}`      — the base branch this task's work PRs into
 //! - `${tt:var NAME}`  — the rendered value of `NAME` from an earlier line
-//!
-//! Unknown or malformed tokens are hard errors (a typo must not render as literal text
-//! into a config file); comment lines pass through untouched, so a template can show
-//! example tokens without claiming ports. Rendering is idempotent by construction — the
-//! caller passes the task's current `.env` as `existing` and in-range claims are reused
-//! rather than re-picked, so a re-render never rotates a task's ports.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -217,8 +211,6 @@ mod tests {
 
     #[test]
     fn rerender_reuses_existing_claim_even_when_listening() {
-        // port_free = false everywhere: the task's own server is listening on
-        // 3005, but reuse must still win — re-renders never rotate ports.
         let existing: BTreeMap<String, String> =
             [("UI_PORT".to_string(), "3005".to_string())].into();
         let out =

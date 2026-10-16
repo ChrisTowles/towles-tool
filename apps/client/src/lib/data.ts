@@ -90,7 +90,7 @@ export type TaskWorktree = {
   dir?: string;
 };
 
-/** A task — the unit of work (#339): 0..N issues, 0..N PRs, usually a worktree. */
+/** A task — the unit of work: 0..N issues, 0..N PRs, usually a worktree. */
 export type TaskItem = {
   id: number;
   text: string;

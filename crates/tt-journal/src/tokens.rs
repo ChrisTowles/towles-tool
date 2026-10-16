@@ -1,5 +1,4 @@
-//! Path-template rendering, ported from `src/commands/journal/paths.ts` and the
-//! Monday-of-week helper from `src/lib/date-utils.ts`.
+//! Path-template rendering and the Monday-of-week helper.
 //!
 //! The TS CLI resolves path templates with Luxon (`DateTime.toFormat`). Because both
 //! CLIs share the same settings file, the rendered paths must match byte-for-byte. We
@@ -21,7 +20,7 @@ use tt_config::JournalSettings;
 pub struct JournalFileInfo {
     /// Absolute path (base folder joined with the resolved template).
     pub full_path: PathBuf,
-    /// The Monday used to render `monday:` tokens (for daily notes) or the date itself.
+    /// The Monday rendered by `monday:` tokens (for daily notes), or the date itself.
     pub monday_date: NaiveDate,
     /// The date the path was resolved against.
     pub current_date: NaiveDate,
@@ -35,7 +34,7 @@ pub fn monday_of_week(date: NaiveDate) -> NaiveDate {
     date - Duration::days(back)
 }
 
-/// Slugify a title like the TS does: lowercase, then collapse each run of whitespace to
+/// Slugify a title: lowercase, then collapse each run of whitespace to
 /// a single `-` (`title.toLowerCase().replace(/\s+/g, "-")`). Leading/trailing
 /// whitespace runs also become `-`, matching JS `replace` semantics.
 pub fn slugify(title: &str) -> String {

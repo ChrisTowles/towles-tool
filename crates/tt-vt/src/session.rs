@@ -147,8 +147,6 @@ impl Sender {
                 }
             }
         }
-        // A failed wake means the engine is gone, which the payload send above
-        // would already have caught.
         let _ = self.wake.send(());
         true
     }
@@ -192,20 +190,12 @@ impl Session {
                 }
             };
 
-            // `hidden` picks the render interval outside this closure, so it is
-            // passed rather than captured.
             let apply_control = |engine: &mut Engine, hidden: &mut bool, input: Input| match input {
-                // Bytes never route here; feed defensively rather than panic.
                 Input::Bytes(b) => engine.feed(&b),
                 Input::Resize { cols, rows, cell_width_px, cell_height_px } => {
-                    // A failed resize (zero cols in a layout race) keeps the
-                    // old grid; the next one fixes it.
                     let _ = engine.resize(cols, rows, cell_width_px, cell_height_px);
                 }
                 Input::Scroll(delta) => engine.scroll(delta),
-                // Encoding fails only on allocation; a lost keystroke or wheel
-                // report reads as dropped input, never a crash. Same for the
-                // mouse, focus, selection and scroll arms below.
                 Input::Key(event) => {
                     let _ = engine.key(&event);
                 }
@@ -227,8 +217,6 @@ impl Session {
                 Input::Copy(reply) => {
                     let _ = reply.try_send(engine.copy_selection().ok().flatten());
                 }
-                // An FFI failure reads as pasted-and-lost; NeedsConfirm here
-                // would raise a spurious dialog.
                 Input::Paste { text, force, reply } => {
                     let _ =
                         reply.try_send(engine.paste(&text, force).unwrap_or(PasteOutcome::Pasted));
@@ -242,20 +230,14 @@ impl Session {
                 Input::RequestFull => engine.request_full(),
                 Input::ClearScrollback => engine.clear_scrollback(),
                 Input::Visibility(visible) => *hidden = !visible,
-                // A failed push keeps the old colors; the next change retries.
                 Input::Theme(theme) => {
                     let _ = engine.set_theme(&theme);
                 }
             };
 
-            // Start in the past so the first input renders immediately.
             let mut last_render = Instant::now() - MIN_FRAME_INTERVAL;
             let mut hidden = false;
-            // Bounds the render hold to `SYNC_OUTPUT_MAX_HOLD` from the instant
-            // the application opened its synchronized-output batch.
             let mut sync_since: Option<Instant> = None;
-            // Buffered wakes arrive before disconnect, so a dropped session
-            // still drains its queued input before the loop ends.
             loop {
                 // A drag held past an edge produces no further events, so an
                 // active autoscroll drives the loop on its own clock instead
@@ -288,9 +270,7 @@ impl Session {
                         let since = *sync_since.get_or_insert_with(Instant::now);
                         if let Some(hold) = SYNC_OUTPUT_MAX_HOLD.checked_sub(since.elapsed()) {
                             match wake_rx.recv_timeout(hold) {
-                                // More input — maybe the ESU. Re-drain.
                                 Ok(()) => continue,
-                                // Hold cap reached (or disconnected): render.
                                 Err(_) => break,
                             }
                         }
@@ -304,8 +284,6 @@ impl Session {
                     }
                     match wake_rx.recv_timeout(interval - elapsed) {
                         Ok(()) => continue,
-                        // Interval reached, or disconnected: render what we
-                        // have and let the outer recv end the loop.
                         Err(_) => break,
                     }
                 }
@@ -313,7 +291,6 @@ impl Session {
                     let _ = engine.autoscroll_tick();
                     applied = true;
                 }
-                // A lone wake token an earlier pass already drained.
                 if !applied {
                     continue;
                 }
@@ -337,7 +314,6 @@ impl Session {
                         last_render = Instant::now();
                     }
                     Ok(None) => {}
-                    // Render errors are state bugs, not recoverable I/O.
                     Err(_) => break,
                 }
             }
@@ -364,7 +340,6 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        // Drop our senders so the wake loop can end once every clone is gone.
         self.sender.disconnect();
         if let Some(join) = self.join.take() {
             let _ = join.join();
@@ -408,7 +383,6 @@ mod tests {
     fn stalled_sink_bounds_the_byte_feed() {
         let (session, entered_rx, release_tx) = spawn_parked();
 
-        // First chunk triggers a frame, parking the engine mid-sink.
         assert!(session.send(Input::Bytes(b"hi".to_vec())));
         entered_rx.recv_timeout(TIMEOUT).expect("engine parked in the sink");
 
@@ -416,8 +390,6 @@ mod tests {
         let (count_tx, count_rx) = mpsc::channel::<usize>();
         let handle = std::thread::spawn(move || {
             let mut n = 0;
-            // Capped above the bound so a broken (unbounded) feed terminates
-            // instead of hanging the test.
             while n < MAX_QUEUED_BYTE_CHUNKS + 100 {
                 if !feeder.send(Input::Bytes(vec![b'x'])) {
                     break;
@@ -427,7 +399,6 @@ mod tests {
             }
         });
 
-        // Drain progress until it stalls: the feeder blocks once full.
         let mut accepted = 0;
         while let Ok(n) = count_rx.recv_timeout(STALL_TIMEOUT) {
             accepted = n;
@@ -438,7 +409,6 @@ mod tests {
         );
         assert!(!handle.is_finished(), "the feeder is blocked on backpressure, not finished");
 
-        // Released, the engine drains and the feeder runs to its safety cap.
         let _ = release_tx.send(());
         handle.join().expect("feeder joins once backpressure lifts");
         drop(session);
@@ -463,13 +433,11 @@ mod tests {
                 let _ = satc_tx.send(n);
             }
         });
-        // Wait until the queue is full and the feeder blocks on its next send.
         let mut accepted = 0;
         while accepted < MAX_QUEUED_BYTE_CHUNKS {
             accepted = satc_rx.recv_timeout(TIMEOUT).expect("byte queue fills");
         }
 
-        // With bytes saturated, a control send must still complete promptly.
         let control = session.sender();
         let (done_tx, done_rx) = mpsc::channel::<bool>();
         std::thread::spawn(move || {
@@ -481,7 +449,6 @@ mod tests {
             "control send accepted while the byte queue is full"
         );
 
-        // Confirm control is actually *processed* with a backlog pending.
         let _ = release_tx.send(());
         let (reply_tx, reply_rx) = mpsc::sync_channel::<Option<String>>(1);
         assert!(session.send(Input::Copy(reply_tx)));

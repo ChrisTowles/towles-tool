@@ -1,7 +1,6 @@
-// Auto-bumps a Claude Code plugin's `.claude-plugin/plugin.json` patch version
-// whenever a commit touches that plugin's directory, unless the manifest version
-// was already hand-edited in the same commit. Invoked by `.githooks/pre-commit`,
-// wired up by the root "prepare" script running `git config core.hooksPath`.
+// Auto-bumps a plugin's `.claude-plugin/plugin.json` patch version when a commit touches its
+// directory, unless the manifest version was hand-edited in the same commit. Run by
+// `.githooks/pre-commit` (wired by the root "prepare" script).
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { Result } from "better-result";
@@ -15,10 +14,7 @@ export const PLUGINS = [
   { dir: "packages/app", manifest: "packages/app/.claude-plugin/plugin.json" },
 ];
 
-/**
- * @param {string} version
- * @returns {Result<string, BadVersion>}
- */
+/** @param {string} version @returns {Result<string, BadVersion>} */
 export function nextPatchVersion(version) {
   const parts = version.split(".").map(Number);
   if (parts.length !== 3 || parts.some((n) => !Number.isInteger(n))) {
@@ -28,7 +24,6 @@ export function nextPatchVersion(version) {
 }
 
 /**
- * Pure aside from the injected reader, so it's testable without a real git repo.
  * @param {string[]} stagedFiles
  * @param {Plugin[]} plugins
  * @param {(manifest: string) => { head: string | null; index: string | null }} readVersions */
@@ -60,8 +55,6 @@ function git(args) {
 }
 
 /**
- * `null` when the file is absent at that ref or unparseable — both mean "no
- * committed version to compare".
  * @param {string} ref
  * @param {string} manifest */
 function manifestVersionAt(ref, manifest) {
@@ -78,11 +71,7 @@ function stagedFiles() {
     .filter(Boolean);
 }
 
-/**
- * A malformed version or an unrewritable manifest aborts the commit rather than
- * letting it land with a stale version.
- * @returns {Result<void, BadVersion | VersionLineMissing>}
- */
+/** @returns {Result<void, BadVersion | VersionLineMissing>} */
 export function runPreCommitBump() {
   const toBump = manifestsToBump(stagedFiles(), PLUGINS, (manifest) => ({
     head: manifestVersionAt("HEAD", manifest),
