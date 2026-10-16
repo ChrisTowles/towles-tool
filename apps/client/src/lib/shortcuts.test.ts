@@ -4,9 +4,10 @@ import {
   matchesShortcut,
   SHORTCUTS,
   shortcutHint,
-  tabShortcutId,
+  screenShortcutId,
   withHint,
 } from "./shortcuts";
+import { NAV_ORDER } from "./screens";
 
 // `matches` only reads these fields, so a plain object stands in for a real
 // KeyboardEvent (the test environment is node, without the DOM).
@@ -228,36 +229,16 @@ describe("editable-target override", () => {
   });
 });
 
-describe("tabShortcutId", () => {
-  it("maps an open tab to its digit, in tab order", () => {
-    expect(tabShortcutId(["agentboard", "slack", "board"], "agentboard")).toBe("tab-1");
-    expect(tabShortcutId(["agentboard", "slack", "board"], "board")).toBe("tab-3");
-  });
-
-  it("has no key for a screen that is not open — the digits address tabs", () => {
-    expect(tabShortcutId(["agentboard"], "telemetry")).toBeNull();
-  });
-
-  it("stops at nine, because the bindings do", () => {
-    const nine = [
-      "agentboard",
-      "board",
-      "slack",
-      "doctor",
-      "claude-sessions",
-      "mcp",
-      "telemetry",
-      "task-explorer",
-      "settings",
-    ] as const;
-    expect(tabShortcutId([...nine], "settings")).toBe("tab-9");
-    expect(tabShortcutId([...nine.slice(0, 8), "board", "settings"], "settings")).toBeNull();
+describe("screenShortcutId", () => {
+  it("maps a screen to its sidebar position, open or not", () => {
+    expect(screenShortcutId("agentboard")).toBe("tab-1");
+    expect(screenShortcutId("board")).toBe("tab-2");
+    expect(screenShortcutId("settings")).toBe("tab-9");
   });
 
   it("every id it returns is a real binding", () => {
-    const tabs = ["agentboard", "slack", "board"] as const;
-    for (const id of tabs) {
-      const shortcut = tabShortcutId([...tabs], id);
+    for (const id of NAV_ORDER) {
+      const shortcut = screenShortcutId(id);
       expect(shortcut && SHORTCUTS[shortcut]).toBeDefined();
     }
   });

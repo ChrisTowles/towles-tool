@@ -4,7 +4,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { keyboardScore, latestKeyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import { isInTerminal, isTextField, macKeymap } from "@/lib/keymap";
 import { uiAction } from "@/lib/ui-action";
-import { SCREENS, type RailView, type ScreenId } from "@/lib/screens";
+import { NAV_ORDER, SCREENS, type RailView, type ScreenId } from "@/lib/screens";
 import { useLiveSettingRef } from "./settings";
 
 // Data-driven registry: one definition per binding drives matching, hints and the `?`
@@ -93,7 +93,7 @@ export const SHORTCUTS = defineShortcuts([
     id: `tab-${i + 1}`,
     scope: "global" as const,
     keys: `mod+${i + 1}`,
-    description: i === 0 ? "Jump to tab 1–9" : `Jump to tab ${i + 1}`,
+    description: i === 0 ? "Jump to sidebar screen 1–9" : `Jump to sidebar screen ${i + 1}`,
     hideInHelp: i > 0,
   })),
   {
@@ -425,10 +425,9 @@ export function withHint(label: string, id: string): string {
   return `${label} (${shortcutHint(id)})`;
 }
 
-/** Digits map to *open tabs* in order, so a screen that isn't open (or is past
- * the ninth) has no key to show. */
-export function tabShortcutId(openTabs: readonly ScreenId[], id: ScreenId): string | null {
-  const i = openTabs.indexOf(id);
+/** Digits map to the sidebar's fixed order, open or not, so a key never moves. */
+export function screenShortcutId(id: ScreenId): string | null {
+  const i = NAV_ORDER.indexOf(id);
   return i >= 0 && i < 9 ? `tab-${i + 1}` : null;
 }
 
