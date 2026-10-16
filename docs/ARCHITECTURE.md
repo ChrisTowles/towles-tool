@@ -54,15 +54,13 @@ the CLI and the app can consume it.
   3339 text keeping the calendar's offset, with a generated `starts_at_utc` as
   the sort key — never sort or range on the authored column. See
   [`crates/tt-store/CLAUDE.md`](../crates/tt-store/CLAUDE.md).
-- `tt-collect` — collectors that fill tt.db: calendar via `claude -p` (**off by
-  default** — it burns tokens per tick), issues + PRs + CI runs via `gh`, a watched
-  Slack DM. Collector keys are `claude:calendar`, `issues`, `prs`, `ci`, `slack:dm`
-  — the frontend matches on them. See
+- `tt-collect` — what keeps tt.db and the queue current: the GitHub collectors
+  (issues, watched-label issues, PRs, CI runs via `gh`), the watched Slack DM's sync
+  and its Socket Mode listener, quiet hours, the sweep cache, and `tt task nudge`.
+  All on by default except calendar via `claude -p`, which burns tokens per tick.
+  Collector keys are `claude:calendar`, `issues`, `prs`, `ci`, `slack:dm` — the
+  frontend matches on them. See
   [`crates/tt-collect/CLAUDE.md`](../crates/tt-collect/CLAUDE.md).
-- `tt-agents` — personal Slack agents: routing a message to `@name`, burst
-  debounce, the locked-down `claude -p --restricted` argv, the JSON reply
-  contract, and `execute` (memory, resume, reminders, audit row). The app's
-  `agents.rs` is only the I/O shell. Trust model: **[AGENTS.md](AGENTS.md)**.
 - `tt-mcp` — the transport-free MCP server: the task family, `preview_file`,
   `file_open`, `needs_you`, the calendar family, and the Claude mod's inbox and
   `next_prompt` tools. Served one per app instance over

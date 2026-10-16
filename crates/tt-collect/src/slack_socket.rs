@@ -37,7 +37,7 @@ pub enum Envelope {
 /// What the watcher acts on; everything else acks and is dropped.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SlackEvent {
-    /// Top-level or a thread reply — identical but for the reply's `thread_ts`.
+    /// Top-level or a thread reply.
     Message(MessageEvent),
     /// A reaction added *or* removed: both refresh the same way.
     Reaction(ReactionEvent),
@@ -54,10 +54,6 @@ pub struct MessageEvent {
     /// `file_share` on a shared image, `thread_broadcast` on a reply also sent
     /// to the conversation; anything else is an edit or a delete.
     pub subtype: Option<String>,
-    pub ts: String,
-    /// The parent's ts when this is a reply, else empty.
-    pub thread_ts: String,
-    pub text: String,
 }
 
 /// A `reaction_added`/`reaction_removed` event. These carry no `channel_type`,
@@ -98,12 +94,6 @@ struct RawEvent {
     #[serde(default)]
     subtype: Option<String>,
     #[serde(default)]
-    ts: Option<String>,
-    #[serde(default)]
-    thread_ts: Option<String>,
-    #[serde(default)]
-    text: Option<String>,
-    #[serde(default)]
     item: Option<RawItem>,
 }
 
@@ -141,9 +131,6 @@ fn slack_event(e: RawEvent) -> Option<SlackEvent> {
             channel_type: e.channel_type.unwrap_or_default(),
             user: e.user.unwrap_or_default(),
             subtype: e.subtype,
-            ts: e.ts.unwrap_or_default(),
-            thread_ts: e.thread_ts.unwrap_or_default(),
-            text: e.text.unwrap_or_default(),
         })),
         "reaction_added" | "reaction_removed" => Some(SlackEvent::Reaction(ReactionEvent {
             user: e.user.unwrap_or_default(),
@@ -173,7 +160,7 @@ pub fn is_watched_event(event: &SlackEvent, watched_channel: &str, watch_user_id
 
 /// A newly sent message — top-level, thread reply and shared file alike — rather than
 /// an edit, delete or other housekeeping subtype.
-pub fn is_new_message(msg: &MessageEvent) -> bool {
+fn is_new_message(msg: &MessageEvent) -> bool {
     match &msg.subtype {
         None => true,
         Some(sub) => sub == "file_share" || sub == "thread_broadcast",
@@ -305,27 +292,6 @@ mod tests {
         assert_eq!(msg.channel_type, "im");
         assert_eq!(msg.user, "U_WIFE");
         assert_eq!(msg.subtype, None);
-        assert_eq!(msg.ts, "1720000100.000200");
-        assert_eq!(msg.thread_ts, "", "a top-level message has no parent");
-        assert_eq!(msg.text, "dinner at 7?");
-    }
-
-    #[test]
-    fn parse_thread_reply_carries_its_parent_ts() {
-        let frame = json!({
-            "type": "events_api",
-            "envelope_id": "env-t",
-            "payload": { "event": {
-                "type": "message", "channel": "D07ABC", "channel_type": "im",
-                "user": "U_WIFE", "ts": "1720000200.0", "thread_ts": "1720000100.000200"
-            }}
-        })
-        .to_string();
-        let Envelope::Event { event: Some(SlackEvent::Message(msg)), .. } = parse_envelope(&frame)
-        else {
-            panic!("expected a message event");
-        };
-        assert_eq!(msg.thread_ts, "1720000100.000200");
     }
 
     #[test]
@@ -396,9 +362,6 @@ mod tests {
             channel_type: channel_type.to_string(),
             user: user.to_string(),
             subtype: subtype.map(str::to_string),
-            ts: "1.0".to_string(),
-            thread_ts: String::new(),
-            text: String::new(),
         })
     }
 
