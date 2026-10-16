@@ -7,6 +7,7 @@ import { IS_MAC, installPcEditKeys, setPcKeybindings } from "@/lib/keymap";
 import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
 import { invoke } from "@/lib/tauri";
 import { installConsoleCollector } from "@/lib/wdio-console";
+import { installCrashReporter } from "@/lib/crash-report";
 import { App } from "./App";
 
 // E2E only: load the WebdriverIO Tauri plugin so tests get browser.tauri.execute /
@@ -18,6 +19,9 @@ if (import.meta.env.VITE_WDIO) {
   installConsoleCollector();
   void import("@wdio/tauri-plugin");
 }
+
+// Before the first render, so a crash during it reaches the event log.
+installCrashReporter();
 
 // Mac only, before the first render: the keycaps, the native monitor and every
 // workbench's keymap all wait on this read.

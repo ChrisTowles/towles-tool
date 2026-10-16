@@ -124,6 +124,9 @@ pub fn run_report(bound_mcp_port: Option<u16>) -> DoctorReport {
     let mut tools: Vec<CheckResult> =
         TOOLS.iter().map(|(name, arg, optional)| check_tool(name, arg, *optional)).collect();
     tools.push(check_zig());
+    if cfg!(target_os = "linux") {
+        tools.push(check_webkit());
+    }
     let plugins = check_claude_plugins();
     let agentboard = check_agentboard();
     let stale_tasks = check_stale_tasks();
@@ -303,6 +306,27 @@ fn zig_version_satisfies(version: &str) -> bool {
         (parts.next().flatten(), parts.next().flatten()),
         (Some(ZIG_REQUIRED_MAJOR), Some(ZIG_REQUIRED_MINOR))
     )
+}
+
+/// tt-app links WebKitGTK 4.1; `pkg-config` is how a build finds it, so it is
+/// the probe that predicts whether `cargo build` will.
+fn check_webkit() -> CheckResult {
+    let version = tt_exec::run("pkg-config", &["--modversion", "webkit2gtk-4.1"])
+        .ok()
+        .filter(|out| out.ok())
+        .and_then(|out| extract_version(&out.stdout));
+    webkit_result(version)
+}
+
+fn webkit_result(version: Option<String>) -> CheckResult {
+    CheckResult {
+        name: "webkit2gtk-4.1".to_string(),
+        ok: version.is_some(),
+        warning: version.is_none().then(|| {
+            "not found by pkg-config — install libwebkit2gtk-4.1-dev to build the app".to_string()
+        }),
+        version,
+    }
 }
 
 /// Whether `claude mcp list` lists the `towles-tool` MCP server. Matching the
@@ -497,6 +521,15 @@ fn check_tt_mcp_registered() -> AgentBoardCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webkit_missing_is_amber_with_the_package_to_install() {
+        let missing = webkit_result(None);
+        assert!(!missing.ok);
+        assert!(missing.warning.unwrap_or_default().contains("libwebkit2gtk-4.1-dev"));
+        let found = webkit_result(Some("2.48.1".to_string()));
+        assert!(found.ok && found.warning.is_none());
+    }
 
     #[test]
     fn extract_version_pulls_first_dotted_token() {

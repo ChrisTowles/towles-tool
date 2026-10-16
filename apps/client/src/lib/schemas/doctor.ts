@@ -66,3 +66,18 @@ export const DoctorReportSchema = z.object({
   portHealth: z.array(PortHealthCheckSchema),
   checkout: z.array(CheckoutCheckSchema),
 });
+
+/** `doctor_recent_crashes`: `tt_telemetry::CrashRecord`, newest first. */
+export const CrashRecordListSchema = z.array(
+  z.object({
+    ts: z.string(),
+    kind: z.string(),
+    message: z.string(),
+    location: z.string().nullable(),
+    stack: z.string().nullable(),
+    ttTask: z.string().nullable(),
+    ttBuildSha: z.string().nullable(),
+  }),
+);
+
+export type CrashRecord = z.infer<typeof CrashRecordListSchema>[number];

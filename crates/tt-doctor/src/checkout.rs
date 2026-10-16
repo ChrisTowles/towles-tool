@@ -262,13 +262,28 @@ fn code_server_version(binary: &Path) -> Option<String> {
 
 fn code_server_row(binary: Option<&Path>, version: Option<String>) -> CheckoutCheck {
     match binary {
-        Some(bin) => CheckoutCheck {
-            name: CODE_SERVER_ROW.to_string(),
-            value: version.unwrap_or_else(|| "found".to_string()),
-            ok: true,
-            warning: None,
-            hint: Some(bin.display().to_string()),
-        },
+        Some(bin) => {
+            let pinned = tt_codeserver::install::VERSION;
+            // Off-pin means one from PATH, which the pane's extensions and
+            // workbench patches were never tested against.
+            let warning = version
+                .as_deref()
+                .filter(|v| *v != pinned)
+                .map(|v| format!("{v} is not the pinned {pinned}; the Files pane may misbehave"));
+            // The screen shows the hint before the warning, so an off-pin
+            // binary leads with why it matters.
+            let hint = match &warning {
+                Some(w) => format!("{w} — {}", bin.display()),
+                None => bin.display().to_string(),
+            };
+            CheckoutCheck {
+                name: CODE_SERVER_ROW.to_string(),
+                value: version.unwrap_or_else(|| "found".to_string()),
+                ok: true,
+                warning,
+                hint: Some(hint),
+            }
+        }
         None => CheckoutCheck {
             name: CODE_SERVER_ROW.to_string(),
             value: "not installed".to_string(),
@@ -490,13 +505,24 @@ mod tests {
     #[test]
     fn code_server_present_is_green_with_version_and_path() {
         let bin = PathBuf::from("/data/code-server-dist/4.137.0/bin/code-server");
-        let row = code_server_row(Some(&bin), Some("4.137.0".to_string()));
+        let row = code_server_row(Some(&bin), Some(tt_codeserver::install::VERSION.to_string()));
         assert!(row.ok && row.warning.is_none());
-        assert_eq!(row.value, "4.137.0");
+        assert_eq!(row.value, tt_codeserver::install::VERSION);
         assert_eq!(row.hint.as_deref(), Some(bin.to_str().unwrap()));
 
         let unknown = code_server_row(Some(&bin), None);
         assert_eq!(unknown.value, "found");
+    }
+
+    #[test]
+    fn code_server_off_the_pin_is_amber() {
+        let bin = PathBuf::from("/usr/bin/code-server");
+        let row = code_server_row(Some(&bin), Some("4.90.0".to_string()));
+        assert!(row.ok, "it still runs");
+        let warning = row.warning.unwrap_or_default();
+        assert!(warning.contains(tt_codeserver::install::VERSION), "{warning}");
+        let hint = row.hint.unwrap_or_default();
+        assert!(hint.starts_with(&warning) && hint.ends_with("/usr/bin/code-server"), "{hint}");
     }
 
     #[test]

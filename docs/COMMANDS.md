@@ -55,12 +55,17 @@ so a **new** npm name is published by hand once.
 
 The desktop app ships through **Main build** and **Release**, both over the
 reusable `build.yml`. Every push to main builds and signs the Linux and macOS
-installers, kept as run artifacts for 30 days. To cut a release, bump `version`
+installers, kept as run artifacts for 30 days, and replaces the assets of the
+rolling `main-build` prerelease, whose `latest.json` carries the commit in its
+notes. To cut a release, bump `version`
 in `crates-tauri/tt-app/tauri.conf.json` and tt-app's `Cargo.toml`, merge, and
 dispatch **Release**: it tags `v<version>`, uploads the bundles plus a signed
 `latest.json` to a draft, and publishes the draft only when every platform
-built. Installed apps poll that manifest and offer the update on a banner
-(`tt-app/src/update.rs`); a from-source build never does. The signing key is
+built. Installed apps poll the manifest of their channel (Settings → General →
+Updates: releases, or every push to main, where a different commit is the newer
+build) and offer the update on a banner (`tt-app/src/update.rs`); a
+from-source build never does. An install records the release it replaced, and
+the same settings section rolls back to it. The signing key is
 the `TAURI_SIGNING_PRIVATE_KEY` secret, its public half is in
 `tauri.conf.json`, and losing it strands every installed copy on its version.
 

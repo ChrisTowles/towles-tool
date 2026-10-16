@@ -5,6 +5,19 @@ import { invoke, isTauri } from "@/lib/tauri";
 export type UpdateInfo = {
   currentVersion: string;
   version: string;
+  /** Short commit of a main-channel build; main builds share a version. */
+  build: string | null;
+};
+
+export type UpdateChannel = "stable" | "main";
+
+/** Mirrors `update::UpdateStatus`. */
+export type UpdateStatus = {
+  installed: boolean;
+  currentVersion: string;
+  build: string;
+  channel: UpdateChannel;
+  rollbackTo: string | null;
 };
 
 /** Mirrors `update::UpdateProgress`; `total` is absent when the server sends no length. */
@@ -26,9 +39,14 @@ export function useUpdateAvailable(): UpdateInfo | null {
     let unlisten: (() => void) | undefined;
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
-      unlisten = await listen<UpdateInfo>("update://available", (event) => {
+      const unlistenFound = await listen<UpdateInfo>("update://available", (event) => {
         setUpdate(event.payload);
       });
+      const unlistenCleared = await listen("update://cleared", () => setUpdate(null));
+      unlisten = () => {
+        unlistenFound();
+        unlistenCleared();
+      };
       const pending = await invoke<UpdateInfo | null>("update_pending");
       const found = pending.unwrapOr(null);
       if (found) setUpdate(found);
@@ -63,4 +81,23 @@ export function useUpdateProgress(): number | null {
 /** Download, install and relaunch. Resolves only on failure — success restarts the app. */
 export function installUpdate() {
   return invoke<void>("update_install");
+}
+
+export function updateStatus() {
+  return invoke<UpdateStatus>("update_status");
+}
+
+/** Check the saved channel now; the banner hears the result as events too. */
+export function checkForUpdate() {
+  return invoke<UpdateInfo | null>("update_check_now");
+}
+
+/** Reinstall the release the last install replaced. Resolves only on failure. */
+export function rollbackUpdate() {
+  return invoke<void>("update_rollback");
+}
+
+/** "0.3.0", or "main build abc1234" when the version can't tell builds apart. */
+export function updateLabel(info: UpdateInfo): string {
+  return info.build ? `main build ${info.build}` : info.version;
 }
