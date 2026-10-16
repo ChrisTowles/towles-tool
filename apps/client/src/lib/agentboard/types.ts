@@ -55,7 +55,12 @@ export type SessionData = {
   portDrift?: PortDrift[];
 };
 
-export type LandedVia = "merged" | "rebase-merged" | "squash-merged" | "upstream gone";
+export type LandedVia =
+  | "merged"
+  | "rebase-merged"
+  | "squash-merged"
+  | "PR merged"
+  | "upstream gone";
 
 export type RowTask = {
   id: number;

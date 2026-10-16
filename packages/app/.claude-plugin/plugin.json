@@ -1,7 +1,7 @@
 {
   "name": "towles-tool-app",
   "description": "Bridges Claude Code to the towles-tool desktop app: its loopback-HTTP MCP server for board tasks, the Preview pane and calendar, plus a mod that shows this checkout's task, PR and next meeting above the prompt, delivers notes you send the session from the app (read at the agent's next step), adds /park to file an idea as a backlog task and /next to suggest your next prompt, and a hook that nudges the app to refresh PR/issue data after a `gh pr`/`gh issue` mutation. Requires the app to be running.",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "author": {
     "name": "Chris Towles"
   },

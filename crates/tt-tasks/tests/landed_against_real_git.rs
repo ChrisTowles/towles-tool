@@ -297,7 +297,14 @@ fn a_failing_git_degrades_to_assuming_work_is_present() {
         local: "refs/heads/main".to_string(),
         remote: None,
     };
-    let state = tt_tasks::ops::work_state(&refs, tmp.path(), "refs/heads/feat/x", 0, 0);
+    let state = tt_tasks::ops::work_state(
+        &refs,
+        tmp.path(),
+        "refs/heads/feat/x",
+        0,
+        0,
+        tt_tasks::ops::PrProbe::Skip,
+    );
     assert_eq!(state.landed, None, "an unanswerable probe must never read as merged");
     // `landed: None` is the load-bearing half — `clean` force-deletes a branch
     // only on content proof. The counts are asserted alongside so a change that
@@ -373,4 +380,61 @@ fn a_squash_resolved_differently_from_the_branch_fails_safe() {
     assert_eq!(state.landed, None, "a rewritten patch is no proof of landing");
     assert_eq!(state.unlanded, 1);
     assert!(state.holds_work());
+}
+
+fn rev(dir: &Path, spec: &str) -> String {
+    let repo = tt_git::repo::Repo::open(dir).expect("open repo");
+    repo.resolve(spec).expect("resolves").to_string()
+}
+
+/// A task branch whose PR got a reviewer's fix on top, then squash-merged with
+/// different content: no local probe can see it landed.
+fn reviewed_and_squashed() -> (tempfile::TempDir, String, String) {
+    let tmp = repo();
+    let dir = tmp.path();
+    run(dir, &["checkout", "-qb", "feat/x"]);
+    commit(dir, "feature.txt", "mine");
+    let tip = rev(dir, "HEAD");
+    commit(dir, "feature.txt", "mine, reviewed");
+    let pr_head = rev(dir, "HEAD");
+    run(dir, &["reset", "-q", "--hard", &tip]);
+    run(dir, &["checkout", "-q", "main"]);
+    commit(dir, "feature.txt", "resolved differently");
+    (tmp, tip, pr_head)
+}
+
+#[test]
+fn a_tip_behind_the_merged_prs_final_head_has_landed() {
+    let (tmp, tip, pr_head) = reviewed_and_squashed();
+    assert!(tt_tasks::ops::tip_reached_by(tmp.path(), &tip, &[pr_head]));
+}
+
+#[test]
+fn a_tip_a_force_push_replaced_has_landed() {
+    let (tmp, tip, pr_head) = reviewed_and_squashed();
+    let dir = tmp.path();
+    run(dir, &["checkout", "-q", "--orphan", "rebased"]);
+    commit(dir, "other.txt", "rebased head");
+    let final_head = rev(dir, "HEAD");
+    assert!(tt_tasks::ops::tip_reached_by(dir, &tip, &[final_head.clone(), pr_head]));
+    assert!(!tt_tasks::ops::tip_reached_by(dir, &tip, &[final_head]));
+}
+
+#[test]
+fn work_added_after_the_pr_merged_has_not_landed() {
+    let (tmp, tip, pr_head) = reviewed_and_squashed();
+    let dir = tmp.path();
+    run(dir, &["checkout", "-q", "feat/x"]);
+    commit(dir, "later.txt", "after the merge");
+    let later = rev(dir, "HEAD");
+    assert!(tt_tasks::ops::tip_reached_by(dir, &tip, std::slice::from_ref(&pr_head)));
+    assert!(!tt_tasks::ops::tip_reached_by(dir, &later, &[pr_head]));
+}
+
+#[test]
+fn no_merged_pr_means_not_landed() {
+    let (tmp, tip, _) = reviewed_and_squashed();
+    assert!(!tt_tasks::ops::tip_reached_by(tmp.path(), &tip, &[]));
+    let unreadable = "0123456789abcdef0123456789abcdef01234567".to_string();
+    assert!(!tt_tasks::ops::tip_reached_by(tmp.path(), &tip, &[unreadable]));
 }

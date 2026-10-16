@@ -239,6 +239,7 @@ pub fn work_state(
     branch: &str,
     uncommitted: usize,
     orphaned: u64,
+    prs: PrProbe,
 ) -> crate::landed::WorkState {
     use crate::landed::{LandedVia, WorkState, probe_work_state};
 
@@ -257,10 +258,82 @@ pub fn work_state(
     if proven(&local) {
         return local;
     }
-    match refs.remote.as_deref().map(&probe).filter(&proven) {
-        Some(remote) => remote,
+    let mut state = match refs.remote.as_deref().map(&probe).filter(&proven) {
+        Some(remote) => return remote,
         None => local,
+    };
+    if prs == PrProbe::Gh && state.total_commits > 0 && reached_by_merged_pr(dir, &repo, branch) {
+        state.landed = Some(LandedVia::PrMerged);
+        state.unlanded = 0;
     }
+    state
+}
+
+/// Whether [`work_state`] may ask GitHub for the branch's merged PRs — the network
+/// fallback after every local probe failed. Skipped where a call per poll is too dear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrProbe {
+    Skip,
+    Gh,
+}
+
+/// How long "no merged PR reaches this tip" is trusted before `gh` is asked again.
+const PR_MISS_TTL: Duration = Duration::from_secs(120);
+
+type PrMemo = std::sync::Mutex<BTreeMap<(String, String), (bool, std::time::Instant)>>;
+static PR_MEMO: std::sync::OnceLock<PrMemo> = std::sync::OnceLock::new();
+
+fn reached_by_merged_pr(dir: &Path, repo: &tt_git::repo::Repo, branch: &str) -> bool {
+    let Some(tip) = repo.resolve(branch) else {
+        return false;
+    };
+    let name = match branch.strip_prefix("refs/heads/") {
+        Some(name) => name.to_string(),
+        None if branch == "HEAD" => match repo.head_branch() {
+            Some(name) if !name.is_empty() => name,
+            _ => return false,
+        },
+        None => branch.to_string(),
+    };
+    let key = (name.clone(), tip.to_string());
+    let memo = PR_MEMO.get_or_init(Default::default);
+    if let Some(&(hit, at)) = memo.lock().ok().as_ref().and_then(|m| m.get(&key))
+        && (hit || at.elapsed() < PR_MISS_TTL)
+    {
+        return hit;
+    }
+    let hit = crate::pr::merged_pr_heads(dir, &name)
+        .is_ok_and(|heads| tip_reached_by(dir, &tip.to_string(), &heads));
+    if let Ok(mut m) = memo.lock() {
+        m.insert(key, (hit, std::time::Instant::now()));
+    }
+    hit
+}
+
+/// Is `tip` one of `heads` or behind one? Heads a force-push left unreachable are
+/// fetched by id first; any that still can't be read simply don't count.
+pub fn tip_reached_by(dir: &Path, tip: &str, heads: &[String]) -> bool {
+    if heads.is_empty() {
+        return false;
+    }
+    if heads.iter().any(|head| head == tip) {
+        return true;
+    }
+    let Ok(repo) = repo_at(dir) else {
+        return false;
+    };
+    let missing: Vec<&str> =
+        heads.iter().map(String::as_str).filter(|head| !repo.has_rev(head)).collect();
+    let repo = if missing.is_empty() {
+        repo
+    } else {
+        let _ = tt_git::cli::fetch_refspecs(dir, &missing);
+        match repo_at(dir) {
+            Ok(repo) => repo,
+            Err(_) => return false,
+        }
+    };
+    heads.iter().any(|head| repo.has_rev(head) && repo.is_ancestor(tip, head))
 }
 
 pub fn uncommitted_count(dir: &Path) -> usize {

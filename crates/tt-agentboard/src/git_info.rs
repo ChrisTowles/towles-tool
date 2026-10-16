@@ -37,7 +37,8 @@ pub struct GitInfo {
     /// this drops to 0 after a rebase *or* squash merge, via [`tt_tasks::landed`].
     pub commits_unlanded: i64,
     /// How this branch's work reached `compared_base` — `"merged"`, `"rebase-merged"`,
-    /// `"squash-merged"`, `"upstream gone"` — or `None` when it has not fully landed.
+    /// `"squash-merged"`, `"PR merged"`, `"upstream gone"` — or `None` when it has not
+    /// fully landed.
     pub landed: Option<String>,
     /// Display-only — NOT the rail's nesting key; two clones can share an origin.
     pub origin_url: Option<String>,
@@ -517,7 +518,14 @@ pub fn compute_git_info(
                 local: compared_base.clone(),
                 remote: None,
             };
-            let work = tt_tasks::ops::work_state(&refs, std::path::Path::new(dir), "HEAD", 0, 0);
+            let work = tt_tasks::ops::work_state(
+                &refs,
+                std::path::Path::new(dir),
+                "HEAD",
+                0,
+                0,
+                tt_tasks::ops::PrProbe::Gh,
+            );
             info.commits_unlanded = work.unlanded as i64;
             info.landed = work.landed.map(|via| via.label().to_string());
         }

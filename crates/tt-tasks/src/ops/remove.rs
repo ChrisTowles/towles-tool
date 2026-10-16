@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use super::claims::{port_occupied, port_registry_path, release_task_ports};
 use super::{
-    OpsError, Result, base_refs, dir_names, discover_root, orphaned_count, run_teardown,
+    OpsError, PrProbe, Result, base_refs, dir_names, discover_root, orphaned_count, run_teardown,
     uncommitted_count, work_state,
 };
 use crate::envfile;
@@ -205,7 +205,14 @@ pub fn remove_task(
     if let Some(branch) = &branch {
         let refs = base_refs(&sr.checkout);
         if *branch != refs.base {
-            let work = work_state(&refs, &dir, &format!("refs/heads/{branch}"), dirty, unreachable);
+            let work = work_state(
+                &refs,
+                &dir,
+                &format!("refs/heads/{branch}"),
+                dirty,
+                unreachable,
+                PrProbe::Gh,
+            );
             if branch_is_disposable(&work) {
                 doomed_branch = Some(branch.clone());
             }
@@ -518,8 +525,14 @@ pub fn clean_tasks(
         }
 
         let branch_ref = format!("refs/heads/{branch}");
-        let work =
-            work_state(&refs, &dir, &branch_ref, uncommitted_count(&dir), orphaned_count(&dir));
+        let work = work_state(
+            &refs,
+            &dir,
+            &branch_ref,
+            uncommitted_count(&dir),
+            orphaned_count(&dir),
+            PrProbe::Gh,
+        );
 
         let Some(via) = work.landed else {
             keep(name, branch, vec![format!("active: {}", work.headline())]);
@@ -665,7 +678,7 @@ fn prune_landed_branches(
         if branch == refs.base || checked_out.contains(&branch) {
             continue;
         }
-        let work = work_state(refs, checkout, &format!("refs/heads/{branch}"), 0, 0);
+        let work = work_state(refs, checkout, &format!("refs/heads/{branch}"), 0, 0, PrProbe::Gh);
         if !branch_is_disposable(&work) {
             continue;
         }

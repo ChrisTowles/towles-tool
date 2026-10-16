@@ -141,6 +141,54 @@ pub fn list_open_for_head(checkout: &Path, branch: &str) -> Result<Vec<PullReque
     Ok(value.as_array().map(|list| list.iter().filter_map(parse_pr).collect()).unwrap_or_default())
 }
 
+const MERGED_HEADS_QUERY: &str = "query($owner:String!,$name:String!,$head:String!){repository(owner:$owner,name:$name){pullRequests(headRefName:$head,states:MERGED,first:10){nodes{headRefOid timelineItems(itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT],first:50){nodes{...on HeadRefForcePushedEvent{beforeCommit{oid}}}}}}}}";
+
+/// Every head a merged PR from `branch` ever had: its final one, plus each one a
+/// force-push replaced. A local tip reachable from any of them was part of a PR its
+/// owner chose to merge, whatever the rebase before the squash did to the content.
+pub fn merged_pr_heads(checkout: &Path, branch: &str) -> Result<Vec<String>, String> {
+    let query = format!("query={MERGED_HEADS_QUERY}");
+    let head = format!("head={branch}");
+    let value = gh_json(
+        checkout,
+        &[
+            "api",
+            "graphql",
+            "-f",
+            &query,
+            "-F",
+            "owner={owner}",
+            "-F",
+            "name={repo}",
+            "-f",
+            &head,
+        ],
+    )?;
+    Ok(parse_merged_heads(&value))
+}
+
+pub fn parse_merged_heads(value: &serde_json::Value) -> Vec<String> {
+    let prs = value
+        .pointer("/data/repository/pullRequests/nodes")
+        .and_then(|v| v.as_array())
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut heads = Vec::new();
+    for pr in prs {
+        heads.push(str_field(pr, "headRefOid"));
+        let pushes = pr
+            .pointer("/timelineItems/nodes")
+            .and_then(|v| v.as_array())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        heads.extend(pushes.iter().filter_map(|push| {
+            push.pointer("/beforeCommit/oid").and_then(|v| v.as_str()).map(str::to_string)
+        }));
+    }
+    heads.retain(|oid| !oid.is_empty());
+    heads
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +236,24 @@ mod tests {
         let mut value = fixture(false);
         value["state"] = json!("MERGED");
         assert!(!parse_pr(&value).unwrap().is_open());
+    }
+
+    #[test]
+    fn merged_heads_include_every_force_pushed_before() {
+        let value = json!({ "data": { "repository": { "pullRequests": { "nodes": [
+            { "headRefOid": "final", "timelineItems": { "nodes": [
+                { "beforeCommit": { "oid": "before1" } },
+                {},
+                { "beforeCommit": { "oid": "before2" } }
+            ] } }
+        ] } } } });
+        assert_eq!(parse_merged_heads(&value), ["final", "before1", "before2"]);
+    }
+
+    #[test]
+    fn no_merged_pr_yields_no_heads() {
+        let value = json!({ "data": { "repository": { "pullRequests": { "nodes": [] } } } });
+        assert!(parse_merged_heads(&value).is_empty());
+        assert!(parse_merged_heads(&json!({})).is_empty());
     }
 }
