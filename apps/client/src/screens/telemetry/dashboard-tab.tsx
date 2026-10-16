@@ -220,45 +220,53 @@ function DashboardGrid({
       </ChartCard>
 
       <ChartCard icon={WarningIcon} title="Warnings · errors per day">
-        <ColumnBars
-          label="Warning and error records per day"
-          columns={summary.problemsByDay.map((d, i, all) => ({
-            key: d.day,
-            label: dayTick(d.day, i, all.length),
-            caption: d.warnings + d.errors > 0 ? String(d.warnings + d.errors) : "",
-            segments: [
-              {
-                value: d.warnings,
-                color: seriesColorAt(0),
-                title: `${d.day} · ${d.warnings} warnings of ${d.records} records`,
-              },
-              {
-                value: d.errors,
-                color: seriesColorAt(2),
-                title: `${d.day} · ${d.errors} errors, ${d.failedSpawns} failed spawns`,
-              },
-            ],
-          }))}
-        />
-        <SeriesLegend
-          items={[
-            { name: "warnings", index: 0, note: String(sum(summary.problemsByDay, "warnings")) },
-            { name: "errors", index: 2, note: String(sum(summary.problemsByDay, "errors")) },
-          ]}
-        />
-        {summary.topProblems.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-0.5 text-xs">
-            {summary.topProblems.map((p) => (
-              <li key={p.key} className="flex items-baseline justify-between gap-3">
-                <span className="truncate font-mono" title={p.key}>
-                  {p.key}
-                </span>
-                <span className="font-mono text-mini text-muted-foreground [font-variant-numeric:tabular-nums]">
-                  {p.count}
-                </span>
-              </li>
-            ))}
-          </ul>
+        {summary.topProblems.length === 0 ? (
+          <Empty inline>No warnings or errors in this range.</Empty>
+        ) : (
+          <>
+            <ColumnBars
+              label="Warning and error records per day"
+              columns={summary.problemsByDay.map((d, i, all) => ({
+                key: d.day,
+                label: dayTick(d.day, i, all.length),
+                caption: d.warnings + d.errors > 0 ? String(d.warnings + d.errors) : "",
+                segments: [
+                  {
+                    value: d.warnings,
+                    color: seriesColorAt(0),
+                    title: `${d.day} · ${d.warnings} warnings of ${d.records} records`,
+                  },
+                  {
+                    value: d.errors,
+                    color: seriesColorAt(2),
+                    title: `${d.day} · ${d.errors} errors, ${d.failedSpawns} failed spawns`,
+                  },
+                ],
+              }))}
+            />
+            <SeriesLegend
+              items={[
+                {
+                  name: "warnings",
+                  index: 0,
+                  note: String(sum(summary.problemsByDay, "warnings")),
+                },
+                { name: "errors", index: 2, note: String(sum(summary.problemsByDay, "errors")) },
+              ]}
+            />
+            <ul className="mt-2 flex flex-col gap-0.5 text-xs">
+              {summary.topProblems.map((p) => (
+                <li key={p.key} className="flex items-baseline justify-between gap-3">
+                  <span className="truncate font-mono" title={p.key}>
+                    {p.key}
+                  </span>
+                  <span className="font-mono text-mini text-muted-foreground [font-variant-numeric:tabular-nums]">
+                    {p.count}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </ChartCard>
 

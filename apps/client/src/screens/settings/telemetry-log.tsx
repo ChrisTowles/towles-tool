@@ -43,7 +43,7 @@ export function TelemetryStorageRow({ flush }: { flush: Flush }) {
         storage
           ? storage.files === 0
             ? "No event-log files yet."
-            : `${storage.files} daily files, ${fmtBytes(storage.bytes)}, since ${storage.oldest}.`
+            : `${storage.files} daily ${storage.files === 1 ? "file" : "files"}, ${fmtBytes(storage.bytes)}, since ${storage.oldest}.`
           : "The event log lives in this checkout's data directory."
       }
     >
