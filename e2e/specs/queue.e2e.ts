@@ -61,7 +61,7 @@ describe("Agent Board queue rail", () => {
 
   it("renders the queue rail and none of the tree", async () => {
     await gotoRail("Queue");
-    await waitForAnyDisplayed('[aria-label="New task"]', "the queue's new-task chips");
+    await waitForAnyDisplayed('[aria-label^="New task in "]', "the queue's new-task chips");
     expect(await (await browser.$('[aria-label="Filter repos"]')).isDisplayed()).toBe(false);
   });
 
