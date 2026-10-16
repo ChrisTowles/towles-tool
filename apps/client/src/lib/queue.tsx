@@ -87,6 +87,24 @@ export function cycleQueue(
   return ids[(from + step + ids.length) % ids.length];
 }
 
+/** An agent sitting idle on a prompt from you: asking, finished, or errored. */
+const AGENT_WAITS: ReadonlySet<WaitReason> = new Set(["answer", "review", "unblock"]);
+
+/** Where focus goes once you've answered `fromSessionId`: the next agent waiting
+ * on a prompt, in queue order after it and wrapping — never the one just answered. */
+export function advanceTarget(queue: TaskQueue, fromSessionId: string): QueueItem | undefined {
+  const waiting = (i: QueueItem) =>
+    i.lane === "on_you" &&
+    !i.snoozed &&
+    i.sessionId != null &&
+    i.reason != null &&
+    AGENT_WAITS.has(i.reason);
+  const at = queue.items.findIndex((i) => i.sessionId === fromSessionId);
+  const ordered =
+    at === -1 ? queue.items : [...queue.items.slice(at + 1), ...queue.items.slice(0, at)];
+  return ordered.find((i) => waiting(i) && i.sessionId !== fromSessionId);
+}
+
 export type Tone = "red" | "orange" | "blue" | "green" | "neutral";
 
 /** The chip's words are the backend's `why`; this is only its tint. */

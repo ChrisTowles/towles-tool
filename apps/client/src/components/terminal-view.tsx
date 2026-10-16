@@ -42,6 +42,7 @@ import {
   matchesShortcut,
   useShortcutsWorkInTerminal,
 } from "@/lib/shortcuts";
+import { notePaneKey } from "@/lib/agentboard/prompt-submit";
 import { openExternalUrl } from "@/lib/open-url";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
@@ -690,6 +691,10 @@ export function TerminalView({
           // A bare modifier press must not yank a scrolled-back viewport down.
           if (!MODIFIER_KEYS.has(e.key)) backToLive();
           sendKey(wire);
+          if (!MODIFIER_KEYS.has(e.key)) {
+            const plain = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
+            notePaneKey(termId, plain && e.key === "Enter");
+          }
         }
       };
       // Only kitty REPORT_EVENTS cares; the engine no-ops these otherwise.

@@ -169,6 +169,8 @@ const AgentboardBlockSchema = z
     copyOnSelect: z.boolean().optional(),
     terminalFontSize: z.number().optional(),
     shortcutsWorkInTerminal: z.boolean().optional(),
+    autoResume: z.boolean().optional(),
+    advanceAfterSubmit: z.boolean().optional(),
     shortcutCoach: z.boolean().optional(),
     boardGroupByRepo: z.boolean().optional(),
     // `.catch` for the same reason as `notifyThreshold`: an unrecognized mode

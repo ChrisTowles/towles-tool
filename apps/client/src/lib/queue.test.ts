@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceTarget,
   ciLogUrl,
   cycleQueue,
   landable,
@@ -61,6 +62,31 @@ describe("cycleQueue", () => {
   });
   it("is null on an empty queue", () => {
     expect(cycleQueue(queue([]), null, "next")).toBeNull();
+  });
+});
+
+describe("advanceTarget", () => {
+  it("picks the next waiting agent after the one answered, wrapping", () => {
+    const q = queue([item(1), item(2), item(3)]);
+    expect(advanceTarget(q, "s2")?.sessionId).toBe("s3");
+    expect(advanceTarget(q, "s3")?.sessionId).toBe("s1");
+  });
+  it("never lands back on the session just answered", () => {
+    expect(advanceTarget(queue([item(1)]), "s1")).toBeUndefined();
+  });
+  it("skips rows that aren't an agent waiting on a prompt", () => {
+    const q = queue([
+      item(1),
+      item(2, { reason: "fix_ci" }),
+      item(3, { lane: "running", reason: null }),
+      item(4, { snoozed: true }),
+      item(5, { sessionId: null }),
+      item(6, { reason: "review" }),
+    ]);
+    expect(advanceTarget(q, "s1")?.sessionId).toBe("s6");
+  });
+  it("starts from the head when the answered session isn't a row", () => {
+    expect(advanceTarget(queue([item(1), item(2)]), "elsewhere")?.sessionId).toBe("s1");
   });
 });
 
