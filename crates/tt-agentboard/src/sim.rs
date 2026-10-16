@@ -257,6 +257,12 @@ pub fn state_at(scenario: &Scenario, now_ms: i64) -> StatePayload {
         ts: now_ms,
     };
     recompute_needs(&mut payload, &mut since, now_ms);
+    // A replay knows when each agent's status last changed, which a fresh stamp can't.
+    for s in payload.repos.iter_mut().flat_map(|r| &mut r.folders).flat_map(|f| &mut f.sessions) {
+        if s.phase_since_ms.is_some() {
+            s.phase_since_ms = s.needs_since_ms.or(s.agent_state.as_ref().map(|a| a.ts));
+        }
+    }
     payload
 }
 
@@ -312,6 +318,7 @@ pub fn frame_on_wall(scenario: &Scenario, sim_ms: i64, wall_ms: i64) -> (StatePa
         for session in &mut folder.sessions {
             shift(&mut session.created_at);
             session.needs_since_ms.iter_mut().for_each(shift);
+            session.phase_since_ms.iter_mut().for_each(shift);
             for agent in session.agent_state.iter_mut().chain(&mut session.agents) {
                 shift(&mut agent.ts);
             }
@@ -623,6 +630,17 @@ mod tests {
         let (state, _) = frame(&s, T0 + 50_000);
         let session = &state.repos[0].folders[0].sessions[0];
         assert_eq!(session.needs_since_ms, Some(T0 + 10_000));
+    }
+
+    #[test]
+    fn a_working_agent_reads_as_working_since_its_turn_began() {
+        let s = one(vec![
+            step(T0, AgentStatus::Idle),
+            step(T0 + 10_000, AgentStatus::Busy),
+        ]);
+        let (state, queue) = frame(&s, T0 + 50_000);
+        assert_eq!(state.repos[0].folders[0].sessions[0].phase_since_ms, Some(T0 + 10_000));
+        assert_eq!(queue.items[0].since_ms, Some(T0 + 10_000));
     }
 
     #[test]
