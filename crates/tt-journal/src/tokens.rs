@@ -8,7 +8,7 @@
 //! Supported Luxon tokens: `yyyy` (4-digit year), `MM` (2-digit month), `dd` (2-digit
 //! day). These appear both bare (`{yyyy}`) and as `monday:`-prefixed compound formats
 //! (`{monday:yyyy-MM-dd}`). Any other character in a token is emitted literally — we do
-//! **not** implement the rest of the Luxon token vocabulary (see MIGRATION.md).
+//! **not** implement the rest of the Luxon token vocabulary.
 
 use crate::JournalType;
 use chrono::{Datelike, Duration, NaiveDate};

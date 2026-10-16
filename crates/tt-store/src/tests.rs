@@ -1,0 +1,2307 @@
+use super::*;
+use crate::model::{MCP_CALL_RETAIN, MCP_CALL_SNAPSHOT_LIMIT, utc_key};
+use crate::schema::{MIN_SUPPORTED_VERSION, SCHEMA_VERSION};
+use chrono::{DateTime, FixedOffset};
+
+fn ci_run(repo: &str, workflow: &str, conclusion: &str, created_ms: i64) -> CiRun {
+    CiRun {
+        repo: repo.to_string(),
+        workflow: workflow.to_string(),
+        status: if conclusion.is_empty() { "in_progress" } else { "completed" }.to_string(),
+        conclusion: conclusion.to_string(),
+        created_ms,
+        updated_ms: created_ms + 60_000,
+        url: format!("https://github.com/{repo}/actions/runs/{created_ms}"),
+        head_sha: "abc123".to_string(),
+        event: "schedule".to_string(),
+        branch: "main".to_string(),
+    }
+}
+
+fn ci_keys(s: &Store) -> Vec<(String, String)> {
+    s.ci_runs().unwrap().into_iter().map(|r| (r.repo, r.workflow)).collect()
+}
+
+#[test]
+fn ci_runs_read_back_one_row_per_workflow_in_order() {
+    let s = Store::open_in_memory().unwrap();
+    let written = s
+        .upsert_ci_runs(&[
+            ci_run("o/r", "Nightly", "failure", 2_000),
+            ci_run("o/a", "CI", "success", 1_000),
+            ci_run("o/r", "CI", "", 3_000),
+        ])
+        .unwrap();
+    assert_eq!(written, 3);
+    let runs = s.ci_runs().unwrap();
+    let keys: Vec<(&str, &str)> =
+        runs.iter().map(|r| (r.repo.as_str(), r.workflow.as_str())).collect();
+    assert_eq!(keys, [("o/a", "CI"), ("o/r", "CI"), ("o/r", "Nightly")]);
+    assert_eq!(runs[1].status, "in_progress");
+    assert_eq!(runs[2].conclusion, "failure");
+    assert_eq!(s.snapshot().unwrap().ci_runs, runs, "the snapshot carries the same rows");
+}
+
+#[test]
+fn ci_runs_upsert_takes_a_newer_run_and_ignores_an_older_one() {
+    let s = Store::open_in_memory().unwrap();
+    s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "failure", 2_000)]).unwrap();
+
+    let stale = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "success", 1_000)]).unwrap();
+    assert_eq!(stale, 0, "an older run never rolls the row back");
+    assert_eq!(s.ci_runs().unwrap()[0].conclusion, "failure");
+
+    let same = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "cancelled", 2_000)]).unwrap();
+    assert_eq!(same, 1, "the same run's changed verdict lands");
+    assert_eq!(s.ci_runs().unwrap()[0].conclusion, "cancelled");
+
+    let newer = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "success", 3_000)]).unwrap();
+    assert_eq!(newer, 1);
+    let runs = s.ci_runs().unwrap();
+    assert_eq!(runs.len(), 1, "one row per workflow, never a duplicate");
+    assert_eq!((runs[0].conclusion.as_str(), runs[0].created_ms), ("success", 3_000));
+}
+
+#[test]
+fn ci_runs_absent_workflow_survives_and_prune_drops_untracked_repos() {
+    let s = Store::open_in_memory().unwrap();
+    s.upsert_ci_runs(&[
+        ci_run("o/a", "Nightly", "failure", 1),
+        ci_run("o/a", "CI", "success", 1),
+        ci_run("o/gone", "CI", "success", 1),
+    ])
+    .unwrap();
+
+    // A sweep whose page held only o/a's CI: Nightly is not in it and must stay.
+    s.upsert_ci_runs(&[ci_run("o/a", "CI", "success", 2)]).unwrap();
+    let pruned = s.prune_ci_runs_except(&["o/a".to_string()]).unwrap();
+    assert_eq!(pruned, 1, "only the repo no longer tracked loses its rows");
+    assert_eq!(
+        ci_keys(&s),
+        [
+            ("o/a".into(), "CI".into()),
+            ("o/a".into(), "Nightly".into())
+        ]
+    );
+
+    assert_eq!(s.prune_ci_runs_except(&[]).unwrap(), 2, "no tracked repos means no rows");
+    assert!(ci_keys(&s).is_empty());
+}
+
+#[test]
+fn ci_runs_prune_absent_drops_only_old_missing_workflows_of_that_repo() {
+    let s = Store::open_in_memory().unwrap();
+    s.upsert_ci_runs(&[
+        ci_run("o/a", "CI", "success", 1),
+        ci_run("o/a", "Deleted", "failure", 1),
+        ci_run("o/a", "Weekly", "failure", 50),
+        ci_run("o/b", "Old", "failure", 1),
+    ])
+    .unwrap();
+
+    let pruned = s.prune_absent_ci_workflows("o/a", &["CI"], 10).unwrap();
+    assert_eq!(pruned, 1);
+    assert_eq!(
+        ci_keys(&s),
+        [
+            ("o/a".into(), "CI".into()),
+            ("o/a".into(), "Weekly".into()),
+            ("o/b".into(), "Old".into())
+        ],
+        "present or recent rows stay, as does every other repo's"
+    );
+
+    assert_eq!(s.prune_absent_ci_workflows("o/a", &[], 100).unwrap(), 2, "empty page");
+    assert_eq!(ci_keys(&s), [("o/b".into(), "Old".into())]);
+}
+use rusqlite::params;
+
+fn issue_link(repo: &str, number: i64, state: &str) -> TaskIssueLink {
+    TaskIssueLink {
+        repo: repo.to_string(),
+        number,
+        url: format!("https://github.com/{repo}/issues/{number}"),
+        state: state.to_string(),
+    }
+}
+
+#[test]
+fn gh_targets_entering_done_closes_open_issues() {
+    let links = [issue_link("a/b", 1, "open"), issue_link("a/b", 2, "open")];
+    let targets = gh_close_reopen_targets("doing", "done", &links);
+    assert_eq!(targets, vec![("a/b".to_string(), 1, true), ("a/b".to_string(), 2, true)]);
+}
+
+#[test]
+fn gh_targets_leaving_done_reopens_closed_issues() {
+    let links = [issue_link("a/b", 1, "closed")];
+    let targets = gh_close_reopen_targets("done", "doing", &links);
+    assert_eq!(targets, vec![("a/b".to_string(), 1, false)]);
+}
+
+#[test]
+fn gh_targets_skip_links_already_in_target_state() {
+    // Entering done skips issues already closed; leaving done skips open ones.
+    assert!(gh_close_reopen_targets("doing", "done", &[issue_link("a/b", 1, "closed")]).is_empty());
+    assert!(gh_close_reopen_targets("done", "doing", &[issue_link("a/b", 1, "open")]).is_empty());
+}
+
+#[test]
+fn gh_targets_only_a_mix_when_entering_done() {
+    // Only the still-open issue is closed; the already-closed one is left alone.
+    let links = [issue_link("a/b", 1, "open"), issue_link("a/b", 2, "closed")];
+    let targets = gh_close_reopen_targets("doing", "done", &links);
+    assert_eq!(targets, vec![("a/b".to_string(), 1, true)]);
+}
+
+#[test]
+fn gh_targets_empty_when_status_unchanged() {
+    assert!(gh_close_reopen_targets("done", "done", &[issue_link("a/b", 1, "open")]).is_empty());
+    assert!(gh_close_reopen_targets("doing", "doing", &[issue_link("a/b", 1, "open")]).is_empty());
+}
+
+#[test]
+fn gh_targets_empty_for_moves_not_touching_done() {
+    // Neither side is `done`, so no close/reopen regardless of link state.
+    assert!(gh_close_reopen_targets("todo", "doing", &[issue_link("a/b", 1, "open")]).is_empty());
+    assert!(gh_close_reopen_targets("doing", "todo", &[issue_link("a/b", 1, "closed")]).is_empty());
+}
+
+#[test]
+fn gh_targets_empty_for_link_less_tasks() {
+    assert!(gh_close_reopen_targets("doing", "done", &[]).is_empty());
+    assert!(gh_close_reopen_targets("done", "doing", &[]).is_empty());
+}
+
+/// Raw `task_issues` rows — the observable for delete-cascade tests, now
+/// that no production API exposes the table's contents directly.
+fn issue_link_rows(s: &Store) -> Vec<(i64, String, i64)> {
+    let mut stmt = s
+        .conn
+        .prepare("SELECT task_id, repo, number FROM task_issues ORDER BY repo, number")
+        .unwrap();
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap()
+}
+
+/// Raw `task_prs` rows — the PR-side twin of [`issue_link_rows`], for the
+/// same reason: no production API exposes this table's contents.
+fn pr_link_rows(s: &Store) -> Vec<(i64, String, i64)> {
+    let mut stmt =
+        s.conn.prepare("SELECT task_id, repo, number FROM task_prs ORDER BY repo, number").unwrap();
+    stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap()
+}
+
+/// Epoch ms -> the `DateTime<FixedOffset>` the event types now hold. UTC,
+/// since these tests assert on instants, not on presentation.
+fn at(ms: i64) -> DateTime<FixedOffset> {
+    DateTime::from_timestamp_millis(ms).unwrap().fixed_offset()
+}
+
+fn event(ext: &str, start: i64) -> EventInput {
+    EventInput {
+        external_id: ext.to_string(),
+        title: format!("Event {ext}"),
+        start: at(start),
+        end: Some(at(start + 1000)),
+        attendees: vec!["a@example.com".to_string()],
+        location: None,
+        join_url: None,
+    }
+}
+
+/// Write events for tests that don't care about source/day scoping: one
+/// source, a window wide enough to sweep everything. Tests that DO care
+/// about the scoping call [`Store::replace_events_for_source`] directly.
+fn put_events(s: &Store, events: &[EventInput], now_ms: i64) -> Result<usize> {
+    s.replace_events_for_source("test", i64::MIN, i64::MAX, events, now_ms)
+}
+
+fn issue(repo: &str, number: i64, updated: i64) -> IssueInput {
+    IssueInput {
+        repo: repo.to_string(),
+        number,
+        title: format!("Issue {number}"),
+        labels: vec!["bug".to_string()],
+        state: "open".to_string(),
+        url: format!("https://github.com/{repo}/issues/{number}"),
+        updated_ts: updated,
+    }
+}
+
+fn pr(repo: &str, number: i64, state: &str) -> PrInput {
+    PrInput {
+        repo: repo.to_string(),
+        number,
+        title: "t".to_string(),
+        branch: "b".to_string(),
+        state: state.to_string(),
+        checks: "passing".to_string(),
+        review_state: String::new(),
+        url: "https://x".to_string(),
+        updated_ts: 1,
+        base_branch: String::new(),
+    }
+}
+
+#[test]
+fn migrations_are_idempotent() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    {
+        let s = Store::open(&path).unwrap();
+        s.add_task("survives", "backlog", None, None, 1).unwrap();
+    }
+    // Re-open: migrate runs again without error, data intact.
+    let s = Store::open(&path).unwrap();
+    assert_eq!(s.open_tasks().unwrap().len(), 1);
+    let version: String = s
+        .conn
+        .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_VERSION.to_string());
+}
+
+/// A db below the floor is refused at open, not left to fail later on a
+/// `no such column` from a query.
+#[test]
+fn a_db_older_than_the_floor_is_refused_with_its_version() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 INSERT INTO meta (key, value) VALUES ('schema_version', '11');",
+        )
+        .unwrap();
+    }
+    let Err(err) = Store::open(&path) else {
+        panic!("a v11 db must not open")
+    };
+    assert!(matches!(err, Error::SchemaTooOld { found: 11, min: MIN_SUPPORTED_VERSION }));
+}
+
+fn db_at_version(version: i64) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(&format!(
+        "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO meta (key, value) VALUES ('schema_version', '{version}');"
+    ))
+    .unwrap();
+    (dir, path)
+}
+
+#[test]
+fn open_refuses_a_db_newer_than_this_build_and_leaves_it_alone() {
+    let (_dir, path) = db_at_version(SCHEMA_VERSION + 1);
+    let Err(err) = Store::open(&path) else {
+        panic!("a newer db must not open")
+    };
+    assert!(matches!(err, Error::SchemaTooNew { found, supported }
+            if found == SCHEMA_VERSION + 1 && supported == SCHEMA_VERSION));
+    assert!(err.to_string().contains("Rebuild and restart"));
+    let conn = Connection::open(&path).unwrap();
+    let v: String = conn
+        .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(v, (SCHEMA_VERSION + 1).to_string(), "an old build must not stamp the version down");
+}
+
+#[test]
+fn ensure_schema_current_catches_a_migration_after_open() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    let s = Store::open(&path).unwrap();
+    s.ensure_schema_current().unwrap();
+    Connection::open(&path)
+        .unwrap()
+        .execute(
+            "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+            [(SCHEMA_VERSION + 1).to_string()],
+        )
+        .unwrap();
+    assert!(matches!(s.ensure_schema_current(), Err(Error::SchemaTooNew { .. })));
+}
+
+fn task_columns(s: &Store) -> Vec<String> {
+    let mut stmt = s.conn.prepare("PRAGMA table_info(tasks)").unwrap();
+    let cols = stmt.query_map([], |r| r.get::<_, String>(1)).unwrap();
+    cols.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+}
+
+/// `local_day_bounds` exists in one place because it scopes a DELETE, and
+/// two implementations had already drifted apart on DST handling — one
+/// widening to a ±1-day window, the other collapsing to an empty one, both
+/// feeding the same destructive call. These pin the properties that make
+/// the shared version safe to hand to a delete.
+#[test]
+fn local_day_bounds_is_a_single_day_that_contains_its_reference() {
+    // A few instants spread across the year, including both DST changeover
+    // weekends in the northern hemisphere.
+    for reference in [
+        1_700_000_000_000_i64, // Nov 2023
+        1_678_600_000_000,     // Mar 2023 (spring forward)
+        1_699_164_000_000,     // Nov 2023 (fall back)
+        1_719_000_000_000,     // Jun 2024
+        0,                     // epoch
+    ] {
+        let (start, end) = Store::local_day_bounds(reference);
+        assert!(start <= reference, "window starts at or before its reference ({reference})");
+        assert!(reference < end, "window contains its reference ({reference})");
+        let span = end - start;
+        // A civil day is 23, 24 or 25 hours long depending on DST. Never more.
+        assert!(
+            (23 * 3_600_000..=25 * 3_600_000).contains(&span),
+            "span {span}ms for {reference} is not one civil day"
+        );
+    }
+}
+
+/// The fallback direction is the safety property: if the boundary can't be
+/// resolved, delete nothing rather than delete more. Stale rows are fixed by
+/// the next pull; over-deleted rows are gone.
+#[test]
+fn local_day_bounds_never_widens_past_a_day() {
+    let (start, end) = Store::local_day_bounds(i64::MAX);
+    assert!(end - start <= 25 * 3_600_000, "degenerate input must not widen the delete");
+}
+
+#[test]
+fn replace_events_swaps_within_one_source_and_day() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_events_for_source("google", 0, 1000, &[event("a", 100), event("b", 200)], 1).unwrap();
+    assert_eq!(s.snapshot().unwrap().events.len(), 2);
+    let n = s.replace_events_for_source("google", 0, 1000, &[event("c", 300)], 2).unwrap();
+    assert_eq!(n, 1);
+    let events = s.snapshot().unwrap().events;
+    assert_eq!(events.len(), 1, "the earlier pull for this source+day is swept");
+    assert_eq!(events[0].external_id, "c");
+    assert_eq!(events[0].source, "google", "source is recorded for provenance");
+}
+
+/// The reason this method exists: two calendars are pulled independently and
+/// merged into one timeline, so a pull must not erase the other.
+#[test]
+fn one_sources_pull_never_disturbs_another() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_events_for_source("google", 0, 1000, &[event("personal", 100)], 1).unwrap();
+    s.replace_events_for_source("outlook", 0, 1000, &[event("work", 200)], 1).unwrap();
+
+    let merged = s.snapshot().unwrap().events;
+    let ids: Vec<&str> = merged.iter().map(|e| e.external_id.as_str()).collect();
+    assert_eq!(ids, vec!["personal", "work"], "both calendars coexist, merged by start_ts");
+
+    // Re-pulling one source replaces only its own lane.
+    s.replace_events_for_source("google", 0, 1000, &[event("personal-v2", 100)], 2).unwrap();
+    let events = s.snapshot().unwrap().events;
+    let ids: Vec<&str> = events.iter().map(|e| e.external_id.as_str()).collect();
+    assert_eq!(ids, vec!["personal-v2", "work"], "the work calendar survives untouched");
+}
+
+/// The delete is scoped to the day window too, so pulling today never drops
+/// a tomorrow's-events row that some other call stored.
+#[test]
+fn replace_events_leaves_other_days_alone() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_events_for_source("google", 0, i64::MAX, &[event("tomorrow", 5_000)], 1).unwrap();
+    s.replace_events_for_source("google", 0, 1000, &[event("today", 100)], 2).unwrap();
+
+    let events = s.snapshot().unwrap().events;
+    let ids: Vec<&str> = events.iter().map(|e| e.external_id.as_str()).collect();
+    assert_eq!(ids, vec!["today", "tomorrow"], "out-of-window row untouched");
+}
+
+/// The scoped delete bounds one lane and one day, so something else has to
+/// bound the table over time — otherwise yesterday's meetings, and every row
+/// from a calendar the user renamed or removed, accumulate forever. The old
+/// full-table swap did that implicitly; this pins the replacement.
+#[test]
+fn old_events_are_swept_including_orphaned_lanes() {
+    let s = Store::open_in_memory().unwrap();
+    let now = 30 * EVENT_RETAIN_MS;
+    let stale = now - EVENT_RETAIN_MS - 1;
+
+    // A row from a lane that will never be written again (its source was
+    // removed from settings), old enough to be past retention.
+    s.replace_events_for_source("retired-calendar", 0, i64::MAX, &[event("ancient", stale)], now)
+        .unwrap();
+    assert_eq!(s.snapshot().unwrap().events.len(), 1);
+
+    // A write to a *different* lane sweeps it — age, not source, is what
+    // catches an orphan, since no per-source write will ever visit it again.
+    s.replace_events_for_source("google", now, now + 86_400_000, &[event("today", now)], now)
+        .unwrap();
+    let ids: Vec<String> =
+        s.snapshot().unwrap().events.iter().map(|e| e.external_id.clone()).collect();
+    assert_eq!(ids, vec!["today"], "the orphaned lane's stale row is gone");
+}
+
+/// A repeated `externalId` inside one payload must not overwrite its own earlier row
+/// mid-loop while the returned count claims both were written.
+#[test]
+fn duplicate_external_ids_in_one_payload_are_collapsed_and_counted_honestly() {
+    let s = Store::open_in_memory().unwrap();
+    let now = 30 * EVENT_RETAIN_MS;
+    let mut first = event("abc", now + 1000);
+    first.title = "Standup (9am)".to_string();
+    let mut second = event("abc", now + 5000);
+    second.title = "Standup (2pm)".to_string();
+
+    let written = s
+        .replace_events_for_source("google", now, now + 86_400_000, &[first, second], now)
+        .unwrap();
+    assert_eq!(written, 1, "count reflects rows that landed, not payload length");
+    let events = s.snapshot().unwrap().events;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].title, "Standup (2pm)", "last occurrence wins, matching the upsert");
+}
+
+/// Retention can't be hostage to a write happening: switching the last
+/// calendar off means no write ever runs again, so the sweep has to be
+/// callable on its own or stale rows live forever.
+#[test]
+fn sweep_old_events_works_without_a_write() {
+    let s = Store::open_in_memory().unwrap();
+    let now = 30 * EVENT_RETAIN_MS;
+    s.replace_events_for_source(
+        "google",
+        0,
+        i64::MAX,
+        &[
+            event("stale", now - EVENT_RETAIN_MS - 1),
+            event("fresh", now),
+        ],
+        now,
+    )
+    .unwrap();
+    assert_eq!(s.snapshot().unwrap().events.len(), 2, "both written inside the window");
+
+    // Time passes; nothing writes. The sweep alone must still age it out.
+    let later = now + EVENT_RETAIN_MS;
+    let removed = s.sweep_old_events(later).unwrap();
+    assert_eq!(removed, 1);
+    let ids: Vec<String> =
+        s.snapshot().unwrap().events.iter().map(|e| e.external_id.clone()).collect();
+    assert_eq!(ids, vec!["fresh"]);
+}
+
+/// Retention must not eat a meeting that hasn't happened yet, nor the recent
+/// past a countdown might still be reasoning about.
+#[test]
+fn retention_keeps_recent_and_future_events() {
+    let s = Store::open_in_memory().unwrap();
+    let now = 30 * EVENT_RETAIN_MS;
+    s.replace_events_for_source(
+        "google",
+        0,
+        i64::MAX,
+        &[
+            event("yesterday", now - 86_400_000),
+            event("next-week", now + 7 * 86_400_000),
+        ],
+        now,
+    )
+    .unwrap();
+    s.replace_events_for_source("outlook", now, now + 86_400_000, &[], now).unwrap();
+    assert_eq!(s.snapshot().unwrap().events.len(), 2, "both are inside the retention window");
+}
+
+/// Two providers can legitimately mint the same event id — that's why the
+/// uniqueness rule is `(source, external_id)` and not `external_id` alone.
+#[test]
+fn the_same_external_id_can_exist_in_two_sources() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_events_for_source("google", 0, 1000, &[event("shared-id", 100)], 1).unwrap();
+    s.replace_events_for_source("outlook", 0, 1000, &[event("shared-id", 200)], 1).unwrap();
+    assert_eq!(s.snapshot().unwrap().events.len(), 2, "no unique-constraint collision");
+}
+
+/// A row outside the swept window with a colliding id must upsert rather
+/// than blow up the whole pull on a constraint violation.
+#[test]
+fn re_pushing_an_out_of_window_id_updates_it_instead_of_failing() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_events_for_source("google", 0, i64::MAX, &[event("e", 9_000)], 1).unwrap();
+    // Window doesn't cover 9_000, so the delete misses it; the insert collides.
+    s.replace_events_for_source("google", 0, 1000, &[event("e", 9_000)], 2).unwrap();
+    let events = s.snapshot().unwrap().events;
+    assert_eq!(events.len(), 1, "upserted, not duplicated");
+}
+
+#[test]
+fn replace_issues_is_full_swap_and_decodes_labels() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_issues(&[issue("o/r", 1, 100), issue("o/r", 2, 200)]).unwrap();
+    assert_eq!(s.issues().unwrap().len(), 2);
+    // Newest update first.
+    assert_eq!(s.issues().unwrap()[0].number, 2);
+    assert_eq!(s.issues().unwrap()[0].labels, vec!["bug".to_string()]);
+    let n = s.replace_issues(&[issue("o/r", 3, 300)]).unwrap();
+    assert_eq!(n, 1);
+    let issues = s.issues().unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].number, 3);
+}
+
+#[test]
+fn replace_issues_for_repos_preserves_other_repos_rows() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_issues(&[issue("o/a", 1, 100), issue("o/b", 2, 200)]).unwrap();
+
+    // Repo o/a re-collected (now empty); o/b's gh call failed → untouched.
+    s.replace_issues_for_repos(&["o/a".to_string()], &[]).unwrap();
+    let issues = s.issues().unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].repo, "o/b");
+
+    // Scoped write inserts the named repo's fresh rows.
+    s.replace_issues_for_repos(&["o/a".to_string()], &[issue("o/a", 9, 900)]).unwrap();
+    let issues = s.issues().unwrap();
+    let repos: Vec<&str> = issues.iter().map(|i| i.repo.as_str()).collect();
+    assert!(repos.contains(&"o/a") && repos.contains(&"o/b"));
+}
+
+#[test]
+fn reconcile_repos_upserts_and_drops_untracked() {
+    let s = Store::open_in_memory().unwrap();
+    s.reconcile_repos(
+        &[
+            ("/repo/a".to_string(), "o/a".to_string()),
+            ("/repo/b".to_string(), "o/b".to_string()),
+        ],
+        100,
+    )
+    .unwrap();
+    let root_of = |slug: &str| s.tracked_repo_for_owner_repo(slug).unwrap().map(|(root, _)| root);
+    assert_eq!(root_of("o/a").as_deref(), Some("/repo/a"));
+    assert_eq!(root_of("o/b").as_deref(), Some("/repo/b"));
+
+    // /repo/a's origin was renamed and /repo/b fell out of tracking.
+    s.reconcile_repos(&[("/repo/a".to_string(), "o/a-renamed".to_string())], 200).unwrap();
+    assert_eq!(root_of("o/a"), None);
+    assert_eq!(root_of("o/a-renamed").as_deref(), Some("/repo/a"));
+    assert_eq!(root_of("o/b"), None);
+}
+
+#[test]
+fn a_dir_resolves_to_the_deepest_tracked_root_holding_it() {
+    let s = Store::open_in_memory().unwrap();
+    let repos = [
+        ("/c/app".to_string(), "o/app".to_string()),
+        ("/c/app/vendor/x".to_string(), "o/x".to_string()),
+    ];
+    s.reconcile_repos(&repos, 1).unwrap();
+    let slug = |dir: &str| s.tracked_repo_for_dir(dir).unwrap().map(|(_, slug)| slug);
+    assert_eq!(slug("/c/app/.claude/worktrees/feat").as_deref(), Some("o/app"));
+    assert_eq!(slug("/c/app/vendor/x/src").as_deref(), Some("o/x"));
+    assert_eq!(slug("/c/app2"), None);
+}
+
+/// GitHub slugs are case-preserving but not case-sensitive, and this repo
+/// has two sources for them (`gh` output vs. the origin-derived cache). An
+/// exact-match lookup rejected the `gh` casing and accepted only the folded
+/// one, so `task_create` stamped rows with a second identity that the Board
+/// rendered as a duplicate swimlane.
+#[test]
+fn tracked_repo_lookup_folds_case_and_returns_the_stored_spelling() {
+    let s = Store::open_in_memory().unwrap();
+    s.reconcile_repos(&[("/repo/a".to_string(), "ChrisTowles/towles-tool".to_string())], 100)
+        .unwrap();
+
+    for probe in [
+        "ChrisTowles/towles-tool",
+        "christowles/towles-tool",
+        "CHRISTOWLES/TOWLES-TOOL",
+    ] {
+        let found = s.tracked_repo_for_owner_repo(probe).unwrap();
+        assert_eq!(
+            found.as_ref().map(|(root, repo)| (root.as_str(), repo.as_str())),
+            Some(("/repo/a", "ChrisTowles/towles-tool")),
+            "failed for {probe}"
+        );
+    }
+
+    assert_eq!(s.tracked_repo_for_owner_repo("other/repo").unwrap(), None);
+}
+
+#[test]
+fn reconcile_repos_empty_clears_the_cache() {
+    let s = Store::open_in_memory().unwrap();
+    s.reconcile_repos(&[("/repo/a".to_string(), "o/a".to_string())], 100).unwrap();
+    s.reconcile_repos(&[], 200).unwrap();
+    assert!(s.repo_slugs().unwrap().is_empty());
+}
+
+#[test]
+fn attach_detach_issue_links_and_get_issue() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_issues(&[issue("o/r", 1, 100)]).unwrap();
+    let plain = s.add_task("plain task", "backlog", None, None, 1).unwrap();
+    let linked = s.add_task("linked task", "backlog", None, None, 2).unwrap();
+    s.attach_task_issue(linked.id, "o/r", 1, "https://github.com/o/r/issues/1").unwrap();
+    s.attach_task_issue(linked.id, "o/r", 2, "https://github.com/o/r/issues/2").unwrap();
+
+    let got = s.get_task(linked.id).unwrap().unwrap();
+    assert_eq!(got.issues.len(), 2);
+    assert_eq!(got.issues[0].state, "open");
+    assert!(s.get_task(plain.id).unwrap().unwrap().issues.is_empty());
+
+    // Re-attach refreshes the url but never resets collector-owned state.
+    s.set_issue_link_state("o/r", 1, "closed", 5).unwrap();
+    s.attach_task_issue(linked.id, "o/r", 1, "https://new.example/1").unwrap();
+    let got = s.get_task(linked.id).unwrap().unwrap();
+    let one = got.issues.iter().find(|l| l.number == 1).unwrap();
+    assert_eq!(one.state, "closed");
+    assert_eq!(one.url, "https://new.example/1");
+
+    s.detach_task_issue(linked.id, "o/r", 2).unwrap();
+    assert_eq!(s.get_task(linked.id).unwrap().unwrap().issues.len(), 1);
+    // Detaching a non-existent link is a no-op, attaching to a missing task errors.
+    s.detach_task_issue(linked.id, "o/r", 99).unwrap();
+    assert!(matches!(s.attach_task_issue(9999, "o/r", 1, "u"), Err(Error::TaskNotFound(9999))));
+
+    let found = s.get_issue("o/r", 1).unwrap().unwrap();
+    assert_eq!(found.number, 1);
+    assert!(s.get_issue("o/r", 999).unwrap().is_none());
+}
+
+#[test]
+fn worktree_binding_set_lookup_and_detach() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("worktree-backed", "doing", None, None, 1).unwrap();
+    assert!(t.worktree.is_none());
+    s.set_task_worktree(
+        t.id,
+        "/repos/x",
+        Some("o/x"),
+        Some("feat/y"),
+        Some("/repos/x/.claude/worktrees/feat-y"),
+    )
+    .unwrap();
+
+    let bound = s.task_for_worktree_dir("/repos/x/.claude/worktrees/feat-y").unwrap().unwrap();
+    assert_eq!(bound.id, t.id);
+    let worktree = bound.worktree.unwrap();
+    assert_eq!(worktree.repo_root, "/repos/x");
+    assert_eq!(worktree.repo.as_deref(), Some("o/x"));
+    assert_eq!(worktree.branch.as_deref(), Some("feat/y"));
+
+    // A repo-only rebind (the retry path re-sends the submit-time bind)
+    // upserts: `None` means "leave as is", never "clear".
+    s.set_task_worktree(t.id, "/repos/x", None, None, None).unwrap();
+    let rebound = s.get_task(t.id).unwrap().unwrap().worktree.unwrap();
+    assert_eq!(rebound.repo.as_deref(), Some("o/x"));
+    assert_eq!(rebound.branch.as_deref(), Some("feat/y"));
+    assert_eq!(rebound.dir.as_deref(), Some("/repos/x/.claude/worktrees/feat-y"));
+
+    // Removing the worktree takes the whole task with it — there is no
+    // detached-task state to land in (see `set_task_worktree`'s doc).
+    s.delete_task(t.id).unwrap();
+    assert!(s.task_for_worktree_dir("/repos/x/.claude/worktrees/feat-y").unwrap().is_none());
+    assert!(s.get_task(t.id).unwrap().is_none());
+    assert!(matches!(
+        s.set_task_worktree(777, "/r", None, Some("b"), None),
+        Err(Error::TaskNotFound(777))
+    ));
+}
+
+/// The rail's row list: a task with a worktree binding is a row, a task
+/// without one isn't, and closing a task retires its row.
+#[test]
+fn rail_worktrees_lists_live_bindings_only() {
+    let s = Store::open_in_memory().unwrap();
+    assert!(s.rail_worktrees().unwrap().is_empty());
+
+    let dir = "/repos/x/.claude/worktrees/feat-y";
+    let t = s.add_task("worktree-backed", "doing", None, None, 1).unwrap();
+    s.add_task("no worktree", "doing", None, None, 2).unwrap();
+    s.set_task_worktree(t.id, "/repos/x", None, Some("feat/y"), Some(dir)).unwrap();
+    let rows = s.rail_worktrees().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].dir, dir);
+    assert_eq!(rows[0].repo_root, "/repos/x");
+    assert_eq!(rows[0].branch.as_deref(), Some("feat/y"));
+    assert_eq!(rows[0].kind, TaskKind::Task);
+
+    // Closing clears the binding: the worktree is off disk, and a new one
+    // at the same path belongs to whatever created it next.
+    s.close_task(t.id, TaskOutcome::Done, 10).unwrap();
+    assert!(s.rail_worktrees().unwrap().is_empty());
+}
+
+/// The rail row exists as soon as the binding is written — before anything
+/// is on disk. This is the whole point of the record-driven rail: the `+`
+/// form binds the predicted dir, then `git worktree add` runs.
+#[test]
+fn rail_worktrees_includes_a_task_whose_dir_does_not_exist_yet() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("not created yet", "backlog", None, None, 1).unwrap();
+    s.set_task_worktree(
+        t.id,
+        "/repos/x",
+        None,
+        Some("feat/new"),
+        Some("/repos/x/.claude/worktrees/feat-new"),
+    )
+    .unwrap();
+    let rows = s.rail_worktrees().unwrap();
+    assert_eq!(rows.len(), 1, "no filesystem check gates a rail row");
+    assert_eq!(rows[0].dir, "/repos/x/.claude/worktrees/feat-new");
+}
+
+/// Detected rows are the rail's own bookkeeping: they show up there, and
+/// nowhere the user manages work.
+#[test]
+fn detected_rows_reach_the_rail_but_never_the_board() {
+    let s = Store::open_in_memory().unwrap();
+    let mine = s.add_task("my work", "doing", None, None, 1).unwrap();
+    s.set_task_worktree(mine.id, "/repos/x", None, Some("feat/y"), Some("/repos/x/wt/feat-y"))
+        .unwrap();
+    s.record_detected_worktree("/repos/x", "/repos/x/wt/agent-8f21", Some("agent/8f21"), 2)
+        .unwrap();
+
+    // The rail sees both, oldest first.
+    let rows = s.rail_worktrees().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].kind, TaskKind::Task);
+    assert_eq!(rows[1].kind, TaskKind::Detected);
+    assert_eq!(rows[1].branch.as_deref(), Some("agent/8f21"));
+
+    // The board sees only the user's own.
+    let board: Vec<i64> = s.all_tasks().unwrap().into_iter().map(|t| t.id).collect();
+    assert_eq!(board, vec![mine.id]);
+    assert_eq!(s.open_tasks().unwrap().len(), 1);
+    assert_eq!(s.worktree_bound_open_tasks().unwrap().len(), 1);
+}
+
+/// Recording is idempotent per dir, and adopting is a kind change on the
+/// same row — the id survives, so nothing moves in the rail.
+#[test]
+fn detected_rows_dedupe_and_adopt_in_place() {
+    let s = Store::open_in_memory().unwrap();
+    let dir = "/repos/x/wt/agent-8f21";
+    s.record_detected_worktree("/repos/x", dir, None, 1).unwrap();
+    s.record_detected_worktree("/repos/x", dir, None, 2).unwrap();
+    let rows = s.rail_worktrees().unwrap();
+    assert_eq!(rows.len(), 1, "a second scan must not mint a duplicate");
+    let id = rows[0].task_id;
+
+    let adopted = s.adopt_detected_worktree(id).unwrap();
+    assert_eq!(adopted.id, id, "same row, so the rail position is unchanged");
+    assert_eq!(adopted.kind, TaskKind::Task);
+    assert_eq!(s.all_tasks().unwrap().len(), 1, "now it's the user's work");
+
+    // And the scan must not re-mint a detected row over the adopted one.
+    s.record_detected_worktree("/repos/x", dir, None, 3).unwrap();
+    assert_eq!(s.rail_worktrees().unwrap().len(), 1);
+    assert_eq!(s.rail_worktrees().unwrap()[0].kind, TaskKind::Task);
+}
+
+/// The rail's scan can see a new task's worktree before `task_create` binds
+/// it, minting a detected row first. Binding must retire that row, or the
+/// dir has two and removal closes the older, detected one.
+#[test]
+fn binding_a_task_retires_the_detected_row_for_its_dir() {
+    let s = Store::open_in_memory().unwrap();
+    let dir = "/repos/x/.claude/worktrees/feat-y";
+    s.record_detected_worktree("/repos/x", dir, Some("feat-y"), 1).unwrap();
+    let t = s.add_task("my work", "doing", None, None, 2).unwrap();
+    s.set_task_worktree(t.id, "/repos/x", None, Some("feat-y"), Some(dir)).unwrap();
+
+    let rows = s.rail_worktrees().unwrap();
+    assert_eq!(rows.len(), 1, "one dir, one row");
+    assert_eq!(rows[0].task_id, t.id);
+    assert_eq!(s.task_for_worktree_dir(dir).unwrap().unwrap().id, t.id);
+
+    // Rebinding an adopted row to its own dir must not delete it.
+    s.record_detected_worktree("/repos/x", "/repos/x/wt/other", None, 3).unwrap();
+    let other = s.rail_worktrees().unwrap()[1].task_id;
+    s.set_task_worktree(other, "/repos/x", None, None, Some("/repos/x/wt/other")).unwrap();
+    assert_eq!(s.rail_worktrees().unwrap().len(), 2);
+}
+
+/// The asymmetry that makes deletion coherent: a vanished directory retires
+/// a *detected* row and never a task's, because only the second is someone's
+/// work waiting on an answer.
+#[test]
+fn forgetting_a_vanished_worktree_spares_real_tasks() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("my work", "doing", None, None, 1).unwrap();
+    s.set_task_worktree(t.id, "/repos/x", None, None, Some("/repos/x/wt/mine")).unwrap();
+    s.record_detected_worktree("/repos/x", "/repos/x/wt/theirs", None, 2).unwrap();
+
+    assert!(s.forget_detected_worktree("/repos/x/wt/theirs").unwrap());
+    assert!(!s.forget_detected_worktree("/repos/x/wt/mine").unwrap());
+    let rows = s.rail_worktrees().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].task_id, t.id);
+}
+
+#[test]
+fn refresh_link_states_from_cache_and_missing_refs() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("t", "doing", None, None, 1).unwrap();
+    s.attach_task_issue(t.id, "o/r", 1, "u1").unwrap();
+    s.attach_task_issue(t.id, "o/r", 2, "u2").unwrap();
+    s.attach_task_pr(t.id, "o/r", 10, "p10").unwrap();
+
+    // Issue 1 is in the snapshot (still open); issue 2 and PR 10 are not.
+    s.replace_issues(&[issue("o/r", 1, 100)]).unwrap();
+    s.refresh_link_states_from_cache(50).unwrap();
+
+    assert_eq!(s.open_issue_refs_missing_from_cache().unwrap(), vec![("o/r".to_string(), 2)]);
+    assert_eq!(s.pr_refs_missing_from_cache().unwrap(), vec![("o/r".to_string(), 10)]);
+
+    // A terminal issue link stops being reported though it stays absent; the
+    // PR half is answered with a row instead, and the link reads its state off.
+    s.set_issue_link_state("o/r", 2, "closed", 60).unwrap();
+    assert!(s.open_issue_refs_missing_from_cache().unwrap().is_empty());
+    s.upsert_prs(&[pr("o/r", 10, "closed")]).unwrap();
+    assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+    s.refresh_link_states_from_cache(60).unwrap();
+    let got = s.get_task(t.id).unwrap().unwrap();
+    assert_eq!(got.issues.iter().find(|l| l.number == 2).unwrap().state, "closed");
+    assert_eq!(got.prs[0].state, "closed");
+}
+
+/// The rail's badge vanished because the open sweep purged the closed row.
+#[test]
+fn a_closed_pr_row_survives_the_open_sweep() {
+    let s = Store::open_in_memory().unwrap();
+    s.upsert_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "closed")]).unwrap();
+    s.replace_open_prs_for_repos(&["o/a".to_string()], &[]).unwrap();
+    let rows = s.prs().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].number, rows[0].state.as_str()), (2, "closed"));
+
+    // …and reopening replaces that row rather than colliding with it.
+    s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 2, "open")]).unwrap();
+    let rows = s.prs().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].number, rows[0].state.as_str()), (2, "open"));
+}
+
+/// The refetch loop: a targeted fetch's merged row fell outside the merged
+/// sweep's bounded list, was deleted, and `gh pr view` ran again every sweep.
+#[test]
+fn a_targeted_merged_fetch_survives_every_sweep() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("t", "doing", None, None, 1).unwrap();
+    s.attach_task_pr(t.id, "o/a", 5, "p5").unwrap();
+    let repos = ["o/a".to_string()];
+    s.upsert_prs(&[pr("o/a", 5, "merged")]).unwrap();
+
+    s.replace_merged_prs_for_repos(&repos, &[pr("o/a", 6, "merged")]).unwrap();
+    s.replace_open_prs_for_repos(&repos, &[]).unwrap();
+    s.replace_prs_for_repos(&repos, &[]).unwrap();
+    s.replace_merged_prs(&[]).unwrap();
+    s.replace_prs(&[]).unwrap();
+
+    assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+    assert_eq!(s.prs().unwrap().len(), 1);
+}
+
+/// An open PR that closes drops out of the open sweep, is reported missing
+/// once, and its fetched terminal row then sticks.
+#[test]
+fn an_open_pr_that_closed_is_refreshed_once() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("t", "doing", None, None, 1).unwrap();
+    s.attach_task_pr(t.id, "o/a", 5, "p5").unwrap();
+    let repos = ["o/a".to_string()];
+    s.replace_open_prs_for_repos(&repos, &[pr("o/a", 5, "open")]).unwrap();
+    assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+
+    s.replace_open_prs_for_repos(&repos, &[]).unwrap();
+    assert_eq!(s.pr_refs_missing_from_cache().unwrap(), vec![("o/a".to_string(), 5)]);
+
+    s.upsert_prs(&[pr("o/a", 5, "merged")]).unwrap();
+    s.replace_open_prs_for_repos(&repos, &[]).unwrap();
+    s.replace_merged_prs_for_repos(&repos, &[]).unwrap();
+    assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
+    assert_eq!(s.prs().unwrap()[0].state, "merged");
+}
+
+/// Unlinked terminal rows are still swept away; only linked ones are kept.
+#[test]
+fn unlinked_merged_rows_are_still_swept() {
+    let s = Store::open_in_memory().unwrap();
+    s.upsert_prs(&[pr("o/a", 7, "merged")]).unwrap();
+    s.replace_merged_prs_for_repos(&["o/a".to_string()], &[]).unwrap();
+    assert!(s.prs().unwrap().is_empty());
+}
+
+#[test]
+fn auto_attach_worktree_prs_links_by_repo_and_branch() {
+    let pr = |branch: &str, number: i64| PrInput {
+        repo: "o/x".to_string(),
+        number,
+        title: "t".to_string(),
+        branch: branch.to_string(),
+        state: "open".to_string(),
+        checks: "pending".to_string(),
+        review_state: String::new(),
+        url: format!("https://github.com/o/x/pull/{number}"),
+        updated_ts: 1,
+        base_branch: String::new(),
+    };
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("worktree task", "doing", None, None, 1).unwrap();
+    s.set_task_worktree(t.id, "/repos/x", Some("o/x"), Some("feat/y"), Some("/w")).unwrap();
+    let other = s.add_task("no worktree", "backlog", None, None, 2).unwrap();
+
+    s.replace_prs(&[pr("feat/y", 7), pr("other-branch", 8)]).unwrap();
+    let n = s.auto_attach_worktree_prs(9).unwrap();
+    assert_eq!(n, 1);
+    let got = s.get_task(t.id).unwrap().unwrap();
+    assert_eq!(got.prs.len(), 1);
+    assert_eq!(got.prs[0].number, 7);
+    assert!(s.get_task(other.id).unwrap().unwrap().prs.is_empty());
+
+    // Idempotent: a second pass creates nothing new.
+    assert_eq!(s.auto_attach_worktree_prs(10).unwrap(), 0);
+}
+
+/// The gh-merge-in-a-worktree case: the merge lands through the API, `gh`
+/// dies on its local cleanup, and no sweep ever carried the PR. The probe's
+/// row is the only evidence, and the ordinary branch join must accept it.
+#[test]
+fn a_probed_pr_links_a_task_no_sweep_ever_saw() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("worktree task", "doing", None, None, 1).unwrap();
+    s.set_task_worktree(t.id, "/repos/x", Some("o/x"), Some("feat/y"), Some("/w")).unwrap();
+
+    assert_eq!(
+        s.unlinked_worktrees(1, 8).unwrap(),
+        vec![UnlinkedWorktree {
+            task_id: t.id,
+            repo: "o/x".to_string(),
+            branch: "feat/y".to_string()
+        }]
+    );
+
+    s.upsert_prs(&[PrInput {
+        repo: "o/x".to_string(),
+        number: 83,
+        title: "t".to_string(),
+        branch: "feat/y".to_string(),
+        state: "merged".to_string(),
+        checks: "passing".to_string(),
+        review_state: String::new(),
+        url: "https://github.com/o/x/pull/83".to_string(),
+        updated_ts: 1,
+        base_branch: String::new(),
+    }])
+    .unwrap();
+    s.mark_pr_probe(&[t.id], 2).unwrap();
+    assert_eq!(s.auto_attach_worktree_prs(3).unwrap(), 1);
+
+    let got = s.get_task(t.id).unwrap().unwrap();
+    assert_eq!(got.prs[0].number, 83);
+    assert_eq!(got.prs[0].state, "merged");
+    // Linked now, so it never costs another `gh` call.
+    assert!(s.unlinked_worktrees(i64::MAX, 8).unwrap().is_empty());
+}
+
+#[test]
+fn resync_task_branch_replaces_the_record_and_rearms_the_pr_probe() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("drifted", "doing", None, None, 1).unwrap();
+    s.set_task_worktree(t.id, "/r", Some("o/x"), Some("feat/old"), Some("/r/wt")).unwrap();
+    s.mark_pr_probe(&[t.id], 100).unwrap();
+    assert!(s.unlinked_worktrees(50, 10).unwrap().is_empty(), "probed at 100, not due");
+
+    let resync = s.resync_task_branch(t.id, "feat/new").unwrap();
+    assert_eq!(resync.previous.as_deref(), Some("feat/old"));
+    assert!(resync.changed);
+    let wt = s.task_by_id(t.id).unwrap().worktree.unwrap();
+    assert_eq!(wt.branch.as_deref(), Some("feat/new"));
+    assert_eq!(wt.dir.as_deref(), Some("/r/wt"), "only the branch moves");
+    let due = s.unlinked_worktrees(50, 10).unwrap();
+    assert_eq!(due[0].branch, "feat/new", "the new branch is probed on the next pass");
+
+    let again = s.resync_task_branch(t.id, "feat/new").unwrap();
+    assert!(!again.changed);
+}
+
+#[test]
+fn resync_task_branch_refuses_a_branch_another_open_task_records() {
+    let s = Store::open_in_memory().unwrap();
+    let mine = s.add_task("mine", "doing", None, None, 1).unwrap();
+    let theirs = s.add_task("theirs", "doing", None, None, 2).unwrap();
+    s.set_task_worktree(mine.id, "/r", None, Some("feat/a"), Some("/r/a")).unwrap();
+    s.set_task_worktree(theirs.id, "/r", None, Some("feat/b"), Some("/r/b")).unwrap();
+
+    match s.resync_task_branch(mine.id, "feat/b") {
+        Err(Error::BranchTaken { branch, other_task_id }) => {
+            assert_eq!(branch, "feat/b");
+            assert_eq!(other_task_id, theirs.id);
+        }
+        other => panic!("expected BranchTaken, got {other:?}"),
+    }
+    let kept = s.task_by_id(mine.id).unwrap().worktree.unwrap();
+    assert_eq!(kept.branch.as_deref(), Some("feat/a"), "a refusal writes nothing");
+
+    // A closed task's branch is history, not a claim.
+    s.close_task(theirs.id, TaskOutcome::Done, 3).unwrap();
+    assert!(s.resync_task_branch(mine.id, "feat/b").unwrap().changed);
+    assert!(matches!(s.resync_task_branch(999, "x"), Err(Error::TaskNotFound(999))));
+}
+
+#[test]
+fn unlinked_worktrees_skips_the_bound_the_archived_and_the_just_probed() {
+    let s = Store::open_in_memory().unwrap();
+    let bare = s.add_task("no worktree", "backlog", None, None, 1).unwrap();
+    let archived = s.add_task("archived", "done", None, None, 2).unwrap();
+    s.set_task_worktree(archived.id, "/r", Some("o/x"), Some("feat/old"), Some("/w1")).unwrap();
+    s.close_task(archived.id, TaskOutcome::Done, 3).unwrap();
+    s.archive_closed_tasks(i64::MAX, 4).unwrap();
+    let live = s.add_task("live", "doing", None, None, 5).unwrap();
+    s.set_task_worktree(live.id, "/r", Some("o/x"), Some("feat/new"), Some("/w2")).unwrap();
+
+    let ids = |probe_before: i64| -> Vec<i64> {
+        s.unlinked_worktrees(probe_before, 8).unwrap().iter().map(|w| w.task_id).collect()
+    };
+    assert_eq!(ids(10), vec![live.id], "{} and {} must not be asked about", bare.id, archived.id);
+
+    // A stamped clock hides the row until the interval has passed, whatever
+    // the answer was — an unpushed branch throttles like a found PR.
+    s.mark_pr_probe(&[live.id], 10).unwrap();
+    assert!(ids(9).is_empty());
+    assert_eq!(ids(10), vec![live.id]);
+}
+
+#[test]
+fn replace_prs_for_repos_preserves_other_repos_rows() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "open")]).unwrap();
+    s.replace_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, "open")]).unwrap();
+    let prs = s.prs().unwrap();
+    assert_eq!(prs.len(), 2);
+    assert!(prs.iter().any(|p| p.repo == "o/b" && p.number == 2));
+    assert!(prs.iter().any(|p| p.repo == "o/a" && p.number == 3));
+}
+
+#[test]
+fn replace_open_prs_for_repos_preserves_merged_rows() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "merged")]).unwrap();
+    s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, "open")]).unwrap();
+    let prs = s.prs().unwrap();
+    assert_eq!(prs.len(), 2);
+    assert!(prs.iter().any(|p| p.number == 2 && p.state == "merged"));
+    assert!(prs.iter().any(|p| p.number == 3 && p.state == "open"));
+    assert!(!prs.iter().any(|p| p.number == 1));
+}
+
+#[test]
+fn replace_merged_prs_for_repos_preserves_open_rows() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "merged")]).unwrap();
+    s.replace_merged_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 4, "merged")]).unwrap();
+    let prs = s.prs().unwrap();
+    assert_eq!(prs.len(), 2);
+    assert!(prs.iter().any(|p| p.number == 1 && p.state == "open"));
+    assert!(prs.iter().any(|p| p.number == 4 && p.state == "merged"));
+    assert!(!prs.iter().any(|p| p.number == 2));
+}
+
+#[test]
+fn replace_open_prs_and_replace_merged_prs_are_full_snapshots_scoped_by_state() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "merged")]).unwrap();
+    s.replace_open_prs(&[pr("o/a", 3, "open")]).unwrap();
+    let prs = s.prs().unwrap();
+    assert_eq!(prs.len(), 2);
+    assert!(prs.iter().any(|p| p.number == 3 && p.state == "open"));
+    assert!(prs.iter().any(|p| p.number == 2 && p.state == "merged"));
+
+    s.replace_merged_prs(&[pr("o/b", 5, "merged")]).unwrap();
+    let prs = s.prs().unwrap();
+    assert_eq!(prs.len(), 2);
+    assert!(prs.iter().any(|p| p.number == 3 && p.state == "open"));
+    assert!(prs.iter().any(|p| p.number == 5 && p.state == "merged"));
+}
+
+#[test]
+fn replace_prs_round_trips_every_checks_state() {
+    let pr = |number: i64, checks: &str| PrInput {
+        repo: "o/r".to_string(),
+        number,
+        title: format!("pr {number}"),
+        branch: format!("b{number}"),
+        state: "open".to_string(),
+        checks: checks.to_string(),
+        review_state: String::new(),
+        url: "https://x".to_string(),
+        updated_ts: number,
+        base_branch: String::new(),
+    };
+    let s = Store::open_in_memory().unwrap();
+    s.replace_prs(&[
+        pr(1, "passing"),
+        pr(2, "failing"),
+        pr(3, "pending"),
+        pr(4, "none"),
+    ])
+    .unwrap();
+    let mut got: Vec<(i64, String)> =
+        s.prs().unwrap().into_iter().map(|p| (p.number, p.checks)).collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            (1, "passing".to_string()),
+            (2, "failing".to_string()),
+            (3, "pending".to_string()),
+            (4, "none".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn add_task_lands_in_backlog_at_the_bottom_of_the_queue() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("first", "backlog", None, None, 100).unwrap();
+    let b = s.add_task("second", "backlog", None, None, 200).unwrap();
+    assert_eq!(a.status, "backlog");
+    assert_eq!(a.rank, RANK_GAP);
+    assert_eq!(b.rank, 2 * RANK_GAP);
+    let open = s.open_tasks().unwrap();
+    let texts: Vec<&str> = open.iter().map(|t| t.text.as_str()).collect();
+    assert_eq!(texts, vec!["first", "second"]);
+}
+
+#[test]
+fn set_task_status_moves_columns_and_stamps_done() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("ship it", "backlog", None, None, 1).unwrap();
+    s.set_task_status(t.id, "doing", 5).unwrap();
+    let doing = s.open_tasks().unwrap();
+    assert_eq!(doing[0].status, "doing");
+    assert_eq!(doing[0].completed_at, None);
+
+    s.set_task_status(t.id, "done", 20).unwrap();
+    assert!(s.open_tasks().unwrap().is_empty());
+    let done = s.snapshot().unwrap().tasks.into_iter().find(|x| x.id == t.id).unwrap();
+    assert_eq!(done.status, "done");
+    assert_eq!(done.completed_at, Some(20));
+
+    // Re-opening clears completed_at.
+    s.set_task_status(t.id, "backlog", 30).unwrap();
+    let reopened = s.open_tasks().unwrap();
+    assert_eq!(reopened[0].status, "backlog");
+    assert_eq!(reopened[0].completed_at, None);
+}
+
+#[test]
+fn archive_closed_tasks_sweeps_only_old_finished() {
+    let s = Store::open_in_memory().unwrap();
+    let old = s.add_task("old done", "backlog", None, None, 1).unwrap();
+    let abandoned = s.add_task("old abandoned", "doing", None, None, 1).unwrap();
+    let recent = s.add_task("recent done", "backlog", None, None, 2).unwrap();
+    let open = s.add_task("still open", "backlog", None, None, 3).unwrap();
+    s.set_task_status(old.id, "done", 100).unwrap();
+    s.close_task(abandoned.id, TaskOutcome::Abandoned, 200).unwrap();
+    s.set_task_status(recent.id, "done", 5_000).unwrap();
+    s.set_task_status(open.id, "doing", 4).unwrap();
+
+    // Cutoff between the finished todos: archived rows survive, hidden, not deleted.
+    let archived = s.archive_closed_tasks(1_000, 9_000).unwrap();
+    assert_eq!(archived, 2);
+
+    let tasks = s.snapshot().unwrap().tasks;
+    let archived_ids: Vec<i64> =
+        tasks.iter().filter(|t| t.archived_at.is_some()).map(|t| t.id).collect();
+    assert!(archived_ids.contains(&old.id));
+    assert!(archived_ids.contains(&abandoned.id));
+    assert!(tasks.iter().any(|t| t.id == recent.id && t.archived_at.is_none()));
+    assert!(tasks.iter().any(|t| t.id == open.id && t.archived_at.is_none()));
+
+    // Nothing else old enough on a second sweep.
+    assert_eq!(s.archive_closed_tasks(1_000, 9_001).unwrap(), 0);
+}
+
+#[test]
+fn close_task_as_done_lands_in_done_and_detaches_the_dir() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("ship it", "doing", None, None, 2).unwrap();
+    s.set_task_worktree(t.id, "/repos/x", Some("o/x"), Some("feat/y"), Some("/repos/x/wt"))
+        .unwrap();
+
+    let closed = s.close_task(t.id, TaskOutcome::Done, 500).unwrap();
+    assert_eq!(closed.status, "done");
+    assert_eq!(closed.outcome.as_deref(), Some("done"));
+    assert_eq!(closed.completed_at, Some(500));
+    assert_eq!(closed.rank, t.rank, "closing keeps the rank");
+    let wt = closed.worktree.expect("repo binding survives");
+    assert_eq!(wt.branch.as_deref(), Some("feat/y"), "branch kept as historical fact");
+    assert_eq!(wt.dir, None, "dir cleared — the worktree is gone");
+    assert!(s.task_for_worktree_dir("/repos/x/wt").unwrap().is_none());
+}
+
+#[test]
+fn close_task_as_abandoned_freezes_status() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("didn't pan out", "doing", None, None, 1).unwrap();
+
+    let closed = s.close_task(t.id, TaskOutcome::Abandoned, 500).unwrap();
+    assert_eq!(closed.status, "doing", "status stays where the work stopped");
+    assert_eq!(closed.outcome.as_deref(), Some("abandoned"));
+    assert_eq!(closed.completed_at, Some(500), "stamped so the archive sweep can age it");
+    assert!(!s.open_tasks().unwrap().iter().any(|x| x.id == t.id), "closed = not open");
+
+    // Unknown outcomes never parse; a bad id is TaskNotFound.
+    assert_eq!(TaskOutcome::parse("exploded"), None);
+    assert_eq!(TaskOutcome::parse("abandoned"), Some(TaskOutcome::Abandoned));
+    assert!(matches!(s.close_task(9999, TaskOutcome::Done, 501), Err(Error::TaskNotFound(9999))));
+}
+
+#[test]
+fn status_move_out_of_done_reopens_a_closed_task() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("round two", "doing", None, None, 1).unwrap();
+    s.close_task(t.id, TaskOutcome::Done, 100).unwrap();
+    s.archive_closed_tasks(200, 200).unwrap();
+
+    // Dragging the card back to an active column clears the whole
+    // terminal record: outcome, archive, completed_at.
+    s.set_task_status(t.id, "doing", 300).unwrap();
+    let back = s.task_by_id(t.id).unwrap();
+    assert_eq!(back.outcome, None);
+    assert_eq!(back.archived_at, None);
+    assert_eq!(back.completed_at, None);
+
+    // A move *within* done (re-close) keeps the record.
+    s.close_task(t.id, TaskOutcome::Done, 400).unwrap();
+    s.set_task_status(t.id, "done", 500).unwrap();
+    assert_eq!(s.task_by_id(t.id).unwrap().outcome.as_deref(), Some("done"));
+}
+
+#[test]
+fn archive_and_unarchive_round_trip() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("history", "doing", None, None, 1).unwrap();
+    s.close_task(t.id, TaskOutcome::Abandoned, 100).unwrap();
+
+    assert_eq!(s.archive_closed_tasks(200, 200).unwrap(), 1);
+    assert_eq!(s.task_by_id(t.id).unwrap().archived_at, Some(200));
+    // Idempotent: a later sweep skips an already-archived row rather than
+    // restamping it, so the original archive instant survives.
+    assert_eq!(s.archive_closed_tasks(300, 300).unwrap(), 0);
+    assert_eq!(s.task_by_id(t.id).unwrap().archived_at, Some(200));
+
+    s.unarchive_task(t.id).unwrap();
+    let back = s.task_by_id(t.id).unwrap();
+    assert_eq!(back.archived_at, None);
+    assert_eq!(back.outcome.as_deref(), Some("abandoned"), "outcome survives unarchive");
+    assert!(matches!(s.unarchive_task(9999), Err(Error::TaskNotFound(9999))));
+}
+
+#[test]
+fn auto_attach_skips_archived_tasks_but_not_closed_ones() {
+    let s = Store::open_in_memory().unwrap();
+    let closed = s.add_task("closed", "doing", None, None, 1).unwrap();
+    s.set_task_worktree(closed.id, "/r/a", Some("o/r"), Some("feat/a"), None).unwrap();
+    let archived = s.add_task("archived", "doing", None, None, 2).unwrap();
+    s.set_task_worktree(archived.id, "/r/b", Some("o/r"), Some("feat/b"), None).unwrap();
+    // Staggered so one sweep separates them: only `archived` finished
+    // before the cutoff, so only it is swept off the board.
+    s.close_task(archived.id, TaskOutcome::Done, 10).unwrap();
+    s.close_task(closed.id, TaskOutcome::Done, 30).unwrap();
+    assert_eq!(s.archive_closed_tasks(20, 20).unwrap(), 1);
+
+    let pr = |number: i64, branch: &str| PrInput {
+        repo: "o/r".to_string(),
+        number,
+        title: "t".to_string(),
+        branch: branch.to_string(),
+        state: "merged".to_string(),
+        checks: "none".to_string(),
+        review_state: String::new(),
+        url: "https://x".to_string(),
+        updated_ts: number,
+        base_branch: String::new(),
+    };
+    s.replace_prs(&[pr(1, "feat/a"), pr(2, "feat/b")]).unwrap();
+
+    assert_eq!(s.auto_attach_worktree_prs(30).unwrap(), 1);
+    assert_eq!(s.task_by_id(closed.id).unwrap().prs.len(), 1, "closed still attaches");
+    assert!(s.task_by_id(archived.id).unwrap().prs.is_empty(), "archived never attaches");
+}
+
+#[test]
+fn add_task_stores_notes_and_lands_in_requested_status() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("port the CLI", "backlog", Some("start with doctor"), None, 1).unwrap();
+    assert_eq!(t.notes.as_deref(), Some("start with doctor"));
+    assert!(t.issues.is_empty() && t.prs.is_empty() && t.worktree.is_none());
+    // A worktree-backed task is born straight into `doing`.
+    let d = s.add_task("agent already running", "doing", None, None, 2).unwrap();
+    assert_eq!(d.status, "doing");
+    assert_eq!(d.completed_at, None);
+    // Unknown statuses are rejected.
+    assert!(s.add_task("nope", "bogus", None, None, 3).is_err());
+    let bare = s.add_task("no context", "backlog", None, None, 4).unwrap();
+    assert_eq!(bare.notes, None);
+}
+
+#[test]
+fn migrate_drops_retired_collector_rows_v6() {
+    // A db carrying freshness rows from collectors removed in the
+    // day-screens pivot alongside live ones.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    {
+        let s = Store::open(&path).unwrap();
+        for key in ["claude:email", "claude:tasks", "prs", "slack:dm"] {
+            s.conn
+                .execute(
+                    "INSERT INTO collect_runs (collector, ran_at, ok) VALUES (?1, 1, 1)",
+                    params![key],
+                )
+                .unwrap();
+        }
+    }
+
+    let s = Store::open(&path).unwrap();
+    let keys: Vec<String> = s.runs().unwrap().into_iter().map(|r| r.collector).collect();
+    assert_eq!(keys, ["prs", "slack:dm"], "retired collector keys are swept");
+}
+
+#[test]
+fn set_task_status_keeps_the_rank() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+    let b = s.add_task("b", "backlog", None, None, 2).unwrap();
+    // An agent starting and stopping must not reshuffle the queue.
+    s.set_task_status(a.id, "doing", 10).unwrap();
+    s.set_task_status(a.id, "backlog", 11).unwrap();
+    assert_eq!(s.get_task(a.id).unwrap().unwrap().rank, a.rank);
+    assert!(a.rank < b.rank);
+}
+
+fn ranked(s: &Store) -> Vec<String> {
+    let mut tasks = s.open_tasks().unwrap();
+    tasks.sort_by_key(|t| t.rank);
+    tasks.into_iter().map(|t| t.text).collect()
+}
+
+#[test]
+fn move_task_reorders_top_bottom_before_after() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+    let b = s.add_task("b", "backlog", None, None, 2).unwrap();
+    let c = s.add_task("c", "backlog", None, None, 3).unwrap();
+    s.move_task(c.id, RankMove::Top).unwrap();
+    assert_eq!(ranked(&s), ["c", "a", "b"]);
+    s.move_task(c.id, RankMove::Bottom).unwrap();
+    assert_eq!(ranked(&s), ["a", "b", "c"]);
+    s.move_task(c.id, RankMove::Before(b.id)).unwrap();
+    assert_eq!(ranked(&s), ["a", "c", "b"]);
+    s.move_task(a.id, RankMove::After(b.id)).unwrap();
+    assert_eq!(ranked(&s), ["c", "b", "a"]);
+    assert!(matches!(s.move_task(a.id, RankMove::Before(999)), Err(Error::TaskNotFound(999))));
+}
+
+#[test]
+fn move_task_renumbers_when_the_gap_runs_out() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+    let b = s.add_task("b", "backlog", None, None, 2).unwrap();
+    let c = s.add_task("c", "backlog", None, None, 3).unwrap();
+    // Bisecting a 1024 gap runs dry after ~10 moves; order must still hold.
+    for _ in 0..15 {
+        s.move_task(c.id, RankMove::After(a.id)).unwrap();
+        s.move_task(b.id, RankMove::After(a.id)).unwrap();
+    }
+    assert_eq!(ranked(&s), ["a", "b", "c"]);
+    let _ = (b, c);
+}
+
+#[test]
+fn rank_moves_parse_the_client_shape() {
+    let parse = |v| serde_json::from_value::<RankMove>(v).unwrap();
+    assert_eq!(parse(serde_json::json!("top")), RankMove::Top);
+    assert_eq!(parse(serde_json::json!({ "before": 3 })), RankMove::Before(3));
+    assert_eq!(parse(serde_json::json!({ "after": 4 })), RankMove::After(4));
+}
+
+#[test]
+fn snoozes_replace_and_clear_and_go_with_their_task() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+    s.set_task_worktree(a.id, "/r", Some("o/r"), Some("feat/a"), Some("/w")).unwrap();
+    let key = "folder:/w";
+    s.snooze_queue_item(key, "answer", Some(100), 5).unwrap();
+    s.snooze_queue_item(key, "land", None, 6).unwrap();
+    s.snooze_queue_item("ci:o/r@main", "fix_ci", None, 6).unwrap();
+    let snoozes = s.queue_snoozes().unwrap();
+    assert_eq!(snoozes.len(), 2);
+    assert_eq!((snoozes[0].key.as_str(), snoozes[0].reason.as_str()), ("ci:o/r@main", "fix_ci"));
+    assert_eq!((snoozes[1].reason.as_str(), snoozes[1].until_ms), ("land", None));
+    s.unsnooze_queue_item(key).unwrap();
+    assert_eq!(s.queue_snoozes().unwrap().len(), 1);
+    s.snooze_queue_item(key, "land", None, 7).unwrap();
+    s.delete_task(a.id).unwrap();
+    let left = s.queue_snoozes().unwrap();
+    assert_eq!(left.len(), 1, "only the task's own snooze goes with it");
+    assert_eq!(left[0].key, "ci:o/r@main");
+}
+
+#[test]
+fn writing_a_snooze_sweeps_the_spent_timed_ones() {
+    let s = Store::open_in_memory().unwrap();
+    s.snooze_queue_item("pr:o/r#1", "fix_ci", Some(10), 0).unwrap();
+    s.snooze_queue_item("pr:o/r#2", "fix_ci", None, 0).unwrap();
+    s.snooze_queue_item("pr:o/r#3", "fix_ci", Some(500), 20).unwrap();
+    let keys: Vec<String> = s.queue_snoozes().unwrap().into_iter().map(|q| q.key).collect();
+    assert_eq!(keys, ["pr:o/r#2", "pr:o/r#3"]);
+}
+
+#[test]
+fn v22_task_snoozes_carry_over_as_task_keys() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    {
+        let s = Store::open(&path).unwrap();
+        s.conn
+            .execute_batch(
+                "DROP TABLE queue_snoozes;
+                     CREATE TABLE task_snoozes (task_id INTEGER PRIMARY KEY, reason TEXT NOT NULL,
+                       until_ms INTEGER, created_at INTEGER NOT NULL);
+                     INSERT INTO task_snoozes VALUES (7, 'answer', 100, 1);
+                     UPDATE meta SET value = '23' WHERE key = 'schema_version';",
+            )
+            .unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    let got = s.queue_snoozes().unwrap();
+    assert_eq!(
+        (got[0].key.as_str(), got[0].reason.as_str(), got[0].until_ms),
+        ("task:7", "answer", Some(100))
+    );
+    let old: i64 = s
+        .conn
+        .query_row("SELECT COUNT(*) FROM sqlite_master WHERE name = 'task_snoozes'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(old, 0);
+}
+
+#[test]
+fn migrate_turns_column_positions_into_one_global_rank() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    {
+        let s = Store::open(&path).unwrap();
+        s.conn
+            .execute_batch(
+                "ALTER TABLE tasks RENAME COLUMN rank TO position;
+                     INSERT INTO tasks (text, status, position, created_at) VALUES
+                       ('backlog-1', 'backlog', 1, 1), ('doing-0', 'doing', 0, 2),
+                       ('backlog-0', 'backlog', 0, 3), ('done-0', 'done', 0, 4);
+                     UPDATE meta SET value = '21' WHERE key = 'schema_version';",
+            )
+            .unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    assert!(!task_columns(&s).contains(&"position".to_string()));
+    let mut all = s.all_tasks().unwrap();
+    all.sort_by_key(|t| t.rank);
+    let texts: Vec<&str> = all.iter().map(|t| t.text.as_str()).collect();
+    assert_eq!(texts, ["doing-0", "backlog-0", "backlog-1", "done-0"]);
+    assert_eq!(all[0].rank, RANK_GAP);
+}
+
+#[test]
+fn update_task_edits_text_and_notes() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("rough draft", "backlog", None, None, 1).unwrap();
+    let updated = s.update_task(t.id, "polished", Some("ship friday")).unwrap();
+    assert_eq!(updated.text, "polished");
+    assert_eq!(updated.notes.as_deref(), Some("ship friday"));
+    // Status/rank are untouched by an edit.
+    assert_eq!(updated.status, "backlog");
+    assert_eq!(updated.rank, t.rank);
+    // And it persists.
+    assert_eq!(s.get_task(t.id).unwrap().unwrap().text, "polished");
+}
+
+#[test]
+fn update_task_none_notes_clears_them() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("call dentist", "backlog", Some("weds am"), None, 1).unwrap();
+    assert_eq!(t.notes.as_deref(), Some("weds am"));
+    // Passing None clears notes back out — a full replace, no sentinel.
+    let cleared = s.update_task(t.id, "call dentist", None).unwrap();
+    assert_eq!(cleared.notes, None);
+}
+
+#[test]
+fn set_task_summary_records_the_agents_report_and_stamps_it() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("switch the files pane", "doing", Some("mine"), None, 1).unwrap();
+    assert_eq!(t.summary, None);
+    assert_eq!(t.summary_at, None);
+    let done = s.set_task_summary(t.id, "  PR #510 squashed into main.  ", 500).unwrap();
+    assert_eq!(done.summary.as_deref(), Some("PR #510 squashed into main."));
+    assert_eq!(done.summary_at, Some(500));
+    // The user's own notes are a separate field and stay untouched — the
+    // summary must never end up in what a later `task_start` reads back.
+    assert_eq!(done.notes.as_deref(), Some("mine"));
+    // A retried write replaces rather than appends.
+    let again = s.set_task_summary(t.id, "PR #510 squashed into main.", 900).unwrap();
+    assert_eq!(again.summary.as_deref(), Some("PR #510 squashed into main."));
+    assert_eq!(again.summary_at, Some(900));
+    // And it survives a re-read.
+    assert_eq!(
+        s.get_task(t.id).unwrap().unwrap().summary.as_deref(),
+        Some("PR #510 squashed into main.")
+    );
+}
+
+#[test]
+fn set_task_summary_blank_clears_it_and_unknown_id_errors() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("x", "doing", None, None, 1).unwrap();
+    s.set_task_summary(t.id, "something", 1).unwrap();
+    let cleared = s.set_task_summary(t.id, "   ", 2).unwrap();
+    assert_eq!(cleared.summary, None);
+    assert_eq!(cleared.summary_at, None);
+    let err = s.set_task_summary(999, "ghost", 3).unwrap_err();
+    assert!(matches!(err, Error::TaskNotFound(999)));
+}
+
+#[test]
+fn migrate_adds_summary_columns_to_pre_v17_tasks() {
+    // The v16-era shape: every task column except summary/summary_at.
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+                "CREATE TABLE tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'backlog',
+                    position INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    completed_at INTEGER,
+                    notes TEXT,
+                    worktree_repo_root TEXT,
+                    worktree_repo TEXT,
+                    worktree_branch TEXT,
+                    worktree_dir TEXT,
+                    outcome TEXT,
+                    archived_at INTEGER,
+                    goal TEXT
+                );
+                 INSERT INTO tasks (text, status, position, created_at) VALUES ('old', 'doing', 0, 1);",
+            )
+            .unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    let cols = task_columns(&s);
+    assert!(cols.contains(&"summary".to_string()));
+    assert!(cols.contains(&"summary_at".to_string()));
+    // The pre-existing row reads back, summary-less, and can take one.
+    let existing = s.open_tasks().unwrap();
+    assert_eq!(existing[0].summary, None);
+    let updated = s.set_task_summary(existing[0].id, "landed", 7).unwrap();
+    assert_eq!(updated.summary.as_deref(), Some("landed"));
+}
+
+#[test]
+fn update_task_nonexistent_errors() {
+    let s = Store::open_in_memory().unwrap();
+    let err = s.update_task(999, "ghost", None).unwrap_err();
+    assert!(matches!(err, Error::TaskNotFound(999)));
+}
+
+#[test]
+fn delete_task_removes_row() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("keep", "backlog", None, None, 1).unwrap();
+    let b = s.add_task("toss", "backlog", None, None, 2).unwrap();
+    s.delete_task(b.id).unwrap();
+    let open = s.open_tasks().unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].id, a.id);
+    assert!(s.get_task(b.id).unwrap().is_none());
+}
+
+#[test]
+fn delete_task_nonexistent_errors() {
+    let s = Store::open_in_memory().unwrap();
+    let err = s.delete_task(999).unwrap_err();
+    assert!(matches!(err, Error::TaskNotFound(999)));
+}
+
+#[test]
+fn events_between_windows_by_start() {
+    let s = Store::open_in_memory().unwrap();
+    put_events(&s, &[event("a", 100), event("b", 300), event("c", 500)], 1).unwrap();
+    let win = s.events_between(150, 500).unwrap();
+    assert_eq!(win.iter().map(|e| e.external_id.as_str()).collect::<Vec<_>>(), vec!["b"]);
+}
+
+#[test]
+fn current_or_next_event_across_the_meeting_lifecycle() {
+    // The `event` helper spans [start, start + 1000). Two non-overlapping
+    // meetings: "b" runs [300, 1300), "c" runs [1500, 2500).
+    let s = Store::open_in_memory().unwrap();
+    put_events(&s, &[event("b", 300), event("c", 1500)], 1).unwrap();
+
+    // Future: before it starts, "b" is the next meeting.
+    assert_eq!(s.current_or_next_event(200).unwrap().unwrap().external_id, "b");
+    // At the exact start it is already live.
+    assert_eq!(s.current_or_next_event(300).unwrap().unwrap().external_id, "b");
+    // In progress (start <= now < end): "b" stays selected, not skipped.
+    assert_eq!(s.current_or_next_event(800).unwrap().unwrap().external_id, "b");
+    // Ended (now >= end_ts): "b" drops out and the next meeting "c" takes over.
+    assert_eq!(s.current_or_next_event(1300).unwrap().unwrap().external_id, "c");
+    // After the last meeting ends there is nothing left.
+    assert!(s.current_or_next_event(3000).unwrap().is_none());
+}
+
+#[test]
+fn current_or_next_event_without_end_is_a_point_in_time() {
+    let s = Store::open_in_memory().unwrap();
+    put_events(
+        &s,
+        &[EventInput {
+            external_id: "no-end".to_string(),
+            title: "Open-ended".to_string(),
+            start: at(500),
+            end: None,
+            attendees: vec![],
+            location: None,
+            join_url: None,
+        }],
+        1,
+    )
+    .unwrap();
+    // With no duration there is no live window: shown up to its start, then gone.
+    assert_eq!(s.current_or_next_event(400).unwrap().unwrap().external_id, "no-end");
+    assert_eq!(s.current_or_next_event(500).unwrap().unwrap().external_id, "no-end");
+    assert!(s.current_or_next_event(600).unwrap().is_none());
+}
+
+#[test]
+fn record_run_upserts_per_collector() {
+    let s = Store::open_in_memory().unwrap();
+    s.record_run("gcal", true, None, 10).unwrap();
+    s.record_run("gcal", false, Some("boom"), 20).unwrap();
+    let runs = s.runs().unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].ran_at, 20);
+    assert!(!runs[0].ok);
+    assert_eq!(runs[0].message.as_deref(), Some("boom"));
+}
+
+fn dm_msg(ts: i64, from_me: bool) -> DmInput {
+    DmInput {
+        channel: "D123".to_string(),
+        from_name: "Sarah".to_string(),
+        text: format!("msg at {ts}"),
+        ts,
+        from_me,
+        url: Some("slack://channel?team=T1&id=D123".to_string()),
+    }
+}
+
+#[test]
+fn upsert_dm_preserves_dismissal_until_a_newer_message() {
+    // File-backed: dismissals live in the ledger next to the db, not in it.
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(&dir.path().join("tt.db")).unwrap();
+
+    s.upsert_dm(&dm_msg(100, false), 1).unwrap();
+    let dm = &s.dms().unwrap()[0];
+    assert!(!dm.from_me);
+    assert_eq!(dm.dismissed_ts, 0, "fresh message starts undismissed");
+
+    // Mark handled: dismissed_ts catches up to ts.
+    s.dismiss_dm("D123", 100).unwrap();
+    assert_eq!(s.dms().unwrap()[0].dismissed_ts, 100);
+
+    // Re-collecting the same message keeps the dismissal.
+    s.upsert_dm(&dm_msg(100, false), 2).unwrap();
+    let dm = s.dms().unwrap()[0].clone();
+    assert_eq!(dm.dismissed_ts, 100);
+    assert_eq!(dm.fetched_at, 2);
+
+    // A newer message outruns the dismissal (dismissed_ts < ts again).
+    s.upsert_dm(&dm_msg(200, false), 3).unwrap();
+    let dm = s.dms().unwrap()[0].clone();
+    assert_eq!(dm.ts, 200);
+    assert!(dm.dismissed_ts < dm.ts);
+
+    // Replying clears it collector-side: latest message is mine.
+    s.upsert_dm(&dm_msg(300, true), 4).unwrap();
+    assert!(s.dms().unwrap()[0].from_me);
+}
+
+#[test]
+fn dm_dismissal_holds_across_store_instances_sharing_the_ledger() {
+    // The regression this fixes: tt.db is per-checkout instance state, so a
+    // dismissal stored in it evaporated whenever the next launch resolved a
+    // different scope. Two dbs in one dir model two instances — `Store::open`
+    // points both at the same `dm-dismissals.json`.
+    let dir = tempfile::tempdir().unwrap();
+    let a = Store::open(&dir.path().join("a.db")).unwrap();
+    let b = Store::open(&dir.path().join("b.db")).unwrap();
+
+    a.upsert_dm(&dm_msg(100, false), 1).unwrap();
+    b.upsert_dm(&dm_msg(100, false), 1).unwrap();
+    a.dismiss_dm("D123", 100).unwrap();
+
+    assert_eq!(b.dms().unwrap()[0].dismissed_ts, 100, "handled in a must hold in b");
+
+    // A newer message still re-raises everywhere.
+    b.upsert_dm(&dm_msg(200, false), 2).unwrap();
+    let dm = b.dms().unwrap()[0].clone();
+    assert!(dm.dismissed_ts < dm.ts);
+}
+
+#[test]
+fn dm_dismissal_ledger_never_lowers_and_survives_corruption() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(&dir.path().join("tt.db")).unwrap();
+    s.upsert_dm(&dm_msg(200, false), 1).unwrap();
+
+    s.dismiss_dm("D123", 200).unwrap();
+    // An out-of-order (older) dismissal must not resurface the newer message.
+    s.dismiss_dm("D123", 100).unwrap();
+    assert_eq!(s.dms().unwrap()[0].dismissed_ts, 200);
+
+    // A mangled ledger reads as empty and self-heals on the next write.
+    std::fs::write(dir.path().join("dm-dismissals.json"), b"{ not json").unwrap();
+    assert_eq!(s.dms().unwrap()[0].dismissed_ts, 0);
+    s.dismiss_dm("D123", 200).unwrap();
+    assert_eq!(s.dms().unwrap()[0].dismissed_ts, 200);
+}
+
+#[test]
+fn dismiss_item_survives_replace_until_the_item_updates() {
+    let s = Store::open_in_memory().unwrap();
+    let pr = |updated_ts: i64| PrInput {
+        repo: "octo/widgets".to_string(),
+        number: 42,
+        title: "feat: treemap".to_string(),
+        branch: "feat/treemap".to_string(),
+        state: "open".to_string(),
+        checks: "passing".to_string(),
+        review_state: "review_requested".to_string(),
+        url: "https://github.com/octo/widgets/pull/42".to_string(),
+        updated_ts,
+        base_branch: String::new(),
+    };
+
+    s.replace_prs(&[pr(100)]).unwrap();
+    assert_eq!(s.prs().unwrap()[0].dismissed_ts, 0, "fresh PR starts undismissed");
+
+    s.dismiss_item("pr", "octo/widgets", 42, 100).unwrap();
+    assert_eq!(s.prs().unwrap()[0].dismissed_ts, 100);
+
+    // A collector re-run with no real change (same updated_ts) keeps the
+    // dismissal, exactly like a re-sent DM at the same ts.
+    s.replace_prs(&[pr(100)]).unwrap();
+    assert_eq!(s.prs().unwrap()[0].dismissed_ts, 100);
+
+    // The PR actually changing (a newer review) outruns the dismissal.
+    s.replace_prs(&[pr(200)]).unwrap();
+    let pr_row = &s.prs().unwrap()[0];
+    assert_eq!(pr_row.updated_ts, 200);
+    assert!(pr_row.dismissed_ts < pr_row.updated_ts);
+}
+
+#[test]
+fn clear_dismissals_removes_every_kind() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_issues(&[IssueInput {
+        repo: "octo/widgets".to_string(),
+        number: 118,
+        title: "Flaky resize".to_string(),
+        labels: vec![],
+        state: "open".to_string(),
+        url: "https://github.com/octo/widgets/issues/118".to_string(),
+        updated_ts: 50,
+    }])
+    .unwrap();
+    s.replace_prs(&[PrInput {
+        repo: "octo/widgets".to_string(),
+        number: 42,
+        title: "feat: treemap".to_string(),
+        branch: "feat/treemap".to_string(),
+        state: "open".to_string(),
+        checks: "passing".to_string(),
+        review_state: "review_requested".to_string(),
+        url: "https://github.com/octo/widgets/pull/42".to_string(),
+        updated_ts: 100,
+        base_branch: String::new(),
+    }])
+    .unwrap();
+
+    s.dismiss_item("issue", "octo/widgets", 118, 50).unwrap();
+    s.dismiss_item("pr", "octo/widgets", 42, 100).unwrap();
+    assert_eq!(s.issues().unwrap()[0].dismissed_ts, 50);
+    assert_eq!(s.prs().unwrap()[0].dismissed_ts, 100);
+
+    let cleared = s.clear_dismissals().unwrap();
+    assert_eq!(cleared, 2);
+    assert_eq!(s.issues().unwrap()[0].dismissed_ts, 0);
+    assert_eq!(s.prs().unwrap()[0].dismissed_ts, 0);
+}
+
+#[test]
+fn snapshot_serializes_camel_case() {
+    let s = Store::open_in_memory().unwrap();
+    put_events(
+        &s,
+        &[EventInput {
+            external_id: "x".to_string(),
+            title: "T".to_string(),
+            start: at(1),
+            end: Some(at(2)),
+            attendees: vec!["a@b.com".to_string()],
+            location: Some("room".to_string()),
+            join_url: Some("https://meet".to_string()),
+        }],
+        1,
+    )
+    .unwrap();
+    s.add_task("do thing", "backlog", None, None, 1).unwrap();
+    s.replace_issues(&[issue("o/r", 5, 6)]).unwrap();
+    s.replace_prs(&[PrInput {
+        repo: "o/r".to_string(),
+        number: 7,
+        title: "Fix".to_string(),
+        branch: "feat".to_string(),
+        state: "open".to_string(),
+        checks: "passing".to_string(),
+        review_state: "approved".to_string(),
+        url: "https://x".to_string(),
+        updated_ts: 3,
+        base_branch: String::new(),
+    }])
+    .unwrap();
+    s.record_run("gcal", true, None, 4).unwrap();
+    s.upsert_dm(
+        &DmInput {
+            channel: "D1".to_string(),
+            from_name: "Sarah".to_string(),
+            text: "hi".to_string(),
+            ts: 5,
+            from_me: false,
+            url: None,
+        },
+        6,
+    )
+    .unwrap();
+
+    let json = serde_json::to_string(&s.snapshot().unwrap()).unwrap();
+    for key in [
+        "\"start\"",
+        "\"externalId\"",
+        "\"joinUrl\"",
+        "\"createdAt\"",
+        "\"updatedTs\"",
+        "\"reviewState\"",
+        "\"ranAt\"",
+        "\"fromName\"",
+        "\"fromMe\"",
+        "\"dismissedTs\"",
+    ] {
+        assert!(json.contains(key), "expected {key} in snapshot JSON: {json}");
+    }
+    // snake_case must not leak through.
+    assert!(!json.contains("start_ts"));
+    assert!(!json.contains("review_state"));
+    // Event times are RFC 3339 on the wire, not epoch integers — this is
+    // the readability the format exists for, so pin the rendered shape.
+    // Note chrono's serde renders a zero offset as `Z` where `to_rfc3339`
+    // writes `+00:00`. Both are valid RFC 3339 and parse identically, and
+    // the generated sort column normalizes either — so this pins the shape
+    // without pretending the two spellings must match.
+    assert!(
+        json.contains("\"start\":\"1970-01-01T00:00:00.001Z\""),
+        "event start should be RFC 3339: {json}"
+    );
+}
+
+/// `utc_key` and the `starts_at_utc` generated column must produce byte-
+/// identical strings. They are compared lexically, so a divergence in
+/// width or precision does not error — it silently returns the wrong rows
+/// from every range query. Pinned through SQLite itself rather than by
+/// eyeballing two format strings that live in different languages.
+#[test]
+fn utc_key_matches_the_generated_column() {
+    let s = Store::open_in_memory().unwrap();
+    for ms in [0i64, 1, 999, 1_700_000_000_000, -86_400_000] {
+        s.replace_events_for_source("k", i64::MIN, i64::MAX, &[event("x", ms)], ms + 1).unwrap();
+        let stored: String = s
+            .conn
+            .query_row("SELECT starts_at_utc FROM events WHERE source = 'k'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(stored, utc_key(ms), "format drift at {ms}");
+    }
+}
+
+/// The offset the calendar reported survives a write/read round trip —
+/// the whole reason these columns are text and not integers.
+#[test]
+fn a_non_utc_offset_round_trips_and_still_sorts_by_instant() {
+    let s = Store::open_in_memory().unwrap();
+    let london = DateTime::parse_from_rfc3339("2026-07-20T15:00:00+01:00").unwrap();
+    let chicago = DateTime::parse_from_rfc3339("2026-07-20T09:30:00-05:00").unwrap();
+    // Chicago 09:30-05:00 is 14:30Z — half an hour *before* London 15:00+01:00
+    // (14:00Z)... no: 14:30Z is after 14:00Z. Instant order is london, chicago.
+    s.replace_events_for_source(
+        "tz",
+        i64::MIN,
+        i64::MAX,
+        &[
+            EventInput {
+                external_id: "chicago".to_string(),
+                title: "Standup".to_string(),
+                start: chicago,
+                end: None,
+                attendees: vec![],
+                location: None,
+                join_url: None,
+            },
+            EventInput {
+                external_id: "london".to_string(),
+                title: "Review".to_string(),
+                start: london,
+                end: None,
+                attendees: vec![],
+                location: None,
+                join_url: None,
+            },
+        ],
+        london.timestamp_millis(),
+    )
+    .unwrap();
+
+    let all = s.events_between(i64::MIN, i64::MAX).unwrap();
+    // Sorted by instant (14:00Z then 14:30Z), NOT by the authored strings —
+    // lexically "09:30-05:00" would come first and be wrong.
+    assert_eq!(
+        all.iter().map(|e| e.external_id.as_str()).collect::<Vec<_>>(),
+        vec!["london", "chicago"]
+    );
+    // ...and each keeps the offset it was written with.
+    let stored_london = all.iter().find(|e| e.external_id == "london").unwrap();
+    assert_eq!(stored_london.start.to_rfc3339(), "2026-07-20T15:00:00+01:00");
+    assert_eq!(stored_london.start.offset().local_minus_utc(), 3600);
+}
+
+fn mcp_call(method: &str, tool: Option<&str>, ok: bool) -> McpCallInput {
+    McpCallInput {
+        method: method.to_string(),
+        tool: tool.map(str::to_string),
+        args: tool.map(|_| "{\"title\":\"x\"}".to_string()),
+        ok,
+        error: (!ok).then(|| "boom".to_string()),
+        duration_ms: Some(3),
+        client: Some("claude-code 2.0".to_string()),
+    }
+}
+
+#[test]
+fn record_mcp_call_reads_back_newest_first() {
+    let s = Store::open_in_memory().unwrap();
+    s.record_mcp_call(&mcp_call("tools/list", None, true), 10).unwrap();
+    s.record_mcp_call(&mcp_call("tools/call", Some("todo_create"), true), 20).unwrap();
+    s.record_mcp_call(&mcp_call("tools/call", Some("nope"), false), 30).unwrap();
+
+    let calls = s.mcp_calls(10).unwrap();
+    assert_eq!(calls.len(), 3);
+    assert_eq!(calls[0].ts, 30);
+    assert_eq!(calls[0].tool.as_deref(), Some("nope"));
+    assert!(!calls[0].ok);
+    assert_eq!(calls[0].error.as_deref(), Some("boom"));
+    assert_eq!(calls[2].method, "tools/list");
+    assert_eq!(calls[2].tool, None);
+    assert_eq!(calls[1].args.as_deref(), Some("{\"title\":\"x\"}"));
+    assert_eq!(calls[1].client.as_deref(), Some("claude-code 2.0"));
+
+    // The limit caps the read.
+    assert_eq!(s.mcp_calls(2).unwrap().len(), 2);
+}
+
+#[test]
+fn record_mcp_call_prunes_beyond_retention() {
+    let s = Store::open_in_memory().unwrap();
+    for i in 0..(MCP_CALL_RETAIN + 25) {
+        s.record_mcp_call(&mcp_call("ping", None, true), i).unwrap();
+    }
+    let calls = s.mcp_calls(MCP_CALL_RETAIN as usize * 2).unwrap();
+    assert_eq!(calls.len(), MCP_CALL_RETAIN as usize);
+    // The survivors are the newest rows.
+    assert_eq!(calls[0].ts, MCP_CALL_RETAIN + 24);
+    assert_eq!(calls.last().unwrap().ts, 25);
+}
+
+#[test]
+fn snapshot_carries_mcp_calls_camel_cased() {
+    let s = Store::open_in_memory().unwrap();
+    s.record_mcp_call(&mcp_call("tools/call", Some("day_brief"), true), 7).unwrap();
+    let snapshot = s.snapshot().unwrap();
+    assert_eq!(snapshot.mcp_calls.len(), 1);
+    assert_eq!(snapshot.mcp_calls[0].tool.as_deref(), Some("day_brief"));
+
+    let json = serde_json::to_string(&snapshot).unwrap();
+    assert!(json.contains("\"mcpCalls\""), "expected mcpCalls in {json}");
+    assert!(json.contains("\"durationMs\""), "expected durationMs in {json}");
+    assert!(!json.contains("mcp_calls"));
+}
+
+#[test]
+fn archive_closed_tasks_never_sweeps_legacy_null_completed_at() {
+    // A `done` row whose `completed_at` is NULL (data from before the column
+    // was stamped) has no known completion time, so the sweep must skip it —
+    // even with a cutoff far in the future. There is no public API to make
+    // such a row, so insert it directly.
+    let s = Store::open_in_memory().unwrap();
+    s.conn
+        .execute(
+            "INSERT INTO tasks (text, status, rank, created_at, completed_at)
+                 VALUES ('legacy done', 'done', 0, 1, NULL)",
+            [],
+        )
+        .unwrap();
+    let normal = s.add_task("normal done", "backlog", None, None, 2).unwrap();
+    s.set_task_status(normal.id, "done", 10).unwrap();
+
+    let archived = s.archive_closed_tasks(1_000_000, 1_000_001).unwrap();
+    assert_eq!(archived, 1, "only the stamped done row is swept");
+    let visible: Vec<String> = s
+        .snapshot()
+        .unwrap()
+        .tasks
+        .into_iter()
+        .filter(|t| t.archived_at.is_none())
+        .map(|t| t.text)
+        .collect();
+    assert_eq!(visible, vec!["legacy done".to_string()]);
+}
+
+#[test]
+fn events_between_is_start_inclusive_end_exclusive() {
+    let s = Store::open_in_memory().unwrap();
+    put_events(
+        &s,
+        &[
+            event("at-start", 100),
+            event("mid", 150),
+            event("at-end", 200),
+        ],
+        1,
+    )
+    .unwrap();
+    // Window [100, 200): the event exactly at start is in, the one at end is out.
+    let ids: Vec<String> =
+        s.events_between(100, 200).unwrap().into_iter().map(|e| e.external_id).collect();
+    assert_eq!(ids, vec!["at-start".to_string(), "mid".to_string()]);
+}
+
+#[test]
+fn current_or_next_event_on_empty_store_is_none() {
+    let s = Store::open_in_memory().unwrap();
+    assert!(s.current_or_next_event(0).unwrap().is_none());
+}
+
+#[test]
+fn replace_events_round_trips_attendees_json() {
+    let s = Store::open_in_memory().unwrap();
+    put_events(
+        &s,
+        &[
+            EventInput {
+                external_id: "many".to_string(),
+                title: "Sync".to_string(),
+                start: at(100),
+                end: Some(at(200)),
+                attendees: vec!["a@x.com".to_string(), "b@x.com".to_string()],
+                location: Some("Room 1".to_string()),
+                join_url: Some("https://meet/x".to_string()),
+            },
+            EventInput {
+                external_id: "none".to_string(),
+                title: "Solo".to_string(),
+                start: at(300),
+                end: None,
+                attendees: vec![],
+                location: None,
+                join_url: None,
+            },
+        ],
+        1,
+    )
+    .unwrap();
+    let events = s.snapshot().unwrap().events;
+    let many = events.iter().find(|e| e.external_id == "many").unwrap();
+    assert_eq!(many.attendees, vec!["a@x.com".to_string(), "b@x.com".to_string()]);
+    assert_eq!(many.location.as_deref(), Some("Room 1"));
+    let none = events.iter().find(|e| e.external_id == "none").unwrap();
+    assert!(none.attendees.is_empty());
+    assert_eq!(none.end, None);
+}
+
+#[test]
+fn open_tasks_orders_across_columns_by_board_order() {
+    let s = Store::open_in_memory().unwrap();
+    s.add_task("backlog item", "backlog", None, None, 1).unwrap();
+    let doing = s.add_task("doing item", "backlog", None, None, 2).unwrap();
+    let done = s.add_task("done item", "backlog", None, None, 3).unwrap();
+    s.set_task_status(doing.id, "doing", 11).unwrap();
+    s.set_task_status(done.id, "done", 13).unwrap();
+
+    // open_tasks excludes done and returns backlog → doing.
+    let statuses: Vec<String> = s.open_tasks().unwrap().into_iter().map(|t| t.status).collect();
+    assert_eq!(statuses, vec!["backlog".to_string(), "doing".to_string()]);
+}
+
+#[test]
+fn task_derived_fields_track_closed_worktree_and_outcome() {
+    let s = Store::open_in_memory().unwrap();
+    // Backlog, no worktree: open, no badge, nothing to jump to.
+    let bare = s.add_task("bare", "backlog", None, None, 1).unwrap();
+    assert!(!bare.closed);
+    assert_eq!(bare.display_outcome, None);
+    assert!(!bare.has_worktree);
+
+    // A bound repo with no worktree dir yet — still not "has_worktree".
+    s.set_task_worktree(bare.id, "/repo", None, None, None).unwrap();
+    let repo_bound = s.get_task(bare.id).unwrap().unwrap();
+    assert!(!repo_bound.closed);
+    assert!(!repo_bound.has_worktree);
+
+    // A worktree dir makes it `has_worktree`.
+    s.set_task_worktree(bare.id, "/repo", None, Some("br"), Some("/repo/wt")).unwrap();
+    let with_dir = s.get_task(bare.id).unwrap().unwrap();
+    assert!(with_dir.has_worktree);
+
+    // Dragged straight into `done` with no explicit outcome: closed, and
+    // the badge falls back to `done` even though `outcome` itself is unset.
+    let dragged = s.add_task("dragged", "backlog", None, None, 2).unwrap();
+    s.set_task_status(dragged.id, "done", 10).unwrap();
+    let dragged = s.get_task(dragged.id).unwrap().unwrap();
+    assert!(dragged.closed);
+    assert_eq!(dragged.outcome, None);
+    assert_eq!(dragged.display_outcome, Some("done".to_string()));
+
+    // Explicitly closed as abandoned: closed, badge mirrors the recorded outcome.
+    let abandoned = s.add_task("abandoned", "backlog", None, None, 3).unwrap();
+    let abandoned = s.close_task(abandoned.id, TaskOutcome::Abandoned, 20).unwrap();
+    assert!(abandoned.closed);
+    assert_eq!(abandoned.display_outcome, Some("abandoned".to_string()));
+}
+
+#[test]
+fn snapshot_tasks_place_done_column_last() {
+    let s = Store::open_in_memory().unwrap();
+    let d = s.add_task("finish", "backlog", None, None, 1).unwrap();
+    s.add_task("start", "backlog", None, None, 2).unwrap();
+    s.set_task_status(d.id, "done", 10).unwrap();
+    // Snapshot keeps done rows but orders them after open columns regardless
+    // of insertion/completion order.
+    let statuses: Vec<String> = s.snapshot().unwrap().tasks.into_iter().map(|t| t.status).collect();
+    assert_eq!(statuses, vec!["backlog".to_string(), "done".to_string()]);
+}
+
+#[test]
+fn snapshot_caps_mcp_calls_at_the_snapshot_limit() {
+    let s = Store::open_in_memory().unwrap();
+    // More rows than the snapshot carries, but within retention.
+    let total = MCP_CALL_SNAPSHOT_LIMIT + 20;
+    for i in 0..total {
+        s.record_mcp_call(&mcp_call("ping", None, true), i as i64).unwrap();
+    }
+    let snapshot = s.snapshot().unwrap();
+    assert_eq!(snapshot.mcp_calls.len(), MCP_CALL_SNAPSHOT_LIMIT);
+    // Newest first: the last recorded call heads the list.
+    assert_eq!(snapshot.mcp_calls[0].ts, (total - 1) as i64);
+}
+
+#[test]
+fn replace_issues_and_prs_with_empty_clears_all_rows() {
+    let s = Store::open_in_memory().unwrap();
+    s.replace_issues(&[issue("o/r", 1, 100)]).unwrap();
+    s.replace_prs(&[PrInput {
+        repo: "o/r".to_string(),
+        number: 2,
+        title: "t".to_string(),
+        branch: "b".to_string(),
+        state: "open".to_string(),
+        checks: "passing".to_string(),
+        review_state: String::new(),
+        url: "https://x".to_string(),
+        updated_ts: 1,
+        base_branch: String::new(),
+    }])
+    .unwrap();
+    assert_eq!(s.replace_issues(&[]).unwrap(), 0);
+    assert_eq!(s.replace_prs(&[]).unwrap(), 0);
+    assert!(s.issues().unwrap().is_empty());
+    assert!(s.prs().unwrap().is_empty());
+}
+
+#[test]
+fn update_task_leaves_links_and_worktree_intact() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("wire board", "backlog", None, None, 1).unwrap();
+    s.attach_task_issue(t.id, "o/r", 7, "https://github.com/o/r/issues/7").unwrap();
+    s.set_task_worktree(t.id, "/repos/r", Some("o/r"), Some("feat/wire"), Some("/w")).unwrap();
+    let updated = s.update_task(t.id, "wire board v2", Some("note")).unwrap();
+    assert_eq!(updated.text, "wire board v2");
+    // Editing free-form fields must not disturb links or the worktree binding.
+    assert_eq!(updated.issues.len(), 1);
+    assert_eq!(updated.issues[0].number, 7);
+    assert_eq!(updated.worktree.unwrap().branch.as_deref(), Some("feat/wire"));
+}
+
+#[test]
+fn attach_task_issue_accumulates_links() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("multi-issue", "backlog", None, None, 1).unwrap();
+    s.attach_task_issue(t.id, "o/a", 1, "https://github.com/o/a/issues/1").unwrap();
+    s.attach_task_issue(t.id, "o/b", 2, "https://github.com/o/b/issues/2").unwrap();
+    let got = s.get_task(t.id).unwrap().unwrap();
+    // Attaching a second issue adds a link rather than overwriting.
+    assert_eq!(got.issues.len(), 2);
+    let repos: Vec<&str> = got.issues.iter().map(|l| l.repo.as_str()).collect();
+    assert_eq!(repos, vec!["o/a", "o/b"]);
+}
+
+#[test]
+fn delete_task_cascades_link_rows_but_archiving_keeps_them() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("a", "backlog", None, None, 1).unwrap();
+    let b = s.add_task("b", "backlog", None, None, 2).unwrap();
+    s.attach_task_issue(a.id, "o/r", 1, "u").unwrap();
+    s.attach_task_pr(a.id, "o/r", 2, "u").unwrap();
+    s.attach_task_issue(b.id, "o/r", 3, "u").unwrap();
+
+    s.delete_task(a.id).unwrap();
+    assert_eq!(issue_link_rows(&s), vec![(b.id, "o/r".to_string(), 3)]);
+    assert!(pr_link_rows(&s).is_empty());
+
+    // The archive sweep keeps the row, so its links survive too.
+    s.set_task_status(b.id, "done", 10).unwrap();
+    assert_eq!(s.archive_closed_tasks(100, 101).unwrap(), 1);
+    assert_eq!(issue_link_rows(&s), vec![(b.id, "o/r".to_string(), 3)]);
+}

@@ -20,7 +20,6 @@ pub const TEMPLATE_SIDECAR: &str = "task-env.template";
 pub const SETUP_ENV_KEY: &str = "TT_TASK_SETUP";
 /// Declared teardown, run while the task's `.env` and tree still exist. No fallback.
 pub const TEARDOWN_ENV_KEY: &str = "TT_TASK_TEARDOWN";
-const GIT_TIMEOUT: Duration = Duration::from_secs(30);
 /// [`create_task`]'s pre-flight fetch is best-effort, so it fails fast on a slow network.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
@@ -204,22 +203,8 @@ pub fn resolve_task_dir(dir: &Path) -> Result<(PathBuf, String)> {
     Ok((sr.checkout, name))
 }
 
-/// Bounded, so a stalled network op fails after `GIT_TIMEOUT` instead of hanging.
-pub fn git_checkout(checkout: &Path, args: &[&str]) -> Result<tt_exec::Output> {
-    git_checkout_timeout(checkout, args, GIT_TIMEOUT)
-}
-
-/// [`git_checkout`] with an explicit timeout, for best-effort steps.
-fn git_checkout_timeout(
-    checkout: &Path,
-    args: &[&str],
-    timeout: Duration,
-) -> Result<tt_exec::Output> {
-    let checkout_s = checkout.to_string_lossy();
-    let mut full: Vec<&str> = vec!["-C", checkout_s.as_ref()];
-    full.extend_from_slice(args);
-    tt_exec::run_with_timeout_env("git", &full, tt_exec::GIT_NON_INTERACTIVE_ENV, timeout)
-        .map_err(|e| OpsError::Git(e.to_string()))
+fn git<T>(result: tt_exec::Result<T>) -> Result<T> {
+    result.map_err(|e| OpsError::Git(e.to_string()))
 }
 
 fn note_if_slow(warnings: &mut Vec<String>, label: &str, elapsed: Duration) {
@@ -314,7 +299,7 @@ fn fast_forward_base_if_behind(
     upstream: &str,
     warnings: &mut Vec<String>,
 ) {
-    match git_checkout(&sr.checkout, &["merge", "--ff-only", upstream]) {
+    match tt_git::cli::merge_ff_only(&sr.checkout, upstream) {
         Ok(out) if out.ok() => {}
         Ok(out) => warnings.push(format!(
             "base branch '{base}' has diverged from {upstream} and could not be fast-forwarded \
@@ -994,18 +979,7 @@ mod tests {
     /// silently fails without `-c user.{name,email}=...`, and `is_ok()` alone
     /// only proves the process spawned, not that it did anything.
     pub(super) fn git_ok(dir: &Path, args: &[&str]) {
-        let dir = dir.to_str().unwrap();
-        let mut full = vec![
-            "-C",
-            dir,
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@test",
-        ];
-        full.extend_from_slice(args);
-        let out = tt_exec::run("git", &full).unwrap();
-        assert!(out.ok(), "git {full:?} failed: {}", out.stderr);
+        tt_git::testing::git(dir, args);
     }
 
     #[test]

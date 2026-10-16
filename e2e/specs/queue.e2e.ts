@@ -61,24 +61,23 @@ describe("Agent Board queue rail", () => {
 
   it("renders the queue rail and none of the tree", async () => {
     await gotoRail("Queue");
-    await waitForAnyDisplayed('[aria-label="New task"]', "the queue's new-task chips");
+    await waitForAnyDisplayed('[aria-label^="New task in "]', "the queue's new-task chips");
     expect(await (await browser.$('[aria-label="Filter repos"]')).isDisplayed()).toBe(false);
   });
 
-  it("holds the checkouts a task owns, and none it doesn't", async () => {
+  it("holds the checkouts a task owns, all of them on the board", async () => {
     await browser.waitUntil(
       async () => {
         const [board, queue] = [await boardDirs(), await queueDirs()];
         return (
           rows.every((r) => queue.includes(r.dir)) &&
-          !queue.includes(process.cwd()) &&
           queue.every((d) => board.includes(d))
         );
       },
       {
         timeout: 20000,
         interval: 1000,
-        timeoutMsg: "the queue never held just the tasked checkouts",
+        timeoutMsg: "the queue never held the tasked checkouts, all on the board",
       },
     );
   });

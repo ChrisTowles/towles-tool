@@ -83,4 +83,4 @@ Manage tasks with `tt task` (`init`, `new`, `ls`, `env`, `rm`, `clean`) —
 never raw `git worktree`. Claude Code's own worktree surfaces
 (`claude --worktree`, the app's parallel sessions) make their own worktrees
 and are not tasks. Agent Board (as a queue or a tree) shows the whole fleet and can create a
-task from its `+` button. Full convention and rules: [CLAUDE.md](CLAUDE.md).
+task from its `+` button. Full convention and rules: [CLAUDE.md](../CLAUDE.md).

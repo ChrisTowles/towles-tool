@@ -26,7 +26,7 @@ feature** that `tt-jarvis`/`tt-pane`/`tt-app` forward down — nothing builds th
 fork unless asked (`TT_BEVY=1 bun run dev`, `--features bevy`), and CI compiles
 it only when those two crates change. Full list, flags and Linux gotchas:
 **[docs/COMMANDS.md](docs/COMMANDS.md)**. The binary is
-**`tt`** — the `ttr` cutover was hard ([docs/CUTOVER.md](docs/CUTOVER.md)).
+**`tt`** (the `ttr` cutover was hard).
 
 **`comment-budget` is the one gate on comment sprawl**, a zero-config ratchet: a
 PR fails if it grows a touched file's comment excess (comment past a 15% share)
@@ -147,4 +147,4 @@ Full list: **[docs/CONVENTIONS.md](docs/CONVENTIONS.md)**. The ones that bite:
 - **No CLI-parity requirement.** The app is the primary product; each feature
   picks its natural surface, and the logic lands in a Tauri-free `crates/`
   library with unit tests. The port from the TypeScript CLI is **finished** and
-  selective — [docs/MIGRATION.md](docs/MIGRATION.md) is a record, not a backlog.
+  selective, and finished.

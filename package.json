@@ -23,6 +23,7 @@
     "e2e:run": "node scripts/e2e.mjs --no-build",
     "release:bump": "node scripts/release-version-bump.mjs",
     "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "check:md-links": "node scripts/check-md-links.mjs",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
   "overrides": {

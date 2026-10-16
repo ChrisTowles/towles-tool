@@ -17,12 +17,7 @@ use tempfile::TempDir;
 /// under no checkout before it dials anything.
 fn repo() -> TempDir {
     let dir = TempDir::new().unwrap();
-    let status = std::process::Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(dir.path())
-        .status()
-        .unwrap();
-    assert!(status.success(), "git init should succeed");
+    tt_git::testing::git(dir.path(), &["init", "--quiet"]);
     dir
 }
 

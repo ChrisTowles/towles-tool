@@ -8,28 +8,9 @@ use common::{canonical_temp, data_home};
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args([
-            "-c",
-            "user.name=test",
-            "-c",
-            "user.email=test@test",
-            "-c",
-            "init.defaultBranch=main",
-        ])
-        .args(args)
-        .output()
-        .expect("git should run");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    tt_git::testing::git(dir, args);
 }
 
 /// `tt` with every state path pointed inside `home` under `scope` — a *forced* scope
@@ -152,19 +133,11 @@ fn lifecycle_new_env_ls_rm() {
         task.join(".setup-ran").is_file(),
         "the declared TT_TASK_SETUP command runs in the new task"
     );
-    let branch = Command::new("git")
-        .args(["-C", task.to_str().unwrap(), "branch", "--show-current"])
-        .output()
-        .unwrap();
-    assert_eq!(String::from_utf8_lossy(&branch.stdout).trim(), "feat/thing");
+    assert_eq!(tt_git::testing::git(&task, &["branch", "--show-current"]), "feat/thing");
     // info/exclude must keep both the marker and the nested worktrees dir invisible.
     for dir in [&task, &checkout] {
-        let porcelain = Command::new("git")
-            .args(["-C", dir.to_str().unwrap(), "status", "--porcelain"])
-            .output()
-            .unwrap();
         assert_eq!(
-            String::from_utf8_lossy(&porcelain.stdout).trim(),
+            tt_git::testing::git(dir, &["status", "--porcelain"]),
             "",
             "{} must stay clean",
             dir.display()
@@ -211,18 +184,8 @@ fn lifecycle_new_env_ls_rm() {
 
     tt().args(["task", "rm", "fix-other", "--root", &root_s]).assert().success();
     assert!(!task_dir(&checkout, "fix-other").exists());
-    let branches = Command::new("git")
-        .args([
-            "-C",
-            checkout.to_str().unwrap(),
-            "branch",
-            "--list",
-            "fix/other",
-        ])
-        .output()
-        .unwrap();
     assert!(
-        String::from_utf8_lossy(&branches.stdout).contains("fix/other"),
+        tt_git::testing::git(&checkout, &["branch", "--list", "fix/other"]).contains("fix/other"),
         "removing a task never deletes its branch"
     );
 
@@ -645,22 +608,13 @@ fn new_fast_forwards_a_base_behind_origin() {
     std::fs::write(seed.join("upstream.txt"), "new on origin\n").unwrap();
     git(&seed, &["add", "upstream.txt"]);
     git(&seed, &["commit", "-m", "upstream moves on"]);
-    let origin_head = Command::new("git")
-        .args(["-C", seed.to_str().unwrap(), "rev-parse", "HEAD"])
-        .output()
-        .unwrap()
-        .stdout;
+    let origin_head = tt_git::testing::git(&seed, &["rev-parse", "HEAD"]);
 
     new_task(&root_s, "feat/thing").assert().success();
 
-    let local_head = Command::new("git")
-        .args(["-C", checkout.to_str().unwrap(), "rev-parse", "main"])
-        .output()
-        .unwrap()
-        .stdout;
+    let local_head = tt_git::testing::git(&checkout, &["rev-parse", "main"]);
     assert_eq!(
-        String::from_utf8_lossy(&local_head).trim(),
-        String::from_utf8_lossy(&origin_head).trim(),
+        local_head, origin_head,
         "the checkout's main should be fast-forwarded to origin/main"
     );
 
@@ -749,12 +703,8 @@ fn new_rolls_back_the_worktree_when_env_render_fails() {
         .stderr(contains("unknown or malformed token"));
 
     assert!(!task_dir(&checkout, "feat-thing").exists(), "the worktree must not be left behind");
-    let worktrees = Command::new("git")
-        .args(["-C", checkout.to_str().unwrap(), "worktree", "list"])
-        .output()
-        .unwrap();
     assert!(
-        !String::from_utf8_lossy(&worktrees.stdout).contains("thing"),
+        !tt_git::testing::git(&checkout, &["worktree", "list"]).contains("thing"),
         "git must not still track the rolled-back worktree"
     );
 
@@ -872,17 +822,7 @@ fn rm_reports_unlanded_commits_it_does_not_block_on() {
 
     assert!(!task.exists());
     // The commit survives on its branch — that is why this is not a guard.
-    let branches = std::process::Command::new("git")
-        .args([
-            "-C",
-            checkout.to_str().unwrap(),
-            "branch",
-            "--list",
-            "feat/unlanded",
-        ])
-        .output()
-        .unwrap();
-    assert!(!String::from_utf8_lossy(&branches.stdout).trim().is_empty());
+    assert!(!tt_git::testing::git(&checkout, &["branch", "--list", "feat/unlanded"]).is_empty());
 }
 
 /// A task whose branch really did land reports that instead, so "removed" and

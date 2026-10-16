@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use super::claims::{port_occupied, port_registry_path, release_task_ports};
 use super::{
-    OpsError, Result, base_refs, dir_names, discover_root, git_checkout, orphaned_count,
-    run_teardown, uncommitted_count, work_state,
+    OpsError, Result, base_refs, dir_names, discover_root, orphaned_count, run_teardown,
+    uncommitted_count, work_state,
 };
 use crate::envfile;
 use crate::guards::{ForeignPort, RmBlocked};
@@ -119,7 +119,7 @@ pub fn remove_task(
     // Refresh remote-tracking refs before the unreachable-commit guard below:
     // against a stale `origin/*` a branch merged upstream still looks
     // unreachable, and one merged just now can look falsely safe.
-    match git_checkout(&sr.checkout, &["fetch", "--prune", "--quiet", "origin"]) {
+    match tt_git::cli::fetch_origin(&sr.checkout, true, tt_git::cli::DEFAULT_TIMEOUT) {
         Ok(out) if out.ok() => {}
         _ => messages
             .push("fetch --prune failed (offline?) — using local refs for guard checks".into()),
@@ -152,7 +152,7 @@ pub fn remove_task(
         docker_cleanup(&name, &dir, &mut messages);
         on_phase(RemovePhase::RemovingWorktree);
         remove_dir(&dir)?;
-        let _ = git_checkout(&sr.checkout, &["worktree", "prune"]);
+        let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
         if let Ok(path) = port_registry_path(&sr.checkout) {
             release_task_ports(&sr.checkout, &path, &name);
         }
@@ -233,11 +233,12 @@ pub fn remove_task(
     docker_cleanup(&name, &dir, &mut messages);
 
     on_phase(RemovePhase::RemovingWorktree);
-    let remove = if opts.force {
-        git_checkout(&sr.checkout, &["worktree", "remove", "--force", &dir_s])
-    } else {
-        git_checkout(&sr.checkout, &["worktree", "remove", &dir_s])
-    };
+    let remove = tt_git::cli::worktree_remove(
+        &sr.checkout,
+        &dir_s,
+        opts.force,
+        tt_git::cli::DEFAULT_TIMEOUT,
+    );
     match remove {
         Ok(out) if out.ok() => {}
         result => {
@@ -252,7 +253,7 @@ pub fn remove_task(
             remove_dir(&dir)?;
         }
     }
-    let _ = git_checkout(&sr.checkout, &["worktree", "prune"]);
+    let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
     if let Ok(path) = port_registry_path(&sr.checkout) {
         release_task_ports(&sr.checkout, &path, &name);
     }
@@ -426,9 +427,9 @@ pub fn clean_tasks(
 ) -> Result<CleanReport> {
     let sr = discover_root(opts.root.as_deref())?;
     let mut warnings = Vec::new();
-    let _ = git_checkout(&sr.checkout, &["worktree", "prune"]);
+    let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
     // --prune is what flips a merged-and-deleted remote branch to "gone".
-    match git_checkout(&sr.checkout, &["fetch", "--prune", "--quiet", "origin"]) {
+    match tt_git::cli::fetch_origin(&sr.checkout, true, tt_git::cli::DEFAULT_TIMEOUT) {
         Ok(out) if out.ok() => {}
         _ => warnings.push(
             "fetch --prune failed (offline?) — merges that deleted the remote branch may not \

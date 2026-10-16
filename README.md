@@ -36,8 +36,8 @@ agent is one gesture** (a half-formed thought, a pasted screenshot, `#` to attac
 an issue — and the worktree is minted); **the fleet is one screen**; **a task's
 panes tile beside its terminals** (diff, file tree, a live dev-server preview you
 can draw on, a native GPU pane); **attention is modelled, not guessed**; and
-**where your day went is answerable** from an on-disk event log. The full tour,
-and the honest overlap with Desktop: **[docs/FEATURES.md](docs/FEATURES.md)**.
+**where your day went is answerable** from an on-disk event log. The full tour:
+**[docs/FEATURES.md](docs/FEATURES.md)**.
 Four media carry it, because none covers everything: **HTML/GUI**, **terminal**
 (a real PTY, where the agents work), **git repos** (storage, and how you hand
 work to someone else), and **Bevy** (3D — the newest and least built out).
@@ -138,9 +138,7 @@ It is a Rust rewrite of the bun+tmux v3 version which was `towles-tool`, now arc
 [`towles-tool-tmux`](https://github.com/ChrisTowles/towles-tool-tmux), whose
 tmux-based AgentBoard is kept there as a reference; the repo structure follows
 the [Yaak](https://github.com/mountain-loop/yaak) golden template. The binary is
-**`tt`** — the `ttr` → `tt` cutover happened 2026-07-13, hard, no alias behind it
-([docs/CUTOVER.md](docs/CUTOVER.md)), and
-[docs/MIGRATION.md](docs/MIGRATION.md) records what came across.
+**`tt`** — the `ttr` → `tt` cutover was hard, with no alias behind it.
 
 ## More
 

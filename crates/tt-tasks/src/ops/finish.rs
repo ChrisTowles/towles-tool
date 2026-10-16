@@ -7,9 +7,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::remove::{claimed_ports, docker_owns_port};
-use super::{
-    base_refs, git_checkout, orphaned_count, port_occupied, repo_at, uncommitted_count, work_state,
-};
+use super::{base_refs, orphaned_count, port_occupied, repo_at, uncommitted_count, work_state};
 use crate::landed::WorkState;
 use crate::pr::PullRequest;
 
@@ -30,7 +28,8 @@ pub fn finish_blockers(dir: &Path, branch: &str) -> (Vec<FinishBlocker>, Vec<Str
     let mut notes = Vec::new();
     // `/done` runs right after a merge: against a stale `origin/<base>` the merged branch
     // reads as unlanded and the gate refuses work that just shipped.
-    if !git_checkout(dir, &["fetch", "--prune", "--quiet", "origin"]).is_ok_and(|out| out.ok()) {
+    if !tt_git::cli::fetch_origin(dir, true, tt_git::cli::DEFAULT_TIMEOUT).is_ok_and(|out| out.ok())
+    {
         notes.push("fetch failed (offline?) — judged against local refs".to_string());
     }
     let open_prs = match crate::pr::list_open_for_head(dir, branch) {
