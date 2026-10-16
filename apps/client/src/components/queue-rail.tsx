@@ -436,7 +436,7 @@ function QueueRow({
             <span
               data-testid="queue-reason"
               className={cn(
-                "w-28 shrink-0 truncate rounded px-1.5 py-px text-center text-xs font-medium transition-colors duration-1000",
+                "w-32 shrink-0 truncate rounded px-1.5 py-px text-center text-xs font-medium transition-colors duration-1000",
                 TONE_CLASS[REASON_TONE[item.reason]],
               )}
             >
@@ -444,7 +444,7 @@ function QueueRow({
               {item.also.length > 0 && ` +${item.also.length}`}
             </span>
           ) : item.lane === "on_you" ? (
-            <span className="w-28 shrink-0" />
+            <span className="w-32 shrink-0" />
           ) : null}
           {/* Repo and title share one line: two lines a row, so twenty fit a screen.
               With no meta to show, the title may take the meta's line instead. */}
