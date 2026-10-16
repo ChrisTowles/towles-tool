@@ -73,3 +73,8 @@ jobs:
       # webkit2gtk/GTK system libs).
       - name: build
         run: bun run build
+
+      # Gzipped-size ratchet against scripts/bundle-budget.json.
+      - name: bundle budget
+        run: bun run check:bundle
+        working-directory: .

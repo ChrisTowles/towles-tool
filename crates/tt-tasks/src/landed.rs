@@ -181,7 +181,9 @@ pub fn probe_work_state(
         let landed_at = commits[1..]
             .iter()
             .position(|rev| is_landed(repo.cumulative_patch_id(merge_base, *rev)));
-        1 + landed_at.unwrap_or(commits.len() - 1) as u64
+        // Both counts over-report, each where the other is exact: the prefix scan
+        // misses a commit picked from mid-branch, per-commit identity misses a squash.
+        (1 + landed_at.unwrap_or(commits.len() - 1) as u64).min(cherry_plus)
     };
 
     state

@@ -306,3 +306,71 @@ fn a_failing_git_degrades_to_assuming_work_is_present() {
     assert_eq!(state.unlanded, 0);
     assert_eq!(state.headline(), "no commits", "and it claims no merge in the UI either");
 }
+
+#[test]
+fn cherry_picking_part_of_a_branch_leaves_the_rest_unlanded() {
+    let tmp = repo();
+    let dir = tmp.path();
+
+    run(dir, &["checkout", "-qb", "feat/partial"]);
+    commit(dir, "a.txt", "a");
+    commit(dir, "b.txt", "b");
+    commit(dir, "c.txt", "c");
+    run(dir, &["checkout", "-q", "main"]);
+    run(dir, &["cherry-pick", "feat/partial~1"]);
+    run(dir, &["commit", "--amend", "-qm", "pick b.txt"]);
+
+    let state = probe(dir, "main", "feat/partial", 0, false);
+
+    assert_eq!(state.landed, None, "one picked commit of three is not a landing");
+    assert_eq!(state.total_commits, 3);
+    assert_eq!(state.unlanded, 2, "only the picked commit is out of the count");
+    assert!(state.holds_work());
+}
+
+#[test]
+fn squash_stays_landed_after_the_base_rewrites_the_same_file() {
+    let tmp = repo();
+    let dir = tmp.path();
+
+    run(dir, &["checkout", "-qb", "feat/edited"]);
+    commit(dir, "a.txt", "a");
+    commit(dir, "b.txt", "b");
+    run(dir, &["checkout", "-q", "main"]);
+    run(dir, &["merge", "--squash", "feat/edited"]);
+    run(dir, &["commit", "-qm", "squashed (#1)"]);
+    // A later PR rewrites what the squash brought in, so the branch's tree is
+    // no longer anywhere in main — only the squash commit's patch is.
+    commit(dir, "a.txt", "a, revised");
+
+    let state = probe(dir, "main", "feat/edited", 0, false);
+
+    assert_eq!(state.landed, Some(LandedVia::Squash));
+    assert_eq!(state.unlanded, 0);
+    assert!(!state.holds_work());
+}
+
+/// A squash whose conflict was resolved differently from the branch carries a
+/// patch nothing on the branch matches. Reading that as unlanded is the safe
+/// direction — `clean` keeps the branch — so it is pinned rather than "fixed".
+#[test]
+fn a_squash_resolved_differently_from_the_branch_fails_safe() {
+    let tmp = repo();
+    let dir = tmp.path();
+
+    run(dir, &["checkout", "-qb", "feat/conflict"]);
+    commit(dir, "base.txt", "branch");
+    run(dir, &["checkout", "-q", "main"]);
+    commit(dir, "base.txt", "main");
+    // Conflicts by design, so the exit status is not checked.
+    tt_git::testing::git_output(dir, &["merge", "--squash", "feat/conflict"]);
+    std::fs::write(dir.join("base.txt"), "main and branch").unwrap();
+    run(dir, &["add", "-A"]);
+    run(dir, &["commit", "-qm", "squashed with a resolution (#1)"]);
+
+    let state = probe(dir, "main", "feat/conflict", 0, false);
+
+    assert_eq!(state.landed, None, "a rewritten patch is no proof of landing");
+    assert_eq!(state.unlanded, 1);
+    assert!(state.holds_work());
+}

@@ -177,6 +177,9 @@ fn pick_port(
 }
 
 #[cfg(test)]
+mod proptests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

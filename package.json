@@ -24,6 +24,7 @@
     "release:bump": "node scripts/release-version-bump.mjs",
     "test:scripts": "node --test \"scripts/*.test.mjs\"",
     "check:md-links": "node scripts/check-md-links.mjs",
+    "check:bundle": "node scripts/bundle-budget.mjs",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json"
   },
   "overrides": {
