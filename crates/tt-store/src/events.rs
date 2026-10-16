@@ -6,8 +6,6 @@ use rusqlite::params;
 use crate::model::*;
 use crate::{Result, Store};
 
-/// Local midnight of `date` as epoch ms, resolving DST edges rather than
-/// giving up on them. `None` only if the whole day is unrepresentable.
 fn local_midnight(date: chrono::NaiveDate) -> Option<i64> {
     use chrono::{Local, LocalResult, TimeZone};
 
@@ -18,8 +16,6 @@ fn local_midnight(date: chrono::NaiveDate) -> Option<i64> {
         Some(LocalResult::Ambiguous(earlier, _)) => return Some(earlier.timestamp_millis()),
         _ => {}
     }
-    // Spring-forward at 00:00: midnight doesn't exist, so walk to the first
-    // instant that does. Bounded — a DST jump is never more than a few hours.
     for minute in 1..=180 {
         if let Some(dt) = date.and_hms_opt(0, 0, 0).map(|dt| dt + chrono::Duration::minutes(minute))
             && let Some(resolved) = Local.from_local_datetime(&dt).earliest()
@@ -84,10 +80,6 @@ impl Store {
                AND starts_at_utc >= ?2 AND starts_at_utc < ?3",
             params![source, utc_key(day_start_ms), utc_key(day_end_ms)],
         )?;
-        // The delete above is scoped to one lane and one day, so it bounds nothing
-        // over time; sweeping by *age* is what reclaims rows of a calendar the user
-        // renamed or removed, which no per-source write will ever visit again.
-        // `tx` is an `unchecked_transaction` on `self.conn`, so this call joins it.
         self.sweep_old_events(now_ms)?;
         // De-duplicate by external_id: the upsert would otherwise let a repeated id
         // overwrite its own earlier row inside the loop while the returned count still
@@ -134,9 +126,6 @@ impl Store {
         Ok(deduped.len())
     }
 
-    // Queries
-
-    /// Events starting within `[start_ms, end_ms)`, ordered by start time.
     pub fn events_between(&self, start_ms: i64, end_ms: i64) -> Result<Vec<CalEvent>> {
         self.query_events(
             &format!(
@@ -147,9 +136,6 @@ impl Store {
         )
     }
 
-    /// The meeting to surface at `now_ms`: the one in progress right now, or
-    /// the soonest still to start — whichever begins first.
-    ///
     /// A meeting stays selected until it actually ends rather than vanishing the
     /// instant it starts. An event with no `end_ts` is a point in time, returned
     /// only while still in the future.
@@ -201,9 +187,6 @@ impl Store {
                 join_url,
             ) = row?;
             let attendees: Vec<String> = serde_json::from_str(&attendees_json)?;
-            // Rows are written from a `DateTime`, so an unparseable value means
-            // the column was hand-edited. Skip the row rather than fail the query:
-            // one bad row must not blank the countdown, and it ages out.
             let Some(start) = parse_rfc3339(&starts_at) else {
                 log_unparseable_event(&external_id, &starts_at);
                 continue;

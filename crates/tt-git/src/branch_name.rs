@@ -1,4 +1,4 @@
-//! Branch-name generation, ported from `src/lib/git/branch-name.ts`.
+//! Branch-name generation.
 
 /// Lowercase, trim, anything outside `[0-9a-zA-Z_-]` to `-`, collapse runs,
 /// strip trailing `-`. The character class is ASCII-only, matching the TS

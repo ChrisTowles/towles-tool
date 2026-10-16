@@ -11,29 +11,21 @@
 //! (no PTYs) to any. Linux reads `/proc/<pid>/environ`; other platforms return
 //! `None` for now.
 
-/// Injected into every agentboard PTY at spawn, read back here to attribute a
-/// detected agent to its session.
 pub const TT_SESSION_ENV: &str = "TT_SESSION_ID";
 
-/// Which app instance spawned the PTY (that app's pid).
 pub const TT_INSTANCE_ENV: &str = "TT_APP_INSTANCE";
 
-/// The instance id this process stamps on its PTYs: its pid.
 pub fn instance_id() -> String {
     std::process::id().to_string()
 }
 
-/// Which app-spawned agents an engine host reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstanceScope {
-    /// Only agents in PTYs stamped with this `TT_APP_INSTANCE`.
     Instance(String),
-    /// Agents in any app instance's PTYs — the MCP server's cross-cutting view.
     Any,
 }
 
 impl InstanceScope {
-    /// Scope to the running process ([`instance_id`]) — what an app host uses.
     pub fn this_app() -> Self {
         Self::Instance(instance_id())
     }
@@ -50,8 +42,6 @@ pub struct SessionAgentProc {
 
 /// Find the live `claude` processes under `shell_pids` (the host's PTY shells,
 /// themselves included) that carry `TT_SESSION_ID` and match `scope`. Walks only
-/// those trees, never all of `/proc`, and stops at the first `claude` on a
-/// branch. Linux-only; empty elsewhere.
 #[cfg(target_os = "linux")]
 pub fn scan_session_agents(shell_pids: &[u32], scope: &InstanceScope) -> Vec<SessionAgentProc> {
     let mut out = Vec::new();
@@ -71,8 +61,6 @@ pub fn scan_session_agents(shell_pids: &[u32], scope: &InstanceScope) -> Vec<Ses
         if is_claude_daemon(pid) {
             continue;
         }
-        // Deliberately *not* `session_id_in_scope`: this loop just established
-        // liveness from `/proc`, so its re-check is pure waste here.
         if let Some(sid) = scoped_session_id_of(pid, scope) {
             out.push(SessionAgentProc { session_id: sid, pid });
         }
@@ -80,7 +68,6 @@ pub fn scan_session_agents(shell_pids: &[u32], scope: &InstanceScope) -> Vec<Ses
     out
 }
 
-/// A child is listed under the thread that forked it, so read every thread's.
 #[cfg(target_os = "linux")]
 fn child_pids(pid: i32) -> Vec<i32> {
     let Ok(tasks) = std::fs::read_dir(format!("/proc/{pid}/task")) else {
@@ -120,13 +107,11 @@ pub fn scan_session_agents(_shell_pids: &[u32], _scope: &InstanceScope) -> Vec<S
     Vec::new()
 }
 
-/// Whether `pid` is the shared `claude daemon` rather than a session.
 #[cfg(target_os = "linux")]
 fn is_claude_daemon(pid: i32) -> bool {
     std::fs::read(format!("/proc/{pid}/cmdline")).map(|b| is_daemon_argv(&b)).unwrap_or(false)
 }
 
-/// Whether NUL-separated `argv` bytes describe `claude daemon …`.
 #[cfg(target_os = "linux")]
 fn is_daemon_argv(cmdline: &[u8]) -> bool {
     cmdline.split(|&b| b == 0).nth(1) == Some(b"daemon".as_slice())
@@ -145,7 +130,6 @@ pub fn session_id_in_scope(pid: i32, scope: &InstanceScope) -> Option<String> {
 
 #[cfg(not(target_os = "linux"))]
 pub fn session_id_in_scope(_pid: i32, _scope: &InstanceScope) -> Option<String> {
-    // macOS/other: no `/proc`. Follow-up: `ps eww <pid>` or libproc.
     None
 }
 
@@ -162,8 +146,6 @@ pub fn in_scope(_pid: i32, _scope: &InstanceScope) -> bool {
     true
 }
 
-/// The session id from environ bytes, if the stamped instance passes `scope`.
-///
 /// Under [`InstanceScope::Instance`] a shell is ours unless it carries a
 /// *different* app's stamp. A **missing** stamp is admitted: a concurrent app
 /// always stamps its own pid, so an unstamped shell is one we spawned before
@@ -222,8 +204,6 @@ mod tests {
         let theirs = InstanceScope::Instance("5678".into());
         assert_eq!(scoped_session_id(environ, &ours).as_deref(), Some("s00abc"));
         assert_eq!(scoped_session_id(environ, &theirs), None);
-        // No stamp at all → still ours; dropping those blanked every
-        // pre-existing shell's agent after an app upgrade.
         let unstamped = b"TT_SESSION_ID=s00abc\0";
         assert_eq!(scoped_session_id(unstamped, &ours).as_deref(), Some("s00abc"));
     }
@@ -231,8 +211,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn session_id_in_scope_refuses_a_pid_that_isnt_claude() {
-        // Live pid, wrong `comm` — the shape of a recycled pid from a stale
-        // CLI snapshot, which must be refused rather than read.
         let pid = std::process::id() as i32;
         assert!(!is_live_claude_process(pid));
         assert_eq!(session_id_in_scope(pid, &InstanceScope::Any), None);
@@ -243,7 +221,6 @@ mod tests {
     fn child_pids_lists_a_spawned_child() {
         let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
         let pid = child.id() as i32;
-        // `children` can miss a child while other test threads fork.
         let listed = (0..100).any(|_| {
             std::thread::sleep(std::time::Duration::from_millis(10));
             child_pids(std::process::id() as i32).contains(&pid)

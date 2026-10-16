@@ -17,12 +17,8 @@ use crate::guards::{ForeignPort, RmBlocked};
 
 #[derive(Debug, Default)]
 pub struct RemoveOpts {
-    /// Task root; `None` walks up from the current working directory.
     pub root: Option<PathBuf>,
-    /// Task directory name under `tasks/`.
     pub name: String,
-    /// Skip guards (each skip lands in [`RemovedTask::messages`]) and force
-    /// worktree removal.
     pub force: bool,
     /// Port-ledger dir; `None` is the shared one (`tt_config::task_ports_dir`).
     pub ports_dir: Option<PathBuf>,
@@ -35,15 +31,10 @@ pub struct RemoveOpts {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemovePhase {
     CheckingGuards,
-    /// Guards passed (or were forced); live sessions stop before anything on
-    /// disk changes.
     StoppingSessions,
     RunningTeardown,
     CleaningDocker,
     RemovingWorktree,
-    /// Off disk: untracking from `repos.json` and closing the bound board row.
-    /// Reported by `tt_agentboard::task_removal`, the one step outside
-    /// `remove_task` itself.
     Untracking,
 }
 
@@ -62,17 +53,12 @@ impl RemovePhase {
 
 pub struct RemovedTask {
     pub name: String,
-    /// The removed checkout's directory (now gone from disk) — callers use it
-    /// to untrack the task from stores keyed by dir (the agentboard rail).
     pub dir: PathBuf,
     /// The main checkout the task belonged to. Carried because it survives the
     /// removal and `dir` does not: it identifies the *instance state* holding
     /// this task's board row.
     pub checkout: PathBuf,
-    /// Progress notes for the user. Callers surface these — nothing here prints.
     pub messages: Vec<String>,
-    /// Git proved the branch's work reached the base (a squash merge included) —
-    /// the evidence an inferred close needs, read before the worktree went.
     pub landed: bool,
 }
 
@@ -239,7 +225,7 @@ pub fn remove_task(
     }
 
     // Past every guard, and the state above is already gathered — only now is
-    // it safe to kill the folder's PTYs (#366).
+    // it safe to kill the folder's PTYs.
     on_phase(RemovePhase::StoppingSessions);
     on_phase(RemovePhase::RunningTeardown);
     if let Some(warning) = run_teardown(&dir)? {
@@ -347,7 +333,6 @@ fn foreign_owned(_dir: &Path) -> Option<(PathBuf, u32)> {
     None
 }
 
-/// The ports a checkout claims, from its rendered `.env`.
 pub(super) fn claimed_ports(dir: &Path) -> BTreeSet<u16> {
     envfile::port_claims(&fs::read_to_string(dir.join(".env")).unwrap_or_default())
 }
@@ -395,11 +380,8 @@ fn state_cleanup(scope: Option<&str>, messages: &mut Vec<String>) {
 
 #[derive(Debug, Default)]
 pub struct CleanOpts {
-    /// Task root; `None` walks up from the current working directory.
     pub root: Option<PathBuf>,
-    /// Report what would happen without removing or sweeping anything.
     pub dry_run: bool,
-    /// Parents of per-scope instance-state dirs to sweep. Empty = skip it.
     pub scope_parents: Vec<PathBuf>,
     /// Port-ledger dir to sweep; `None` is the shared one.
     pub ports_dir: Option<PathBuf>,
@@ -409,13 +391,9 @@ pub struct CleanOpts {
 pub struct FinishedTask {
     pub name: String,
     pub branch: String,
-    /// How the branch landed, e.g. `"squash-merged into main"`.
     pub reason: String,
-    /// Empty on dry-run.
     pub messages: Vec<String>,
-    /// See [`RemovedTask::dir`].
     pub dir: PathBuf,
-    /// The main checkout this task belonged to — see [`RemovedTask::checkout`].
     pub checkout: PathBuf,
 }
 
@@ -428,10 +406,8 @@ pub struct KeptTask {
 
 pub struct CleanReport {
     pub dry_run: bool,
-    /// Removed (dry-run: would-remove) tasks.
     pub removed: Vec<FinishedTask>,
     pub kept: Vec<KeptTask>,
-    /// Orphaned per-scope state dirs swept (dry-run: would sweep).
     pub swept_state_dirs: Vec<PathBuf>,
     /// Port-registry files swept because their checkout no longer exists — the
     /// one leak the load-time prune can't reach, since nothing ever renders a

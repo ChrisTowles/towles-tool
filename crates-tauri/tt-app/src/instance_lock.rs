@@ -6,7 +6,7 @@
 //!
 //! - `"slack-socket"` (`slack_socket.rs`): Slack credentials live in the *shared* config
 //!   dir, so every open worktree's process reads the same token. Without this guard, N
-//!   open tasks would each open their own Socket Mode connection on it — see #227.
+//!   open tasks would each open their own Socket Mode connection on it.
 //! - `"app-<identifier>"` (`lib.rs`'s `run`): stops the *same* checkout being launched
 //!   twice at once, which would silently run two independent windows/PTY sets/schedulers
 //!   against it. Different tasks already get different identifiers.
@@ -23,9 +23,6 @@ pub struct InstanceLock {
 }
 
 impl InstanceLock {
-    /// Try to acquire `<locks_dir>/<name>.lock`. `None` if another live
-    /// process already holds it; a lock whose recorded PID is no longer
-    /// running is stolen.
     pub fn try_acquire(name: &str) -> Option<Self> {
         let path = tt_config::locks_dir().join(format!("{name}.lock"));
         if let Some(parent) = path.parent() {
@@ -36,7 +33,6 @@ impl InstanceLock {
             if held_by.is_some_and(pid_is_alive) {
                 return None;
             }
-            // Stale: the recorded PID is gone (or unreadable). Steal it.
             fs::remove_file(&path).ok()?;
             if !create_new(&path) {
                 return None;
@@ -53,7 +49,6 @@ impl Drop for InstanceLock {
     }
 }
 
-/// Atomically create `path`, failing (without error) if it already exists.
 fn create_new(path: &PathBuf) -> bool {
     match fs::OpenOptions::new().write(true).create_new(true).open(path) {
         Ok(_) => true,
@@ -78,16 +73,12 @@ mod tests {
         let path = dir.path().join("x.lock");
         assert!(create_new(&path));
         fs::write(&path, std::process::id().to_string()).unwrap();
-        // Our own pid is alive, so a fresh check must treat it as held.
         let held_by = fs::read_to_string(&path).unwrap().trim().parse::<u32>().unwrap();
         assert!(pid_is_alive(held_by));
     }
 
     #[test]
     fn a_dead_pid_is_detected_as_not_alive() {
-        // PID 1 belongs to init and is always alive on any running Linux box;
-        // an implausibly large pid is never a live process to check the other
-        // branch without depending on OS-specific "definitely dead" pids.
         assert!(!pid_is_alive(u32::MAX));
     }
 }

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** Runtime validator for `DoctorReport` (`screens/doctor.tsx`), the
  * `doctor_run` command's result — a few subprocess-probed checks, worth
- * catching a shape drift on rather than rendering a blank screen (#38). */
+ * catching a shape drift on rather than rendering a blank screen. */
 
 const CheckResultSchema = z.object({
   name: z.string(),

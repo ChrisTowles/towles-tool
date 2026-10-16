@@ -8,25 +8,17 @@
 //! which repos exist and what they look like is a fact about the machine, the
 //! same rationale as [`crate::repos`]. (Contrast [`crate::folder_meta`], which
 //! is per-checkout state and therefore task-scoped.)
-//!
-//! Identity lives here rather than as fields on `repos.json`'s `repoPaths`
-//! because that list is a plain `Vec<String>` read by three other crates; a
-//! sibling keyed store adds the axis without churning every reader.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// A `#rrggbb` color, lowercased. Parsed at the edge so nothing downstream
-/// has to re-check that the string is safe to interpolate into a style.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct HexColor(String);
 
 impl HexColor {
-    /// Parse `#rgb` or `#rrggbb` (leading `#` optional, case-insensitive) into
-    /// the canonical `#rrggbb` form. `None` when it isn't a hex color.
     pub fn parse(raw: &str) -> Option<Self> {
         let body = raw.trim().trim_start_matches('#');
         if !body.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -45,7 +37,6 @@ impl HexColor {
     }
 }
 
-/// The palette's first color — what a row holds until [`resolve_colors`] deals it one.
 impl Default for HexColor {
     fn default() -> Self {
         Self(AUTO_PALETTE[0].to_string())
@@ -81,8 +72,6 @@ pub fn resolve_colors(pins: &[Option<&HexColor>]) -> Vec<HexColor> {
                     let lab = oklab(c);
                     held.iter().map(|h| distance(&lab, h)).fold(f64::INFINITY, f64::min)
                 };
-                // `max_by` keeps the *last* maximum, so walk the palette backwards
-                // to let the earlier color win a tie.
                 let dealt = AUTO_PALETTE
                     .iter()
                     .rev()
@@ -99,8 +88,6 @@ fn distance(a: &[f64; 3], b: &[f64; 3]) -> f64 {
     a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>().sqrt()
 }
 
-/// A canonical `#rrggbb` in OKLab, the space a perceived color difference is
-/// a straight-line distance in.
 fn oklab(hex: &str) -> [f64; 3] {
     let channel = |i: usize| {
         let c = f64::from(u8::from_str_radix(&hex[1 + 2 * i..3 + 2 * i], 16).unwrap_or(0)) / 255.0;
@@ -127,7 +114,6 @@ pub struct RepoMeta {
     /// round-trips it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// The pinned color; absent ⇒ dealt one by [`resolve_colors`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<HexColor>,
 }
@@ -138,14 +124,12 @@ impl RepoMeta {
     }
 }
 
-/// On-disk shape: `{ "repos": { "<repoDir>": { "icon": "...", ... } } }`.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct RepoMetaConfig {
     #[serde(default)]
     repos: HashMap<String, RepoMeta>,
 }
 
-/// Default location: `<agentboard_shared_dir>/repo_meta.json`.
 pub fn default_repo_meta_path() -> PathBuf {
     tt_config::agentboard_shared_dir_lossy().join("repo_meta.json")
 }
@@ -158,12 +142,10 @@ pub fn default_repo_meta_path() -> PathBuf {
 pub struct RepoMetaStore {
     path: Option<PathBuf>,
     repos: HashMap<String, RepoMeta>,
-    /// Repo dirs mutated since the last successful `save()`.
     dirty: HashSet<String>,
 }
 
 impl RepoMetaStore {
-    /// Load from `path` (empty on missing/corrupt). `None` = in-memory only (tests).
     pub fn new(path: Option<PathBuf>) -> Self {
         let repos = match &path {
             Some(p) => load(p),
@@ -172,7 +154,6 @@ impl RepoMetaStore {
         Self { path, repos, dirty: HashSet::new() }
     }
 
-    /// This repo's identity, if the user has set any of it.
     pub fn meta_for(&self, dir: &str) -> Option<&RepoMeta> {
         self.repos.get(dir).filter(|m| !m.is_empty())
     }
@@ -181,8 +162,6 @@ impl RepoMetaStore {
     /// field, and an all-empty `meta` clears the entry ("reset to default").
     /// Returns whether anything changed; caller persists on `true`.
     pub fn set_meta(&mut self, dir: &str, meta: RepoMeta) -> bool {
-        // An empty `RepoMeta` is never stored (below), so "absent" and "empty"
-        // are the same state — one comparison covers both.
         if self.repos.get(dir).map_or(meta.is_empty(), |m| *m == meta) {
             return false;
         }
@@ -245,7 +224,6 @@ impl RepoMetaStore {
     }
 }
 
-/// Read the map, defaulting to empty on a missing or unparseable file.
 fn load(path: &Path) -> HashMap<String, RepoMeta> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return HashMap::new();
@@ -341,12 +319,10 @@ mod tests {
         a.set_meta("/a", meta("Rocket", "#7c3aed"));
         a.save().unwrap();
 
-        // Second window loads, edits only its own repo, saves.
         let mut b = RepoMetaStore::new(Some(path.clone()));
         b.set_meta("/b", meta("Bug", "#f59e0b"));
         b.save().unwrap();
 
-        // A's repo survives B's save.
         let reloaded = RepoMetaStore::new(Some(path));
         assert_eq!(reloaded.meta_for("/a").unwrap().icon.as_deref(), Some("Rocket"));
         assert_eq!(reloaded.meta_for("/b").unwrap().icon.as_deref(), Some("Bug"));
@@ -361,13 +337,10 @@ mod tests {
         a.set_meta("/a", meta("Rocket", "#7c3aed"));
         a.save().unwrap();
 
-        // Another window themes a repo A has never touched.
         let mut b = RepoMetaStore::new(Some(path.clone()));
         b.set_meta("/b", meta("Bug", "#f59e0b"));
         b.save().unwrap();
 
-        // A's next save merges — and must leave A *reading* B's repo too,
-        // rather than serving a view that predates it until restart.
         a.set_meta("/a", meta("Cloud", "#0ea5e9"));
         a.save().unwrap();
         assert_eq!(

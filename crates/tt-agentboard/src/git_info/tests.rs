@@ -410,8 +410,7 @@ fn worked_recently_signals_track_commits_and_unstaged_edits() {
     assert!(edited.worktree_touched_ms > 0, "an unstaged edit is a touch");
 }
 
-/// Two disjoint quantities: the old single ± measured the working tree against
-/// the merge-base, folding an uncommitted edit into the commit count's ±.
+/// Two disjoint quantities: an uncommitted edit never folds into the commit count's ±.
 #[test]
 fn committed_and_uncommitted_diffs_are_disjoint() {
     let root = tempfile::TempDir::new().unwrap();
@@ -465,8 +464,7 @@ fn compute_reads_task_base_branch_from_marker() {
     assert_eq!(info.task_base_branch, Some("develop".to_string()));
 }
 
-/// Stats and the diff pane must come from the same `resolve_base_ref`
-/// baseline; this module used to measure everything against origin/main.
+/// Stats and the diff pane must come from the same `resolve_base_ref` baseline.
 #[test]
 fn compute_measures_stats_against_the_resolved_base_not_always_main() {
     let root = tempfile::TempDir::new().unwrap();

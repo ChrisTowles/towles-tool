@@ -254,7 +254,7 @@ pub fn task_id_for_worktree_dir(app: &AppHandle, dir: &str) -> Result<Option<i64
 }
 
 /// Deliberately not a Tauri command: a row-only delete is the half-delete that
-/// used to strand worktrees on disk, so the only way in is
+/// strands worktrees on disk, so the only way in is
 /// [`crate::task::delete_task_blocking`], which has verified nothing is bound.
 pub fn delete_task_row(app: &AppHandle, id: i64) -> Result<(), String> {
     let state = app.state::<StoreState>();
@@ -496,7 +496,7 @@ pub fn store_set_task_status(
 
 /// Fire-and-forget close/reopen of a task's linked issues; a failed gh call
 /// self-heals on the next collector poll. The single call site for this decision
-/// so the behavior can't drift (#246). Only board-originated commands sync — the
+/// so the behavior can't drift. Only board-originated commands sync — the
 /// collectors' rollup writes through `tt_store`, so GitHub never echoes back.
 fn spawn_gh_status_sync(old_status: &str, new_status: &str, issues: &[tt_store::TaskIssueLink]) {
     let targets = tt_store::gh_close_reopen_targets(old_status, new_status, issues);

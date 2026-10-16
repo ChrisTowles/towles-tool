@@ -1,10 +1,8 @@
-//! Configuration model for the towles-tool CLI, plus the resolver for every mutable
-//! state path the CLI and app touch. It mirrors the zod settings schema used by the
-//! TypeScript CLI and reads/writes the *same* file
-//! (`~/.config/towles-tool/towles-tool.settings.json`), so the model tolerates
-//! unknown fields and defaults missing ones — never `deny_unknown_fields`. Two
-//! test-enforced invariants keep that file safe: every property name is `camelCase`,
-//! and writes go through [`save_merge`] so TS-owned keys survive.
+//! Configuration model for towles-tool, plus the resolver for every mutable state path the
+//! CLI and app touch. It reads/writes `~/.config/towles-tool/towles-tool.settings.json`, so
+//! the model tolerates unknown fields and defaults missing ones — never
+//! `deny_unknown_fields`. Two test-enforced invariants keep that file safe: every property
+//! name is `camelCase`, and writes go through [`save_merge`] so unknown keys survive.
 //!
 //! ## Task-scoped state
 //!

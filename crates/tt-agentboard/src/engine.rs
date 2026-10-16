@@ -82,7 +82,7 @@ impl GitInvalidation {
 
 /// Fetch cadence per activity tier, and the windows that sort a repo into one.
 /// A repo with a task worktree, or touched within [`ACTIVE_WINDOW_MS`], keeps
-/// the cadence every repo used to get; the rest earn theirs back.
+/// the fastest cadence; the rest earn theirs back.
 const ACTIVE_FETCH_MS: i64 = 3 * 60 * 1000;
 const RECENT_FETCH_MS: i64 = 15 * 60 * 1000;
 const IDLE_FETCH_MS: i64 = 60 * 60 * 1000;

@@ -422,8 +422,7 @@ mod tests {
 
     #[test]
     fn prune_sweeps_legacy_paneless_windows() {
-        // Empty windows can't be created anymore; one persisted before that
-        // rule is residue and goes.
+        // A persisted empty window is residue and goes.
         let payload = WindowsPayload {
             windows: vec![win("w1", "/live", &[])],
             active_windows: BTreeMap::from([("/live".into(), "w1".into())]),

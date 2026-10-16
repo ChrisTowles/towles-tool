@@ -1,8 +1,5 @@
 //! Journal and note-taking library for the towles-tool CLI.
 //!
-//! Ports `src/commands/journal/` from the TypeScript CLI. The two public modules mirror
-//! the split in the original:
-//!
 //! - [`tokens`] — path-template rendering (Luxon-style `{yyyy}`/`{monday:...}` tokens),
 //!   Monday-of-week math, and title slugification. Output must match the TS CLI
 //!   byte-for-byte because both tools share the same settings file.
@@ -34,7 +31,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// The three kinds of journal entry, mirroring `JOURNAL_TYPES` in the TS CLI.
+/// The three kinds of journal entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalType {
     DailyNotes,

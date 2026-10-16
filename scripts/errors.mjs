@@ -1,13 +1,10 @@
-// Typed failures for the dev-tooling scripts — the scripts-side twin of
-// apps/client/src/lib/errors.ts. `TaggedError("Tag")<Props>()` is TypeScript
-// syntax and these are `.mjs`, so each class casts the factory's return to name
-// its Props; without the cast `Tag.is(value)` and the props go untyped.
+// Typed failures for the dev-tooling scripts, the twin of apps/client/src/lib/errors.ts.
+// Each class casts the `TaggedError` factory (TypeScript syntax) to name its Props.
 import { TaggedError } from "better-result";
 
 /** @type {import("better-result").TaggedErrorClass<"EnvFileUnreadable", { path: string; cause: unknown; message: string }>} */
 const EnvFileUnreadableBase = TaggedError("EnvFileUnreadable")();
 
-/** Distinct from "absent", the normal case for a checkout with no `.env.local`. */
 export class EnvFileUnreadable extends EnvFileUnreadableBase {
   /** @param {{ path: string; cause: unknown }} args */
   constructor(args) {
@@ -18,7 +15,6 @@ export class EnvFileUnreadable extends EnvFileUnreadableBase {
 /** @type {import("better-result").TaggedErrorClass<"DevPortUnset", { message: string }>} */
 const DevPortUnsetBase = TaggedError("DevPortUnset")();
 
-/** Recoverable: the launchers render the task's `.env` and retry. */
 export class DevPortUnset extends DevPortUnsetBase {
   constructor() {
     super({ message: "no TT_DEV_PORT for this checkout" });
@@ -28,7 +24,6 @@ export class DevPortUnset extends DevPortUnsetBase {
 /** @type {import("better-result").TaggedErrorClass<"DevPortInvalid", { value: string; message: string }>} */
 const DevPortInvalidBase = TaggedError("DevPortInvalid")();
 
-/** Unlike {@link DevPortUnset}, a typo the user has to fix. */
 export class DevPortInvalid extends DevPortInvalidBase {
   /** @param {{ value: string }} args */
   constructor(args) {
@@ -52,7 +47,6 @@ export class TaskEnvRenderFailed extends TaskEnvRenderFailedBase {
 /** @type {import("better-result").TaggedErrorClass<"SpawnFailed", { command: string; cause: unknown; message: string }>} */
 const SpawnFailedBase = TaggedError("SpawnFailed")();
 
-/** A child that never started — not one that ran and exited non-zero. */
 export class SpawnFailed extends SpawnFailedBase {
   /** @param {{ command: string; cause: unknown }} args */
   constructor(args) {
@@ -96,7 +90,6 @@ export class PortNeverListened extends PortNeverListenedBase {
 /** @type {import("better-result").TaggedErrorClass<"RequestFailed", { url: string; cause: unknown; message: string }>} */
 const RequestFailedBase = TaggedError("RequestFailed")();
 
-/** Nothing answered on the socket at all. */
 export class RequestFailed extends RequestFailedBase {
   /** @param {{ url: string; base: string; cause: unknown }} args */
   constructor(args) {
@@ -114,7 +107,6 @@ export class RequestFailed extends RequestFailedBase {
 /** @type {import("better-result").TaggedErrorClass<"RemoteRejected", { detail: string; message: string }>} */
 const RemoteRejectedBase = TaggedError("RemoteRejected")();
 
-/** It answered, but with a non-2xx, a WebDriver error, or a missing field. */
 export class RemoteRejected extends RemoteRejectedBase {
   /** @param {{ action: string; detail: string }} args */
   constructor(args) {
@@ -122,11 +114,7 @@ export class RemoteRejected extends RemoteRejectedBase {
   }
 }
 
-/**
- * `fetch` buries a Node errno one level down, in the `TypeError`'s `cause`.
- * @param {unknown} cause
- * @returns {string | undefined}
- */
+/** @param {unknown} cause @returns {string | undefined} */
 function errnoCode(cause) {
   const nested = cause instanceof Error && cause.cause !== undefined ? cause.cause : cause;
   if (!(nested instanceof Error)) return undefined;
@@ -135,8 +123,6 @@ function errnoCode(cause) {
 }
 
 /**
- * `String(e)` degrades to `"[object Object]"` on the non-`Error` values
- * `execFileSync` and `fetch` can reject with.
  * @param {unknown} cause
  * @returns {string} */
 export function describe(cause) {

@@ -7,16 +7,10 @@ use std::path::PathBuf;
 use super::render::{RenderSummary, init_template_sidecar, render_task_env, template_sidecar_path};
 use super::{OpsError, Result, TaskRoot};
 
-/// What [`init_repo`] did (every step is idempotent, so re-runs report
-/// mostly `false`/unchanged).
 pub struct InitReport {
-    /// The template tasks will render from: the repo's tokenized
-    /// `.env.example`, or the `.claude/task-env.template` sidecar.
     pub template: PathBuf,
     pub sidecar_created: bool,
-    /// `.env` was appended to the repo's `.gitignore`.
     pub gitignore_added: bool,
-    /// The primary checkout's `.env` render (it claims ports like any task).
     pub render: RenderSummary,
 }
 
@@ -28,8 +22,6 @@ pub struct InitReport {
 /// deliberately — `tt task new` or the app's `+` — never by a Claude Code
 /// worktree hook, whose worktrees this machinery neither renders nor removes.
 pub fn init_repo(sr: &TaskRoot, now_ms: i64) -> Result<InitReport> {
-    // Template: the committed tokenized .env.example wins; otherwise make
-    // sure the sidecar exists (empty-but-explained when freshly created).
     let repo_template = sr.checkout.join(".env.example");
     let has_tokenized_example =
         fs::read_to_string(&repo_template).is_ok_and(|text| text.contains("${tt:"));

@@ -164,7 +164,7 @@ function extractSessionFlag(args) {
 
 /** A full event sequence rather than the native W3C click endpoint: that one
  * fires something pointerdown-opened menu/popover triggers don't react to, so
- * they never open (#35).
+ * they never open.
  * @param {string} sessionId @param {string} elId
  * @returns {Promise<Result<void, DriveError>>} */
 async function dispatchClick(sessionId, elId) {

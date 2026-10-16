@@ -4,14 +4,6 @@
 //! when a row is opened. Tauri-free, and every filesystem-touching function takes
 //! explicit paths so tests never read the real `~/.claude`.
 //!
-//! - [`types`], [`parser`] (day cutoffs), [`tools`] (content-block extraction).
-//! - [`analyzer`] — per-session token analysis, model/project name helpers.
-//! - [`pricing`] — per-model token→dollar rates.
-//! - [`ledger`] — single-parse scan + summary aggregates + search.
-//! - [`insights`] — ranked waste/habit findings; [`cadence`] — human-prompt
-//!   cadence, not token/cost accounting.
-//! - [`usage_limits`] — the CLI's own cached rate-limit percentages from
-//!   `~/.claude.json`: an account-level cache, not session transcripts.
 
 use thiserror::Error;
 
@@ -40,7 +32,6 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-// Re-export the public API surface.
 pub use analyzer::{
     SessionAnalysis, aggregate_session_tools, analyze_session, extract_project_name,
     get_model_name, get_primary_model,
@@ -56,11 +47,8 @@ pub use ledger::{
 pub use parser::calculate_cutoff_ms;
 pub use pricing::{ModelPricing, pricing_for};
 pub use tools::{extract_tool_data, extract_tool_detail, sanitize_string, truncate_detail};
-pub use types::{BarChartDay, ModelBar, ProjectBar, ToolData};
-pub use usage_limits::{UsageLimitBar, UsageLimits, read_cached_usage_limits};
-// The Claude Code transcript schema + parse/title/usage projections live in
-// the shared crate; re-export the pieces this crate's consumers use so they
-// need not depend on tt-claude-code directly.
 pub use tt_claude_code::{
     Content, Message, TranscriptEntry, Usage, parse_transcript, parse_transcript_file,
 };
+pub use types::{BarChartDay, ModelBar, ProjectBar, ToolData};
+pub use usage_limits::{UsageLimitBar, UsageLimits, read_cached_usage_limits};

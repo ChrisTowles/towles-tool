@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /** Runtime validators for the Slack DM panel (`lib/slack.ts`) — payloads that
  * originate from the external Slack Web API, one layer further from our own
- * control than an internal command result (#38). */
+ * control than an internal command result. */
 
 const DmFileSchema = z.object({
   id: z.string(),

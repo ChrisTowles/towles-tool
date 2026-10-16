@@ -388,8 +388,7 @@ fn replace_events_swaps_within_one_source_and_day() {
 }
 
 /// The reason this method exists: two calendars are pulled independently and
-/// merged into one timeline. Under the old full-table swap, whichever pulled
-/// second erased the first.
+/// merged into one timeline, so a pull must not erase the other.
 #[test]
 fn one_sources_pull_never_disturbs_another() {
     let s = Store::open_in_memory().unwrap();
@@ -445,9 +444,8 @@ fn old_events_are_swept_including_orphaned_lanes() {
     assert_eq!(ids, vec!["today"], "the orphaned lane's stale row is gone");
 }
 
-/// A repeated `externalId` inside one payload used to have the upsert
-/// overwrite its own earlier row mid-loop: one row landed, the other
-/// vanished, and the returned count still claimed both were written.
+/// A repeated `externalId` inside one payload must not overwrite its own earlier row
+/// mid-loop while the returned count claims both were written.
 #[test]
 fn duplicate_external_ids_in_one_payload_are_collapsed_and_counted_honestly() {
     let s = Store::open_in_memory().unwrap();
@@ -1216,8 +1214,7 @@ fn archive_closed_tasks_sweeps_only_old_finished() {
     s.set_task_status(recent.id, "done", 5_000).unwrap();
     s.set_task_status(open.id, "doing", 4).unwrap();
 
-    // Cutoff between the finished todos: the old done *and* the old
-    // abandoned are archived — the rows survive, hidden, not deleted.
+    // Cutoff between the finished todos: archived rows survive, hidden, not deleted.
     let archived = s.archive_closed_tasks(1_000, 9_000).unwrap();
     assert_eq!(archived, 2);
 
@@ -2284,7 +2281,7 @@ fn attach_task_issue_accumulates_links() {
     s.attach_task_issue(t.id, "o/a", 1, "https://github.com/o/a/issues/1").unwrap();
     s.attach_task_issue(t.id, "o/b", 2, "https://github.com/o/b/issues/2").unwrap();
     let got = s.get_task(t.id).unwrap().unwrap();
-    // Attaching a second issue adds a link — it no longer overwrites.
+    // Attaching a second issue adds a link rather than overwriting.
     assert_eq!(got.issues.len(), 2);
     let repos: Vec<&str> = got.issues.iter().map(|l| l.repo.as_str()).collect();
     assert_eq!(repos, vec!["o/a", "o/b"]);

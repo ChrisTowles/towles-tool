@@ -735,8 +735,7 @@ mod tests {
 
     #[test]
     fn a_staged_edit_reverted_in_the_worktree_is_still_unstaged_work() {
-        // The old worktree-vs-HEAD listing dropped this file entirely: the
-        // pending reverse-edit was invisible and unstageable.
+        // The pending reverse-edit must stay visible and unstageable.
         let repo = TestRepo::new();
         repo.commit_file("f.txt", "one\n");
         repo.write("f.txt", "ONE\n");
@@ -857,7 +856,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         // An unreadable file is the observable form of "nothing here reads
-        // the bytes": the old `fs::read` failed and dropped the row.
+        // the bytes".
         let repo = TestRepo::new();
         repo.write("secret.txt", "new\n");
         let path = repo.path().join("secret.txt");

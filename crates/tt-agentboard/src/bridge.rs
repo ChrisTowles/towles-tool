@@ -10,9 +10,6 @@
 //!   function of whether the checkout was tracked or discovered. Empty gets its
 //!   own row. The row's non-worktree checkout leads its folder list and owns the
 //!   `key`, so a worktree that merely sorted first never keys the row.
-//! - An attributed agent event renders only on that exact session (a foreign id
-//!   is dropped, never guessed). An unattributed one goes to the pane that
-//!   recorded running its thread, and only failing that to the default.
 
 use std::collections::HashMap;
 

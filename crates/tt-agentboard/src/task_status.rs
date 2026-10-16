@@ -1,15 +1,11 @@
 //! Auto-driving a worktree-backed task's board column from Agentboard state.
 //!
-//! The Board used to let a card be dragged between `backlog`/`doing`/`done`
-//! by hand; that manual path is gone (2026-07-23). A task with a bound
-//! worktree now reports where it *is*: `doing` while a live agent is running
-//! in it, `backlog` the moment nothing is. `done` is untouched here — it's a
-//! user/GitHub decision (see `tt-collect`'s `rollup_task_statuses` and
-//! `Store::close_task`), never an agent-liveness fact.
+//! A task with a bound worktree reports where it *is*: `doing` while a live agent runs in it,
+//! `backlog` the moment nothing does. `done` is untouched here — it is a user/GitHub decision
+//! (see `tt-collect`'s `rollup_task_statuses` and `Store::close_task`).
 //!
-//! This mirrors `rollup_task_statuses`'s guard on purpose: skip anything
-//! already closed (`outcome`/`archived_at` set) or sitting outside
-//! `backlog`/`doing`, so this sync and the gh-driven rollup can never fight
+//! Mirrors `rollup_task_statuses`'s guard on purpose: skip anything already closed
+//! (`outcome`/`archived_at` set) or outside `backlog`/`doing`, so the two can never fight
 //! over the same row.
 
 use tt_store::Store;
@@ -25,10 +21,6 @@ pub fn sync_worktree_task_statuses(
     now_ms: i64,
 ) -> tt_store::Result<usize> {
     let mut changed = 0;
-    // The store-side filter is the same set of discards this loop used to make
-    // by hand over `all_tasks()` — which meant reading every closed and
-    // archived row, plus hydrating both link tables onto all of them, on every
-    // emit tick, to then throw nearly all of it away.
     for task in store.worktree_bound_open_tasks()? {
         let Some(dir) = task.worktree.as_ref().and_then(|w| w.dir.as_deref()) else {
             continue;
@@ -60,8 +52,6 @@ mod tests {
     use super::*;
     use crate::types::{AgentEventDetails, AgentStatus, FolderData, RepoData, SessionData};
 
-    /// A `FolderData` with just the fields this module reads set; the rest
-    /// are inert.
     fn folder(dir: &str, sessions: Vec<SessionData>) -> FolderData {
         FolderData {
             name: dir.to_string(),

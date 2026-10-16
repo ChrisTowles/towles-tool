@@ -1,11 +1,6 @@
 //! Watched-repo configuration (agentboard). The desktop app's session source: a
 //! list of absolute repo paths plus the add-repo picker's scan roots, persisted
 //! to the app's OWN file, `~/.config/towles-tool/agentboard/repos.json`.
-//!
-//! Kept out of the shared `towles-tool.settings.json` on purpose: this is
-//! app-runtime state owned entirely by the Rust/Tauri app — the TypeScript CLI
-//! never reads it — and it sits beside `sessions.json` which established the
-//! per-file pattern. Path-parameterized so tests use a tempdir.
 
 use std::path::{Path, PathBuf};
 
@@ -46,7 +41,7 @@ fn load_config(path: &Path) -> ReposConfig {
 
 /// Load the repo-path list, distinguishing a torn read from an absent file:
 /// `Some(vec![])` when the file doesn't exist, `None` when it exists but won't
-/// parse — most likely a read racing another instance's write (#75). Callers
+/// parse — most likely a read racing another instance's write. Callers
 /// keep their previous in-memory list on `None` rather than degrading to empty.
 pub fn try_load_repos(path: &Path) -> Option<Vec<String>> {
     if !path.exists() {
@@ -283,7 +278,6 @@ fn parent_basename(path: &str) -> Option<String> {
 /// Resolve repo paths to `(name, dir)` entries. Session name = dir basename; when
 /// two basenames collide, the parent-dir basename is prefixed (`parent/base`).
 pub fn repo_entries(repo_paths: &[String]) -> Vec<RepoEntry> {
-    // Count basenames to detect collisions.
     let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for p in repo_paths {
         *counts.entry(basename(p)).or_default() += 1;
@@ -430,10 +424,8 @@ mod tests {
         let (merged, removed) = untrack_missing_persisted(&path).unwrap();
         assert_eq!(merged, vec![real_s.clone()]);
         assert_eq!(removed, vec![gone]);
-        // persisted: a fresh load sees only the surviving repo
         assert_eq!(load_repos(&path), vec![real_s]);
 
-        // second run is a clean no-op
         let (merged, removed) = untrack_missing_persisted(&path).unwrap();
         assert_eq!(merged.len(), 1);
         assert!(removed.is_empty());
@@ -443,10 +435,7 @@ mod tests {
     fn untrack_nested_tasks_persisted_drops_worktrees_of_tracked_repos() {
         let repo = "/home/u/proj".to_string();
         let task = "/home/u/proj/.claude/worktrees/feat-x".to_string();
-        // A worktree whose parent repo is NOT tracked has no group to fold
-        // into — it stays, whatever its shape.
         let orphan = "/home/u/other/.claude/worktrees/feat-y".to_string();
-        // A sibling checkout that merely shares a name prefix must not match.
         let prefix = "/home/u/proj-two".to_string();
         let all = vec![repo.clone(), task.clone(), orphan.clone(), prefix.clone()];
         assert_eq!(nested_task_paths(&all), vec![task.clone()]);
@@ -459,7 +448,6 @@ mod tests {
         assert_eq!(removed, vec![task]);
         assert_eq!(load_repos(&path), merged);
 
-        // second run is a clean no-op
         let (_, removed) = untrack_nested_tasks_persisted(&path).unwrap();
         assert!(removed.is_empty());
     }
@@ -482,11 +470,9 @@ mod tests {
         std::fs::write(&path, r#"{"repoPaths":["/a/x"],"scanRoots":["~/code","/srv/work"]}"#)
             .unwrap();
         assert_eq!(load_scan_roots(&path), paths(&["~/code", "/srv/work"]));
-        // Adding a repo must not wipe the configured scan roots.
         save_repos(&path, &paths(&["/a/x", "/a/y"])).unwrap();
         assert_eq!(load_scan_roots(&path), paths(&["~/code", "/srv/work"]));
         assert_eq!(load_repos(&path), paths(&["/a/x", "/a/y"]));
-        // Editing scan roots must not wipe the repo list.
         save_scan_roots(&path, &paths(&["~/dev"])).unwrap();
         assert_eq!(load_scan_roots(&path), paths(&["~/dev"]));
         assert_eq!(load_repos(&path), paths(&["/a/x", "/a/y"]));
@@ -496,14 +482,10 @@ mod tests {
     fn discover_finds_repos_and_prunes() {
         let root = TempDir::new().unwrap();
         let base = root.path();
-        // A repo at depth 1 (normal clone).
         std::fs::create_dir_all(base.join("p/proj/.git")).unwrap();
-        // A repo nested under a non-repo container at depth 2.
         std::fs::create_dir_all(base.join("p/repos/task/.git")).unwrap();
-        // A worktree whose `.git` is a file, not a dir.
         std::fs::create_dir_all(base.join("w/wt")).unwrap();
         std::fs::write(base.join("w/wt/.git"), "gitdir: /elsewhere").unwrap();
-        // Heavy/hidden dirs must be skipped, and repos aren't descended into.
         std::fs::create_dir_all(base.join("p/proj/node_modules/pkg/.git")).unwrap();
         std::fs::create_dir_all(base.join(".hidden/nope/.git")).unwrap();
 
@@ -573,15 +555,10 @@ mod tests {
     #[test]
     fn try_load_distinguishes_missing_from_torn_read() {
         let dir = TempDir::new().unwrap();
-        // Missing file: legitimately no repos configured.
         assert_eq!(try_load_repos(&dir.path().join("nope.json")), Some(vec![]));
-        // Valid file: the list.
         let path = dir.path().join("repos.json");
         save_repos(&path, &paths(&["/a/x"])).unwrap();
         assert_eq!(try_load_repos(&path), Some(paths(&["/a/x"])));
-        // Existing-but-unparseable (a torn read of a concurrent write): None,
-        // so callers keep their previous in-memory list instead of pruning
-        // everything against an empty set (#75).
         std::fs::write(&path, r#"{"repoPaths":["/a/x"#).unwrap();
         assert_eq!(try_load_repos(&path), None);
         std::fs::write(&path, "").unwrap();
@@ -591,33 +568,25 @@ mod tests {
     #[test]
     fn resolve_session_matches_encoded_prefix_longest() {
         let entries = repo_entries(&paths(&["/home/u/proj", "/home/u/proj/sub"]));
-        // Exact repo dir.
         assert_eq!(resolve_session_name("-home-u-proj", &entries).as_deref(), Some("proj"));
-        // A project dir *under* proj/sub → longest match wins (proj/sub, named "sub").
         assert_eq!(
             resolve_session_name("-home-u-proj-sub-deeper", &entries).as_deref(),
             Some("sub")
         );
-        // Unrelated dir → None.
         assert_eq!(resolve_session_name("-var-tmp-x", &entries), None);
     }
 
     #[test]
     fn resolve_real_absolute_path_against_repo_dirs() {
         let entries = repo_entries(&paths(&["/home/u/proj"]));
-        // Exact real path (the pid→cwd fallback form).
         assert_eq!(resolve_session_name("/home/u/proj", &entries).as_deref(), Some("proj"));
-        // A cwd under the repo.
         assert_eq!(resolve_session_name("/home/u/proj/src", &entries).as_deref(), Some("proj"));
-        // Unrelated real path.
         assert_eq!(resolve_session_name("/var/tmp", &entries), None);
-        // A sibling that only shares a prefix segment must not match.
         assert_eq!(resolve_session_name("/home/u/project-x", &entries), None);
     }
 
     #[test]
     fn resolve_handles_literal_dashes_via_encoded_match() {
-        // A repo whose name contains a literal dash encodes unambiguously here.
         let entries = repo_entries(&paths(&["/home/u/my-proj"]));
         assert_eq!(resolve_session_name("-home-u-my-proj", &entries).as_deref(), Some("my-proj"));
     }
@@ -626,7 +595,6 @@ mod tests {
     fn resolve_repo_dir_matches_exact_and_subdir() {
         let entries = repo_entries(&paths(&["/home/u/proj"]));
         assert_eq!(resolve_repo_dir("/home/u/proj", &entries).as_deref(), Some("/home/u/proj"));
-        // A session cwd nested under the repo still resolves to the repo's dir.
         assert_eq!(
             resolve_repo_dir("/home/u/proj/crates/sub", &entries).as_deref(),
             Some("/home/u/proj")
@@ -708,7 +676,6 @@ mod tests {
         assert_eq!(out, v(&["/c", "/b", "/a"]));
         assert_eq!(load_repos(&path), v(&["/c", "/b", "/a"]), "order must survive the round-trip");
 
-        // Re-applying the same order must not rewrite the file.
         let before = std::fs::metadata(&path).unwrap().modified().unwrap();
         let again = reorder_repos_persisted(&path, &v(&["/c", "/b", "/a"])).unwrap();
         assert_eq!(again, v(&["/c", "/b", "/a"]));

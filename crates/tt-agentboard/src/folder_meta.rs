@@ -3,18 +3,13 @@
 //! override*, which forces a folder off the rail under either narrowing filter
 //! whatever its own activity says, and the *last-worked stamp*, the pane
 //! open/close half of that filter's worked-recently mode. Stored in the app's
-//! own file, `~/.config/towles-tool/agentboard/folder_meta.json`, keyed by the
-//! folder's absolute dir (same per-file pattern as [`crate::sessions`]).
-//! Path-parameterized so tests use a tempdir.
+//! own file, `~/.config/towles-tool/agentboard/folder_meta.json`, keyed by folder dir.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// Metadata for one folder. A struct rather than a bare string so the on-disk
-/// value stays a named object — a second field can land without rewriting
-/// every existing file.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderMeta {
@@ -45,18 +40,12 @@ impl FolderMeta {
     }
 }
 
-/// On-disk shape: `{ "folders": { "<folderDir>": { "baseBranch": "...",
-/// "quiet": true } } }`.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct FolderMetaConfig {
     #[serde(default)]
     folders: HashMap<String, FolderMeta>,
 }
 
-/// Owns the folder→meta map plus its file path. Loaded once; saved on each
-/// mutation by the caller (engine), mirroring [`crate::sessions::SessionStore`]
-/// — including its merge-on-save behavior, since this file is likewise shared
-/// across every Agentboard window.
 #[derive(Debug, Default)]
 pub struct FolderMetaStore {
     path: Option<PathBuf>,
@@ -65,14 +54,11 @@ pub struct FolderMetaStore {
     dirty: HashSet<String>,
 }
 
-/// Default location: `<agentboard_dir>/folder_meta.json` (task-scoped in a task
-/// checkout; see [`tt_config::agentboard_dir`]).
 pub fn default_folder_meta_path() -> PathBuf {
     tt_config::agentboard_dir_lossy().join("folder_meta.json")
 }
 
 impl FolderMetaStore {
-    /// Load from `path` (empty on missing/corrupt). `None` = in-memory only (tests).
     pub fn new(path: Option<PathBuf>) -> Self {
         let folders = match &path {
             Some(p) => load(p),
@@ -107,7 +93,6 @@ impl FolderMetaStore {
     }
 
     /// Set (`true`) or clear (`false`, the default) a folder's quiet override.
-    /// Returns whether it changed. Caller persists on `true`.
     pub fn set_quiet(&mut self, dir: &str, quiet: bool) -> bool {
         let normalized = quiet.then_some(true);
         let current = self.folders.get(dir).and_then(|m| m.quiet);
@@ -120,7 +105,6 @@ impl FolderMetaStore {
         true
     }
 
-    /// When a pane was last opened or closed on this folder, if ever.
     pub fn last_worked_at_for(&self, dir: &str) -> Option<i64> {
         self.folders.get(dir).and_then(|m| m.last_worked_at)
     }
@@ -145,7 +129,6 @@ impl FolderMetaStore {
         }
     }
 
-    /// Drop metadata for folders no longer in `dirs` (called after a repo removal).
     pub fn prune(&mut self, dirs: &HashSet<String>) -> bool {
         let removed: Vec<String> =
             self.folders.keys().filter(|dir| !dirs.contains(*dir)).cloned().collect();
@@ -187,7 +170,6 @@ impl FolderMetaStore {
     }
 }
 
-/// Load the folder→meta map from `path` (empty on missing/corrupt).
 fn load(path: &Path) -> HashMap<String, FolderMeta> {
     let Ok(text) = std::fs::read_to_string(path) else {
         return HashMap::new();
@@ -206,7 +188,6 @@ mod tests {
         assert_eq!(store.base_branch_for("/r/a"), None);
         assert!(store.set_base_branch("/r/a", Some("release/2.0")));
         assert_eq!(store.base_branch_for("/r/a"), Some("release/2.0"));
-        // Unchanged write reports false.
         assert!(!store.set_base_branch("/r/a", Some("release/2.0")));
     }
 
@@ -219,7 +200,6 @@ mod tests {
         store.set_base_branch("/r/a", Some("develop"));
         assert!(store.set_base_branch("/r/a", None));
         assert_eq!(store.base_branch_for("/r/a"), None);
-        // Clearing an unset folder is a no-op.
         assert!(!store.set_base_branch("/r/b", None));
     }
 
@@ -236,11 +216,9 @@ mod tests {
         assert!(!store.quiet_for("/r/a"));
         assert!(store.set_quiet("/r/a", true));
         assert!(store.quiet_for("/r/a"));
-        // Unchanged write reports false.
         assert!(!store.set_quiet("/r/a", true));
         assert!(store.set_quiet("/r/a", false));
         assert!(!store.quiet_for("/r/a"));
-        // Clearing an unset folder is a no-op.
         assert!(!store.set_quiet("/r/b", false));
     }
 
@@ -252,12 +230,10 @@ mod tests {
         assert_eq!(store.base_branch_for("/r/a"), Some("develop"));
         assert!(store.quiet_for("/r/a"));
 
-        // Clearing one field must not wipe out the other.
         store.set_quiet("/r/a", false);
         assert_eq!(store.base_branch_for("/r/a"), Some("develop"));
         assert!(!store.quiet_for("/r/a"));
 
-        // Now clearing the last field drops the entry outright.
         store.set_base_branch("/r/a", None);
         assert_eq!(store.base_branch_for("/r/a"), None);
         assert!(!store.quiet_for("/r/a"));

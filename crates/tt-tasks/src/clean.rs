@@ -3,10 +3,7 @@
 //! orchestration (git calls, removal, directory sweep) lives in
 //! [`crate::ops::clean_tasks`].
 //!
-//! Whether a task is *finished* is no longer decided here — that moved to
-//! [`crate::landed`], which combines several git signals because the
-//! ancestor-or-`[gone]` rule this module used to apply could not see a squash
-//! merge and treated a deleted remote branch as proof of one.
+//! Whether a task is *finished* is decided by [`crate::landed`], not here.
 
 use std::collections::BTreeSet;
 

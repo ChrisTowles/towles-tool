@@ -653,7 +653,7 @@ fn new_warns_but_still_creates_when_base_diverged_from_origin() {
 }
 
 /// A plain checkout never onboarded onto tasks must still get one: the render falls
-/// back to an empty template instead of the old "no template" error.
+/// back to an empty template instead of a "no template" error.
 #[test]
 fn new_works_in_a_repo_with_no_template() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1111,8 +1111,7 @@ fn lockfile_detection_installs_without_declared_setup() {
     std::fs::create_dir_all(&seed).unwrap();
     git(tmp.path(), &["init", "seed"]);
     // Its own window like every other fixture, and below the ephemeral range
-    // — this one used to hardcode 42430-42439, which is *inside* it (32768+),
-    // exactly what `POOL_FLOOR`'s doc warns against.
+    // (see `POOL_FLOOR`'s doc).
     std::fs::write(seed.join(".env.example"), format!("UI_PORT=${{tt:port {}}}\n", next_pool()))
         .unwrap();
     std::fs::write(seed.join(".gitignore"), ".env\n").unwrap();

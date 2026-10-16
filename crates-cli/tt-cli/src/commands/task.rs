@@ -296,7 +296,7 @@ fn cmd_new(
     Ok(())
 }
 
-/// Write the #339 board-task row and bind it to `repo_root` + the new worktree. Same
+/// Write the board-task row and bind it to `repo_root` + the new worktree. Same
 /// store path as the app's `store_add_task` + `store_task_set_worktree`; a review
 /// task also links its PR, which a fork's owner-prefixed branch can't match on its own,
 /// and an issue task links its issue the way the app's `+` flow does.

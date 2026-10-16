@@ -4,8 +4,6 @@
 //! registry. Its whole contract is: draw into the surface it was given, resize
 //! when told, and park when told (a hidden pane is moved off screen by the main
 //! thread, so its frames are pure waste — see [`crate::RenderMsg::Pause`]).
-//! Everything about *where* the pane sits stays on the main thread — see the
-//! module docs in `lib.rs` for why the split exists.
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread::JoinHandle;
@@ -16,7 +14,6 @@ use tt_jarvis::PresentMode;
 
 use crate::RenderMsg;
 
-/// Start rendering `surface`.
 pub fn spawn(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("tt-pane-render".into())
@@ -38,14 +35,9 @@ fn run(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) {
     // Nothing to pump while waiting: the main thread owns the Wayland queue.
     tt_jarvis::finalize_embedded_app(&mut app, std::thread::yield_now);
 
-    // Parked = hidden: the app stays alive but stops presenting, since under vsync each
-    // frame blocks this thread on a callback for something nobody can see. Resizes still
-    // apply, so the first frame after resuming is already right.
     let mut paused = false;
 
     loop {
-        // Blocking on `recv` while parked is the point: it costs nothing until there is
-        // something to do. A dropped sender is terminal either way.
         let msg = if paused {
             match rx.recv() {
                 Ok(msg) => Some(msg),
@@ -69,8 +61,6 @@ fn run(surface: ForeignSurface, rect: PaneRect, rx: Receiver<RenderMsg>) {
             continue;
         }
 
-        // Blocks until the compositor's next frame callback under vsync. That
-        // is exactly why this is not on the GTK main thread.
         app.update();
 
         if app.should_exit().is_some() {

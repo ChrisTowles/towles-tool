@@ -1,11 +1,5 @@
 //! `tt task nudge`: poke the app instance that owns this terminal into
 //! refreshing a collector now.
-//!
-//! Collecting itself is the app's job — `crates-tauri/tt-app/src/scheduler.rs`
-//! runs every collector on its own cadence while the app is open, and the app
-//! is also where their health is read (`apps/client/src/lib/collector-health.ts`,
-//! via the status bar and Settings).
-//!
 //! This survives as a CLI command because its caller *can't* be the app: the
 //! `gh-pr-nudge.sh` PostToolUse hook is a shell script, so a process boundary is
 //! the only way it can reach `tt_config`'s shared nudge directory.
@@ -73,10 +67,6 @@ fn admits(session: Option<&str>) -> bool {
 }
 
 /// Record a failed nudge and report it, returning the exit code.
-///
-/// One home for the failure shape so every arm emits the same `hook.nudge`
-/// event: the hook discards this command's output entirely, which makes the
-/// event log the only place a broken nudge is visible at all.
 fn fail(
     target: tt_collect::NudgeTarget,
     session: Option<&str>,

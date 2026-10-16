@@ -10,12 +10,6 @@
 //!   *scoped* directory; the bare `~/.local/share/towles-tool/telemetry/` exists but
 //!   stays empty, so checking it by eye reads as "telemetry is broken". Use
 //!   `telemetry_dir()`.
-//! - [`list_days`]/[`read_day`]/[`read_days`] read them back uncached; [`summarize`],
-//!   [`keyboard_score`], [`apply`] and [`children_of`] aggregate/filter in Rust, since a day
-//!   can hold 75,000+ records.
-//! - [`list_days`]/[`read_day`]/[`read_days`] read them back uncached; [`summarize`] and
-//!   [`keyboard_score`] aggregate in Rust, since a day can hold 75,000+ records, and
-//!   [`query`] answers ad-hoc SQL over a fortnight of them.
 
 mod attention;
 mod builds;
@@ -107,9 +101,6 @@ fn disk_sink_disabled() -> bool {
 }
 
 /// Resource attributes stamped on every record, in OpenTelemetry naming.
-/// `tt.task` and `tt.build_sha` are the load-bearing pair: several checkouts
-/// run concurrently at different commits, so a record is only interpretable if
-/// it names which binary produced it.
 fn resource(service: &str) -> Map<String, Value> {
     let mut attrs = Map::new();
     let [service_name, service_version, process_pid] = schema::RESOURCE_KEYS else {
@@ -182,8 +173,6 @@ mod disk_filter_tests {
     use super::*;
     use tracing_subscriber::Layer;
 
-    /// Run `body` under a `DISK_FILTER`-scoped EventLogLayer; return the number
-    /// of records that reached disk.
     fn records_written(body: impl FnOnce()) -> usize {
         let _serialized = crate::serialize_subscriber_tests();
         let dir = tempfile::tempdir().unwrap();
@@ -205,8 +194,6 @@ mod disk_filter_tests {
 
     #[test]
     fn third_party_debug_is_dropped() {
-        // The whole reason the filter is scoped: an unscoped debug sink bridges
-        // in every dependency's log::debug! and writes+flushes each one.
         let n = records_written(|| {
             tracing::debug!(target: "hyper::client", "connection reused");
             tracing::debug!(target: "tao::platform_impl", "event loop tick");
@@ -216,8 +203,6 @@ mod disk_filter_tests {
 
     #[test]
     fn ui_action_events_reach_disk() {
-        // Pinned because the sink's default is `warn`: an action seam that moved
-        // to a non-`tt_*` target would be silently swallowed.
         let n = records_written(|| {
             tracing::info!(target: "tt_app_lib", action = "repo.icon_set", screen = "settings", "ui.action");
         });

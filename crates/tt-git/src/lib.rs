@@ -1,17 +1,13 @@
 //! GitHub/git helper domain logic shared by the app and the task machinery.
 //!
-//! This crate is Tauri-free, and [`repo`] reads repositories in-process via
-//! `gix` rather than parsing a `git` subprocess; only [`cli`] and [`provision`] spawn one.
-//! The rest is pure decision logic that takes data and returns data, unit-testable
-//! without `gh` or a terminal.
+//! This crate is Tauri-free, and [`repo`] reads repositories in-process via `gix`;
+//! only [`cli`] and [`provision`] spawn a `git` subprocess.
 //!
 //! - [`testing`] — behind `test-support`: fixture git helpers for other crates' tests.
 //! - [`cli`] — the typed `git` subprocess operations (fetch, worktree writes).
-//! - [`repo`] — in-process git: the per-folder [`repo::RepoCache`], refs,
-//!   graph walks, status, diffs, and patch identity. Start there; its module
-//!   docs cover what still shells out to `git` and why.
+//! - [`repo`] — in-process git (cache, refs, graph walks, status, diffs, patch identity).
 //! - [`provision`] — `git init` / `git clone` a new repo onto disk.
-//! - [`branch_name`] — branch-name slugging (`branch-name.ts`).
+//! - [`branch_name`] — branch-name slugging.
 //! - [`task_assign`] — remote URL to `owner/name` slug.
 
 pub mod branch_name;

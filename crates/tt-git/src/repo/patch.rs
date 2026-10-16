@@ -4,14 +4,6 @@
 //! meant `commit-tree` writing a real object for its cumulative tree, then deleting
 //! the loose object so the poll didn't litter thousands of dead objects a day. In
 //! process a patch id is computed from trees that already exist, and thrown away.
-//!
-//! **These ids are not git's.** `git patch-id` has a specific stable hash; this does
-//! not reproduce it and does not try to. An id here is only ever compared against
-//! another from this same code, in the same process — nothing is persisted or shown.
-//! The comparison needs only that identical changes hash identically and different
-//! ones do not. What *is* preserved is what a patch id ignores: commit metadata,
-//! parentage and the lines a hunk lands on, so the same content change is one patch
-//! whether rebased, cherry-picked or a year apart.
 
 use std::collections::HashSet;
 
@@ -98,8 +90,6 @@ impl Repo {
             .collect())
     }
 
-    /// Hash the change between two trees. `None` for `old` means the empty
-    /// tree.
     fn patch_id_between(
         &self,
         old: Option<&gix::Tree<'_>>,
@@ -109,8 +99,6 @@ impl Repo {
         let empty = self.inner().empty_tree();
         let old = old.unwrap_or(&empty);
 
-        // Sorted, so two runs over the same change hash identically regardless
-        // of the order the tree walk happened to report entries in.
         let mut parts: Vec<(String, String, Vec<u8>)> = Vec::new();
         for change in changes {
             use gix::object::tree::diff::ChangeDetached as C;
@@ -211,8 +199,6 @@ mod tests {
         repo.git(&["checkout", "--quiet", "-b", "feature"]);
         let original = repo.commit_file("shared.txt", "content\n");
         repo.git(&["checkout", "--quiet", "main"]);
-        // An unrelated commit first, so the cherry-pick lands at a different
-        // position with a different sha and a different parent.
         repo.commit_file("unrelated.txt", "noise\n");
         repo.git(&["cherry-pick", "--quiet", &original]);
         let picked = repo.rev_parse("HEAD");
@@ -248,11 +234,6 @@ mod tests {
     #[test]
     fn cherry_matches_git_cherry_after_a_rebase_merge() {
         let repo = branched();
-        // Rebase-merge: main gets patch-identical copies under new shas. The
-        // unrelated commit first is load-bearing — cherry-picking straight onto
-        // the merge-base reproduces byte-identical commits (same tree, same
-        // parent, same second), so feature would be *contained* in main and
-        // there would be no divergence left for either implementation to judge.
         repo.git(&["checkout", "--quiet", "main"]);
         repo.commit_file("unrelated.txt", "noise\n");
         repo.git(&["cherry-pick", "--quiet", "feature~1", "feature"]);
@@ -299,9 +280,6 @@ mod tests {
 
     #[test]
     fn per_commit_ids_do_not_match_a_squash() {
-        // The case that made `git cherry` alone insufficient: a squash commit
-        // is patch-identical to the branch as a whole, but to none of its
-        // individual commits.
         let repo = branched();
         repo.git(&["checkout", "--quiet", "main"]);
         repo.git(&["merge", "--squash", "feature"]);
