@@ -95,6 +95,17 @@ export function nextPromptImproverId(improvers: PromptImprover[], label: string)
   }
 }
 
+/** A new-task preset — `tt_config::TaskTemplate`. Empty fields mean "none"; an
+ * empty `repo` offers it for every repo. */
+export type TaskTemplate = {
+  id: string;
+  label: string;
+  repo: string;
+  goal: string;
+  improver: string;
+  setup: string;
+};
+
 /** Read from `tt_config` — a second copy of prompts this long drifts. */
 export function defaultPromptImprovers() {
   return invoke<PromptImprover[]>(
@@ -264,6 +275,7 @@ export type UserSettings = {
   preferredEditor: string;
   journalSettings: JournalSettings;
   promptImprovers: PromptImprover[];
+  taskTemplates: TaskTemplate[];
   savedViews: SavedView[];
   savedQueries: SavedQuery[];
   telemetryRules: TelemetryRule[];

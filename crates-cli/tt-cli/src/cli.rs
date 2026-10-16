@@ -109,6 +109,10 @@ pub enum TaskCommands {
         #[arg(long, value_name = "NUMBER", conflicts_with = "pr")]
         issue: Option<u64>,
 
+        /// Start from a task template (Settings → Agent Board): its goal leads --goal, its setup runs after the repo's
+        #[arg(long, value_name = "ID")]
+        template: Option<String>,
+
         /// Emit the created task as JSON
         #[arg(long)]
         json: bool,

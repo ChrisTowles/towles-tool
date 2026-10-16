@@ -77,6 +77,19 @@ const TelemetryRuleSchema = z
 /** `settings_default_prompt_improvers` answers with a bare array. */
 export const PromptImproverListSchema = z.array(PromptImproverSchema);
 
+const TaskTemplateSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    repo: z.string(),
+    goal: z.string(),
+    improver: z.string(),
+    setup: z.string(),
+  })
+  .passthrough();
+
+export const TaskTemplateListSchema = z.array(TaskTemplateSchema);
+
 const SavedQuerySchema = z
   .object({
     id: z.string(),
@@ -176,6 +189,7 @@ export const UserSettingsSchema = z
     preferredEditor: z.string(),
     journalSettings: JournalSettingsSchema,
     promptImprovers: z.array(PromptImproverSchema),
+    taskTemplates: TaskTemplateListSchema.default([]),
     savedViews: z.array(SavedViewSchema),
     savedQueries: z.array(SavedQuerySchema),
     telemetryRules: z.array(TelemetryRuleSchema),

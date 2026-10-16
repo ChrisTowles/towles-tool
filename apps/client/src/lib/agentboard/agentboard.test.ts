@@ -1676,6 +1676,7 @@ describe("folderLandingSummary", () => {
     expect(folderLandingSummary(f, pr({ state: "merged", number: 732 }))).toEqual({
       landed: true,
       text: "PR #732 merged, squash-merged into main",
+      url: "https://github.com/ChrisTowles/towles-tool/pull/42",
     });
   });
 
@@ -1683,6 +1684,7 @@ describe("folderLandingSummary", () => {
     expect(folderLandingSummary(folder({}), pr({ state: "merged", number: 4 }))).toEqual({
       landed: true,
       text: "PR #4 merged",
+      url: "https://github.com/ChrisTowles/towles-tool/pull/42",
     });
   });
 
@@ -1691,6 +1693,7 @@ describe("folderLandingSummary", () => {
     expect(folderLandingSummary(f, pr({ state: "open", number: 7 }))).toEqual({
       landed: false,
       text: "PR #7 open, not in develop",
+      url: "https://github.com/ChrisTowles/towles-tool/pull/42",
     });
   });
 

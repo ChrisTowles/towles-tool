@@ -22,6 +22,7 @@ pub mod overlap;
 pub mod pasted;
 pub mod ports;
 pub mod pr;
+pub mod presets;
 pub mod staleness;
 pub mod suggest;
 pub mod template;

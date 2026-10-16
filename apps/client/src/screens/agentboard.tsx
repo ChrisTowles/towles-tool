@@ -562,6 +562,7 @@ export function AgentBoardScreen() {
         worktree: true,
         launchClaude: false,
         pr: null,
+        templateSetup: "",
         taskId: task.id,
       },
     );

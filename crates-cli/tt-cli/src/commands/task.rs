@@ -20,22 +20,31 @@ use crate::ui;
 
 pub fn run(command: TaskCommands) -> i32 {
     let result = match command {
-        TaskCommands::New { title, repo, status, notes, goal, branch, base, pr, issue, json } => {
+        TaskCommands::New {
+            title,
+            repo,
+            status,
+            notes,
+            goal,
+            branch,
+            base,
+            pr,
+            issue,
+            template,
+            json,
+        } => {
             let (branch, base) = (branch.as_deref(), base.as_deref());
             let source = match (pr, issue) {
                 (Some(number), _) => NewSource::Pr(number),
                 (None, Some(number)) => NewSource::Issue { number, branch, base },
                 (None, None) => NewSource::Branch { branch, base },
             };
-            cmd_new(
-                title.as_deref(),
-                &repo,
-                &status,
-                notes.as_deref(),
-                goal.as_deref(),
-                source,
-                json,
-            )
+            let card = NewCard {
+                notes: notes.as_deref(),
+                goal: goal.as_deref(),
+                template: template.as_deref(),
+            };
+            cmd_new(title.as_deref(), &repo, &status, card, source, json)
         }
         TaskCommands::Ls { json, stale, root } => cmd_ls(json, stale, root.as_deref()),
         TaskCommands::Rm { name, force, outcome, root } => {
@@ -154,6 +163,14 @@ enum NewSource<'a> {
     },
 }
 
+/// What the board card says, before a template fills in its part.
+struct NewCard<'a> {
+    notes: Option<&'a str>,
+    goal: Option<&'a str>,
+    /// A `tt_config::TaskTemplate` id.
+    template: Option<&'a str>,
+}
+
 /// Create a task (the unit of work): a board-task row PLUS its worktree, in one shot.
 /// Same store path as the app's `+` flow and MCP `task_create`, same
 /// `ops::create_task` — those two flows unified behind one verb.
@@ -161,11 +178,11 @@ fn cmd_new(
     title: Option<&str>,
     repo: &str,
     status: &str,
-    notes: Option<&str>,
-    goal: Option<&str>,
+    card: NewCard<'_>,
     source: NewSource<'_>,
     json: bool,
 ) -> Result<(), String> {
+    let NewCard { notes, goal, template } = card;
     let title = title.map(str::trim).unwrap_or_default();
     if title.is_empty() && matches!(source, NewSource::Branch { .. }) {
         return Err("a task needs a title".to_string());
@@ -188,6 +205,15 @@ fn cmd_new(
     // `worktree_repo_root` keys the card to a Board swimlane matching no repo.
     let sr = ops::discover_root(Some(Path::new(&repo_dir))).map_err(|e| e.to_string())?;
     let repo_root = sr.checkout.to_string_lossy().to_string();
+    // Resolved before anything is created, so a typo'd id costs nothing.
+    let template = match template {
+        Some(id) => {
+            let settings = tt_config::load().map_err(|e| e.to_string())?;
+            let name = entries.iter().find(|e| e.dir == repo_dir).map_or(repo, |e| e.name.as_str());
+            Some(tt_tasks::presets::find(&settings.task_templates, id, name, &repo_root)?.clone())
+        }
+        None => None,
+    };
 
     // The branch defaults to a slug of the title; the task folder slugs it again. An
     // issue task is a new branch like any other — only its naming comes from `gh`.
@@ -218,7 +244,12 @@ fn cmd_new(
         }
     };
 
-    let opts = CreateOpts { root: Some(sr.checkout.clone()), source, run_setup: true };
+    let opts = CreateOpts {
+        root: Some(sr.checkout.clone()),
+        source,
+        run_setup: true,
+        template_setup: template.as_ref().map(|t| t.setup.clone()).filter(|s| !s.trim().is_empty()),
+    };
     // Text mode only — `ui::info` writes to stdout, which `--json`'s document owns.
     // Worth printing because the setup step can run for minutes in silence.
     let created = ops::create_task(&opts, now_ms(), &mut |phase| {
@@ -239,6 +270,8 @@ fn cmd_new(
     };
     let title = title.as_str();
     let goal = issue.as_ref().map(|planned| planned.goal.as_str()).or(goal);
+    let templated = template.as_ref().and_then(|t| tt_tasks::presets::compose_goal(t, goal));
+    let goal = templated.as_deref().or(goal);
 
     // A store that can't open is a soft failure: the worktree exists and is
     // usable, so warn rather than abort. (`--status` is checked by clap, up front.)
@@ -269,6 +302,7 @@ fn cmd_new(
             "baseLabel": created.base_label,
             "pr": created.pr.as_ref().map(|pr| pr.number),
             "issue": issue.map(|issue| issue.number),
+            "template": template.as_ref().map(|t| t.id.as_str()),
             "ports": ports,
             "inheritedKeys": created.inherited,
             "warnings": warnings,

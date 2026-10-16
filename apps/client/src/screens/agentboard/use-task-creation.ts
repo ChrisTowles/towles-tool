@@ -117,21 +117,24 @@ export function useTaskCreation(args: {
   }
 
   // Setup can fail without invalidating the task — give it a one-click retry.
-  async function retrySetup(dir: string) {
+  async function retrySetup(dir: string, templateSetup: string) {
     markSetupRunning(dir);
-    const result = await invoke<SetupRun>("task_run_setup", { dir });
+    const result = await invoke<SetupRun>("task_run_setup", {
+      dir,
+      templateSetup: templateSetup || null,
+    });
     clearSetupRunning(dir);
     result.match({
       ok: (run) => {
-        if (run.warning) toast(run.warning, { actions: setupActions(dir, run) });
+        if (run.warning) toast(run.warning, { actions: setupActions(dir, run, templateSetup) });
         else toast("setup succeeded");
       },
       err: (e) => toast(e.message),
     });
   }
 
-  function setupActions(dir: string, run: SetupRun) {
-    const retry = { label: "Retry", onClick: () => void retrySetup(dir) };
+  function setupActions(dir: string, run: SetupRun, templateSetup: string) {
+    const retry = { label: "Retry", onClick: () => void retrySetup(dir, templateSetup) };
     const { logPath } = run;
     if (!logPath) return [retry];
     const openLog = () => {
@@ -148,13 +151,16 @@ export function useTaskCreation(args: {
   }
 
   // The pane opens as soon as the worktree exists; setup runs after it.
-  function runSetupInBackground(dir: string) {
+  function runSetupInBackground(dir: string, templateSetup: string) {
     markSetupRunning(dir);
-    void invoke<SetupRun>("task_run_setup", { dir }).then((result) => {
+    void invoke<SetupRun>("task_run_setup", {
+      dir,
+      templateSetup: templateSetup || null,
+    }).then((result) => {
       clearSetupRunning(dir);
       result.match({
         ok: (run) => {
-          if (run.warning) toast(run.warning, { actions: setupActions(dir, run) });
+          if (run.warning) toast(run.warning, { actions: setupActions(dir, run, templateSetup) });
         },
         err: (e) => toast(e.message),
       });
@@ -233,7 +239,7 @@ export function useTaskCreation(args: {
     for (const warning of created.warnings) {
       toast(warning);
     }
-    runSetupInBackground(created.dir);
+    runSetupInBackground(created.dir, input.templateSetup);
 
     const label =
       input.goal ||
