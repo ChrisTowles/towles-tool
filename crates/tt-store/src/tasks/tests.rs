@@ -290,8 +290,18 @@ fn the_oldest_task_owns_a_worktree_dir_two_rows_claim() {
 fn deleting_a_task_drops_its_folder_snooze_but_not_others() {
     let s = store();
     let id = bound(&s, "t", 1, "feat/a", "/w/a");
-    s.snooze_queue_item("folder:/w/a", "later", None, 1).unwrap();
-    s.snooze_queue_item("folder:/w/other", "later", None, 1).unwrap();
+    s.snooze_queue_item(
+        "folder:/w/a",
+        SnoozeUntil { reason: "later", until_ms: None, until_ci: false },
+        1,
+    )
+    .unwrap();
+    s.snooze_queue_item(
+        "folder:/w/other",
+        SnoozeUntil { reason: "later", until_ms: None, until_ci: false },
+        1,
+    )
+    .unwrap();
 
     s.delete_task(id).unwrap();
 

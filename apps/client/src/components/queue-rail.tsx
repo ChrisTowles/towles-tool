@@ -20,10 +20,12 @@ import { errorMessage, NotInTauri } from "@/lib/errors";
 import {
   LANES,
   rankMove,
-  REASON_FACE,
+  reasonChip,
+  REASON_TONE,
+  snoozePresets,
   snoozeUntil,
-  type Face,
   type SnoozePreset,
+  type Tone,
 } from "@/lib/queue";
 import { repoAccentStyles } from "@/lib/repo-identity";
 import type { Lane, QueueItem, TaskQueue } from "@/lib/schemas/queue";
@@ -63,7 +65,7 @@ const queueRowMotion = {
 
 /** A wait reason's word, tinted rather than filled: it says what kind of wait
  * this is, at the volume of the rest of the row. */
-const REASON_TONE: Record<Face["variant"], string> = {
+const TONE_CLASS: Record<Tone, string> = {
   red: "bg-danger/10 text-danger",
   orange: "bg-warn/10 text-warn",
   blue: "bg-info/10 text-info",
@@ -71,11 +73,12 @@ const REASON_TONE: Record<Face["variant"], string> = {
   neutral: "bg-kumo-tint text-kumo-subtle",
 };
 
-const SNOOZES: { preset: SnoozePreset; short: string; label: string }[] = [
-  { preset: "1h", short: "1h", label: "for an hour" },
-  { preset: "tomorrow", short: "Tomorrow", label: "until tomorrow 9:00" },
-  { preset: "until_change", short: "Till it changes", label: "until it changes" },
-];
+const SNOOZES: Record<SnoozePreset, { short: string; label: string }> = {
+  "1h": { short: "1h", label: "for an hour" },
+  tomorrow: { short: "Tomorrow", label: "until tomorrow 9:00" },
+  until_change: { short: "Till it changes", label: "until it changes" },
+  until_ci: { short: "Till CI's done", label: "until CI finishes" },
+};
 
 async function report(r: Awaited<ReturnType<typeof invoke>>) {
   if (r.isErr() && !NotInTauri.is(r.error)) toast.error(errorMessage(r.error));
@@ -89,6 +92,7 @@ async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<v
       folderDir: item.folderDir,
       reason: item.reason,
       untilMs: snoozeUntil(preset, Date.now()),
+      untilCi: preset === "until_ci",
     }),
   );
 }
@@ -271,10 +275,12 @@ export function QueueRail({
 
 /** The snooze presets as buttons, one click each. `z` lands focus on the first. */
 function SnoozeButtons({
+  presets,
   onSnooze,
   autoFocus = false,
   onDismiss,
 }: {
+  presets: SnoozePreset[];
   onSnooze: (preset: SnoozePreset) => void;
   autoFocus?: boolean;
   onDismiss?: () => void;
@@ -293,17 +299,17 @@ function SnoozeButtons({
       }}
     >
       <ClockIcon aria-hidden className="mr-0.5 size-3.5 text-kumo-subtle" />
-      {SNOOZES.map((s, i) => (
+      {presets.map((preset, i) => (
         <button
-          key={s.preset}
+          key={preset}
           ref={i === 0 ? first : undefined}
           type="button"
-          aria-label={`Snooze ${s.label}`}
-          title={`Snooze ${s.label}`}
-          onClick={() => onSnooze(s.preset)}
+          aria-label={`Snooze ${SNOOZES[preset].label}`}
+          title={`Snooze ${SNOOZES[preset].label}`}
+          onClick={() => onSnooze(preset)}
           className="rounded-md px-1.5 py-0.5 text-xs text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none"
         >
-          {s.short}
+          {SNOOZES[preset].short}
         </button>
       ))}
     </div>
@@ -368,11 +374,13 @@ function rowMeta(item: QueueItem, now: number): string {
     item.runningAgents > (item.lane === "running" ? 1 : 0)
       ? `${item.runningAgents} agent${item.runningAgents === 1 ? "" : "s"} working`
       : null,
-    item.snoozed
-      ? item.snoozedUntilMs != null
-        ? `snoozed ${fmtAge(now, item.snoozedUntilMs)}`
-        : "snoozed until it changes"
-      : null,
+    !item.snoozed
+      ? null
+      : item.snoozedUntilCi
+        ? "snoozed until CI finishes"
+        : item.snoozedUntilMs != null
+          ? `snoozed ${fmtAge(now, item.snoozedUntilMs)}`
+          : "snoozed until it changes",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -400,7 +408,7 @@ function QueueRow({
   onSnoozeOpenChange: (open: boolean) => void;
   onSelect: () => void;
 }) {
-  const face = item.reason ? REASON_FACE[item.reason] : null;
+  const chip = reasonChip(item, now);
   const look = repoLook(repo, item.repo);
   const meta = rowMeta(item, now);
   return (
@@ -424,18 +432,19 @@ function QueueRow({
         >
           {/* A reserved column, so revealing the digits never reflows a row. */}
           {hotkey !== undefined ? <HotkeyBadge n={hotkey} /> : <span className="w-4 shrink-0" />}
-          {face ? (
+          {item.reason ? (
             <span
+              data-testid="queue-reason"
               className={cn(
-                "w-24 shrink-0 truncate rounded px-1.5 py-px text-center text-xs font-medium transition-colors duration-1000",
-                REASON_TONE[face.variant],
+                "w-32 shrink-0 truncate rounded px-1.5 py-px text-center text-xs font-medium transition-colors duration-1000",
+                TONE_CLASS[REASON_TONE[item.reason]],
               )}
             >
-              {face.label}
+              {chip}
               {item.also.length > 0 && ` +${item.also.length}`}
             </span>
           ) : item.lane === "on_you" ? (
-            <span className="w-24 shrink-0" />
+            <span className="w-32 shrink-0" />
           ) : null}
           {/* Repo and title share one line: two lines a row, so twenty fit a screen.
               With no meta to show, the title may take the meta's line instead. */}
@@ -452,10 +461,9 @@ function QueueRow({
               {item.title}
             </span>
           </span>
-          {item.sinceMs != null && (
-            <span className="shrink-0 font-mono text-xs text-kumo-subtle tabular-nums">
-              {fmtAge(item.sinceMs, now)}
-            </span>
+          {/* Off On you, the agent's state is a fact, so bare type, never a box. */}
+          {!item.reason && chip && (
+            <span className="shrink-0 font-mono text-xs text-kumo-subtle tabular-nums">{chip}</span>
           )}
         </button>
         {item.snoozed && (
@@ -472,6 +480,7 @@ function QueueRow({
             )}
           >
             <SnoozeButtons
+              presets={snoozePresets(item)}
               autoFocus={snoozeOpen}
               onDismiss={() => onSnoozeOpenChange(false)}
               onSnooze={(preset) => {

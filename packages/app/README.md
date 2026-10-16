@@ -39,9 +39,10 @@ tools without manual `claude mcp add` setup:
   a page you wrote, use `file_open` instead — same pane routing, but it reveals
   the file in the Files pane (the `tt open` CLI command is the same call). The user can annotate what you showed and send
   it straight back to you.
-- **Attention** — `needs_you`. The app's other sessions waiting on the user
-  (a question, an error, a finished turn not yet looked at), oldest first,
-  with the caller's own terminal left out. The same state the rail badges.
+- **Attention** — `needs_you`. Everything the queue has on the user — an agent
+  asking, errored or finished unseen, red CI, changes asked, a PR to land — in
+  queue order, each with the chip's own words (`why`: "asking", "CI red", "PR
+  approved"), the caller's own terminal left out.
   And `summon`, the other direction: chime until the user types into your
   terminal, for when you need them to do something only they can.
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`

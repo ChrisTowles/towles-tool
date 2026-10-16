@@ -192,6 +192,7 @@ fn build_folder(
                 unseen,
                 needs_since_ms: None, // stamped app-side by `recompute_needs`
                 needs_reason: None,   // stamped app-side by `recompute_needs`
+                phase_since_ms: None, // stamped app-side by `recompute_needs`
                 working: false,       // stamped by the app after its PTY fold
                 agent_state,
                 agents,
@@ -307,13 +308,15 @@ pub fn needs_reason(s: &SessionData) -> Option<NeedsYouReason> {
 
 /// When each session FIRST entered "needs you", so re-stamping the payload doesn't
 /// reset the clock on a long-waiting block — the attention feed orders oldest-first.
-/// Dropped when a session stops needing you, so a later re-entry stamps fresh.
+/// Dropped when a session stops needing you, so a later re-entry stamps fresh. Also
+/// when each agent session entered its current [`Phase`], for the queue's "working 12m".
 #[derive(Debug, Default)]
-pub struct NeedsSince {
+pub struct SinceStamps {
     stamps: HashMap<String, i64>,
+    phases: HashMap<String, (Phase, i64)>,
 }
 
-impl NeedsSince {
+impl SinceStamps {
     pub fn new() -> Self {
         Self::default()
     }
@@ -328,11 +331,29 @@ impl NeedsSince {
     }
 }
 
+/// What a live agent session is doing, coarsely — a change restarts its `phase_since_ms`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Working,
+    Needs(NeedsYouReason),
+    AtPrompt,
+}
+
+pub fn phase(s: &SessionData) -> Option<Phase> {
+    let agent = s.agent_state.as_ref().filter(|_| s.live)?;
+    Some(match s.needs_reason {
+        Some(reason) => Phase::Needs(reason),
+        None if agent.is_working() => Phase::Working,
+        None => Phase::AtPrompt,
+    })
+}
+
 /// Recompute every folder's and repo's `needs`, and each session's `needs_reason`
 /// and `needs_since_ms`. The engine assembles `needs` before `live` is stamped, so
 /// the app calls this afterwards. `since` carries the first-entered stamp forward.
-pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_ms: i64) {
+pub fn recompute_needs(payload: &mut StatePayload, since: &mut SinceStamps, now_ms: i64) {
     let mut next: HashMap<String, i64> = HashMap::new();
+    let mut phases: HashMap<String, (Phase, i64)> = HashMap::new();
     for repo in &mut payload.repos {
         let mut repo_needs = 0;
         for folder in &mut repo.folders {
@@ -347,6 +368,14 @@ pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_m
                 } else {
                     s.needs_since_ms = None;
                 }
+                s.phase_since_ms = phase(s).map(|p| {
+                    let stamp = match since.phases.get(&s.id) {
+                        Some(&(was, at)) if was == p => at,
+                        _ => s.needs_since_ms.unwrap_or(now_ms),
+                    };
+                    phases.insert(s.id.clone(), (p, stamp));
+                    stamp
+                });
             }
             folder.needs = folder_needs;
             repo_needs += folder_needs;
@@ -354,6 +383,7 @@ pub fn recompute_needs(payload: &mut StatePayload, since: &mut NeedsSince, now_m
         repo.needs = repo_needs;
     }
     since.stamps = next;
+    since.phases = phases;
 }
 
 /// Headline agent state: a thread whose process still runs beats one that ended,
@@ -906,7 +936,7 @@ mod tests {
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
         let mut payload = assemble(&entries, &git, &tracker, &store, &no_attr);
-        let mut since = NeedsSince::new();
+        let mut since = SinceStamps::new();
         payload.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut payload, &mut since, 1_000);
         assert_eq!(payload.repos[0].folders[0].needs, 1);
@@ -932,7 +962,7 @@ mod tests {
         let git = HashMap::new();
         let entries = vec![RepoEntry { name: "alpha".into(), dir: "/r/alpha".into() }];
         let build = |tracker: &AgentTracker| assemble(&entries, &git, tracker, &store, &no_attr);
-        let mut since = NeedsSince::new();
+        let mut since = SinceStamps::new();
 
         let mut p = build(&tracker);
         p.repos[0].folders[0].sessions[0].live = true;
@@ -950,11 +980,18 @@ mod tests {
         p.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut p, &mut since, 800);
         assert_eq!(p.repos[0].folders[0].sessions[0].needs_since_ms, None);
+        assert_eq!(p.repos[0].folders[0].sessions[0].phase_since_ms, Some(800));
+
+        let mut p = build(&busy);
+        p.repos[0].folders[0].sessions[0].live = true;
+        recompute_needs(&mut p, &mut since, 1_000);
+        assert_eq!(p.repos[0].folders[0].sessions[0].phase_since_ms, Some(800), "still working");
 
         let mut p = build(&tracker);
         p.repos[0].folders[0].sessions[0].live = true;
         recompute_needs(&mut p, &mut since, 1_200);
         assert_eq!(p.repos[0].folders[0].sessions[0].needs_since_ms, Some(1_200));
+        assert_eq!(p.repos[0].folders[0].sessions[0].phase_since_ms, Some(1_200));
     }
 
     #[test]

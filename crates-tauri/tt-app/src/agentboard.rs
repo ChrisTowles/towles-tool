@@ -24,7 +24,7 @@ pub struct Ab {
     pub scan: Arc<Notify>,
     /// First-entered "needs you" timestamps, carried across recomputes so a
     /// session's waiting-age is stable. Every payload the app stamps threads here.
-    pub needs_since: Mutex<tt_agentboard::bridge::NeedsSince>,
+    pub needs_since: Mutex<tt_agentboard::bridge::SinceStamps>,
     /// Session ids seen with a live PTY at least once, so [`prune_ended_sessions`]
     /// can tell "just ended" from "hasn't started yet".
     pub ever_live: Mutex<HashSet<String>>,
@@ -50,7 +50,7 @@ pub fn stamp_pty_state(
     payload: &mut StatePayload,
     terms: &crate::terminal::TermState,
     phases: &crate::task::TaskPhases,
-    since: &mut tt_agentboard::bridge::NeedsSince,
+    since: &mut tt_agentboard::bridge::SinceStamps,
     log: &mut tt_agentboard::status_log::StatusLog,
     now: i64,
 ) {

@@ -410,60 +410,69 @@ fn preview_file_is_not_a_writing_tool() {
 /// Every `(reason, session, max_minutes)` a fake attention host was summoned with.
 type Summoned = std::sync::Arc<std::sync::Mutex<Vec<(String, Option<String>, u32)>>>;
 
-fn with_attention_host(waiting: &[(&str, i64)]) -> Dispatcher {
+fn with_attention_host(waiting: &[(Option<&str>, &str)]) -> Dispatcher {
     with_attention_host_summoned(waiting).0
 }
 
-fn with_attention_host_summoned(waiting: &[(&str, i64)]) -> (Dispatcher, Summoned) {
-    struct FakeAttentionHost(Vec<(String, i64)>, Summoned);
+/// A fake host answering `(session, reason)` rows in the order given — the queue's.
+fn with_attention_host_summoned(waiting: &[(Option<&str>, &str)]) -> (Dispatcher, Summoned) {
+    struct FakeAttentionHost(Vec<(Option<String>, String)>, Summoned);
     impl AttentionHost for FakeAttentionHost {
         fn summon(&self, r: SummonRequest) -> Result<(), String> {
             self.1.lock().unwrap().push((r.reason, r.session, r.max_minutes));
             Ok(())
         }
-        fn needs_you(&self) -> Vec<WaitingSession> {
+        fn needs_you(&self) -> Vec<WaitingRow> {
             self.0
                 .iter()
-                .map(|(session, since_ms)| WaitingSession {
+                .enumerate()
+                .map(|(i, (session, reason))| WaitingRow {
                     session: session.clone(),
-                    name: format!("{session} name"),
+                    title: format!("row {i}"),
                     repo: "towles-tool".to_string(),
-                    dir: "/r".to_string(),
-                    reason: "waitingForInput".to_string(),
-                    since_ms: *since_ms,
+                    dir: format!("/r/{i}"),
+                    reason: reason.clone(),
+                    why: format!("{reason} words"),
+                    also: Vec::new(),
+                    since_ms: session.as_ref().map(|_| 100),
                 })
                 .collect()
         }
     }
-    let waiting = waiting.iter().map(|(s, t)| (s.to_string(), *t)).collect();
+    let waiting = waiting.iter().map(|(s, r)| (s.map(str::to_string), r.to_string())).collect();
     let summoned = Summoned::default();
     let host = FakeAttentionHost(waiting, summoned.clone());
     (dispatcher().with_attention_host(Box::new(host)), summoned)
 }
 
 #[test]
-fn needs_you_lists_the_others_oldest_wait_first() {
-    let mut dispatcher = with_attention_host(&[("a", 300), ("me", 100), ("b", 200)]);
+fn needs_you_lists_the_rest_of_the_queue_in_its_order_with_why() {
+    let mut dispatcher = with_attention_host(&[
+        (Some("a"), "answer"),
+        (Some("me"), "review"),
+        (None, "fix_ci"),
+        (Some("b"), "land"),
+    ]);
     let result = call_tool_as(
         &mut dispatcher,
         "needs_you",
         json!({}),
         &RequestContext::for_session(Some("me")),
     );
-    let ids: Vec<&str> = result["sessions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s["session"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids, ["b", "a"]);
-    assert_eq!(result["sessions"][0]["sinceMs"], 200);
+    let rows = result["waiting"].as_array().unwrap();
+    let reasons: Vec<&str> = rows.iter().map(|r| r["reason"].as_str().unwrap()).collect();
+    assert_eq!(reasons, ["answer", "fix_ci", "land"]);
+    assert_eq!(rows[1]["session"], Value::Null);
+    assert_eq!(rows[1]["sinceMs"], Value::Null);
+    assert_eq!(rows[0]["why"], "answer words");
+    assert_eq!(rows[0]["sinceMs"], 100);
 }
 
 #[test]
-fn needs_you_from_outside_an_app_terminal_lists_everyone() {
-    let mut dispatcher = with_attention_host(&[("a", 1)]);
-    assert_eq!(call_tool(&mut dispatcher, "needs_you", json!({}))["sessions"][0]["session"], "a");
+fn needs_you_from_outside_an_app_terminal_lists_everything() {
+    let mut dispatcher = with_attention_host(&[(Some("a"), "answer"), (None, "cleanup")]);
+    let rows = call_tool(&mut dispatcher, "needs_you", json!({}))["waiting"].clone();
+    assert_eq!(rows.as_array().unwrap().len(), 2);
 }
 
 #[test]

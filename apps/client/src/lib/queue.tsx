@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { fmtStateAge } from "./agentboard/session";
 import { invoke, isTauri } from "./tauri";
 import {
   TaskQueueSchema,
@@ -86,17 +87,32 @@ export function cycleQueue(
   return ids[(from + step + ids.length) % ids.length];
 }
 
-export type Face = { label: string; variant: "red" | "orange" | "blue" | "green" | "neutral" };
+export type Tone = "red" | "orange" | "blue" | "green" | "neutral";
 
-export const REASON_FACE: Record<WaitReason, Face> = {
-  unblock: { label: "errored", variant: "red" },
-  answer: { label: "answer", variant: "orange" },
-  review: { label: "review", variant: "blue" },
-  fix_ci: { label: "fix CI", variant: "red" },
-  address_review: { label: "changes asked", variant: "orange" },
-  land: { label: "land", variant: "green" },
-  cleanup: { label: "clean up", variant: "neutral" },
+/** The chip's words are the backend's `why`; this is only its tint. */
+export const REASON_TONE: Record<WaitReason, Tone> = {
+  unblock: "red",
+  answer: "orange",
+  review: "blue",
+  fix_ci: "red",
+  address_review: "orange",
+  land: "green",
+  cleanup: "neutral",
 };
+
+/** What the row's chip says — why it's on you and for how long ("asking 4m"),
+ * or, off that lane, what the agent is doing and for how long ("working 12m"). */
+export function reasonChip(item: QueueItem, now: number): string | null {
+  if (item.why) return fmtStateAge(item.why, item.sinceMs, now) ?? item.why;
+  switch (item.lane) {
+    case "running":
+      return fmtStateAge("working", item.sinceMs, now);
+    case "idle":
+      return fmtStateAge("idle", item.sinceMs, now);
+    default:
+      return null;
+  }
+}
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -108,7 +124,7 @@ export function tomorrowMorning(now: number): number {
   return d.getTime();
 }
 
-export type SnoozePreset = "1h" | "tomorrow" | "until_change";
+export type SnoozePreset = "1h" | "tomorrow" | "until_change" | "until_ci";
 
 export function snoozeUntil(preset: SnoozePreset, now: number): number | null {
   switch (preset) {
@@ -117,8 +133,15 @@ export function snoozeUntil(preset: SnoozePreset, now: number): number | null {
     case "tomorrow":
       return tomorrowMorning(now);
     case "until_change":
+    case "until_ci":
       return null;
   }
+}
+
+/** The presets a row offers: "until CI finishes" only while its PR's checks run. */
+export function snoozePresets(item: QueueItem): SnoozePreset[] {
+  const base: SnoozePreset[] = ["1h", "tomorrow", "until_change"];
+  return item.pr?.checks === "pending" ? [...base, "until_ci"] : base;
 }
 
 /** The task to move before/after for a one-step reorder within the visible

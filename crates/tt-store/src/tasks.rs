@@ -450,23 +450,19 @@ impl Store {
 
     /// One snooze per queue row: a new one replaces the old. Spent timed snoozes
     /// are swept on the way, since rows that vanished never come back to clear them.
-    pub fn snooze_queue_item(
-        &self,
-        key: &str,
-        reason: &str,
-        until_ms: Option<i64>,
-        now_ms: i64,
-    ) -> Result<()> {
+    pub fn snooze_queue_item(&self, key: &str, snooze: SnoozeUntil, now_ms: i64) -> Result<()> {
+        let SnoozeUntil { reason, until_ms, until_ci } = snooze;
         self.conn.execute(
             "DELETE FROM queue_snoozes WHERE until_ms IS NOT NULL AND until_ms <= ?1",
             params![now_ms],
         )?;
         self.conn.execute(
-            "INSERT INTO queue_snoozes (key, reason, until_ms, created_at)
-             VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO queue_snoozes (key, reason, until_ms, until_ci, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(key) DO UPDATE SET reason = excluded.reason,
-               until_ms = excluded.until_ms, created_at = excluded.created_at",
-            params![key, reason, until_ms, now_ms],
+               until_ms = excluded.until_ms, until_ci = excluded.until_ci,
+               created_at = excluded.created_at",
+            params![key, reason, until_ms, until_ci, now_ms],
         )?;
         Ok(())
     }
@@ -479,15 +475,16 @@ impl Store {
     /// Every snooze, expired ones included: whether one still holds is the
     /// queue's call, against its own `now_ms`.
     pub fn queue_snoozes(&self) -> Result<Vec<QueueSnooze>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT key, reason, until_ms, created_at FROM queue_snoozes ORDER BY key")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT key, reason, until_ms, until_ci, created_at FROM queue_snoozes ORDER BY key",
+        )?;
         let rows = stmt.query_map([], |r| {
             Ok(QueueSnooze {
                 key: r.get(0)?,
                 reason: r.get(1)?,
                 until_ms: r.get(2)?,
-                created_at: r.get(3)?,
+                until_ci: r.get(3)?,
+                created_at: r.get(4)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

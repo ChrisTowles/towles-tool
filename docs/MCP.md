@@ -40,8 +40,8 @@ into its terminals beside `TT_MCP_PORT`: Claude Code otherwise probes
 app's `store_add_task`), `task_summary`, `task_sync` (re-read a task
 worktree's branch onto its row after a `git switch`), `task_start`, `task_delete`,
 `task_done` (`/done` as one call, below),
-`preview_file`, `file_open`, `needs_you` (the other sessions waiting on
-the user, read from the rail's PTY-stamped state through `AttentionHost`),
+`preview_file`, `file_open`, `needs_you` (the queue's On-you rows — agent waits, red CI, PRs to land — with
+the chip's `why`, read through `AttentionHost`),
 `summon` (the agent→human interrupt, below), plus the calendar family `calendar_today`, `calendar_next` and the
 push-model write `calendar_set`, and the Claude mod's own `inbox_take`, `inbox_ack`, `next_prompt`
 and `next_prompt_taken` (below). `task_create` takes `dir` in place of `repo` for a caller
