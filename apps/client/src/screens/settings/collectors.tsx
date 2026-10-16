@@ -524,7 +524,7 @@ export function collectorsSections(
               <Input
                 aria-label="Watched issue labels"
                 placeholder="agent-ready, good first issue"
-                value={c.issues.watchedLabels.join(", ")}
+                value={c.issues.watchedLabels.join(",")}
                 onChange={(e) =>
                   setIssues({ watchedLabels: parseLabelList(e.target.value) }, typed)
                 }
