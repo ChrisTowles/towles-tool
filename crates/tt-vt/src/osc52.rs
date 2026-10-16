@@ -4,14 +4,6 @@
 //! engine. This scanner watches the same bytes fed to `Terminal::vt_write`, recognizes
 //! `ESC ] 52 ; <targets> ; <base64> ST`, decodes it, and queues the text.
 //!
-//! Tradeoffs of scanning rather than hooking the library: bytes the library already
-//! parses are re-scanned (cheap — a byte-at-a-time state machine, no allocation until
-//! a real sequence appears); only the *write* form is handled, a read/query being
-//! deliberately unimplemented; and targets (clipboard vs. primary selection) are not
-//! distinguished, every set writing the one system clipboard.
-//!
-//! Fragment-tolerant — a sequence split across feed calls is reassembled — and
-//! malformed base64, non-UTF-8 and oversized payloads drop silently.
 
 use base64::Engine as _;
 
@@ -21,8 +13,6 @@ use base64::Engine as _;
 /// any real clipboard copy while bounding memory.
 const MAX_PAYLOAD: usize = 1024 * 1024;
 
-/// Guard on the OSC numeric identifier length so a stream of digits after
-/// `ESC ]` can't grow the ident buffer; real OSC numbers are 1–3 digits.
 const MAX_IDENT: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,15 +52,12 @@ impl Osc52Scanner {
         Self::default()
     }
 
-    /// Process a chunk of PTY output, recognizing any OSC 52 set-clipboard
-    /// sequences within (including those spanning previous chunks).
     pub fn feed(&mut self, bytes: &[u8]) {
         for &b in bytes {
             self.step(b);
         }
     }
 
-    /// Take the decoded clipboard writes recognized so far, in order.
     pub fn take(&mut self) -> Vec<String> {
         std::mem::take(&mut self.pending)
     }
@@ -186,19 +173,16 @@ mod tests {
 
     #[test]
     fn decodes_a_bel_terminated_set_clipboard() {
-        // ESC ] 52 ; c ; aGk= BEL  — "aGk=" is base64 for "hi".
         assert_eq!(scan(b"\x1b]52;c;aGk=\x07"), vec!["hi".to_string()]);
     }
 
     #[test]
     fn decodes_an_st_terminated_set_clipboard() {
-        // Same payload terminated by ESC \ (String Terminator) instead of BEL.
         assert_eq!(scan(b"\x1b]52;c;aGk=\x1b\\"), vec!["hi".to_string()]);
     }
 
     #[test]
     fn empty_target_field_still_decodes() {
-        // Pc may be empty: ESC ] 52 ; ; <base64> ST.
         assert_eq!(scan(b"\x1b]52;;aGk=\x07"), vec!["hi".to_string()]);
     }
 
@@ -206,7 +190,6 @@ mod tests {
     fn ignores_ordinary_terminal_output_around_the_sequence() {
         let mut out = scan(b"before\x1b]52;c;aGk=\x07after");
         assert_eq!(out, vec!["hi".to_string()]);
-        // And a plain title OSC is not mistaken for a clipboard write.
         out = scan(b"\x1b]0;my-title\x07");
         assert!(out.is_empty());
     }
@@ -222,19 +205,16 @@ mod tests {
 
     #[test]
     fn malformed_base64_yields_no_event_and_no_panic() {
-        // '@' and '!' are not base64; the sequence is dropped silently.
         assert!(scan(b"\x1b]52;c;@@@!!!\x07").is_empty());
     }
 
     #[test]
     fn read_query_is_ignored() {
-        // Pd == "?" is a paste/query request — read-side is unimplemented.
         assert!(scan(b"\x1b]52;c;?\x07").is_empty());
     }
 
     #[test]
     fn missing_data_separator_is_dropped() {
-        // No second ';' — malformed set-clipboard.
         assert!(scan(b"\x1b]52;caGk=\x07").is_empty());
     }
 
@@ -249,14 +229,12 @@ mod tests {
         let mut s = Osc52Scanner::new();
         s.feed(&seq);
         assert!(s.take().is_empty(), "oversized sequence produces no event");
-        // The scanner recovered to a clean state and still works afterward.
         s.feed(b"\x1b]52;c;aGk=\x07");
         assert_eq!(s.take(), vec!["hi".to_string()]);
     }
 
     #[test]
     fn back_to_back_sequences_both_decode() {
-        // "aGVsbG8=" is base64 for "hello".
         assert_eq!(
             scan(b"\x1b]52;c;aGk=\x07\x1b]52;p;aGVsbG8=\x07"),
             vec!["hi".to_string(), "hello".to_string()],

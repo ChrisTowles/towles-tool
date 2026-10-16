@@ -1,10 +1,7 @@
-//! Attention analytics: one day of raw event-log records reduced to the question the
-//! log exists to answer — *where did the day go?* It already records the two things an
-//! attention picture needs and nothing else on the machine records at all: the window's
-//! OS-level focus history (`window.focus_changed`) and every discrete gesture
-//! (`ui.action`, with its screen), plus interruptions (`notify_needs_you`) and
-//! subprocess wait (`process.spawn`). [`summarize`] folds a day into
-//! [`AttentionSummary`] — hundreds of bytes against 75,000+ records — in Rust.
+//! Attention analytics: one day of raw event-log records reduced to *where did the day go?* —
+//! window focus history (`window.focus_changed`), gestures (`ui.action`), interruptions
+//! (`notify_needs_you`) and subprocess wait (`process.spawn`). [`summarize`] folds a day
+//! into [`AttentionSummary`] in Rust.
 //!
 //! **Two things that look like bugs and aren't.** Event names are read from `message`,
 //! not `name`: a `tracing` *event*'s `name` is the auto-generated `event <file>:<line>`

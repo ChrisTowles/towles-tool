@@ -11,23 +11,16 @@ import { uiAction } from "@/lib/ui-action";
  * binding may call {@link mouseAction} — a near-twin scores as a miss and lies.
  */
 
-/** Per-binding quiet period: long enough to collapse a burst of clicks on one
- * button into a single reminder, short enough to teach on the next lapse. */
 export const NUDGE_COOLDOWN_MS = 60_000;
 
-/** Ceiling for one app run, across all bindings — anti-runaway, not a quota. */
 export const MAX_NUDGES_PER_SESSION = 100;
 
-/** Keyboard uses of a binding *today* that count as "knows this one" — a
- * habit, not the first flicker of recognition. */
 export const FLUENT_USES = 10;
 
 /** What the coach remembers within one app run. Nothing is persisted — a
  * reminder that survives restarts would be a scolding backlog. */
 export type CoachState = {
-  /** Last nudge per shortcut id, epoch ms. */
   nudgedAt: Record<string, number>;
-  /** Nudges shown this session. */
   shown: number;
 };
 
@@ -52,8 +45,6 @@ export function noteNudge(state: CoachState, id: string, now: number): CoachStat
   return { nudgedAt: { ...state.nudgedAt, [id]: now }, shown: state.shown + 1 };
 }
 
-/** Keyboard uses of `id` in the day's score, or 0 before the first fetch (so
- * an early click can still be coached rather than silently skipped). */
 export function keyboardUsesToday(
   score: { today: { byShortcut: { id: string; shortcut: number }[] } } | null,
   id: string,
@@ -64,7 +55,6 @@ export function keyboardUsesToday(
 let state = emptyCoachState();
 let enabled = true;
 
-/** Built-in default for `agentboard.shortcutCoach` — on. */
 export const DEFAULT_SHORTCUT_COACH = true;
 
 /**

@@ -19,7 +19,7 @@ use crate::{CodeServerError, RETRY_PAUSE, unix_http};
 /// the server starting and the workbench booting (and, for a diff, git's first scan).
 const DEADLINE: Duration = Duration::from_secs(45);
 
-/// Bumping this rewrites the profile entry beside the old copy. The built-in
+/// Bumping this rewrites the profile entry beside the previous copy. The built-in
 /// copy carries no version and is overwritten in place.
 const VERSION: &str = "0.1.0";
 const ID: &str = "towles-tool.tt-bridge";

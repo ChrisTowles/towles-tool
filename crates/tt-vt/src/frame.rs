@@ -27,12 +27,9 @@ pub mod flags {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {
-    /// Starting column of the run.
     pub x: u16,
-    /// Total column width of the run.
     pub width: u16,
     pub text: String,
-    /// Packed 0xRRGGBB; `None` means "use the terminal default".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fg: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -63,10 +60,8 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
-/// One changed viewport row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RowUpdate {
-    /// Viewport row index (0 = top).
     pub y: u16,
     pub runs: Vec<Run>,
     /// This row soft-wraps into the next: its content continues on row
@@ -121,14 +116,12 @@ pub struct Colors {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Modes {
-    /// Alternate screen active (fullscreen TUI owns the scrollback chords).
     pub alt_screen: bool,
     /// Any mouse tracking mode enabled (clicks, wheel, and hover motion go
     /// to the program; left drags and multi-clicks stay local selection).
     pub mouse_tracking: bool,
 }
 
-/// One render frame: everything that changed since the previous frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
@@ -141,14 +134,12 @@ pub struct Frame {
     pub cursor: Cursor,
     pub colors: Colors,
     pub modes: Modes,
-    /// Present only on the frame where the OSC 0/2 title changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// Present only on the frame where the OSC 7 working directory changed
     /// (a `file://` URI as the shell reported it).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pwd: Option<String>,
-    /// Rows available above the viewport (drives the scrollbar).
     pub scrollback_rows: usize,
     /// Absolute row index of the viewport's top (0 = oldest scrollback row);
     /// equals `scrollback_rows` at the live bottom. Maps absolute search
@@ -164,10 +155,6 @@ pub struct Frame {
 
 #[cfg(test)]
 mod tests {
-    //! These tests pin the *serialized* wire shape the renderer consumes
-    //! (`apps/client/src/lib/term-protocol.ts`). A silent serde rename or a
-    //! changed `skip_serializing_if` would break the frontend at runtime, not
-    //! at compile time, so we assert the JSON directly rather than round-trip.
 
     use super::*;
     use serde_json::{json, to_value};
@@ -186,8 +173,6 @@ mod tests {
 
     #[test]
     fn flag_bits_are_a_stable_bitfield() {
-        // The renderer ANDs these exact values out of `Run.flags`; they must
-        // stay a contiguous power-of-two set.
         assert_eq!(flags::BOLD, 1);
         assert_eq!(flags::ITALIC, 2);
         assert_eq!(flags::FAINT, 4);
@@ -229,9 +214,6 @@ mod tests {
 
     #[test]
     fn run_omits_default_color_and_zero_flags() {
-        // `fg`/`bg` None means "terminal default" and `flags == 0` means plain
-        // text; all three are skipped to keep the common run compact. The TS
-        // reader treats their absence as exactly those defaults.
         let run = Run {
             x: 0,
             width: 4,
@@ -248,9 +230,6 @@ mod tests {
 
     #[test]
     fn wide_run_width_exceeds_char_count() {
-        // A CJK/emoji run occupies more columns than it has chars: two glyphs,
-        // four columns. `width` is authoritative for layout, independent of
-        // `text` length, and the serialized `width` must reflect the columns.
         let run = Run {
             x: 0,
             width: 4,
@@ -320,8 +299,6 @@ mod tests {
 
     #[test]
     fn modes_use_camel_case_keys() {
-        // These multi-word fields are where a serde rename would silently
-        // diverge from the TS `Modes` type.
         let modes = Modes { alt_screen: true, mouse_tracking: false };
         assert_eq!(
             to_value(modes).unwrap(),
@@ -413,7 +390,6 @@ mod tests {
         };
         let value = to_value(&frame).unwrap();
         assert!(value.get("title").is_none(), "title omitted when None");
-        // The multi-word Frame keys survive even on a minimal frame.
         assert!(value.get("scrollbackRows").is_some());
         assert!(value.get("viewportTop").is_some());
     }

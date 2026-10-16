@@ -430,7 +430,7 @@ mod tests {
         assert_eq!(rows[0].value, "serving on 47874 · towles-tool 1");
     }
 
-    /// The #687 drive scenario: the instance was up on an inherited 47870 while the
+    /// The drive scenario: the instance was up on an inherited 47870 while the
     /// checkout's `.env` claimed 47874 — serving, but not where sessions expect it.
     #[test]
     fn a_bound_port_differing_from_the_claim_adds_an_amber_mismatch_row() {

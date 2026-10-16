@@ -4,10 +4,6 @@
 //! is an ordinary winit window (the benchmark baseline), and [`embedded_app`] takes a
 //! [`ForeignSurface`] handed in by the platform layer, with `WinitPlugin` disabled
 //! entirely.
-//!
-//! The difference is deliberately tiny — one plugin and one entity — because the whole
-//! question this crate answers is what that difference costs. See [`crate::surface`]
-//! for why Bevy tolerates it without a fork.
 
 use bevy::prelude::*;
 use bevy::window::{
@@ -17,7 +13,6 @@ use bevy::winit::WinitPlugin;
 
 use crate::surface::{ForeignSurface, PaneRect};
 
-/// Present mode for both hosts; the benchmark runs it both ways (throughput vs. pacing).
 pub use bevy::window::PresentMode;
 
 /// Build the baseline host: a winit-created window, with no scene. The caller adds its
@@ -45,7 +40,6 @@ pub unsafe fn embedded_app(surface: ForeignSurface, rect: PaneRect, present: Pre
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
-                // No winit to make one, and its absence must not be an exit reason.
                 primary_window: None,
                 primary_cursor_options: None,
                 exit_condition: ExitCondition::DontExit,
@@ -60,8 +54,6 @@ pub unsafe fn embedded_app(surface: ForeignSurface, rect: PaneRect, present: Pre
         ..default()
     };
 
-    // SAFETY: the caller promised the handles outlive the app, and `WindowWrapper` holds
-    // the `ForeignSurface` (`Copy`, owns nothing) alive as long as the component exists.
     let handle = RawHandleWrapper::new(&WindowWrapper::new(surface))
         .expect("ForeignSurface always yields both handles infallibly");
 
@@ -83,12 +75,9 @@ pub fn finalize_embedded_app(app: &mut App, mut on_wait: impl FnMut()) {
     app.cleanup();
 }
 
-/// Resize the embedded surface's swapchain. `extract_windows` reconfigures on any
-/// `Window.resolution` change, so a resize is a plain component write.
 pub fn set_embedded_resolution(app: &mut App, rect: PaneRect) {
     let mut q = app.world_mut().query_filtered::<&mut Window, With<PrimaryWindow>>();
     if let Ok(mut window) = q.single_mut(app.world_mut()) {
-        // Already physical pixels; `set` would apply the scale factor a second time.
         window.resolution.set_physical_resolution(rect.width.max(1), rect.height.max(1));
     }
 }

@@ -1,9 +1,4 @@
 //! `gh`-backed pull-request collector.
-//!
-//! Subprocess plumbing (cwd, timeout, name cache) lives in [`crate::gh`]. The
-//! JSON-to-[`PrInput`] mapping is factored into pure functions ([`map_pr_list`],
-//! [`checks_status`]) so it can be unit-tested with inline fixtures without
-//! invoking `gh`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -12,7 +7,6 @@ use tt_store::PrInput;
 
 use crate::gh;
 
-/// The `--json` field set requested from `gh pr list`.
 const PR_LIST_FIELDS: &str =
     "number,title,headRefName,baseRefName,state,statusCheckRollup,reviewDecision,url,updatedAt";
 
@@ -33,28 +27,17 @@ pub(crate) fn collect_repo_prs(dir: &Path) -> Result<(String, Vec<PrInput>), Str
     let mut open = open_prs_by_number(dir, &repo)?;
     let merged = gh_pr_list(dir, "merged", MERGED_LIST_LIMIT, &["--author", "@me"])?;
     for pr in map_pr_list(&merged, &repo, false) {
-        // Merged can never collide with open/review-requested (GitHub never
-        // reports the same PR number as both), so insertion order doesn't
-        // matter here the way it does between authored and review-requested.
         open.entry(pr.number).or_insert(pr);
     }
     Ok((repo, open.into_values().collect()))
 }
 
-/// Collect just the authored + review-requested open PRs for one repo dir —
-/// the fast, frequently-polled half of [`collect_repo_prs`]. Used by the
-/// periodic scheduler tick so it doesn't also re-fetch the separately-cadenced
-/// recently-merged list on every poll; see [`collect_repo_merged_prs`].
 pub(crate) fn collect_repo_prs_open(dir: &Path) -> Result<(String, Vec<PrInput>), String> {
     let repo = gh::repo_name_with_owner(dir)?;
     let by_number = open_prs_by_number(dir, &repo)?;
     Ok((repo, by_number.into_values().collect()))
 }
 
-/// Collect just the recently-merged authored PRs for one repo dir — the slow,
-/// infrequently-polled half of [`collect_repo_prs`]. This list only exists to
-/// catch a just-merged branch before its worktree is removed, so it doesn't
-/// need the open-PR sweep's cadence; see [`collect_repo_prs_open`].
 pub(crate) fn collect_repo_merged_prs(dir: &Path) -> Result<(String, Vec<PrInput>), String> {
     let repo = gh::repo_name_with_owner(dir)?;
     let merged = gh_pr_list(dir, "merged", MERGED_LIST_LIMIT, &["--author", "@me"])?;
@@ -72,7 +55,6 @@ fn open_prs_by_number(dir: &Path, repo: &str) -> Result<HashMap<i64, PrInput>, S
     for pr in map_pr_list(&authored, repo, false) {
         by_number.insert(pr.number, pr);
     }
-    // Insert review-requested last so it wins on collision.
     for pr in map_pr_list(&review, repo, true) {
         by_number.insert(pr.number, pr);
     }
@@ -84,7 +66,6 @@ fn open_prs_by_number(dir: &Path, repo: &str) -> Result<HashMap<i64, PrInput>, S
 /// explicit ask. The whole row, since the rail's badge is drawn from the row.
 pub(crate) fn fetch_pr(dir: &Path, repo: &str, number: i64) -> Result<Option<PrInput>, String> {
     let value = gh::run_json(dir, &["pr", "view", &number.to_string(), "--json", PR_LIST_FIELDS])?;
-    // `gh pr view` answers with the object `gh pr list` would wrap in an array.
     Ok(map_pr_list(&serde_json::Value::Array(vec![value]), repo, false).into_iter().next())
 }
 
@@ -138,11 +119,6 @@ fn gh_pr_list(
     gh::run_json(dir, &args)
 }
 
-/// Map a parsed `gh pr list` JSON array to [`PrInput`]s. Non-array input yields
-/// an empty list. Review-requested rows get `review_state = "review_requested"`;
-/// authored rows derive it from GitHub's `reviewDecision` (see
-/// [`review_decision_state`]) so an approved PR reads differently from one with
-/// changes requested.
 pub(crate) fn map_pr_list(
     list: &serde_json::Value,
     repo: &str,
@@ -213,7 +189,6 @@ pub(crate) fn checks_status(rollup: &serde_json::Value) -> String {
     }
     let mut any_pending = false;
     for check in checks {
-        // Check runs expose `conclusion`; legacy status contexts expose `state`.
         let verdict = check
             .get("conclusion")
             .and_then(|v| v.as_str())
@@ -252,17 +227,14 @@ mod tests {
             checks_status(&json!([{"conclusion": "SUCCESS"}, {"conclusion": "FAILURE"}])),
             "failing"
         );
-        // Missing conclusion (still running) → pending.
         assert_eq!(
             checks_status(&json!([{"conclusion": "SUCCESS"}, {"status": "IN_PROGRESS"}])),
             "pending"
         );
-        // A failure outranks a pending sibling.
         assert_eq!(
             checks_status(&json!([{"status": "IN_PROGRESS"}, {"conclusion": "ERROR"}])),
             "failing"
         );
-        // Legacy status context via `state`.
         assert_eq!(checks_status(&json!([{"state": "SUCCESS"}])), "passing");
     }
 
@@ -317,7 +289,6 @@ mod tests {
         assert_eq!(review_decision_state("APPROVED"), "approved");
         assert_eq!(review_decision_state("CHANGES_REQUESTED"), "changes_requested");
         assert_eq!(review_decision_state("REVIEW_REQUIRED"), "review_required");
-        // Empty (no reviews required) and anything unknown stay indistinguishable.
         assert_eq!(review_decision_state(""), "");
         assert_eq!(review_decision_state("SOMETHING_ELSE"), "");
     }
@@ -345,7 +316,6 @@ mod tests {
             map_pr_list(&row("REVIEW_REQUIRED"), "o/r", false)[0].review_state,
             "review_required"
         );
-        // A review-requested row ignores reviewDecision and keeps its own state.
         assert_eq!(map_pr_list(&row("APPROVED"), "o/r", true)[0].review_state, "review_requested");
     }
 
@@ -355,7 +325,6 @@ mod tests {
         let prs = map_pr_list(&list, "o/r", false);
         assert_eq!(prs.len(), 1);
         assert_eq!(prs[0].number, 7);
-        // A non-array (e.g. gh error object) yields nothing rather than panicking.
         assert!(map_pr_list(&json!({"message": "boom"}), "o/r", false).is_empty());
     }
 

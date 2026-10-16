@@ -13,23 +13,17 @@
 use serde::Deserialize;
 use std::sync::LazyLock;
 
-/// The base 200K context window.
 pub const CONTEXT_200K: i64 = 200_000;
-/// The extended 1M context window.
 pub const CONTEXT_1M: i64 = 1_000_000;
 
-/// The maintained model → context-window table, embedded at build time.
 const TABLE_JSON: &str = include_str!("context_windows.json");
 
-/// One family entry: a case-insensitive `contains` needle and its window.
 #[derive(Debug, Deserialize)]
 struct Family {
     contains: String,
     window: i64,
 }
 
-/// The parsed table. Unknown keys (`$comment`, `note`, `lastReviewed`) are
-/// ignored so the data file can stay self-documenting.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WindowTable {
@@ -48,17 +42,12 @@ static TABLE: LazyLock<WindowTable> = LazyLock::new(|| {
 /// How a model's context window was determined.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowSource {
-    /// An explicit `[1m]` opt-in marker on the model id forced the window.
     Marker,
-    /// A Bedrock id (bare `anthropic.` or a region-prefixed inference profile).
     Bedrock,
-    /// Matched a known model family; carries the matched `contains` needle.
     Family(String),
-    /// No rule matched: the conservative default, and callers should flag it.
     Unknown,
 }
 
-/// A resolved context window plus how it was determined.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWindow {
     pub tokens: i64,
@@ -66,7 +55,6 @@ pub struct ResolvedWindow {
 }
 
 impl ResolvedWindow {
-    /// `true` when a rule recognized the model, `false` on the default fallback.
     pub fn is_known(&self) -> bool {
         !matches!(self.source, WindowSource::Unknown)
     }
@@ -78,16 +66,12 @@ pub fn resolve_window(model: &str) -> ResolvedWindow {
     let table = &*TABLE;
     let m = model.to_ascii_lowercase();
 
-    // 1. Explicit 1M opt-in marker (Sonnet 4/4.5 era) always wins.
     if m.ends_with("[1m]") {
         return ResolvedWindow { tokens: table.marker_window, source: WindowSource::Marker };
     }
-    // 2. Bedrock: match the `anthropic.` segment so region-prefixed inference
-    //    profiles don't fall through to a 1M family match below.
     if m.starts_with("anthropic.") || m.contains(".anthropic.") {
         return ResolvedWindow { tokens: table.bedrock_window, source: WindowSource::Bedrock };
     }
-    // 3. Known family (first match wins).
     for fam in &table.families {
         if m.contains(&fam.contains) {
             return ResolvedWindow {
@@ -96,7 +80,6 @@ pub fn resolve_window(model: &str) -> ResolvedWindow {
             };
         }
     }
-    // 4. Unrecognized — a guess, surfaced as Unknown.
     ResolvedWindow { tokens: table.default_window, source: WindowSource::Unknown }
 }
 
@@ -107,7 +90,6 @@ pub fn context_window(model: &str) -> i64 {
     resolve_window(model).tokens
 }
 
-/// `true` when the model id matched a rule (marker, Bedrock, or known family).
 pub fn model_known(model: &str) -> bool {
     resolve_window(model).is_known()
 }

@@ -10,19 +10,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-/// Hard cap per `gh` invocation. Generous for a slow API, far below the
-/// collector cadence.
 const GH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// `gh list` page cap. `gh` defaults to 30 and silently truncates beyond it, but
 /// a bigger page isn't free: GitHub prices a GraphQL connection on the size
-/// *requested*, and the cost steps at 60→80 (measured, #322 follow-up). 60 is the
+/// *requested*, and the cost steps at 60→80 (measured). 60 is the
 /// top of the cheap band — re-measure before raising it.
 pub(crate) const LIST_LIMIT: &str = "60";
 
 /// How long to pause every `gh` call once one reports a GitHub rate limit
 /// (primary or secondary/abuse-detection). The limit is per-token, not per repo
-/// or per collector (#322), so one hit means every other call is likely limited
+/// or per collector, so one hit means every other call is likely limited
 /// too; erring generous costs nothing but a slightly stale dashboard.
 const RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(5 * 60);
 
@@ -32,19 +30,15 @@ fn rate_limited_until() -> &'static Mutex<Option<Instant>> {
     RATE_LIMITED_UNTIL.get_or_init(|| Mutex::new(None))
 }
 
-/// Time remaining on an armed backoff, or `None` if it's unset/expired. Pure
-/// so the decision is unit-testable without waiting on a real clock.
 fn backoff_remaining(until: Option<Instant>, now: Instant) -> Option<Duration> {
     until.and_then(|u| u.checked_duration_since(now))
 }
 
-/// Whether `gh` calls are currently paused due to a recent rate-limit hit.
 fn in_rate_limit_backoff() -> Option<Duration> {
     let guard = rate_limited_until().lock().ok()?;
     backoff_remaining(*guard, Instant::now())
 }
 
-/// Record that `gh` just reported a rate limit, arming the backoff window.
 fn note_rate_limited() {
     log::warn!("gh reported a rate limit; pausing gh calls for {}s", RATE_LIMIT_BACKOFF.as_secs());
     if let Ok(mut guard) = rate_limited_until().lock() {
@@ -52,19 +46,12 @@ fn note_rate_limited() {
     }
 }
 
-/// Whether a `gh` stderr message indicates GitHub's primary or secondary
-/// (abuse-detection) rate limit, as opposed to some other failure (auth,
-/// network, unknown repo) a backoff wouldn't help with.
 fn is_rate_limit_message(stderr: &str) -> bool {
     let s = stderr.to_ascii_lowercase();
     s.contains("rate limit") || s.contains("abuse detection") || s.contains("submitted too quickly")
 }
 
 /// Run `gh` in `dir`, returning stdout on success or a human-readable error.
-///
-/// Short-circuits without spawning a subprocess while a rate-limit backoff is
-/// armed (see [`RATE_LIMIT_BACKOFF`]), and arms that backoff itself the moment
-/// a call's stderr looks like a rate-limit response.
 pub(crate) fn run(dir: &Path, args: &[&str]) -> Result<String, String> {
     if let Some(remaining) = in_rate_limit_backoff() {
         return Err(format!(
@@ -97,11 +84,6 @@ pub(crate) fn run_json(dir: &Path, args: &[&str]) -> Result<serde_json::Value, S
 }
 
 /// `owner/repo` for the repo rooted at `dir`, via `gh repo view`.
-///
-/// Cached per directory for the process lifetime: a checkout's identity doesn't
-/// change, and the app's scheduler would otherwise pay one extra network call
-/// per repo on every tick. Failures are not cached, so a repo that comes online
-/// (auth fixed, network back) resolves on the next attempt.
 pub(crate) fn repo_name_with_owner(dir: &Path) -> Result<String, String> {
     static CACHE: OnceLock<Mutex<HashMap<PathBuf, String>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -124,7 +106,6 @@ pub(crate) fn repo_name_with_owner(dir: &Path) -> Result<String, String> {
     Ok(name)
 }
 
-/// How long a resolved default branch is trusted before `gh` is asked again.
 const DEFAULT_BRANCH_TTL: Duration = Duration::from_secs(60 * 60);
 
 /// The default branch of the repo rooted at `dir`, via `gh repo view` — the branch

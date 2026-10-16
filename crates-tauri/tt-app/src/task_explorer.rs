@@ -18,8 +18,6 @@ use tauri::State;
 
 use crate::terminal::TermState;
 
-/// Managed sampler state: CPU usage is a delta between refreshes, so the
-/// `System` must live across command calls or every poll would report 0%.
 pub struct ExplorerState(Mutex<System>);
 
 impl Default for ExplorerState {
@@ -34,7 +32,6 @@ pub struct ProcessRow {
     pid: u32,
     parent_pid: Option<u32>,
     name: String,
-    /// Percent of the whole machine's CPU (all cores).
     cpu_percent: f32,
     memory_bytes: u64,
     status: String,
@@ -43,8 +40,6 @@ pub struct ProcessRow {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessGroup {
-    /// `None` for the app's own process; `Some(term_id)` for a terminal's
-    /// shell and its descendants.
     term_id: Option<String>,
     label: String,
     rows: Vec<ProcessRow>,
@@ -52,9 +47,6 @@ pub struct ProcessGroup {
     total_memory_bytes: u64,
 }
 
-/// One snapshot: the app process, then one group per live terminal. Groups
-/// with no inspectable processes are omitted (a shell that exited between
-/// the terminal list and the process refresh).
 #[tauri::command]
 pub fn task_explorer_snapshot(
     explorer: State<'_, ExplorerState>,
@@ -151,8 +143,6 @@ fn related_pids(sys: &System, shell_pid: Pid) -> HashSet<Pid> {
 fn related_pids(sys: &System, shell_pid: Pid) -> HashSet<Pid> {
     let mut children_by_parent: HashMap<Pid, Vec<Pid>> = HashMap::new();
     for (pid, p) in sys.processes() {
-        // See the Unix `related_pids`' doc for why threads (`thread_kind()
-        // .is_some()`) must never enter this walk.
         if p.thread_kind().is_some() {
             continue;
         }

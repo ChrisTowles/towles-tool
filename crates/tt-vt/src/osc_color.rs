@@ -7,11 +7,6 @@
 //! background (it's how Claude Code and many TUIs pick a palette), so the engine
 //! recognizes the query and synthesizes the xterm-format reply from the terminal's
 //! *effective* colors — a program's own set-override wins over the app theme.
-//!
-//! Same tradeoffs as [`crate::osc52`]: bytes re-scanned by a byte-at-a-time state
-//! machine, split sequences reassembled, malformed input dropped silently. Only the
-//! query form is recognized here; sets are libghostty's job, and indexed OSC 4
-//! queries are deliberately not handled.
 
 /// Which default color an OSC query asked about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

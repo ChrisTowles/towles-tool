@@ -1,25 +1,12 @@
 //! The "activity recency" axis for `tt task ls --stale`.
 //!
-//! Deliberately separate from [`crate::landed`], which answers *has this
-//! branch's work reached the base* (the safe-to-remove question). This answers
-//! a different question — *how long since this branch last saw a commit* — the
-//! languishing-task signal. The two are orthogonal: a branch can be days-stale
-//! yet hold unlanded work (exactly what `--stale` surfaces), and a freshly
-//! committed branch can already be landed.
-//!
-//! A task is flagged stale only when **both** hold: its newest own commit is at
-//! least `threshold_days` old, *and* it has not landed. A landed branch is
-//! finished, not stale, however long ago it was touched — so `--stale` never
-//! flags it and it belongs to `tt task clean` instead.
+//! Separate from [`crate::landed`]: a branch can be days-stale yet hold unlanded work
+//! (what `--stale` surfaces), and a landed branch is finished, never stale.
 
-/// Seconds in a day, for age arithmetic.
 const SECS_PER_DAY: i64 = 86_400;
 
-/// Default staleness threshold when `--stale` is given no explicit day count.
-/// Mirrored by the CLI arg's `default_missing_value`; keep the two in step.
 pub const DEFAULT_STALE_DAYS: u64 = 7;
 
-/// A task branch's activity recency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Staleness {
     /// Whole days since the branch's newest own commit. `None` when the branch
@@ -32,8 +19,6 @@ pub struct Staleness {
 }
 
 /// Assess staleness from the branch's newest own-commit time (epoch seconds), or `None`
-/// when it has none. `now_unix` is injected — no clock is read here, matching the store's
-/// passed-in-time discipline. A `landed` branch is never stale regardless of age.
 pub fn assess(
     last_commit_unix: Option<i64>,
     now_unix: i64,
@@ -49,7 +34,6 @@ pub fn assess(
 mod tests {
     use super::*;
 
-    // A fixed "now" so the fixtures read as wall-clock offsets from it.
     const NOW: i64 = 1_000 * SECS_PER_DAY; // day 1000, midnight UTC.
 
     fn days_ago(n: i64) -> i64 {
@@ -79,7 +63,6 @@ mod tests {
 
     #[test]
     fn exactly_at_threshold_is_stale() {
-        // "at least N days" — the boundary counts.
         let s = assess(Some(days_ago(7)), NOW, 7, false);
         assert_eq!(s.age_days, Some(7));
         assert!(s.stale);
@@ -94,7 +77,6 @@ mod tests {
 
     #[test]
     fn a_commit_in_the_future_ages_to_zero() {
-        // Clock skew or a rewritten author date must not underflow to a huge age.
         let s = assess(Some(NOW + 5 * SECS_PER_DAY), NOW, 7, false);
         assert_eq!(s.age_days, Some(0));
         assert!(!s.stale);

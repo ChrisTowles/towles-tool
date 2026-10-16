@@ -3,10 +3,7 @@
 //! the Tauri-free guard + slugging in `tt_git::task_assign` /
 //! `tt_git::branch_name`: this layer only gathers the target task's git state
 //! (`remote`, `status`, `stash`) and shells out; every *decision* lives in the
-//! pure crate so it stays unit-tested. Mirrors the CLI's `tt gh assign`
-//! (`crates-cli/tt-cli/src/commands/gh.rs`), but matches the task against the
-//! issue's `owner/name` slug rather than a current-directory checkout — the app
-//! has no single cwd repo, the issue names its own.
+//! pure crate so it stays unit-tested.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -14,7 +11,6 @@ use std::time::Duration;
 use tt_git::branch_name::create_branch_name_from_issue;
 use tt_git::task_assign::validate_task_for_repo;
 
-/// Timeout for `gh issue develop` (talks to the network, then fetches).
 const GH_DEVELOP_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Passes only when `task_dir` is a clean checkout of the same GitHub repo the
@@ -32,10 +28,6 @@ fn guard_task(repo: &str, task_dir: &Path) -> Result<(), String> {
         .map_err(|blocked| format!("Refusing to use {}: {blocked}", task_dir.display()))
 }
 
-/// `cockpit_assign_issue`: dispatch issue `#number` of `repo` (`owner/name`)
-/// into the task checkout at `task_dir` via `gh issue develop --checkout`, but
-/// only after the clean-tree guard passes. Async so the network round-trip runs
-/// off the main thread (matches the store's `gh` commands).
 #[tauri::command]
 pub async fn cockpit_assign_issue(
     repo: String,

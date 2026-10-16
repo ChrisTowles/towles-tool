@@ -1,7 +1,7 @@
-//! Branch-name generation, ported from `src/lib/git/branch-name.ts`.
+//! Branch-name generation.
 
 /// Build a branch name `feature/<number>-<slug>` from an issue number and
-/// title. Mirrors `createBranchNameFromIssue`; the slug rules are [`slug`].
+/// title; the slug rules are [`slug`].
 pub fn create_branch_name_from_issue(number: u64, title: &str) -> String {
     format!("feature/{number}-{}", slug(title))
 }

@@ -2,11 +2,6 @@
 //! machine-readable answer goes through here, via
 //! `claude -p <prompt> --output-format json --json-schema <schema>`.
 //!
-//! `--json-schema` routes the model through a structured-output tool, so the envelope
-//! carries a validated `structured_output` object — the difference between asking
-//! nicely for JSON and the CLI guaranteeing the shape. No fence stripping or brace
-//! carving exists below this line.
-//!
 //! The envelope also carries `is_error`: a credit balance, expired MCP auth or rate
 //! limit are *claude-side* failures with a message the user can act on, and must not
 //! read like a wrong-shaped answer. [`Error`] keeps the three apart — never ran, ran

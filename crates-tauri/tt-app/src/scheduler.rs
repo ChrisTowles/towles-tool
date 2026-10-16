@@ -642,8 +642,8 @@ mod tests {
 
     #[test]
     fn a_nudge_from_another_instances_terminal_is_skipped() {
-        // The bug this prevents: every checkout's app watches one nudge dir, so
-        // a `gh pr create` in one task used to make all of them sweep `gh`.
+        // Every checkout's app watches one nudge dir, so a `gh pr create` in one task must
+        // not make all of them sweep `gh`.
         let dir = tempfile::tempdir().unwrap();
         let mut seen = NudgeSeen::default();
         let slack = test_slack_config();

@@ -19,19 +19,10 @@ use crate::types::AgentStatus;
 pub const OUTPUT_ACTIVE_MS: i64 = 1_500;
 
 /// How long output must have been *continuing* before it counts as work.
-///
-/// A finished pane still repaints every 1.5–2s, right at the activity window;
-/// treating each repaint as proof of work flipped finished sessions out of
-/// needs-you and back, re-firing the notification 462 times in one day. A real
-/// turn's gaps top out at 0.27s, so persistence separates the two — at the cost
-/// of rule 1 of [`resolve_status`] arriving a second into a turn.
 pub const SUSTAINED_OUTPUT_MS: i64 = 1_000;
 
 /// How long after an attention notification its own trailing repaint is still
 /// attributed to that notification rather than to resumed work.
-///
-/// Claude Code notifies *before* painting the turn's final frame (measured:
-/// 14.219s vs 14.685s), so output alone would clear the flag every time.
 pub const ATTENTION_GRACE_MS: i64 = 2_000;
 
 /// What the app's terminal layer observed for one session's PTY. Every field is
@@ -63,8 +54,7 @@ impl PtySignal {
     ///
     /// Cleared by user input, and by a *run* of output (see
     /// [`SUSTAINED_OUTPUT_MS`]) starting more than [`ATTENTION_GRACE_MS`] after
-    /// the notification — never by a lone frame, which used to clear it seconds
-    /// after every turn and left needs-you to the journal alone.
+    /// the notification — never by a lone frame.
     pub fn attention_pending(&self, now_ms: i64) -> bool {
         let Some(at) = self.attention_at_ms else {
             return false;
@@ -127,7 +117,6 @@ mod tests {
         }
     }
 
-    /// A run of output going for `age`..now — a working agent's repainting.
     fn working(age: i64) -> PtySignal {
         PtySignal {
             last_output_ms: Some(NOW - age),
@@ -136,7 +125,6 @@ mod tests {
         }
     }
 
-    /// A finished pane's own repaint: one frame `age` ago, a 0ms run.
     fn lone_repaint(age: i64) -> PtySignal {
         PtySignal {
             last_output_ms: Some(NOW - age),
@@ -178,7 +166,6 @@ mod tests {
         assert_eq!(resolve_status(AgentStatus::Idle, false, &pty, NOW), AgentStatus::Idle);
     }
 
-    /// However long the silence: a ten-minute build paints nothing new.
     #[test]
     fn a_quiet_pty_leaves_the_backend_verdict_alone() {
         for pty in [quiet(), working(600_000), PtySignal::default()] {
@@ -200,8 +187,6 @@ mod tests {
 
     #[test]
     fn a_finished_agent_stops_flapping_out_of_needs_you() {
-        // Observed live: a long-finished agent alternated busy/complete as
-        // backend attribution came and went, resetting needs-since each flap.
         let pty = PtySignal {
             attention_at_ms: Some(NOW - 300_000),
             input_at_ms: Some(NOW - 360_000),
@@ -209,8 +194,6 @@ mod tests {
         };
         assert!(pty.attention_pending(NOW));
         assert_eq!(resolve_status(AgentStatus::Complete, false, &pty, NOW), AgentStatus::Complete);
-        // `Waiting` beats `Complete` here: `Complete` needs you only while
-        // `unseen` holds, so a seen-then-flapping row could still fall out.
         assert_eq!(resolve_status(AgentStatus::Busy, false, &pty, NOW), AgentStatus::Waiting);
     }
 
@@ -240,7 +223,6 @@ mod tests {
 
     #[test]
     fn the_notifications_own_trailing_repaint_does_not_clear_it() {
-        // Notify fires ~0.5s before the final frame, so needs-you never latches.
         let pty = PtySignal { attention_at_ms: Some(NOW - 10_000), ..working(9_600) };
         assert!(pty.attention_pending(NOW));
         assert_eq!(resolve_status(AgentStatus::Idle, false, &pty, NOW), AgentStatus::Waiting);
@@ -282,8 +264,6 @@ mod tests {
 
     #[test]
     fn a_full_turn_walks_idle_busy_waiting_idle() {
-        // From a real `claude` PTY capture: prompt at t=9.0s, continuous output
-        // to t=14.7s, OSC 777 at t=14.2s, then silence.
         let at = |secs: f64| (secs * 1000.0) as i64;
         let mut pty = PtySignal::default();
 
@@ -304,10 +284,6 @@ mod tests {
         assert_eq!(resolve_status(AgentStatus::Idle, false, &pty, at(31.1)), AgentStatus::Idle);
     }
 
-    /// Reproduced live: a settled `Complete` still alternated `busy`/`complete`
-    /// sub-second, taking the "⚑ Needs you" callout with it, because a finished
-    /// pane's own repaint satisfied "output in the last 1.5s". However recent
-    /// the frame, a run of zero length is not work.
     #[test]
     fn a_lone_repaint_does_not_retract_a_finished_turn() {
         for age in [10, 100, OUTPUT_ACTIVE_MS - 1] {
@@ -326,9 +302,6 @@ mod tests {
         }
     }
 
-    /// The turn-end notification must survive the pane's own idle repaints, or
-    /// the board falls back to the journal, which reads a permission prompt as
-    /// Busy: the agent sits there wanting you, unbadged, with no timer to end it.
     #[test]
     fn a_lone_repaint_does_not_count_as_the_agent_resuming() {
         let pty = PtySignal { attention_at_ms: Some(NOW - 30_000), ..lone_repaint(3_000) };

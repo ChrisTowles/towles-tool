@@ -50,10 +50,8 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
 # Whether any app instance would act on this is `--only-if-tracked`'s job, not
 # this script's: the answer is "the terminal is one the app spawned, or `cwd` is
 # under a repo on the rail", and only `tt` can read that tracked set. Don't
-# reimplement it here as an ancestor walk -- the one that used to live here
-# tested for `crates/tt-config` and so recognised *this* repo alone, dropping
-# `gh pr create` in every other checkout in silence. A skip lands in the event
-# log as `outcome=not_tracked` rather than vanishing.
+# reimplement it here as an ancestor walk. A skip lands in the event log as
+# `outcome=not_tracked` rather than vanishing.
 command -v tt >/dev/null 2>&1 || exit 0
 
 # stderr is captured (stdout stays discarded) because the one failure mode

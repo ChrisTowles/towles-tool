@@ -3,33 +3,20 @@
 //! app's environment at spawn — so anything the user ran inside it (`bun run
 //! dev`) cannot notice a later `tt task env` rotating that port out from under
 //! it (see `tt_tasks::template::render`'s reuse-vs-rotate logic).
-//!
-//! Scoped to ports deliberately: they're the one `${tt:...}`-rendered value with
-//! a "current" signal readable straight off `.env`, where a change is a genuine
-//! conflict-driven rotation. Diffing the whole `.env` would flag unrelated edits
-//! (a secret filled in later), which isn't drift, just enrichment.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::persist::FileVersion;
 
-/// One port whose current claim differs from what a session's shell saw at
-/// spawn time.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PortDrift {
-    /// The `.env` key this port is claimed under, e.g. `"UI_PORT"`.
     pub key: String,
-    /// What the session's shell saw at spawn time.
     pub spawned_port: u16,
-    /// What `.env` claims for this key right now.
     pub current_port: u16,
 }
 
-/// This folder's current port claims, read straight off `<dir>/.env`. Empty
-/// when the file is missing or unreadable — nothing to compare a spawn
-/// snapshot against, so no drift can be reported either way.
 pub fn read_current_ports(dir: &Path) -> BTreeMap<String, u16> {
     std::fs::read_to_string(dir.join(".env"))
         .map(|text| tt_tasks::envfile::port_claims_by_key(&text))

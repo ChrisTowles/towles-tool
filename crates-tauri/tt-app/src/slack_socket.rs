@@ -6,7 +6,7 @@
 //!
 //! Settings (and so the token) are shared across every open worktree, so spawning this
 //! unconditionally would have each task's process connect on the same token — duplicate
-//! `wss://` connections and duplicate notifications for one message (#227). Only one
+//! `wss://` connections and duplicate notifications for one message. Only one
 //! process proceeds past the [`instance_lock::InstanceLock`] gate; the rest park and
 //! retry, so a closed instance's task is picked up without a relaunch.
 

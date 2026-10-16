@@ -427,7 +427,7 @@ export function TerminalView({
         grid.lines = Array.from({ length: frame.rows }, () => ({ runs: [] }));
       } else if (resized) {
         // Resize race: adjust the row count but KEEP the rows — wiping blanks
-        // rows the engine thinks are clean and never resends (#47).
+        // rows the engine thinks are clean and never resends.
         grid.cols = frame.cols;
         grid.rows = frame.rows;
         while (grid.lines.length < frame.rows) grid.lines.push({ runs: [] });
@@ -958,7 +958,7 @@ export function TerminalView({
     const observer = new ResizeObserver(() => {
       if (host.clientWidth === 0 || host.clientHeight === 0) {
         // Never resize a hidden pane's PTY to a degenerate 2×1 grid — it
-        // reflows the shell offscreen and panes come back stale (#47).
+        // reflows the shell offscreen and panes come back stale.
         wasHidden = true;
         void invoke("term_visibility", { termId, visible: false });
         return;

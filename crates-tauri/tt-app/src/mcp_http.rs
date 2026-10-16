@@ -6,7 +6,7 @@
 //! whichever instance won a fixed port answered every session out of **its own** board.
 //!
 //! **[`check_admission`] is the entire security boundary** — no bearer token, no capability
-//! gate (both removed 2026-07-20) — and a pure function, so it is tested directly. Loopback
+//! gate — and a pure function, so it is tested directly. Loopback
 //! keeps *remote hosts* out, not *web pages*: any site can POST to `127.0.0.1`, and CORS
 //! only stops it reading the reply while a blind write is the whole attack. So: reject any
 //! request carrying an `Origin`, and require `Content-Type: application/json`.

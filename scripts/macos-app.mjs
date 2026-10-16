@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-// Give the *dev* app a real macOS bundle identity: `tauri dev` never bundles, so
-// the Dock shows the generic Unix-executable icon, and it can't use the `app`
-// target `bun start` builds without losing watch/HMR. So wrap the launch —
-// `CARGO_TARGET_<HOST_TRIPLE>_RUNNER` (set only on the `tauri dev` child) points
-// cargo at a script that hardlinks the binary into a throwaway `.app`, same PID.
+// Give the *dev* app a real macOS bundle identity: `tauri dev` never bundles, so the Dock shows
+// a generic icon. A cargo runner (`CARGO_TARGET_<HOST_TRIPLE>_RUNNER`, set only on the dev
+// child) hardlinks the binary into a throwaway `.app`, same PID.
 import { chmodSync, cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -28,7 +26,6 @@ export function macosDevAppEnv(repoRoot) {
 }
 
 /**
- * Plain filesystem work — no macOS APIs — so the unit test exercises it anywhere.
  * @param {{ dir: string; productName: string; identifier: string; version: string; icns: string }} spec
  * @returns {string} path to the runner script
  */
@@ -39,16 +36,12 @@ export function writeDevApp({ dir, productName, identifier, version, icns }) {
   mkdirSync(macos, { recursive: true });
   mkdirSync(resources, { recursive: true });
 
-  // Named after the product because that is what "Force Quit" and Activity
-  // Monitor show.
   writeFileSync(
     path.join(app, "Contents", "Info.plist"),
     infoPlist({ executable: productName, productName, identifier, version }),
   );
   cpSync(icns, path.join(resources, "icon.icns"));
 
-  // Resolved relative to the script so the interpolation can't be broken by a
-  // space (or anything else) in the repo path.
   const runner = path.join(dir, "run-app.sh");
   writeFileSync(
     runner,
@@ -91,8 +84,6 @@ function infoPlist({ executable, productName, identifier, version }) {
 }
 
 /**
- * Read rather than restated so the dev bundle can't drift from `bun start`'s;
- * throws rather than returning a Result, since there is no recovery from it.
  * @param {string} repoRoot
  */
 function readTauriConf(repoRoot) {

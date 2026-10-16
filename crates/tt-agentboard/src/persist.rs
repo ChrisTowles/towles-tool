@@ -5,7 +5,7 @@
 //! `std::fs::write` truncates then streams, so a concurrent reader can observe
 //! an empty or half-written file — which is how a torn `repos.json` read made
 //! one instance's engine poll see zero repos and prune every folder's session
-//! records (#75). Writing to a temp file in the same directory and `rename`ing
+//! records. Writing to a temp file in the same directory and `rename`ing
 //! over the target makes the swap atomic on POSIX: readers see either the old
 //! or the new content, never a fragment.
 
@@ -66,7 +66,7 @@ fn file_id(_meta: &std::fs::Metadata) -> (u64, u64) {
 /// it to the caller to adopt as its new in-memory state.
 ///
 /// The one home of the clobber-safety property every shared agentboard JSON file
-/// depends on (#75, #315): a save must never write this instance's *whole* view,
+/// depends on: a save must never write this instance's *whole* view,
 /// which would erase keys another window touched. Callers own path/dirty guards.
 pub fn merge_on_save<T: serde::Serialize>(
     path: &Path,
@@ -99,7 +99,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("shared.json");
 
-        // Another instance already wrote two folders' records.
         let load = |p: &Path| -> BTreeMap<String, i32> {
             std::fs::read_to_string(p)
                 .ok()
@@ -108,14 +107,11 @@ mod tests {
         };
         write_atomic(&path, "{\"a\":1,\"b\":2}\n").unwrap();
 
-        // This instance only knows about — and only touches — key "b".
         let merged = merge_on_save(&path, load, |m: &mut BTreeMap<String, i32>| {
             m.insert("b".to_string(), 20);
         })
         .unwrap();
 
-        // "a" (never touched here) survives; "b" is updated. The merged value is
-        // handed back for the caller to adopt as its own in-memory state.
         assert_eq!(merged.get("a"), Some(&1));
         assert_eq!(merged.get("b"), Some(&20));
         let on_disk = load(&path);
@@ -134,14 +130,12 @@ mod tests {
                 .unwrap_or_default()
         };
 
-        // Missing file → the merge starts from an empty value, no error.
         let merged = merge_on_save(&path, load, |m: &mut BTreeMap<String, i32>| {
             m.insert("x".to_string(), 9);
         })
         .unwrap();
         assert_eq!(merged.get("x"), Some(&9));
 
-        // A merge that removes the key writes it back out gone.
         let merged = merge_on_save(&path, load, |m: &mut BTreeMap<String, i32>| {
             m.remove("x");
         })
@@ -159,9 +153,6 @@ mod tests {
         write_atomic(&path, "{\"repoPaths\":[\"/a\",\"/b\"]}\n").unwrap();
         let before = file_version(&path).expect("version");
 
-        // A reorder: same byte length, and back-to-back enough that the two
-        // writes can share an mtime granule. The rename behind `write_atomic`
-        // gives the second one a new inode regardless.
         write_atomic(&path, "{\"repoPaths\":[\"/b\",\"/a\"]}\n").unwrap();
         let after = file_version(&path).expect("version");
         assert_eq!(before.len, after.len, "the reorder is length-preserving");

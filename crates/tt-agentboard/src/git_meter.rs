@@ -1,15 +1,9 @@
 //! A bounded record of how much git work the pollers are actually doing.
 //!
-//! Git reads moved in-process (gitoxide), which took them out of the
-//! `process.spawn` span — the one thing that used to make a runaway recompute
-//! loop visible, and did: a cache-stamping bug once ran ~20 git spawns/sec
-//! around the clock, and it was caught because every one of those spawns was a
-//! logged subprocess. Nothing spawns now, so that same bug would be silent.
-//!
-//! This is the replacement, at a cost the old shape never had. One rolled-up
-//! record per window rather than one per read: an idle window writes nothing at
-//! all, and a runaway loop reads as a count in the thousands where a healthy one
-//! reads in the tens.
+//! Git reads run in-process (gitoxide), so they do not appear as `process.spawn` spans, and a
+//! runaway recompute loop (a cache-stamping bug once ran ~20 git spawns/sec) would be silent.
+//! One rolled-up record per window instead: an idle window writes nothing, a runaway loop
+//! reads as a count in the thousands where a healthy one reads in the tens.
 
 /// How long a window collects before it can be taken.
 const WINDOW_MS: i64 = 60_000;
@@ -19,9 +13,6 @@ const WINDOW_MS: i64 = 60_000;
 pub struct GitWork {
     pub count: u32,
     pub total_ms: i64,
-    /// The slowest single recompute, and where. A mean hides the one repo that
-    /// is pathological, and a duration with no dir on it can't be acted on —
-    /// the first real window measured 1.65s of its 1.81s in a single checkout.
     pub slowest_ms: i64,
     pub slowest_dir: String,
     /// How long the window actually ran, which is ≥ [`WINDOW_MS`] rather than
@@ -63,8 +54,6 @@ impl GitWorkMeter {
     /// The finished window, once [`WINDOW_MS`] has elapsed and there was work in
     /// it; `None` while it is still open. An *empty* elapsed window rolls
     /// forward and reports nothing — an idle app writing a heartbeat every
-    /// minute is exactly the log noise this exists to avoid, and it would also
-    /// make the next single recompute look like a whole window's worth.
     pub fn take_due(&mut self, now_ms: i64) -> Option<GitWork> {
         let window_ms = now_ms - self.window_started_ms;
         if window_ms < WINDOW_MS {
@@ -117,20 +106,16 @@ mod tests {
         assert_eq!(work.slowest_dir, "/repo/b", "the previous window's worst didn't carry over");
     }
 
-    /// An app nobody is using must not write a record a minute forever.
     #[test]
     fn an_idle_window_reports_nothing_but_still_rolls_forward() {
         let mut m = GitWorkMeter::new(T0);
         assert_eq!(m.take_due(T0 + WINDOW_MS), None);
 
-        // Had the empty window not rolled forward, this single recompute would
-        // close immediately and read as a full window's work.
         m.record("/repo/a", 9);
         assert_eq!(m.take_due(T0 + WINDOW_MS + 1), None);
         assert_eq!(m.take_due(T0 + WINDOW_MS * 2).map(|w| w.count), Some(1));
     }
 
-    /// The shape the whole module exists to make visible.
     #[test]
     fn a_runaway_loop_reads_as_a_count_a_healthy_one_never_reaches() {
         let mut healthy = GitWorkMeter::new(T0);

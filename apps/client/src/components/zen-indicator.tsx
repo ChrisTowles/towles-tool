@@ -19,7 +19,7 @@ export function ZenIndicator({ onExit }: { onExit: () => void }) {
       hideTimer = setTimeout(() => setVisible(false), 2000);
     };
     const onMove = (e: MouseEvent) => {
-      // Only wake near the bottom strip the hidden status bar used to occupy.
+      // Only wake near the bottom strip the hidden status bar occupies.
       if (e.clientY >= window.innerHeight - 64) {
         setVisible(true);
         arm();

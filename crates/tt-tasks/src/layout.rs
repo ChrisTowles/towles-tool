@@ -4,12 +4,6 @@
 //! and no sibling directories. A worktree Claude Code makes for itself
 //! (`claude --worktree`, a background agent) lands here too, but is not a
 //! task: nothing renders, tracks or removes it.
-//!
-//! The main checkout is a normal clone (it is where the user runs the app
-//! themselves); tasks are branch-named, ephemeral worktrees created from it
-//! and removed when their branch merges. `git clean -fdx` at the checkout
-//! root skips nested worktrees (git refuses to touch untracked repositories
-//! without a second `-f`), so the nesting is safe.
 
 use std::path::{Path, PathBuf};
 
@@ -19,21 +13,15 @@ use std::path::{Path, PathBuf};
 /// agents landing cold).
 pub const MARKER_FILE: &str = ".tt-task";
 
-/// First path segment of the worktrees dir under the checkout root.
 pub const CLAUDE_DIR: &str = ".claude";
 
-/// Second path segment: `<checkout>/.claude/worktrees/<name>`.
 pub const WORKTREES_DIR: &str = "worktrees";
 
-/// The directory holding a checkout's worktree tasks:
-/// `<checkout>/.claude/worktrees`.
 pub fn worktrees_dir(checkout: &Path) -> PathBuf {
     checkout.join(CLAUDE_DIR).join(WORKTREES_DIR)
 }
 
 /// If `dir` is a task checkout (`<main>/.claude/worktrees/<name>`), the main
-/// checkout `<main>`. Pure path shape — no filesystem probes; callers verify
-/// `.git` presence themselves.
 pub fn main_checkout_for(dir: &Path) -> Option<&Path> {
     let worktrees = dir.parent()?;
     let claude = worktrees.parent()?;
@@ -46,15 +34,11 @@ pub fn main_checkout_for(dir: &Path) -> Option<&Path> {
 /// Parse-don't-validate — the only constructor is [`TaskName::parse`], so a
 /// name that reached a `TaskName` can never traverse out of the worktrees
 /// dir. This matters most for names read back off disk (the port registry's
-/// owner fields, directory listings): a corrupt or hand-edited `"../x"`
-/// entry must die at the parse, not at a path join.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TaskName(String);
 
 impl TaskName {
     /// Accepts exactly the names [`task_name_from_branch`] can produce (its
-    /// `[A-Za-z0-9._-]` alphabet, `.`/`-` trimmed at the ends) — which is
-    /// also what rules out every traversal shape (`/`, `\`, `..`, empty).
     pub fn parse(raw: &str) -> Option<Self> {
         (!raw.is_empty() && sanitize_segment(raw) == raw).then(|| Self(raw.to_string()))
     }
@@ -90,9 +74,6 @@ pub fn task_name_from_branch(branch: &str) -> Option<String> {
 
 /// The task name for a worktree directory: its basename, which is the slugged
 /// branch by construction (see [`task_name_from_branch`]). Pure path shape —
-/// no filesystem probe — so it works for a directory that is already gone,
-/// which is exactly when the caller can't read the name off the checkout.
-/// Falls back to the whole path string for a path with no final component.
 pub fn task_name_from_dir(dir: &Path) -> String {
     dir.file_name().and_then(|n| n.to_str()).unwrap_or(&dir.to_string_lossy()).to_string()
 }
@@ -111,8 +92,6 @@ pub fn marker_contents(task_name: &str, base_branch: &str, stream: &str) -> Stri
     format!("name={task_name}\nbase={base_branch}\nstream={stream}\n")
 }
 
-/// Parse `.tt-task` marker contents (as written by [`marker_contents`]) into
-/// its `key=value` lines. Pure — callers own reading the file.
 pub fn parse_marker(contents: &str) -> std::collections::HashMap<String, String> {
     contents
         .lines()
@@ -142,9 +121,6 @@ mod tests {
 
     #[test]
     fn task_name_rejects_every_traversal_shape() {
-        // The reason the type exists: names read back off disk (registry
-        // owners, hand-typed args) must not be able to escape the worktrees
-        // dir via a path join.
         for name in ["", ".", "..", "../x", "a/b", "a\\b", "/abs", "-trimmed-"] {
             assert!(TaskName::parse(name).is_none(), "{name:?} must be rejected");
         }
@@ -181,7 +157,6 @@ mod tests {
     fn task_name_sanitizes_and_trims() {
         assert_eq!(task_name_from_branch("feat/hello world!"), Some("feat-hello-world".into()));
         assert_eq!(task_name_from_branch("feat/---"), Some("feat".into()));
-        // slug degenerates to separators only → no name
         assert_eq!(task_name_from_branch("///"), None);
     }
 
@@ -192,7 +167,6 @@ mod tests {
             "feat-thing"
         );
         assert_eq!(task_name_from_dir(Path::new("/home/u/tasks/standalone")), "standalone");
-        // A trailing slash still yields the final component.
         assert_eq!(task_name_from_dir(Path::new("/home/u/tasks/thing/")), "thing");
     }
 

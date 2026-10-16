@@ -1,12 +1,8 @@
 //! Edge detection for "an agent just stopped working in this checkout".
 //!
-//! The working-tree half of a checkout's git stats (`dirty`, `uncommitted_*`)
-//! has no `.git` file to watch: an edit that is never staged moves none of the
-//! five control files the host's watcher registers, so those numbers ride a
-//! slow backup poll. The app does know something git cannot, though — which
-//! checkout an agent was just editing. lazygit refreshes the moment a command
-//! *it* ran returns; here the actor is the agent, and its turn ending is the
-//! same signal arriving by a different route.
+//! The working-tree half of a checkout's git stats (`dirty`, `uncommitted_*`) has no `.git`
+//! file to watch, so those numbers ride a slow backup poll; an agent's turn ending is the
+//! signal that the tree just changed.
 //!
 //! Pure state diffing over successive snapshots, like [`crate::notify`]: a
 //! busy→not-busy edge per folder, never a level, so a finished agent costs one

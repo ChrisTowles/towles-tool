@@ -6,11 +6,6 @@
 //! app's DM panel on demand. HTTP plumbing is isolated in [`SlackHttp`];
 //! response interpretation is pure functions over `serde_json::Value`, so it
 //! unit-tests with inline fixtures.
-//!
-//! Slack keeps thread replies *out* of `conversations.history` — a parent only
-//! carries `reply_count`/`latest_reply`. So the newest thing in the DM may be a
-//! reply the watcher would otherwise never see; [`fetch_dm`] follows the
-//! freshest parent into `conversations.replies` when that is the case.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;

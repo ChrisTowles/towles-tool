@@ -1,13 +1,9 @@
 //! Environment checks for towles-tool ("doctor"): the developer tools the
 //! desktop app relies on, gh auth, required Claude plugins, and the
 //! agentboard/data-hub state. Tauri-free (the shared-crate rule); the app's
-//! Doctor screen is the consumer (the CLI `doctor` command was removed in the
-//! 2026-07-19 trim).
+//! Doctor screen is the consumer.
 //!
-//! Run records serialize camelCase (the TS `DoctorRunResult` shape) for the
-//! app's IPC/JSON consumers. The tool list follows the current product: the
-//! tmux agentboard was removed (2026-07-04, hard cutover), so `tmux`/`ttyd`
-//! are no longer checked.
+//! Run records serialize camelCase for the app's IPC/JSON consumers.
 
 mod checkout;
 
@@ -15,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub use checkout::CheckoutCheck;
 
-/// Result of probing one tool. Matches the TS `CheckResult`.
+/// Result of probing one tool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckResult {
     pub name: String,
@@ -26,14 +22,14 @@ pub struct CheckResult {
     pub warning: Option<String>,
 }
 
-/// A `{name, ok}` pair, matching the TS shape used for plugins and agentboard.
+/// A `{name, ok}` pair, used for plugins and agentboard.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NameOk {
     pub name: String,
     pub ok: bool,
 }
 
-/// A full doctor run. Serde shape matches the TS `DoctorRunResult` exactly.
+/// A full doctor run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DoctorRunResult {
@@ -724,7 +720,6 @@ plugin:towles-tool-app:towles-tool: http://127.0.0.1:47870/mcp - ✔ Connected
         assert!(!tt_mcp_registered("chrome-devtools: npx chrome-devtools-mcp - ✔ Connected"));
         // A different server whose command merely mentions the name must not match.
         assert!(!tt_mcp_registered("other: towles-tool proxy - ✔ Connected"));
-        // The retired stdio registration is no longer what we look for.
         assert!(!tt_mcp_registered("tt: tt mcp serve - ✔ Connected"));
         assert!(!tt_mcp_registered(""));
     }

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-// Bumps the app's release version across every file that carries it, then syncs
-// both lockfiles. The version that matters is the *app's* — bump it before
-// tagging, release.yml won't do it for you. The independent `0.1.0`s on the
-// library crates under `crates/` are internal and deliberately left alone.
-// Nothing is staged, committed or tagged here; review the diff, then do that.
+// Bumps the app's release version across every file that carries it, then syncs both
+// lockfiles; bump before tagging. The library crates' `0.1.0`s are internal and left alone.
+// Nothing is staged, committed or tagged here.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -23,10 +21,7 @@ export const VERSION_FILES = [
   { path: "crates-tauri/tt-app/Cargo.toml", format: "toml" },
 ];
 
-/**
- * @param {string} version
- * @returns {Result<[number, number, number], BadVersion>}
- */
+/** @param {string} version @returns {Result<[number, number, number], BadVersion>} */
 export function parseVersion(version) {
   const parts = version.split(".").map(Number);
   if (parts.length !== 3 || parts.some((n) => !Number.isInteger(n) || n < 0)) {
@@ -36,7 +31,6 @@ export function parseVersion(version) {
 }
 
 /**
- * Resolves `major`/`minor`/`patch`, or an explicit `x.y.z`, against `current`.
  * @param {string} current
  * @param {string} arg
  * @returns {Result<string, BadVersion>} */
@@ -56,11 +50,7 @@ export function resolveNewVersion(current, arg) {
   }
 }
 
-/**
- * @param {VersionFile["format"]} format
- * @param {string} version
- * @returns {string}
- */
+/** @param {VersionFile["format"]} format @param {string} version @returns {string} */
 function needle(format, version) {
   return format === "toml" ? `version = "${version}"` : `"version": "${version}"`;
 }
@@ -79,10 +69,7 @@ export function withBumpedVersion(contents, format, from, to) {
   );
 }
 
-/**
- * @param {string[]} args
- * @param {string} cwd
- */
+/** @param {string[]} args @param {string} cwd */
 function run(args, cwd) {
   console.log(`[release-version-bump] $ ${args.join(" ")}`);
   execFileSync(args[0], args.slice(1), { cwd, stdio: "inherit" });
@@ -116,8 +103,6 @@ async function main() {
     console.log(`[release-version-bump] ${file.path}: ${from} -> ${to}`);
   }
 
-  // `cargo check` updates Cargo.lock's `tt-app` entry without a full build;
-  // `--lockfile-only` does the same for bun.lock without touching node_modules.
   run(["cargo", "check", "-p", "tt-app", "--quiet"], repoRoot);
   run(["bun", "install", "--lockfile-only", "--silent"], repoRoot);
 
@@ -126,7 +111,6 @@ async function main() {
   console.log(`  git tag v${to} && git push origin v${to}`);
 }
 
-// Only when invoked directly, not when imported by the test file.
 if (path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1] ?? "")) {
   main();
 }

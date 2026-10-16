@@ -60,10 +60,8 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-// Re-export the externally-consumed surface (the app, the remaining CLI
-// commands, and the collector/MCP/doctor crates). Everything else stays
-// reachable through its module path; the 2026-07-19 CLI trim removed the
-// last importer of the wider re-export list.
+// Re-export the externally-consumed surface (the app, the CLI commands, and the
+// collector/MCP/doctor crates). Everything else stays reachable through its module path.
 pub use bridge::StatePayload;
 pub use coalesce::Coalescer;
 pub use engine::{GitInvalidation, RailRow, UnrecordedWorktree};
