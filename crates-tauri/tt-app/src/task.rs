@@ -188,14 +188,8 @@ pub enum CreateSource {
 /// Fetch, worktree add, render `.env`, inherit secrets. Deliberately **not** the
 /// install step — that can run for minutes and this gates the terminal pane; the
 /// caller fires `task_run_setup` once the pane opens.
-#[tauri::command]
-pub async fn task_create(
-    app: tauri::AppHandle,
-    root: String,
-    source: CreateSource,
-    dir: String,
-) -> Result<TaskCreated, String> {
-    let source = match source {
+fn task_source(source: CreateSource) -> Result<TaskSource, String> {
+    match source {
         CreateSource::Branch { branch, base } => {
             let branch = branch.trim().to_string();
             if branch.is_empty() {
@@ -204,10 +198,20 @@ pub async fn task_create(
                 );
             }
             let base = base.trim();
-            TaskSource::NewBranch { branch, base: (!base.is_empty()).then(|| base.to_string()) }
+            Ok(TaskSource::NewBranch { branch, base: (!base.is_empty()).then(|| base.to_string()) })
         }
-        CreateSource::Pr { number } => TaskSource::PullRequest(number),
-    };
+        CreateSource::Pr { number } => Ok(TaskSource::PullRequest(number)),
+    }
+}
+
+#[tauri::command]
+pub async fn task_create(
+    app: tauri::AppHandle,
+    root: String,
+    source: CreateSource,
+    dir: String,
+) -> Result<TaskCreated, String> {
+    let source = task_source(source)?;
     let opts = CreateOpts { root: Some(PathBuf::from(root)), source, run_setup: false };
     let now_ms = tt_config::now_ms();
     // Claimed before the first step, so the row is never on the rail mute.
@@ -401,6 +405,10 @@ struct Resolved {
     label: String,
 }
 
+fn worktree_label(dir: &str) -> String {
+    PathBuf::from(dir).file_name().and_then(|n| n.to_str()).unwrap_or(dir).to_string()
+}
+
 fn resolve_delete_target(app: &tauri::AppHandle, target: DeleteTarget) -> Result<Resolved, String> {
     match target {
         DeleteTarget::Board(id) => {
@@ -410,11 +418,7 @@ fn resolve_delete_target(app: &tauri::AppHandle, target: DeleteTarget) -> Result
             Ok(Resolved { board_id: Some(id), dir, label: task.text })
         }
         DeleteTarget::Worktree(dir) => {
-            let label = PathBuf::from(&dir)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&dir)
-                .to_string();
+            let label = worktree_label(&dir);
             Ok(Resolved { board_id: None, dir: Some(dir), label })
         }
     }
@@ -424,6 +428,18 @@ fn resolve_delete_target(app: &tauri::AppHandle, target: DeleteTarget) -> Result
 /// survives closed (`purge` is the only true row delete). The row closes last,
 /// only if the worktree really went, and PTYs die only past the guards —
 /// dropping records up front made a blocked removal look clean.
+fn purge_target(board_id: Option<i64>, bound_to_worktree: bool) -> Result<i64, String> {
+    let Some(id) = board_id else {
+        return Err("purge names a board task by id".to_string());
+    };
+    if bound_to_worktree {
+        return Err(
+            "this task is still bound to a worktree — close it first, then purge".to_string()
+        );
+    }
+    Ok(id)
+}
+
 pub fn delete_task_blocking(
     app: &tauri::AppHandle,
     target: DeleteTarget,
@@ -435,14 +451,7 @@ pub fn delete_task_blocking(
 
     // The only hard delete, row-only: a bound row would orphan its checkout.
     if purge {
-        let Some(id) = board_id else {
-            return Err("purge names a board task by id".to_string());
-        };
-        if dir.is_some() {
-            return Err(
-                "this task is still bound to a worktree — close it first, then purge".to_string()
-            );
-        }
+        let id = purge_target(board_id, dir.is_some())?;
         crate::store::delete_task_row(app, id)?;
         return Ok(TaskDeleteOutcome::Deleted {
             name: label,
@@ -481,7 +490,7 @@ pub fn delete_task_blocking(
         }
         Err(error) => return Err(error.to_string()),
     };
-    let opts = RemoveOpts { root, name, force };
+    let opts = RemoveOpts { root, name, force, ports_dir: None };
     let mut hooks = AppRemovalHooks { app, dir };
     let rows = AppBoardRows { app, board_id };
     let removal = tt_agentboard::task_removal::TaskRemoval {
@@ -624,6 +633,21 @@ impl tt_agentboard::task_removal::BoardRows for AppBoardRows<'_> {
 
 /// Exactly one of `id`/`dir` identifies the task; `outcome` omitted lets the
 /// row's own evidence decide; `purge` is the explicit permanent delete.
+fn delete_target(id: Option<i64>, dir: Option<String>) -> Result<DeleteTarget, String> {
+    match (id, dir) {
+        (Some(id), None) => Ok(DeleteTarget::Board(id)),
+        (None, Some(dir)) => Ok(DeleteTarget::Worktree(dir)),
+        _ => Err("task_delete needs exactly one of id/dir".to_string()),
+    }
+}
+
+fn parse_outcome(raw: Option<&str>) -> Result<Option<tt_store::TaskOutcome>, String> {
+    raw.map(|raw| {
+        tt_store::TaskOutcome::parse(raw).ok_or_else(|| format!("unknown task outcome: {raw}"))
+    })
+    .transpose()
+}
+
 #[tauri::command]
 pub async fn task_delete(
     app: tauri::AppHandle,
@@ -635,18 +659,8 @@ pub async fn task_delete(
 ) -> Result<TaskDeleteOutcome, String> {
     use tracing::Instrument as _;
 
-    let target = match (id, dir.clone()) {
-        (Some(id), None) => DeleteTarget::Board(id),
-        (None, Some(dir)) => DeleteTarget::Worktree(dir),
-        _ => return Err("task_delete needs exactly one of id/dir".to_string()),
-    };
-    let outcome = match outcome.as_deref() {
-        None => None,
-        Some(raw) => Some(
-            tt_store::TaskOutcome::parse(raw)
-                .ok_or_else(|| format!("unknown task outcome: {raw}"))?,
-        ),
-    };
+    let target = delete_target(id, dir.clone())?;
+    let outcome = parse_outcome(outcome.as_deref())?;
     let purge = purge.unwrap_or(false);
 
     // `outcome` covers all three endings (a refusal looks like success in an
@@ -686,6 +700,19 @@ pub async fn task_delete(
 /// The `foreignPort` blocker's remedy. `ops::stop_task_port` refuses any port the
 /// task doesn't claim in its own `.env`, which keeps this from being a
 /// UI-reachable "kill any port" primitive. SIGTERM, then SIGKILL if still held.
+/// One decision for both log field and toast.
+fn stop_port_report(stopped: &tt_tasks::ports::Stopped, port: u16) -> (&'static str, String) {
+    let count = stopped.pgids.len();
+    let s = if count == 1 { "" } else { "s" };
+    if count == 0 {
+        ("already_free", format!("Port {port} was already free"))
+    } else if stopped.graceful {
+        ("terminated", format!("Port {port}: stopped {count} process group{s}"))
+    } else {
+        ("killed", format!("Port {port}: force-killed {count} process group{s}"))
+    }
+}
+
 #[tauri::command]
 pub async fn task_stop_port(dir: String, port: u16) -> Result<String, String> {
     use tracing::Instrument as _;
@@ -711,16 +738,7 @@ pub async fn task_stop_port(dir: String, port: u16) -> Result<String, String> {
         let span = tracing::Span::current();
         match stopped {
             Ok(stopped) => {
-                let count = stopped.pgids.len();
-                let s = if count == 1 { "" } else { "s" };
-                // One decision for both log field and toast.
-                let (outcome, message) = if count == 0 {
-                    ("already_free", format!("Port {port} was already free"))
-                } else if stopped.graceful {
-                    ("terminated", format!("Port {port}: stopped {count} process group{s}"))
-                } else {
-                    ("killed", format!("Port {port}: force-killed {count} process group{s}"))
-                };
+                let (outcome, message) = stop_port_report(&stopped, port);
                 let pgids: Vec<String> = stopped.pgids.iter().map(i32::to_string).collect();
                 span.record("pgids", pgids.join(","));
                 span.record("outcome", outcome);
@@ -735,3 +753,6 @@ pub async fn task_stop_port(dir: String, port: u16) -> Result<String, String> {
     .instrument(span)
     .await
 }
+
+#[cfg(test)]
+mod tests;

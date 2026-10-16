@@ -9,28 +9,9 @@ mod common;
 use assert_cmd::Command as Tt;
 use common::{canonical_temp, data_home};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 fn git(dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args([
-            "-c",
-            "user.name=test",
-            "-c",
-            "user.email=test@test",
-            "-c",
-            "init.defaultBranch=main",
-        ])
-        .args(args)
-        .output()
-        .expect("git should run");
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    tt_git::testing::git(dir, args);
 }
 
 /// A `tt` command with the state tree sandboxed under `home`.
@@ -87,11 +68,7 @@ fn commit_file(task: &Path, name: &str) {
 }
 
 fn branch_exists(checkout: &Path, branch: &str) -> bool {
-    let out = Command::new("git")
-        .args(["-C", checkout.to_str().unwrap(), "branch", "--list", branch])
-        .output()
-        .unwrap();
-    !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+    !tt_git::testing::git(checkout, &["branch", "--list", branch]).is_empty()
 }
 
 fn clean_json(home: &Path, root: &str, extra: &[&str]) -> serde_json::Value {
@@ -245,12 +222,8 @@ fn clean_removes_a_squash_merged_task_even_when_local_base_is_stale() {
     // the whole diagnosis — without it this reads as a bare
     // `Null != "feat-push"` with nothing to act on.
     let git_out = |dir: &Path, args: &[&str]| -> String {
-        let out = Command::new("git").arg("-C").arg(dir).args(args).output().expect("git runs");
-        format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout).trim(),
-            String::from_utf8_lossy(&out.stderr).trim()
-        )
+        let out = tt_git::testing::git_output(dir, args);
+        format!("{}{}", out.stdout.trim(), out.stderr.trim())
     };
     assert_eq!(
         report["removed"][0]["name"],

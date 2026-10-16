@@ -3,7 +3,7 @@
 Terminal-state engine on top of **libghostty-vt**: feeds raw PTY bytes in,
 emits dirty-row `Frame`s out (style runs, cursor, title, scrollback). Does
 no rendering and no PTY handling itself — both are deliberately excluded
-from Ghostty's library, and live in `crates-tauri/tt-app/src/terminal.rs`
+from Ghostty's library, and live in `crates-tauri/tt-app/src/terminal/`
 (PTY host) and `apps/client/src/lib/term-protocol.ts` (rendering) instead.
 See [`apps/client/CLAUDE.md`](../../apps/client/CLAUDE.md) for the frontend
 half of this wire protocol.

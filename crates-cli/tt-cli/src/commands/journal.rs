@@ -4,7 +4,7 @@
 //! is the CLI boundary — it loads settings, resolves the current date, calls the library,
 //! and flattens errors to exit codes (the yaak pattern).
 //!
-//! Deviations from the TS CLI (see docs/MIGRATION.md):
+//! Deviations from the old TS CLI:
 //! - A `--no-open` flag suppresses the editor; the editor is also skipped when stdout is
 //!   not a TTY, so tests and CI never spawn one.
 //! - The per-command `--debug` flag is replaced by the global `-v/--verbose` flag.

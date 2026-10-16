@@ -1,12 +1,6 @@
-# Features: in towles-tool, not yet in Claude Desktop
+# Features
 
-What this app does that Claude Desktop doesn't. Summarised in the
-[README](../README.md).
-
-Checked on 2026-07-19 against Claude Desktop **1.22209.0** (built 2026-07-16),
-using the published [docs](https://code.claude.com/docs/en/desktop) plus the
-installed bundle. Biggest gap first. Read the overlap list under it too: most
-of what this repo does, Desktop now does as well.
+What sets this app apart. Summarised in the [README](../README.md). Biggest first.
 
 - **Handing work to an agent is one gesture.** The Agentboard `+` takes a
   half-formed thought, a pasted screenshot, and `#` to attach one of the repo's
@@ -21,7 +15,7 @@ of what this repo does, Desktop now does as well.
   (Fable or Sonnet), uncommitted diff, linked PR. Teardown is the same gesture
   in reverse, and it refuses while the task still holds work only it can prove.
 
-  ![The Agentboard + flow: a rough goal plus a pasted screenshot, an optional prompt improver rewriting it on target and naming the branch, the worktree minted with Claude already working in it, and a guarded teardown that refuses before it destroys](docs/images/demos/agentboard.gif)
+  ![The Agentboard + flow: a rough goal plus a pasted screenshot, an optional prompt improver rewriting it on target and naming the branch, the worktree minted with Claude already working in it, and a guarded teardown that refuses before it destroys](images/demos/agentboard.gif)
 
 - **A real VS Code per checkout, wired to the sessions beside it.**
   The Files pane is a code-server workbench — one server, one window per
@@ -38,7 +32,7 @@ of what this repo does, Desktop now does as well.
   "tasks pane" holds background subagents inside a single session, and no
   cross-repo surface exists.
 
-  ![The Board kanban across three repos, filtering across them, then a merged PR attaching to a task and rolling it to done](docs/images/demos/board.gif)
+  ![The Board kanban across three repos, filtering across them, then a merged PR attaching to a task and rolling it to done](images/demos/board.gif)
 
 - **A task queue that says what's next.** Agent Board's Queue rail lays its
   checkouts — the tree's rows, roots included — out as a queue, by your priority, with the work blocked on you up
@@ -52,15 +46,15 @@ of what this repo does, Desktop now does as well.
   to a collector you run. I found no sign of an on-disk log that is on by
   default, though I read strings in the bundle rather than watching it run.
 
-  ![The Telemetry screen: today's records, filtered down to process.spawn spans, then one record opened to its full JSON including tt.task](docs/images/demos/telemetry.gif)
+  ![The Telemetry screen: today's records, filtered down to process.spawn spans, then one record opened to its full JSON including tt.task](images/demos/telemetry.gif)
 
 - **Guarded task lifecycle.** `tt task new` in, `tt task rm`/`clean` out, with
   a setup hook, a port lifecycle and a removal guard hung off either end (the
-  whole cycle is under [Worktree tasks](#worktree-tasks)). Desktop creates
+  whole cycle is under [Worktree tasks](WORKTREE-TASKS.md)). Desktop creates
   worktrees and auto-archives them on PR merge or close, but has none of those
   three — in particular no removal guard for a branch that never had a PR.
 
-  ![Diagram: tt task new creating a worktree, rendering its .env, running TT_TASK_SETUP and starting the agent; then tt task rm checking for unlanded work before teardown](docs/images/demos/lifecycle.gif)
+  ![Diagram: tt task new creating a worktree, rendering its .env, running TT_TASK_SETUP and starting the agent; then tt task rm checking for unlanded work before teardown](images/demos/lifecycle.gif)
 
 - **Per-task port isolation.** Both tools put worktrees in
   `.claude/worktrees/`. The difference is the `${tt:port A-B}` claim: every
@@ -68,7 +62,7 @@ of what this repo does, Desktop now does as well.
   colliding. Desktop's `.worktreeinclude` copies gitignored files verbatim,
   which hands every worktree the same port.
 
-  ![Diagram: three worktrees copying one .env all collide on port 3000, while a ${tt:port} pool claim renders each its own port](docs/images/demos/ports.gif)
+  ![Diagram: three worktrees copying one .env all collide on port 3000, while a ${tt:port} pool claim renders each its own port](images/demos/ports.gif)
 
 - **Squash-merge-aware landing detection.** The guard above rests on it: only
   the branch's cumulative diff against base can prove a squash merge landed.
@@ -76,19 +70,4 @@ of what this repo does, Desktop now does as well.
   the common case but never has to answer whether a branch with no PR still
   holds work.
 
-  ![Diagram: after a squash merge, reachability, SHA lookup and per-commit patch identity all report unmerged; only the cumulative diff against base proves the work landed](docs/images/demos/landed.gif)
-
-### Overlap: things Desktop already does
-
-Written down so this repo stops claiming them. Desktop ships automatic git
-worktrees at the same `.claude/worktrees/` path with auto-archive on PR merge,
-a real `node-pty` terminal, a file pane with editing and save-conflict
-detection, file-by-file diff review with batched per-line comments, PR CI
-monitoring with auto-fix and auto-merge, GUI plugin and MCP management,
-scheduled tasks, and a browser pane with element selection. On PR automation
-and telemetry configurability it is ahead of this repo.
-
-What Desktop lacks is a shorter list than it first appears. It runs
-interactive only, with no `--print` and no headless entry point, so there is no
-equivalent of `tt collect`. The Linux beta also has no
-Computer Use, no dictation, and no self-update.
+  ![Diagram: after a squash merge, reachability, SHA lookup and per-commit patch identity all report unmerged; only the cumulative diff against base proves the work landed](images/demos/landed.gif)

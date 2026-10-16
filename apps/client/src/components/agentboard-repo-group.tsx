@@ -536,7 +536,7 @@ export function RepoGroup({
                 {...railRowMotion}
                 // Dim via `animate`, not a class: motion writes an inline
                 // opacity no class could win against.
-                animate={{ opacity: deleting ? 0.5 : 1, x: 0 }}
+                animate={{ ...railRowMotion.animate, opacity: deleting ? 0.5 : 1 }}
                 className={cn(deleting && "pointer-events-none")}
               >
                 <FolderHeader

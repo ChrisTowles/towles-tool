@@ -389,7 +389,7 @@ fn cmd_env(name: &str, root: Option<&Path>) -> Result<(), String> {
 
 fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), String> {
     let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
-    let _ = ops::git_checkout(&sr.checkout, &["worktree", "prune"]);
+    let _ = tt_git::cli::worktree_prune(&sr.checkout, tt_git::cli::DEFAULT_TIMEOUT);
     let mut checkouts: Vec<(String, std::path::PathBuf, bool)> =
         vec![("primary".to_string(), sr.checkout.clone(), true)];
     checkouts.extend(sr.tasks().into_iter().map(|(name, dir)| (name, dir, false)));
@@ -590,7 +590,12 @@ fn cmd_rm(
 ) -> Result<(), String> {
     let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
     let dir = sr.task_dir(name);
-    let opts = RemoveOpts { root: root.map(Path::to_path_buf), name: name.to_string(), force };
+    let opts = RemoveOpts {
+        root: root.map(Path::to_path_buf),
+        name: name.to_string(),
+        force,
+        ports_dir: None,
+    };
     // clap's value_parser guarantees the spelling; parse never fails here.
     let outcome = outcome.and_then(tt_store::TaskOutcome::parse);
     // The name came from the command line, so a missing worktree is a typo to report.
@@ -700,6 +705,7 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         root: root.map(Path::to_path_buf),
         dry_run,
         scope_parents: bases.scope_parents().to_vec(),
+        ports_dir: None,
     };
     let report =
         ops::clean_tasks(&opts, tt_config::task_scope_from_dir).map_err(|e| e.to_string())?;
