@@ -7,6 +7,7 @@ import { JarvisPane } from "@/components/jarvis-pane";
 import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
 import type { SessionActions } from "@/lib/agentboard/actions";
+import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
 import { paneRects } from "@/lib/agentboard/layout";
 import {
   filesPaneDir,
@@ -41,6 +42,8 @@ export function PaneGrid(props: {
   sessionById: Map<string, SessionData>;
   folderOf: Map<string, FolderData>;
   folderByDir: Map<string, FolderData>;
+  /** Every folder's repo, quiet ones included, for its GitHub `owner/name`. */
+  repoByFolder: Map<string, RepoData>;
   now: number;
   actions: SessionActions;
   /** Which tile last claimed the click — the sole driver of the violet ring. */
@@ -85,6 +88,7 @@ export function PaneGrid(props: {
     sessionById,
     folderOf,
     folderByDir,
+    repoByFolder,
     now,
     actions,
     focusedPaneId,
@@ -182,6 +186,9 @@ export function PaneGrid(props: {
                   }
                   onRevealPath={
                     termDir ? (path) => void onRevealTerminalPath(termDir, id, path) : undefined
+                  }
+                  ghRepo={
+                    termDir ? ownerRepoFromOrigin(repoByFolder.get(termDir)?.originUrl) : undefined
                   }
                   focusRequest={
                     focusTerminalRequest?.id === id ? focusTerminalRequest.nonce : undefined

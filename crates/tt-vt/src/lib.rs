@@ -5,6 +5,7 @@
 //! (dotfiles `functions/18-zig.sh`).
 
 pub mod engine;
+pub mod fence;
 pub mod frame;
 pub mod keymap;
 pub mod osc52;
