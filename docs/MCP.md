@@ -43,8 +43,8 @@ worktree's branch onto its row after a `git switch`), `task_start`, `task_delete
 `preview_file`, `file_open`, `needs_you` (the queue's On-you rows — agent waits, red CI, PRs to land — with
 the chip's `why`, read through `AttentionHost`),
 `summon` (the agent→human interrupt, below), plus the calendar family `calendar_today`, `calendar_next` and the
-push-model write `calendar_set`, and the Claude mod's own `inbox_take`, `inbox_ack`, `next_prompt`
-and `next_prompt_taken` (below). `task_create` takes `dir` in place of `repo` for a caller
+push-model write `calendar_set`, and the Claude mod's own `inbox_take`, `inbox_ack`, `next_prompt`,
+`next_prompt_taken`, `clip_suggest` and `clip_copied` (below). `task_create` takes `dir` in place of `repo` for a caller
 that knows its checkout but not its slug, as `/park` does.
 `task_summary` is how a finished agent leaves a record: it writes the
 wrap-up onto the task's row (`summary`/`summary_at`, schema v17) instead of
@@ -131,8 +131,11 @@ PTY's `input_at_ms` through `InboxHost`, as a keystroke would.
 (`tt_exec::claude::Ask::bare`: no tools, MCP, setting sources or session
 persistence) with the question from settings, the session's work profile and
 the prompts typed after similar turns in the last 30 days of transcripts
-(`tt_claude_sessions::next_prompt`, rebuilt hourly off the call path). The
-mod denies the model all four of these tools.
+(`tt_claude_sessions::next_prompt`, rebuilt hourly off the call path).
+`clip_suggest` is held the same way against `clipSuggest` and its own
+`clip_spend` row; its host skips the call for a message with nothing copyable
+in it and drops any offered string that is not verbatim in the message
+(`tt_claude_sessions::clip`). The mod denies the model all six of these tools.
 
 **`summon` is the one tool that interrupts**: one desktop notification, then
 a chime every 4 s until the user types into the *caller's* terminal, its PTY

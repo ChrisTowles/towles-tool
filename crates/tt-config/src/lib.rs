@@ -356,6 +356,36 @@ impl Default for NextPromptSettings {
     }
 }
 
+/// The Claude mod's end-of-turn clipboard question: after each turn that printed something
+/// copyable, one bare `claude -p` asks what the user would copy. `question` is the instruction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClipSuggestSettings {
+    pub enabled: bool,
+    pub question: String,
+    pub model: String,
+    /// Spend past this in a local day stops asking until tomorrow.
+    pub daily_budget_usd: f64,
+}
+
+pub const DEFAULT_CLIP_SUGGEST_QUESTION: &str = "Which exact strings from this coding agent's \
+last message would the person want on their clipboard next: a command to run, a URL, a PR or \
+issue link, a path, a value, a short snippet? Answer each verbatim as it should be pasted, with \
+a label of a few words, most useful first, at most three. Answer an empty list if nothing is \
+worth copying.";
+
+impl Default for ClipSuggestSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            question: DEFAULT_CLIP_SUGGEST_QUESTION.to_string(),
+            model: "haiku".to_string(),
+            daily_budget_usd: 0.20,
+        }
+    }
+}
+
 /// How a [`TelemetryFilter`] compares a record's value with its own.
 /// `Gt`/`Lt` compare numerically when both sides parse as numbers and
 /// lexically otherwise; `Contains` is a case-insensitive substring.
@@ -931,11 +961,22 @@ pub struct UserSettings {
     /// Lenient for the same reason as `mcp`.
     #[serde(default, deserialize_with = "lenient_telemetry")]
     pub telemetry: TelemetrySettings,
+
+    /// Lenient for the same reason as `mcp`.
+    #[serde(default, deserialize_with = "lenient_clip_suggest")]
+    pub clip_suggest: ClipSuggestSettings,
 }
 
 fn lenient_telemetry<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<TelemetrySettings, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
+}
+
+fn lenient_clip_suggest<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<ClipSuggestSettings, D::Error> {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
@@ -981,6 +1022,7 @@ impl Default for UserSettings {
             agents: AgentsSettings::default(),
             next_prompt: NextPromptSettings::default(),
             telemetry: TelemetrySettings::default(),
+            clip_suggest: ClipSuggestSettings::default(),
         }
     }
 }

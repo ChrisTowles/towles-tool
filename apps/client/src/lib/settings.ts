@@ -272,6 +272,9 @@ export type UserSettings = {
   nextPrompt?: { question?: string; model?: string; dailyBudgetUsd?: number };
   /** Rust reads it (`tt_config::TelemetrySettings`) when the app starts. */
   telemetry?: { retainDays?: number };
+  /** The tt Claude mod's end-of-turn copy offer, capped per day. Rust reads it
+   * (`tt_config::ClipSuggestSettings`); unset keys take its defaults. */
+  clipSuggest?: { enabled?: boolean; question?: string; model?: string; dailyBudgetUsd?: number };
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through
    * `ab_set_show_unmanaged_worktrees`, not by saving here. */

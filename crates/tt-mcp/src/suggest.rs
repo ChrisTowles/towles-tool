@@ -1,9 +1,11 @@
-//! The Claude mod's next-prompt suggestion: one model question per keystroke of the
-//! user's, held to a daily budget here so no caller can spend past it.
+//! The Claude mod's model questions — the next-prompt suggestion (one per keystroke of
+//! the user's) and the end-of-turn clipboard offer — each held to its own daily budget
+//! here so no caller can spend past it.
 
 use chrono::{Local, TimeZone};
 use serde_json::{Value, json};
-use tt_config::NextPromptSettings;
+use tt_config::{ClipSuggestSettings, NextPromptSettings};
+use tt_store::SpendLedger;
 
 use crate::{Dispatcher, RequestContext};
 
@@ -25,12 +27,33 @@ pub struct SuggestAnswer {
     pub cost_usd: Option<f64>,
 }
 
+/// The finished turn's last message, for the clipboard question.
+pub struct ClipRequest {
+    pub session: Option<String>,
+    pub answer: String,
+    pub goal: Option<String>,
+    pub question: String,
+    pub model: String,
+}
+
+pub struct ClipOffer {
+    pub label: String,
+    pub text: String,
+}
+
+pub struct ClipAnswer {
+    pub items: Vec<ClipOffer>,
+    /// `None` when no model call was made.
+    pub cost_usd: Option<f64>,
+}
+
 /// The app-side half: the user's history and the `claude -p` spawn live there.
 pub trait SuggestHost: Send {
     fn suggest(&self, request: SuggestRequest) -> Result<SuggestAnswer, String>;
+    fn clip(&self, request: ClipRequest) -> Result<ClipAnswer, String>;
 }
 
-fn local_day(now_ms: i64) -> String {
+pub(crate) fn local_day(now_ms: i64) -> String {
     Local
         .timestamp_millis_opt(now_ms)
         .single()
@@ -65,17 +88,15 @@ impl Dispatcher {
             .ok_or_else(|| "next_prompt is unavailable: no suggest host is attached".to_string())?;
         let settings = self.next_prompt_settings();
         let day = local_day(now_ms);
-        let spent = self.store.suggest_spend(&day).map_err(|e| e.to_string())?;
+        let spent =
+            self.store.model_spend(SpendLedger::NextPrompt, &day).map_err(|e| e.to_string())?;
         if spent >= settings.daily_budget_usd {
             tracing::info!(spent, budget = settings.daily_budget_usd, "next_prompt.over_budget");
             return Ok(json!({
                 "prompt": null, "confidence": 0.0, "costUsd": null, "budgetLeftUsd": 0.0,
             }));
         }
-        let goal = match args.get("taskId").and_then(Value::as_i64) {
-            Some(id) => self.store.task_by_id(id).ok().and_then(|t| t.goal),
-            None => None,
-        };
+        let goal = self.goal_of(args);
         let answer = host.suggest(SuggestRequest {
             session: ctx.session.clone(),
             tools: strings(args, "tools"),
@@ -91,7 +112,9 @@ impl Dispatcher {
         })?;
         let cost = answer.cost_usd.unwrap_or(0.0);
         if cost > 0.0 {
-            self.store.add_suggest_spend(&day, cost).map_err(|e| e.to_string())?;
+            self.store
+                .add_model_spend(SpendLedger::NextPrompt, &day, cost)
+                .map_err(|e| e.to_string())?;
         }
         tracing::info!(
             cost_usd = cost,
@@ -110,6 +133,66 @@ impl Dispatcher {
     pub(crate) fn next_prompt_taken(&self, args: &Value) -> Result<Value, String> {
         let edited = args.get("edited").and_then(Value::as_bool).unwrap_or(false);
         tracing::info!(edited, "next_prompt.taken");
+        Ok(json!({ "recorded": true }))
+    }
+
+    fn goal_of(&self, args: &Value) -> Option<String> {
+        let id = args.get("taskId").and_then(Value::as_i64)?;
+        self.store.task_by_id(id).ok().and_then(|t| t.goal)
+    }
+
+    fn clip_settings(&self) -> ClipSuggestSettings {
+        match &self.clip_settings {
+            Some(settings) => settings.clone(),
+            None => tt_config::load().map(|s| s.clip_suggest).unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn clip_suggest(
+        &self,
+        args: &Value,
+        now_ms: i64,
+        ctx: &RequestContext,
+    ) -> Result<Value, String> {
+        let host = self.suggest_host.as_ref().ok_or_else(|| {
+            "clip_suggest is unavailable: no suggest host is attached".to_string()
+        })?;
+        let settings = self.clip_settings();
+        let none = |skipped: &str| Ok(json!({ "items": [], "costUsd": null, "skipped": skipped }));
+        if !settings.enabled {
+            return none("disabled");
+        }
+        let day = local_day(now_ms);
+        let spent = self.store.model_spend(SpendLedger::Clip, &day).map_err(|e| e.to_string())?;
+        if spent >= settings.daily_budget_usd {
+            tracing::info!(spent, budget = settings.daily_budget_usd, "clip_suggest.over_budget");
+            return none("budget");
+        }
+        let answer = host.clip(ClipRequest {
+            session: ctx.session.clone(),
+            answer: args.get("answer").and_then(Value::as_str).unwrap_or_default().to_string(),
+            goal: self.goal_of(args),
+            question: if settings.question.trim().is_empty() {
+                tt_config::DEFAULT_CLIP_SUGGEST_QUESTION.to_string()
+            } else {
+                settings.question
+            },
+            model: settings.model,
+        })?;
+        let cost = answer.cost_usd.unwrap_or(0.0);
+        if cost > 0.0 {
+            self.store.add_model_spend(SpendLedger::Clip, &day, cost).map_err(|e| e.to_string())?;
+        }
+        tracing::info!(cost_usd = cost, items = answer.items.len(), "clip_suggest.asked");
+        let items: Vec<Value> =
+            answer.items.iter().map(|i| json!({ "label": i.label, "text": i.text })).collect();
+        Ok(json!({ "items": items, "costUsd": answer.cost_usd, "skipped": null }))
+    }
+
+    pub(crate) fn clip_copied(&self, args: &Value) -> Result<Value, String> {
+        let index = args.get("index").and_then(Value::as_i64);
+        let count = args.get("count").and_then(Value::as_i64).unwrap_or(1);
+        tracing::info!(index, count, "clip_suggest.copied");
         Ok(json!({ "recorded": true }))
     }
 }

@@ -48,9 +48,10 @@ tools without manual `claude mcp add` setup:
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.
-- **The mod's own** — `inbox_take`, `inbox_ack`, `next_prompt` and
-  `next_prompt_taken` serve the mod below. The mod denies the model any call to
-  them, so an agent never reads another's notes or spends the suggestion budget.
+- **The mod's own** — `inbox_take`, `inbox_ack`, `next_prompt`,
+  `next_prompt_taken`, `clip_suggest` and `clip_copied` serve the mod below. The
+  mod denies the model any call to them, so an agent never reads another's notes
+  or spends a suggestion budget.
 
 The broader dashboard-read tools were pruned in the 2026-07 tool-surface review.
 
@@ -173,8 +174,26 @@ cannot take a note; the app says so rather than type into its prompt box.
   take. It never runs on its own, and the app holds it to a daily budget
   (Settings → Agent Board → Next-prompt suggestion).
 
+### Copy suggestions
+
+When a turn ends with an answer, the mod sends its last message to
+`clip_suggest`. If it holds a code span, link, path or `#123` ref, the app asks
+one bare `claude -p` which exact strings you would copy, and keeps only those
+that appear verbatim in the message, at most three. The band then offers each:
+
+```
+✦ tt  …  n: next prompt  1: copy PR #9  2: copy run e2e  a: copy all
+```
+
+A digit in the empty prompt (or a click) copies that one; `a`, with the band
+focused, copies all of them in order, apart enough that a clipboard manager
+keeps each entry. The offer clears when the next turn starts. It is on by
+default, held to its own daily budget, and its question is editable
+(Settings → Agent Board → Copy suggestions). Each copy is recorded through
+`clip_copied` as a `clip_suggest.copied` event.
+
 The `$.state` contract is `types/index.d.ts`, and the pure logic in
-`hooks/band.ts`, `hooks/inbox.ts`, `hooks/park.ts` and `hooks/suggest.ts` is
+`hooks/band.ts`, `hooks/clip.ts`, `hooks/inbox.ts`, `hooks/park.ts` and `hooks/suggest.ts` is
 what `tests/` covers:
 
 ```sh

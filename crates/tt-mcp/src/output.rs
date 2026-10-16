@@ -225,6 +225,25 @@ struct NextPrompt {
 
 #[derive(JsonSchema)]
 #[allow(dead_code)]
+struct ClipOfferOut {
+    label: String,
+    text: String,
+}
+
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+#[schemars(rename_all = "camelCase")]
+struct ClipSuggested {
+    /// Empty when nothing is worth copying, or no call was made (see `skipped`).
+    items: Vec<ClipOfferOut>,
+    #[schemars(schema_with = "number_or_null")]
+    cost_usd: Option<f64>,
+    /// `disabled` or `budget` when no call was made; `null` otherwise.
+    skipped: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct Recorded {
     recorded: bool,
@@ -248,7 +267,8 @@ pub fn schema_for(name: &str) -> Option<Value> {
         "inbox_take" => schema::<InboxTaken>(),
         "inbox_ack" => schema::<InboxAcked>(),
         "next_prompt" => schema::<NextPrompt>(),
-        "next_prompt_taken" => schema::<Recorded>(),
+        "next_prompt_taken" | "clip_copied" => schema::<Recorded>(),
+        "clip_suggest" => schema::<ClipSuggested>(),
         _ => return None,
     })
 }

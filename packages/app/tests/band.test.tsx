@@ -151,4 +151,76 @@ describe('band', () => {
     expect(status).toEqual([undefined])
     await ui.unmount()
   })
+
+  test('a finished turn offers its copyable strings; a digit copies, the next turn clears', async ($, on) => {
+    const clock = mock.clock(on)
+    const calls: { tool: string; args: unknown }[] = []
+    const copied: string[] = []
+    const toasts: string[] = []
+    on('ui.toast', ($, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    on('ui.status', () => ({ value: undefined }))
+    on('ui.copy', ($, e) => {
+      copied.push(e.text)
+      return { value: { isCopied: true as const } }
+    })
+    on('session.start', () => ({ cwd: '/r' }))
+    on('session.cwd', () => ({ value: '/elsewhere' }))
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('turn.start', () => ({ turnId: 't2' }))
+    on('turn.complete', ($, e) => ({ text: e.answer }))
+    on('ui.render', ($, e) => {
+      const { Text } = $.ui.resolve(e)
+      return <Text>engine</Text>
+    })
+    on('mcp.call', ($, e) => {
+      calls.push({ tool: e.tool, args: e.args })
+      const body =
+        e.tool === 'task_list'
+          ? { tasks: [] }
+          : e.tool === 'inbox_take'
+            ? { notes: [], pollMs: 3000 }
+            : e.tool === 'clip_suggest'
+              ? {
+                  items: [
+                    { label: 'PR', text: 'https://x.dev/pr/9' },
+                    { label: 'run e2e', text: 'bun run e2e' },
+                  ],
+                  costUsd: 0.001,
+                  skipped: null,
+                }
+              : e.tool === 'clip_copied'
+                ? { recorded: true }
+                : { event: null }
+      return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
+    })
+    await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
+    const answer = 'Opened https://x.dev/pr/9 — run `bun run e2e` next.'
+    await $.turn.complete({ answer, reason: 'answer', turnId: 't1' } as never)
+    expect(calls.find(c => c.tool === 'clip_suggest')?.args).toEqual({ answer })
+
+    const ui = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
+    expect(await ui.find({ text: 'copy PR' })).toBeDefined()
+    await ui.press({ key: 'clip:1' })
+    expect(copied).toEqual(['bun run e2e'])
+    expect(toasts.at(-1)).toBe('Copied run e2e')
+
+    const all = ui.press({ key: 'clip:all' })
+    await clock.advance(1000)
+    await all
+    expect(copied).toEqual(['bun run e2e', 'https://x.dev/pr/9', 'bun run e2e'])
+    expect(calls.filter(c => c.tool === 'clip_copied').map(c => c.args)).toEqual([
+      { count: 1, index: 1 },
+      { count: 2 },
+    ])
+    await ui.unmount()
+
+    await $.turn.start({ text: 'next', turnId: 't2' } as never)
+    const after = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
+    expect(await after.find({ text: 'copy PR' })).toBe(undefined)
+    expect(await after.find({ text: 'engine' })).toBeDefined()
+    await after.unmount()
+  })
 })

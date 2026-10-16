@@ -11,6 +11,7 @@ pub mod analyzer;
 pub mod breakdown;
 pub mod by_dir;
 pub mod cadence;
+pub mod clip;
 pub mod insights;
 pub mod ledger;
 pub mod next_prompt;
