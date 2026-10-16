@@ -9,10 +9,6 @@ thiserror = { workspace = true }
 gix = { workspace = true }
 tt-exec = { workspace = true }
 
-[features]
-# `testing`: real-repo fixtures for dependants' tests.
-test-support = []
-
 [dev-dependencies]
 tempfile = "3.14.0"
 
