@@ -247,17 +247,91 @@ fn user_display_name(member: &serde_json::Value, id: &str) -> String {
         .to_string()
 }
 
+/// One file shared with a reply.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DmUpload {
+    pub name: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Uploads move megabytes, not a JSON envelope.
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Post as the token's user (`chat:write`). A non-empty `thread_ts` replies
-/// inside that thread instead of starting a new top-level message.
-pub fn send_dm(config: &SlackDmConfig, text: &str, thread_ts: &str) -> Result<(), String> {
+/// inside that thread instead of starting a new top-level message. With
+/// `uploads`, the files go up first (`files:write`) and are shared as one message
+/// with `text` as its comment.
+pub fn send_dm(
+    config: &SlackDmConfig,
+    text: &str,
+    thread_ts: &str,
+    uploads: &[DmUpload],
+) -> Result<(), String> {
     let http = SlackHttp { token: &config.token };
     let channel = open_channel(&http, config)?;
-    let mut form = vec![("channel", channel.as_str()), ("text", text)];
+    if uploads.is_empty() {
+        let mut form = vec![("channel", channel.as_str()), ("text", text)];
+        if !thread_ts.is_empty() {
+            form.push(("thread_ts", thread_ts));
+        }
+        http.call_form("chat.postMessage", &form)?;
+        return Ok(());
+    }
+    let mut ids = Vec::with_capacity(uploads.len());
+    for upload in uploads {
+        ids.push((upload_file(&http, upload)?, upload.name.as_str()));
+    }
+    let files = complete_upload_files(&ids);
+    let mut form = vec![("files", files.as_str()), ("channel_id", channel.as_str())];
+    if !text.is_empty() {
+        form.push(("initial_comment", text));
+    }
     if !thread_ts.is_empty() {
         form.push(("thread_ts", thread_ts));
     }
-    http.call_form("chat.postMessage", &form)?;
+    http.call_form("files.completeUploadExternal", &form).map_err(name_files_scope)?;
     Ok(())
+}
+
+/// Slack's two-step external upload: reserve an id and URL, then send the bytes there.
+fn upload_file(http: &SlackHttp<'_>, upload: &DmUpload) -> Result<String, String> {
+    let length = upload.bytes.len().to_string();
+    let reserved = http
+        .call(
+            "files.getUploadURLExternal",
+            &[
+                ("filename", upload.name.as_str()),
+                ("length", length.as_str()),
+            ],
+        )
+        .map_err(name_files_scope)?;
+    let (url, file_id) = parse_upload_url(&reserved)?;
+    agent()?
+        .post(&url)
+        .timeout(UPLOAD_TIMEOUT)
+        .send_bytes(&upload.bytes)
+        .map_err(|e| format!("slack file upload failed: {e}"))?;
+    Ok(file_id)
+}
+
+fn parse_upload_url(body: &serde_json::Value) -> Result<(String, String), String> {
+    let field = |key: &str| body.get(key).and_then(|v| v.as_str()).map(str::to_string);
+    match (field("upload_url"), field("file_id")) {
+        (Some(url), Some(id)) => Ok((url, id)),
+        _ => Err("slack files.getUploadURLExternal: no upload_url/file_id in response".into()),
+    }
+}
+
+fn complete_upload_files(ids: &[(String, &str)]) -> String {
+    serde_json::Value::Array(
+        ids.iter().map(|(id, title)| serde_json::json!({"id": id, "title": title})).collect(),
+    )
+    .to_string()
+}
+
+/// `missing_scope` alone doesn't say which one; the fix needs the name.
+fn name_files_scope(error: String) -> String {
+    if error.contains("missing_scope") { format!("{error} (needs files:write)") } else { error }
 }
 
 /// Toggle one of my reactions (`reactions:write`), `name` a bare shortcode.
@@ -659,6 +733,35 @@ mod tests {
         let err = check_ok(&json!({"ok": false, "error": "invalid_auth"}), "auth.test");
         assert_eq!(err.unwrap_err(), "slack auth.test failed: invalid_auth");
         assert!(check_ok(&json!({}), "auth.test").is_err());
+    }
+
+    #[test]
+    fn parse_upload_url_reads_url_and_id() {
+        let body =
+            json!({"ok": true, "upload_url": "https://files.slack.com/u/1", "file_id": "F1"});
+        assert_eq!(
+            parse_upload_url(&body).unwrap(),
+            ("https://files.slack.com/u/1".to_string(), "F1".to_string())
+        );
+        assert!(parse_upload_url(&json!({"ok": true, "file_id": "F1"})).is_err());
+    }
+
+    #[test]
+    fn complete_upload_files_lists_every_id_with_its_title() {
+        let ids = [("F1".to_string(), "a.png"), ("F2".to_string(), "b.png")];
+        let parsed: serde_json::Value = serde_json::from_str(&complete_upload_files(&ids)).unwrap();
+        assert_eq!(parsed, json!([{"id": "F1", "title": "a.png"}, {"id": "F2", "title": "b.png"}]));
+    }
+
+    #[test]
+    fn a_missing_scope_on_upload_names_files_write() {
+        let named =
+            name_files_scope("slack files.getUploadURLExternal failed: missing_scope".into());
+        assert!(named.ends_with("(needs files:write)"));
+        assert_eq!(
+            name_files_scope("slack x failed: ratelimited".into()),
+            "slack x failed: ratelimited"
+        );
     }
 
     #[test]

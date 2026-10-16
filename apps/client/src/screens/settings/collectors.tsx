@@ -524,7 +524,7 @@ export function collectorsSections(
             <ToggleRow
               label="Enabled"
               id="slack"
-              description="Watches one DM (e.g. your wife) and raises the attention banner on unanswered messages."
+              description="Watches one DM (e.g. your wife) and slides its unanswered messages in from the right, over any screen."
               checked={c.slack.enabled}
               onCheckedChange={(v) => setSlack({ enabled: v })}
             />

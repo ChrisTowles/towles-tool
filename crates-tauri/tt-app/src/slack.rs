@@ -116,16 +116,38 @@ pub async fn slack_dm_thread(thread_ts: String) -> Result<Vec<tt_collect::DmMess
         .map_err(|e| format!("slack thread task failed: {e}"))?
 }
 
-/// Post as me, then refresh the stored DM state so the attention banner clears
-/// without waiting for a tick. A `threadTs` posts into that thread.
+/// A pasted image riding along with a reply.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlackImage {
+    pub name: String,
+    pub data_base64: String,
+}
+
+/// Post as me, then refresh the stored DM state so the attention drawer clears
+/// without waiting for a tick. A `threadTs` posts into that thread; `images`
+/// are uploaded and shared with the text as their comment.
 #[tauri::command]
 pub async fn slack_dm_send(
     app: AppHandle,
     text: String,
     thread_ts: Option<String>,
+    images: Option<Vec<SlackImage>>,
 ) -> Result<(), String> {
+    use base64::Engine;
+
     let text = text.trim().to_string();
-    if text.is_empty() {
+    let uploads = images
+        .unwrap_or_default()
+        .into_iter()
+        .map(|img| {
+            base64::engine::general_purpose::STANDARD
+                .decode(img.data_base64.as_bytes())
+                .map(|bytes| tt_collect::DmUpload { name: img.name, bytes })
+                .map_err(|e| format!("pasted image is not valid base64: {e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if text.is_empty() && uploads.is_empty() {
         return Err("message text is required".into());
     }
     let thread_ts = thread_ts.unwrap_or_default();
@@ -133,10 +155,10 @@ pub async fn slack_dm_send(
         .ok_or("Slack DM is not configured — set the token and member id in Settings")?;
 
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        tt_collect::send_dm(&config, &text, &thread_ts)?;
+        tt_collect::send_dm(&config, &text, &thread_ts, &uploads)?;
         // The action, not its content — the message text is deliberately absent
         // (the event log is plaintext; user content never lands in it).
-        tracing::info!(threaded = !thread_ts.is_empty(), "slack.dm_sent");
+        tracing::info!(threaded = !thread_ts.is_empty(), images = uploads.len(), "slack.dm_sent");
         refresh_snapshot(&app, &config);
         Ok(())
     })

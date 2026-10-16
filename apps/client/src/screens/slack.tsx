@@ -4,7 +4,7 @@ import { toast } from "@/lib/toast";
 import { Button } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { isAuthError, isScopeError, slackDmReact, slackDmSend, useSlackDm } from "@/lib/slack";
+import { slackDmReact, slackDmSend, slackWriteError, useSlackDm } from "@/lib/slack";
 import { uiAction } from "@/lib/ui-action";
 import { Composer } from "@/components/slack/composer";
 import { MessageBubble } from "@/components/slack/message-bubble";
@@ -38,7 +38,7 @@ export function SlackScreen() {
           return true;
         },
         err: (e) => {
-          toast.error(writeErrorMessage(e.message, "send"));
+          toast.error(slackWriteError(e.message, "send"));
           return false;
         },
       });
@@ -52,7 +52,7 @@ export function SlackScreen() {
       void slackDmReact(ts, name, add).then((done) =>
         done.match({
           ok: refresh,
-          err: (e) => toast.error(writeErrorMessage(e.message, "react")),
+          err: (e) => toast.error(slackWriteError(e.message, "react")),
         }),
       );
     },
@@ -153,16 +153,4 @@ export function SlackScreen() {
       )}
     </div>
   );
-}
-
-/** Slack's raw error, mapped to the fix the user can act on. */
-function writeErrorMessage(message: string, kind: "send" | "react"): string {
-  if (isAuthError(message)) {
-    return "Slack rejected that: your token is no longer valid. Re-issue it in Settings → Slack.";
-  }
-  if (isScopeError(message)) {
-    const scope = kind === "send" ? "chat:write" : "reactions:write";
-    return `Slack rejected that: re-authorize your token with the ${scope} scope, then try again.`;
-  }
-  return message;
 }

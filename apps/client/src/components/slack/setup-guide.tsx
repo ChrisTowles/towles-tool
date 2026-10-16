@@ -30,7 +30,7 @@ const APP_MANIFEST = `{
       "user": [
         "im:history", "im:read", "im:write", "chat:write",
         "users:read", "users:read.email", "mpim:history", "mpim:read",
-        "search:read", "reactions:read", "reactions:write", "files:read"
+        "search:read", "reactions:read", "reactions:write", "files:read", "files:write"
       ]
     }
   },

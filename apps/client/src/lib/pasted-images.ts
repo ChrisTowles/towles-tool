@@ -39,13 +39,20 @@ export async function imagesFromDataTransfer(
   return Result.ok(await Promise.all(files.map((file, i) => readImageFile(file, i))));
 }
 
+/** The extension Slack keys its inline preview on; a bare name uploads as a file chip. */
+export function imageExtension(mime: string): string {
+  const sub = mime.split(";")[0].trim().toLowerCase().replace("image/", "");
+  return sub === "jpeg" ? "jpg" : sub || "png";
+}
+
 export async function clipboardImageFromHost(): Promise<PastedImage | null> {
   const result = await invoke<{ mime: string; dataBase64: string } | null>("read_clipboard_image");
   const image = result.unwrapOr(null);
   if (!image) return null;
   return {
-    id: `clipboard-${image.dataBase64.length}`,
-    name: "clipboard image",
+    // Two different screenshots can share a length, and a shared id removes both.
+    id: `clipboard-${crypto.randomUUID()}`,
+    name: `clipboard-image.${imageExtension(image.mime)}`,
     mime: image.mime,
     dataBase64: image.dataBase64,
     previewUrl: `data:${image.mime};base64,${image.dataBase64}`,

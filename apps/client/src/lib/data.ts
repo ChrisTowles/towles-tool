@@ -168,7 +168,7 @@ export type DmItem = {
   dismissedTs: number;
 };
 
-/** The one predicate both the DM banner and the needs-you count derive from. */
+/** The one predicate both the DM drawer and the needs-you count derive from. */
 export function dmsNeedingAttention(snapshot: StoreSnapshot): DmItem[] {
   return snapshot.dms.filter((d) => !d.fromMe && d.dismissedTs < d.ts);
 }
