@@ -50,7 +50,7 @@ node scripts/drive.mjs eval '(() => { document.querySelector(`[aria-label="Agent
 ## Synthetic state, when real state won't cooperate
 
 The frontend hydrates from two live event streams: `agentboard://state`
-(`useAgentboardState`, `apps/client/src/lib/agentboard.ts`) and
+(`useAgentboardState`, `apps/client/src/lib/agentboard/state.tsx`) and
 `store://snapshot` (`useStoreSnapshot`, `apps/client/src/lib/data.ts`). Both
 can be driven directly from the page's own JS context — no Rust command
 needed — via the same IPC call `@tauri-apps/api/event`'s `emit()` uses under

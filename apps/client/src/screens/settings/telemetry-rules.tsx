@@ -22,7 +22,7 @@ const KIND_OPTIONS: { value: RuleKind; label: string }[] = [
   { value: "count", label: "count" },
 ];
 
-export function newTelemetryRule(rules: TelemetryRule[]): TelemetryRule {
+function newTelemetryRule(rules: TelemetryRule[]): TelemetryRule {
   const label = `Rule ${rules.length + 1}`;
   return {
     id: nextTelemetryRuleId(rules, label),

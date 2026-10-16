@@ -88,7 +88,7 @@ bun start                           # reinstall `tt`, release build (`tauri buil
 bun run dev:drive                   # like dev, but the window is automatable (live-drive)
 bun run drive -- <verb>             # drive the dev:drive window (status|invoke|shot|click|…)
 bun run e2e                         # regression suite vs the real shell (see below)
-cd apps/client && bun run lint      # oxlint (types/react/unicorn/oxc rules; warnings are non-blocking)
+cd apps/client && bun run lint      # oxlint (warnings are non-blocking) + knip (unused exports/files)
 cd apps/client && bun run format    # oxfmt, in place (100-col, matches rustfmt's width)
 cd apps/client && npx kumo doc <Name>             # a Kumo component's props/examples
 ```

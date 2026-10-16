@@ -8,7 +8,7 @@ export type UpdateInfo = {
 };
 
 /** Mirrors `update::UpdateProgress`; `total` is absent when the server sends no length. */
-export type UpdateProgress = {
+type UpdateProgress = {
   downloaded: number;
   total: number | null;
 };

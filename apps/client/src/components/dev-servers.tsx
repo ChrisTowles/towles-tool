@@ -2,7 +2,8 @@ import { Button, Popover } from "@cloudflare/kumo";
 import { GlobeIcon, HardDrivesIcon, PlayIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Hint } from "@/components/hint";
-import type { FolderData, SessionActions } from "@/lib/agentboard";
+import type { SessionActions } from "@/lib/agentboard/actions";
+import type { FolderData } from "@/lib/agentboard/types";
 import { errorMessage } from "@/lib/errors";
 import {
   devServerUrl,

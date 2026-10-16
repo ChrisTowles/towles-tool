@@ -52,7 +52,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { IconBtn } from "@/components/agentboard-bits";
+import { IconBtn } from "@/components/agentboard-bits/primitives";
 
 /** Alpha washes, so they read on light and dark terminal themes. */
 const MATCH_FILL = "rgba(250, 204, 21, 0.3)";

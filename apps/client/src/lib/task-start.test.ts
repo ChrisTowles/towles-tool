@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { repoForRoot, startTaskNav, type TaskStartPayload } from "@/lib/task-start";
-import type { RepoData } from "@/lib/agentboard";
+import type { RepoData } from "@/lib/agentboard/types";
 
 /** A rail repo row with only the fields the routing reads — structural, so the
  * test doesn't have to build a full backend snapshot. */

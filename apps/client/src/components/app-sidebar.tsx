@@ -1,13 +1,9 @@
 import { useMemo } from "react";
-import { RollupDots } from "@/components/agentboard-bits";
+import { RollupDots } from "@/components/agentboard-bits/status-dots";
 import { Button, Tooltip } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  agentRollup,
-  rollupAlertColor,
-  rollupAlertTextColor,
-  useAgentboardState,
-} from "@/lib/agentboard";
+import { useAgentboardState } from "@/lib/agentboard/state";
+import { agentRollup, rollupAlertColor, rollupAlertTextColor } from "@/lib/agentboard/status";
 import { dmsNeedingAttention, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
 import { NAV_SECTIONS, SCREENS } from "@/lib/screens";

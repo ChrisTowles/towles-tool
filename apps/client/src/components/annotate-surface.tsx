@@ -12,9 +12,10 @@ import {
   TextTIcon,
 } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
-import { Glyph } from "@/components/agentboard-bits";
+import { Glyph } from "@/components/agentboard-bits/primitives";
 import { Separator } from "@/components/ui/separator";
-import { type FolderData, termWriteRetry } from "@/lib/agentboard";
+import { termWriteRetry } from "@/lib/agentboard/pty";
+import type { FolderData } from "@/lib/agentboard/types";
 import { errorMessage, type IpcError } from "@/lib/errors";
 import {
   ANNOTATION_COLORS,

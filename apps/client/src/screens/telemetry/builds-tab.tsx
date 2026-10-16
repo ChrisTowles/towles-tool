@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import {
-  fmtDuration,
   telemetryBuildCompare,
   type BuildDelta,
   type BuildKey,
@@ -34,6 +33,7 @@ import {
 } from "@/lib/telemetry-builds";
 import { PALETTE } from "@/lib/colors";
 import { ChipMenu, ChipSegments, ChipToggle } from "@/screens/telemetry/chips";
+import { fmtDuration } from "@/lib/format";
 
 /** Builds — Braintrust's Experiments over `tt.build_sha`: a build × day is a
  * snapshot read against a baseline. Days differ, so the day always sits beside the

@@ -98,7 +98,7 @@ export const REASON_FACE: Record<WaitReason, Face> = {
   cleanup: { label: "clean up", variant: "neutral" },
 };
 
-export const HOUR_MS = 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 
 /** Tomorrow 9:00 local, the "come back to it in the morning" snooze. */
 export function tomorrowMorning(now: number): number {

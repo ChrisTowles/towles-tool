@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { RepoData, StatePayload, WindowsPayload } from "@/lib/agentboard/types";
 import {
   changedFolderDirs,
   dropPane,
@@ -7,10 +8,7 @@ import {
   nextWindowId,
   placePane,
   pruneWins,
-  type RepoData,
-  type StatePayload,
-  type WindowsPayload,
-} from "@/lib/agentboard";
+} from "@/lib/agentboard/windows";
 import { invoke } from "@/lib/tauri";
 
 export type WindowLayout = {

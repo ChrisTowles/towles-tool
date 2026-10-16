@@ -1,5 +1,6 @@
 import { dmsNeedingAttention, isItemDismissed, type StoreSnapshot } from "./data";
-import { prForFolder, type StatePayload } from "./agentboard";
+import { prForFolder } from "@/lib/agentboard/folder";
+import type { StatePayload } from "@/lib/agentboard/types";
 import type { FocusTarget } from "./focus-target";
 import { prChecksFailing } from "./pr-tone";
 

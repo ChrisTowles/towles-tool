@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildJumpRecall } from "@/lib/jump-recall";
-import type { AgentStatus, FolderData, RepoData, SessionData } from "@/lib/agentboard";
+import type { AgentStatus, FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
 
 const NOW = 100 * 60 * 60_000;
 

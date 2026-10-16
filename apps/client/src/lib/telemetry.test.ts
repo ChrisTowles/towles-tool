@@ -4,7 +4,6 @@ import {
   effectiveFilters,
   filterLabel,
   fmtCell,
-  fmtDuration,
   focusShare,
   loadTelemetryFilters,
   nearestRange,
@@ -92,24 +91,6 @@ describe("filterLabel", () => {
     expect(filterLabel({ field: "message", op: "contains", value: "notify" })).toBe(
       "message contains notify",
     );
-  });
-});
-
-describe("fmtDuration", () => {
-  it("drops to the coarsest two units that still say something", () => {
-    expect(fmtDuration(8_000)).toBe("8s");
-    // A real subprocess that took 400ms must not read as a flat zero.
-    expect(fmtDuration(400)).toBe("<1s");
-    expect(fmtDuration(0)).toBe("0s");
-    expect(fmtDuration(90_000)).toBe("1m 30s");
-    expect(fmtDuration(120_000)).toBe("2m");
-    expect(fmtDuration(4 * 3_600_000 + 12 * 60_000)).toBe("4h 12m");
-    // A whole number of hours drops the empty minutes rather than reading "4h 0m".
-    expect(fmtDuration(4 * 3_600_000)).toBe("4h");
-  });
-
-  it("floors at zero rather than rendering a negative duration", () => {
-    expect(fmtDuration(-5_000)).toBe("0s");
   });
 });
 

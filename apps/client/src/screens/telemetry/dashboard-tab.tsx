@@ -12,12 +12,7 @@ import { Card, Empty, StatTile } from "@/components/store-bits";
 import { Chip, ChipMenu } from "@/screens/telemetry/chips";
 import { cn } from "@/lib/utils";
 import { uiAction } from "@/lib/ui-action";
-import {
-  fmtDuration,
-  type DashboardGroupBy,
-  type DashboardRange,
-  type DashboardSummary,
-} from "@/lib/telemetry";
+import { type DashboardGroupBy, type DashboardRange, type DashboardSummary } from "@/lib/telemetry";
 import {
   DurationBars,
   ErrorRateLines,
@@ -26,6 +21,7 @@ import {
   WaitBars,
   type LogPoint,
 } from "@/screens/telemetry/dashboard-charts";
+import { fmtDuration } from "@/lib/format";
 
 /** Dashboard — Braintrust's "cost and quality" board over our data: cost is seconds
  * the app spent waiting on subprocesses, quality is their failure rate. Presentation

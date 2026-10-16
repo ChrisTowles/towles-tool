@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 import { XIcon } from "@phosphor-icons/react";
-import { ClaudeBadge, IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
+import { ClaudeBadge } from "@/components/agentboard-bits/badges";
+import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits/primitives";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { CodeServerPane } from "@/components/code-server-pane";
 import { useIdeConnected } from "@/lib/ide";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import type { FolderData } from "@/lib/agentboard";
+import type { FolderData } from "@/lib/agentboard/types";
 
 /** Put one file on screen — Claude's openFile, the MCP `file_open` tool, a terminal link.
  * `path` is checkout-relative, or absolute for a file outside the checkout; a fresh nonce

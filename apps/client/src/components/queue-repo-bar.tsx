@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PlusIcon, XIcon } from "@phosphor-icons/react";
-import type { RepoData } from "@/lib/agentboard";
+import type { RepoData } from "@/lib/agentboard/types";
 import { NotInTauri } from "@/lib/errors";
 import { repoChipStyle, repoIcon } from "@/lib/repo-identity";
 import { applyRepoOrder, orderSettled, reorderDirs, sameOrder } from "@/lib/repo-manager";

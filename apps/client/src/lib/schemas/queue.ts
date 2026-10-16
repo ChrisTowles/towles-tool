@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** Mirrors `tt_agentboard::queue` — validated because it crosses IPC. */
-export const WaitReasonSchema = z.enum([
+const WaitReasonSchema = z.enum([
   "unblock",
   "answer",
   "review",
@@ -12,10 +12,10 @@ export const WaitReasonSchema = z.enum([
 ]);
 export type WaitReason = z.infer<typeof WaitReasonSchema>;
 
-export const LaneSchema = z.enum(["on_you", "idle", "running", "parked", "no_shell"]);
+const LaneSchema = z.enum(["on_you", "idle", "running", "parked", "no_shell"]);
 export type Lane = z.infer<typeof LaneSchema>;
 
-export const QueuePrSchema = z.object({
+const QueuePrSchema = z.object({
   repo: z.string(),
   number: z.number(),
   url: z.string(),
@@ -24,7 +24,7 @@ export const QueuePrSchema = z.object({
   reviewState: z.string(),
 });
 
-export const QueueCiSchema = z.object({
+const QueueCiSchema = z.object({
   workflow: z.string(),
   url: z.string(),
   conclusion: z.string(),
@@ -32,7 +32,7 @@ export const QueueCiSchema = z.object({
 });
 
 /** One checkout — a task's worktree or a repo root; `folderDir` is its identity. */
-export const QueueItemSchema = z.object({
+const QueueItemSchema = z.object({
   taskId: z.number().nullable(),
   lane: LaneSchema,
   reason: WaitReasonSchema.nullable(),

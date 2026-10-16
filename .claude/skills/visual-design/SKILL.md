@@ -14,7 +14,7 @@ specimens, token/recipe tables, the ΔE rationale — is
 
 ## The rules that bite
 
-- **Status dots mirror `statusColor()`** (`lib/agentboard.ts`) exactly; a new
+- **Status dots mirror `statusColor()`** (`lib/agentboard/status.ts`) exactly; a new
   color implies a new state. Busy is cyan (never amber/yellow — that's the
   needs-you accent); background agents still out are not a state but a count
   beside the dot, a steady cyan-700 (`alertColor("background")`, also the
@@ -71,7 +71,7 @@ specimens, token/recipe tables, the ΔE rationale — is
 
 ## Source of truth
 
-`lib/agentboard.ts` (`statusColor()`) · `lib/identity-color.ts` (identity
+`lib/agentboard/status.ts` (`statusColor()`) · `lib/identity-color.ts` (identity
 wash) · `components/app-header.tsx` · the `agentboard-*` row files ·
 `components/header-status.tsx` (needs-you math) · `src/index.css` (signal tokens, type scale, fonts) · `lib/colors.ts` (palette).
 Behavior/flow rules (confirmations, error copy, settings) are the `ui-rules`

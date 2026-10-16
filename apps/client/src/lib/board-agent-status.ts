@@ -1,4 +1,6 @@
-import { ALERT_ORDER, isAgent, sessionCatchesEye, type SessionData } from "./agentboard";
+import { isAgent, sessionCatchesEye } from "@/lib/agentboard/session";
+import { ALERT_ORDER } from "@/lib/agentboard/status";
+import type { SessionData } from "@/lib/agentboard/types";
 
 export type WorktreeFolder = { dir: string; sessions: SessionData[] };
 
@@ -25,7 +27,7 @@ function urgencyKey(s: SessionData): number[] {
   ];
 }
 
-export function compareUrgency(a: SessionData, b: SessionData): number {
+function compareUrgency(a: SessionData, b: SessionData): number {
   const ka = urgencyKey(a);
   const kb = urgencyKey(b);
   for (let i = 0; i < ka.length; i++) {

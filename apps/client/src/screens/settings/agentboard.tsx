@@ -4,7 +4,9 @@ import { toast } from "@/lib/toast";
 import { ToggleGroup } from "@cloudflare/kumo/primitives/toggle-group";
 import { Toggle } from "@cloudflare/kumo/primitives/toggle";
 import { Button, Dialog, Input, InputArea, Popover, Select } from "@cloudflare/kumo";
-import { useAgentboardState, type RepoCandidate, type RepoData } from "@/lib/agentboard";
+import type { RepoCandidate } from "@/lib/agentboard/actions";
+import { useAgentboardState } from "@/lib/agentboard/state";
+import type { RepoData } from "@/lib/agentboard/types";
 import {
   applyRepoOrder,
   orderSettled,

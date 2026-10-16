@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RepoData } from "@/lib/agentboard";
+import type { RepoData } from "@/lib/agentboard/types";
 import { defaultTaskRepo } from "./rail-new-task";
 
 const repo = (key: string, ...dirs: string[]) =>

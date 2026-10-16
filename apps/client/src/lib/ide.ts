@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke, isTauri } from "@/lib/tauri";
 
-export type IdeStatus = {
+type IdeStatus = {
   termId: string;
   dir: string;
   port: number;

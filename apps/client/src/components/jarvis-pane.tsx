@@ -1,8 +1,9 @@
 import { XIcon } from "@phosphor-icons/react";
-import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
+import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits/primitives";
 import { NativePane } from "@/components/native-pane";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
-import { jarvisPaneId, type FolderData } from "@/lib/agentboard";
+import { jarvisPaneId } from "@/lib/agentboard/pane-ids";
+import type { FolderData } from "@/lib/agentboard/types";
 import { cn } from "@/lib/utils";
 
 /** A folder's native pane: a window rect handed to `tt-jarvis`'s Bevy renderer, the one pane

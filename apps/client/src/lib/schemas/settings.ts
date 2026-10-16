@@ -132,12 +132,12 @@ const CollectorsSettingsSchema = z
   .passthrough();
 
 /** Urgency levels, least → most urgent — mirrors Rust's `tt_config::NotifyLevel`. */
-export const NotifyLevelSchema = z.enum(["routine", "important", "urgent"]);
+const NotifyLevelSchema = z.enum(["routine", "important", "urgent"]);
 
 /** Which checkouts reach the Agentboard rail — mirrors Rust's
  * `tt_config::RailFilter`. Not a scale: `active` asks about *now*, `recent`
  * asks about the last N hours. */
-export const RailFilterSchema = z.enum(["all", "active", "recent"]);
+const RailFilterSchema = z.enum(["all", "active", "recent"]);
 
 /** `UserSettings["agentboard"]` is a TS-owned, partly-typed block that already
  * carries a `Record<string, unknown>` passthrough in its TS type — `.catchall`

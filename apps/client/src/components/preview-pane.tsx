@@ -8,10 +8,10 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
-import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits";
+import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits/primitives";
 import { AnnotateSurface } from "@/components/annotate-surface";
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
-import type { FolderData } from "@/lib/agentboard";
+import type { FolderData } from "@/lib/agentboard/types";
 import { errorMessage } from "@/lib/errors";
 import { launchConfigs } from "@/lib/launch";
 import { openExternalUrl } from "@/lib/open-url";

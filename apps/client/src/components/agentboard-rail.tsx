@@ -4,19 +4,15 @@
 import { useState } from "react";
 import { FolderIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
-import { RollupDots } from "@/components/agentboard-bits";
+import { RollupDots } from "@/components/agentboard-bits/status-dots";
 import { Popover, Tooltip } from "@cloudflare/kumo";
 import { Slider } from "@/components/ui/slider";
 import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import {
-  agentRollup,
-  collapsedLiveColor,
-  isSoloRepo,
-  type FolderData,
-  type RepoData,
-} from "@/lib/agentboard";
+import { isSoloRepo } from "@/lib/agentboard/folder";
+import { agentRollup, collapsedLiveColor } from "@/lib/agentboard/status";
+import type { FolderData, RepoData } from "@/lib/agentboard/types";
 import { mouseAction } from "@/lib/shortcut-coach";
 
 /** The rail collapsed to an icon strip, one icon per checkout — each keeps its

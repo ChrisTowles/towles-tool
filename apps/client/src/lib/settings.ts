@@ -36,7 +36,7 @@ export const DEFAULT_NOTIFY_THRESHOLD: NotifyLevel = "routine";
  * worked within `railRecentHours`. */
 export type RailFilter = "all" | "active" | "recent";
 
-export type JournalSettings = {
+type JournalSettings = {
   baseFolder: string;
   dailyPathTemplate: string;
   meetingPathTemplate: string;
@@ -45,7 +45,7 @@ export type JournalSettings = {
 };
 
 /** Weekdays: 0 = Monday … 6 = Sunday. */
-export type CalendarQuietHours = {
+type CalendarQuietHours = {
   enabled: boolean;
   startHour: number;
   endHour: number;
@@ -202,25 +202,25 @@ export function withDefaultTelemetryRules(
   ];
 }
 
-export type CalendarCollector = {
+type CalendarCollector = {
   enabled: boolean;
   refreshMinutes: number;
   quietHours: CalendarQuietHours;
   sources: CalendarSource[];
 };
 
-export type PrCollector = {
+type PrCollector = {
   enabled: boolean;
   refreshSeconds: number;
   mergedRefreshMinutes: number;
 };
 
-export type IssueCollector = {
+type IssueCollector = {
   enabled: boolean;
   refreshMinutes: number;
 };
 
-export type SlackDmCollector = {
+type SlackDmCollector = {
   enabled: boolean;
   token: string;
   /** Optional app-level token (xapp-…) enabling Socket Mode real-time delivery. */
@@ -230,7 +230,7 @@ export type SlackDmCollector = {
   refreshSeconds: number;
 };
 
-export type CollectorsSettings = {
+type CollectorsSettings = {
   calendar: CalendarCollector;
   prs: PrCollector;
   issues: IssueCollector;
@@ -277,7 +277,7 @@ export type SaveState = "idle" | "saving" | "saved" | "error";
 const DEFER_MS = 500;
 
 /** Settings is a tab in the same window, so `"focus"` never fires. */
-export const SETTINGS_SAVED_EVENT = "tt:settings-saved";
+const SETTINGS_SAVED_EVENT = "tt:settings-saved";
 
 /** `null` in browser dev or on a failed read; every consumer has a default. */
 export async function loadUserSettings(): Promise<UserSettings | null> {

@@ -3,9 +3,9 @@ import { FolderIcon } from "@phosphor-icons/react";
 
 import { Button, Checkbox, Dialog } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { requestOpenSession, resumeCandidates } from "@/lib/agentboard";
+import { requestOpenSession, resumeCandidates } from "@/lib/agentboard/requests";
 import { invoke } from "@/lib/tauri";
-import type { ResumeCandidate } from "@/lib/agentboard";
+import type { ResumeCandidate } from "@/lib/agentboard/requests";
 import { fmtAge } from "@/lib/data";
 import { useWorkspace } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
