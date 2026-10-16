@@ -8,7 +8,7 @@ the **native pane**: a Bevy scene rendered into a surface it
 did not create, so a region of the app window is real GPU output rather
 than DOM. Native rather than WebAssembly or streamed frames because only a
 native surface can host Solari's ray-tracing pipeline (see
-[README.md](README.md)).
+[README](../README.md)).
 
 It renders in two places, both fed by the same `NativePane` component:
 the strip at the bottom of the Agent Board rail, and a **first-class pane
