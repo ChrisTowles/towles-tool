@@ -11,6 +11,7 @@
 
 pub mod bridge;
 pub mod install;
+pub mod prune;
 pub mod user_config;
 pub mod webview_relay;
 

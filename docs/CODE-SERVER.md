@@ -127,6 +127,19 @@ pinned release tarball, checked against a SHA-256 pinned beside the version in
 740 MB is a machine cost, and version-scoped, so a bumped pin installs beside a
 running server rather than over it.
 
+Beside it, not instead of it — so every launch ends by dropping what the pin
+left behind (`tt_codeserver::prune`): directories named `major.minor.patch`
+and *older* than the pin, nothing else. Newer ones stay, because every
+worktree task runs its own build of the app against this one directory and a
+sibling may still pin them. An old tree is also skipped while a process is
+running from it (`ps` shows the launcher's `exec <dist>/lib/node <dist>`, so
+another instance's server counts), and nothing is pruned if `ps` can't be read.
+Scratch from an install whose process died (`.download-<pid>-…`, `.stage-<pid>`)
+goes with them. The root is always the caller's: links are never followed, and
+a failed removal is logged (`code-server.prune.failed`) rather than raised. A
+stale build launched after a newer one re-downloads its own pin, and the next
+launch of the newer one prunes it again.
+
 The pane shows it: `code-server://install` carries phase and bytes, so the
 several minutes are a bar, not a spinner. Scratch is removed however the install
 ends, and two instances racing a version resolve by rename. An existing

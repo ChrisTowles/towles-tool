@@ -154,10 +154,12 @@ pub struct Progress {
 }
 
 /// The pinned code-server under `root`, downloading and unpacking it if this
-/// machine has none. `on_progress` is called as the transfer advances so a
+/// machine has none, then dropping the older installs it superseded
+/// ([`crate::prune::superseded`]). `on_progress` is called as the transfer advances so a
 /// caller can show the minutes it takes.
 pub fn ensure(root: &Path, on_progress: &mut dyn FnMut(Progress)) -> Result<PathBuf, InstallError> {
     if let Some(bin) = installed_binary(root) {
+        crate::prune::superseded(root);
         return Ok(bin);
     }
     let (os, arch) = host();
@@ -188,9 +190,11 @@ pub fn ensure(root: &Path, on_progress: &mut dyn FnMut(Progress)) -> Result<Path
         )));
     }
     drop(scratch);
-    installed_binary(root).ok_or_else(|| {
+    let bin = installed_binary(root).ok_or_else(|| {
         InstallError::Unpack(format!("no bin/code-server in {}", install_dir(root).display()))
-    })
+    })?;
+    crate::prune::superseded(root);
+    Ok(bin)
 }
 
 /// Streams `asset` into `dest`, hashing as it goes — the tarball is too big to
