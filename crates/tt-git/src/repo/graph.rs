@@ -34,6 +34,15 @@ impl Repo {
         (ahead, behind)
     }
 
+    /// Commits `reference` has that `sha` lacks (`rev-list --count sha..reference`),
+    /// or `None` when either side does not resolve: a build from an unknown or
+    /// unpushed sha, or a repo with no `origin/main`, has no answer to give.
+    pub fn commits_beyond(&self, sha: &str, reference: &str) -> Option<u64> {
+        let have = self.resolve(sha)?;
+        let tip = self.resolve(reference)?;
+        Some(self.count_since(have, tip) as u64)
+    }
+
     /// Number of commits reachable from `tip` but not from `boundary`.
     fn count_since(&self, boundary: gix::ObjectId, tip: gix::ObjectId) -> i64 {
         if boundary == tip {
@@ -178,6 +187,42 @@ mod tests {
         let repo = TestRepo::new();
         let git = Repo::open(repo.path()).expect("open");
         assert_eq!(git.ahead_behind("origin/nope", "HEAD"), (0, 0));
+    }
+
+    #[test]
+    fn commits_beyond_counts_what_the_reference_has_over_the_sha() {
+        let repo = TestRepo::new();
+        let built = repo.rev_parse("HEAD");
+        repo.commit_file("a.txt", "a\n");
+        repo.commit_file("b.txt", "b\n");
+        repo.git(&["update-ref", "refs/remotes/origin/main", "main"]);
+        let git = Repo::open(repo.path()).expect("open");
+        assert_eq!(git.commits_beyond(&built, "origin/main"), Some(2));
+        assert_eq!(git.commits_beyond("origin/main", "origin/main"), Some(0));
+        let expected = repo.git(&["rev-list", "--count", &format!("{built}..origin/main")]);
+        assert_eq!(expected, "2", "fixture sanity");
+    }
+
+    #[test]
+    fn commits_beyond_ignores_a_builds_own_commits() {
+        let repo = TestRepo::new();
+        repo.git(&["checkout", "--quiet", "-b", "feature"]);
+        let built = repo.commit_file("own.txt", "own\n");
+        repo.git(&["checkout", "--quiet", "main"]);
+        repo.commit_file("c.txt", "c\n");
+        repo.git(&["update-ref", "refs/remotes/origin/main", "main"]);
+        let git = Repo::open(repo.path()).expect("open");
+        assert_eq!(git.commits_beyond(&built, "origin/main"), Some(1));
+    }
+
+    #[test]
+    fn commits_beyond_is_none_for_an_unknown_sha_or_missing_reference() {
+        let repo = TestRepo::new();
+        let git = Repo::open(repo.path()).expect("open");
+        assert_eq!(git.commits_beyond("unknown", "origin/main"), None);
+        let ghost = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(git.commits_beyond(ghost, "origin/main"), None);
+        assert_eq!(git.commits_beyond("main", "origin/nope"), None);
     }
 
     #[test]

@@ -63,6 +63,7 @@ fn refresh_all_git_info_in_background(app: &tauri::AppHandle) {
             tt_agentboard::git_info::fetch_all(&targets);
         })
         .await;
+        crate::build_behind::nudge(&app);
         ab.emit.notify_one();
     });
 }

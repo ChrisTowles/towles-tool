@@ -96,7 +96,7 @@ pub struct UpdateStatus {
 /// Whether this binary was installed from a release bundle the updater can
 /// replace. On Linux the bundler stamps the bundle type into the binary; macOS
 /// reports `App` unconditionally, so there the exe must sit inside a `.app`.
-fn is_installed_bundle() -> bool {
+pub(crate) fn is_installed_bundle() -> bool {
     if cfg!(target_os = "macos") {
         std::env::current_exe().is_ok_and(|exe| is_inside_app_bundle(&exe))
     } else {

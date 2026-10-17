@@ -17,6 +17,7 @@ import {
   useKeyboardScore,
   type KeyboardScore,
 } from "@/lib/keyboard-score";
+import { behindLabel, behindTooltip, useBuildBehind, type BuildBehind } from "@/lib/build-behind";
 import { useRulesFailing } from "@/lib/telemetry-rules";
 import { fmtAge, fmtCountdown, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
@@ -251,6 +252,19 @@ function RulesFailing({ count }: { count: number }) {
   );
 }
 
+/** A fact, so bare mono text with no box. Hidden when up to date, and for a
+ * packaged app, whose update banner says the same thing. */
+function BuildBehindChip({ behind }: { behind: BuildBehind }) {
+  return (
+    <Tooltip
+      content={behindTooltip(behind)}
+      render={<span className="font-mono text-mini tabular-nums" />}
+    >
+      {behindLabel(behind)}
+    </Tooltip>
+  );
+}
+
 export function StatusBar() {
   const { openTab, activeTab } = useWorkspace();
   const usage = useResourceUsage();
@@ -258,6 +272,7 @@ export function StatusBar() {
   const keyboard = useKeyboardScore();
   const rulesFailing = useRulesFailing();
   const version = useAppVersion();
+  const buildBehind = useBuildBehind();
 
   return (
     <footer className="flex h-7 shrink-0 items-center justify-between border-t border-kumo-hairline px-3 text-xs text-kumo-subtle">
@@ -297,6 +312,7 @@ export function StatusBar() {
         <span className={isTauri() ? undefined : "font-medium text-warn"}>
           {isTauri() ? "Tauri shell" : "browser"}
         </span>
+        {buildBehind && <BuildBehindChip behind={buildBehind} />}
         <span>{version}</span>
       </div>
     </footer>
