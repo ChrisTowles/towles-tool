@@ -27,8 +27,11 @@ const suggestion = atom({ plugin: 'towles-tool-app', key: 'suggestion' } as cons
 const asking = atom({ plugin: 'towles-tool-app', key: 'asking' } as const, false)
 const clips = atom({ plugin: 'towles-tool-app', key: 'clips' } as const, [] as ClipOffer[])
 
+const PANE = 'tt'
 const REFRESH_MS = 60_000
 const INBOX_MS = 3_000
+/** The plugin's MCP server connects after session start, so the first refresh usually misses it. */
+const STARTUP_RETRIES = 10
 const SUGGEST_DELAY_MS = 250
 /** The tools only this mod calls: the model is kept off them. */
 const MOD_ONLY = /^mcp__plugin_towles-tool-app_towles-tool__(inbox_|next_prompt|clip_)/
@@ -61,6 +64,7 @@ async function refresh($: EngineInterface) {
   await update($, snapshot, () => next)
   $.ui.status(statusLine(next))
   if (!next) return
+  if (next.task || next.meeting) await openPane($, false)
 
   const pr = next.task?.pr ?? null
   const ci = checksToast(pr, await read($, seenChecks))
@@ -71,6 +75,31 @@ async function refresh($: EngineInterface) {
     const m = next.meeting!
     await update($, warnedMeeting, () => m.id)
     $.ui.toast(`${m.title} in ${m.minutesUntil}m. Time to wrap up.`)
+  }
+}
+
+/** Opened once a session; one the person closed comes back only through `/tt`. */
+let paneOpened = false
+let paneClosed = false
+
+/** Unasked it seats only in a wide terminal and waits below that, so the band stays the fallback. */
+async function openPane($: EngineInterface, asked: boolean) {
+  if (!asked && (paneOpened || paneClosed)) return
+  paneOpened = true
+  paneClosed = false
+  try {
+    await $.ui.open({ id: PANE, title: 'tt' })
+  } catch {
+    // A surface that seats no panes: the band carries everything.
+  }
+  $.ui.invalidate('ui.render')
+}
+
+async function paneShown($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.ui.panes()).some(p => p.id === PANE && p.isPlaced && p.isShown)
+  } catch {
+    return false
   }
 }
 
@@ -172,7 +201,9 @@ async function askClip($: EngineInterface, answer: string) {
       ...(task ? { taskId: task.id } : {}),
     })
     if (turn !== clipTurn) return
-    await update($, clips, () => offersFrom(raw))
+    const offers = offersFrom(raw)
+    await update($, clips, () => offers)
+    if (offers.length) await openPane($, false)
   } catch {
     // App closed or the call failed: nothing is offered.
   }
@@ -213,6 +244,11 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const ran = await next(e)
     await refresh($)
+    let tries = 0
+    const retry = $.clock.every(INBOX_MS, async () => {
+      if (++tries > STARTUP_RETRIES || (await read($, snapshot))) return retry.cancel()
+      await refresh($)
+    })
     $.clock.every(REFRESH_MS, () => void refresh($))
     inboxTimer = $.clock.every(INBOX_MS, () => void takeInbox($))
     // Last, so a host that registers no commands still gets the band and the inbox.
@@ -220,6 +256,10 @@ export const register: Register = on => {
       name: 'park',
       description: 'Park an idea as a backlog task on the tt board, without leaving this session',
       argumentHint: '[idea, or select it first]',
+    })
+    await $.command.register({
+      name: 'tt',
+      description: "Open the tt pane: this checkout's task, PR, next meeting and copy offers",
     })
     await $.command.register({
       name: 'next',
@@ -230,6 +270,17 @@ export const register: Register = on => {
 
   on('command.run', { command: 'park' }, async ($, e) => ({ text: await park($, e.args) }))
   on('command.run', { command: 'next' }, async $ => ({ text: await askNext($) }))
+  on('command.run', { command: 'tt' }, async $ => {
+    await openPane($, true)
+    return {}
+  })
+
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const closed = await next(e)
+    if (closed.deny === undefined && e.origin.kind === 'person') paneClosed = true
+    $.ui.invalidate('ui.render')
+    return closed
+  })
 
   // `$.mcp.call` rides `tool.call` too, so the mod's own calls are told apart by their origin.
   on('tool.call', { tool: MOD_ONLY }, ($, e, next) =>
@@ -297,17 +348,87 @@ export const register: Register = on => {
     return ran
   })
 
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const snap = await read($, snapshot)
+    const offers = await read($, clips)
+    const task = snap?.task ?? null
+    const meeting = snap?.meeting ?? null
+    const soon = !!meeting && (meeting.live || meeting.minutesUntil <= 15)
+    const canSuggest = !!(await read($, lastTurn))
+    return (
+      <Box flexDirection="column" gap={1} paddingX={1}>
+        {!snap && <Text dimColor>The tt app is not reachable.</Text>}
+        {task && (
+          <Box flexDirection="column">
+            <Text bold>
+              #{task.id} {task.text}
+            </Text>
+            <Text dimColor>{task.status}</Text>
+            {task.pr && <Text dimColor>{prLabel(task.pr)}</Text>}
+            {readyForDone(task) && <Text color="green">ready for /done</Text>}
+          </Box>
+        )}
+        {meeting && (
+          <Text color={soon ? 'yellow' : undefined} dimColor={!soon}>
+            {untilLabel(meeting)}
+          </Text>
+        )}
+        {offers.length > 0 && (
+          <Box flexDirection="column">
+            <Text color="magenta">Copy</Text>
+            {offers.map((offer, i) => (
+              <Box key={`clip:${i}`} flexDirection="column">
+                <Button
+                  key={`clip:${i}`}
+                  hotkey={String(i + 1)}
+                  plain
+                  onPress={press => void copyOffers($, [offer], press.surface, i)}
+                >
+                  {clipLabel(offer)}
+                </Button>
+                <Text dimColor wrap="truncate-end">
+                  {'   '}
+                  {offer.text}
+                </Text>
+              </Box>
+            ))}
+            {offers.length > 1 && (
+              <Button
+                key="clip:all"
+                hotkey="a"
+                plain
+                dimColor
+                onPress={press => void copyOffers($, offers, press.surface)}
+              >
+                copy all
+              </Button>
+            )}
+          </Box>
+        )}
+        {canSuggest && (
+          <Button key="next" hotkey="n" plain dimColor onPress={() => void askNext($)}>
+            next prompt
+          </Button>
+        )}
+      </Box>
+    )
+  })
+
+  // Docked, the pane holds the facts and the band keeps only the keys: a pane's hotkeys need its focus.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const snap = await read($, snapshot)
+    const docked = await paneShown($)
+    const snap = docked ? null : await read($, snapshot)
     const offers = e.props.isWorking ? [] : await read($, clips)
-    if ((!snap || (!snap.task && !snap.meeting)) && !offers.length) return next(e)
+    const canSuggest = !e.props.isWorking && !!(await read($, lastTurn))
+    const hasFacts = !!snap && (!!snap.task || !!snap.meeting)
+    if (docked ? !offers.length && !canSuggest : !hasFacts && !offers.length) return next(e)
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const task = snap?.task ?? null
     const meeting = snap?.meeting ?? null
     const soon = !!meeting && (meeting.live || meeting.minutesUntil <= 15)
-    const canSuggest = !e.props.isWorking && !!(await read($, lastTurn))
     return (
       <Box flexDirection="row" gap={1}>
         <Text color="magenta">✦ tt</Text>
@@ -335,7 +456,7 @@ export const register: Register = on => {
             plain
             onPress={press => void copyOffers($, [offer], press.surface, i)}
           >
-            copy {clipLabel(offer)}
+            {docked ? 'copy' : `copy ${clipLabel(offer)}`}
           </Button>
         ))}
         {offers.length > 1 && (

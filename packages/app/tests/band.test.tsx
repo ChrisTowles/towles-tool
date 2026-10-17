@@ -223,4 +223,58 @@ describe('band', () => {
     expect(await after.find({ text: 'engine' })).toBeDefined()
     await after.unmount()
   })
+
+  test('docked, the pane lists task and offers in full; the band keeps only the keys', async ($, on) => {
+    mock.clock(on)
+    const opened: string[] = []
+    on('ui.open', ($, e) => {
+      opened.push(e.id)
+      return { value: { isPlaced: true } }
+    })
+    on('ui.panes', () => ({
+      value: [{ id: 'tt', title: 'tt', isShown: true, isFocused: false, isPlaced: true }],
+    }))
+    on('ui.invalidate', () => ({ value: undefined }))
+    on('ui.status', () => ({ value: undefined }))
+    on('ui.toast', () => ({ value: undefined }))
+    on('session.start', () => ({ cwd: '/r' }))
+    on('session.cwd', () => ({ value: '/r/.claude/worktrees/mods' }))
+    on('command.register', ($, e) => ({ value: { command: e.name } }))
+    on('turn.complete', ($, e) => ({ text: e.answer }))
+    on('ui.render', ($, e) => {
+      const { Text } = $.ui.resolve(e)
+      return <Text>engine</Text>
+    })
+    on('mcp.call', ($, e) => {
+      const body =
+        e.tool === 'task_list'
+          ? { tasks: TASKS }
+          : e.tool === 'inbox_take'
+            ? { notes: [], pollMs: 3000 }
+            : e.tool === 'clip_suggest'
+              ? { items: [{ label: 'run e2e', text: 'bun run e2e' }], costUsd: 0, skipped: null }
+              : { event: null }
+      return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
+    })
+    await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
+    expect(opened).toEqual(['tt'])
+    await $.turn.complete({ answer: 'run `bun run e2e`', reason: 'answer', turnId: 't1' } as never)
+
+    const pane = await $.ui.mount({
+      plugin: 'towles-tool-app',
+      surface: 'terminal',
+      component: 'Pane',
+      requestId: 'tt',
+      props: {},
+    } as never)
+    expect(await pane.find({ type: 'Text', text: '#7 Claude mods' })).toBeDefined()
+    expect(await pane.find({ text: 'run e2e' })).toBeDefined()
+    expect(await pane.find({ text: '   bun run e2e' })).toBeDefined()
+    await pane.unmount()
+
+    const band = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
+    expect(await band.find({ text: 'copy' })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: '#7 Claude mods (doing)' })).toBe(undefined)
+    await band.unmount()
+  })
 })
