@@ -27,11 +27,10 @@ const folder = {
   quiet: false,
 } as unknown as FolderData;
 
-describe("FolderHeader at repo scope", () => {
-  it("keeps the repo name in a block with a width floor, and lets the branch truncate", () => {
+describe("FolderHeader on the primary checkout", () => {
+  it("keeps the checkout name in a block with a width floor, and lets the branch truncate", () => {
     renderWithProviders(
       <FolderHeader
-        scope="repo"
         title="toolbox"
         folder={folder}
         needs={0}
@@ -46,7 +45,7 @@ describe("FolderHeader at repo scope", () => {
         onOpenPreview={vi.fn<() => void>()}
       />,
     );
-    const name = screen.getByText("toolbox");
+    const name = screen.getByText("Root");
     expect(name.parentElement?.parentElement).toHaveClass("min-w-40");
     expect(screen.getByText(`⎇ ${LONG}`)).toHaveClass("truncate", "min-w-0");
   });

@@ -11,6 +11,7 @@ function repo(dir: string, folders: Record<string, string[]>): RepoData {
     folders: Object.entries(folders).map(([d, sessions]) => ({
       dir: d,
       name: d.split("/").pop() ?? d,
+      record: { origin: "checkout" },
       sessions: sessions.map((id) => ({ id })),
     })),
   } as unknown as RepoData;
@@ -63,10 +64,8 @@ describe("railHotkeyTargets", () => {
     ]);
   });
 
-  it("ignores a folder-level collapse key on a solo repo, which has no such row", () => {
+  it("skips a collapsed single-checkout repo's checkout row like any other", () => {
     expect(targets({ collapsed: { [`${SOLO.key}::/code/dotfiles`]: true } })).toEqual([
-      "a",
-      "b",
       "c",
       "d",
       "e",

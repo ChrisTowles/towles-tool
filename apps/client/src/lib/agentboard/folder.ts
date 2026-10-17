@@ -80,11 +80,6 @@ export function comparedBaseLabel(folder: Pick<FolderData, "comparedBase">): str
   return base.startsWith("origin/") ? base.slice("origin/".length) : base;
 }
 
-/** True when a repo's single folder should collapse into one rail header. */
-export function isSoloRepo(r: RepoData): boolean {
-  return r.folders.length === 1;
-}
-
 /** The rail minus its quiet checkouts, plus what was taken out. "Mark quiet"
  * is a hide, not a demotion, and it ignores the rail filter — under the
  * default `"all"` a filter-shaped quiet would do nothing at all. The checkout

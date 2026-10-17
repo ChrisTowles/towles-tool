@@ -1,4 +1,4 @@
-import { isSoloRepo, withoutFolded } from "@/lib/agentboard/folder";
+import { isHomeRepo, withoutFolded } from "@/lib/agentboard/folder";
 import type { FolderData, RepoData, SessionData, WindowsPayload } from "@/lib/agentboard/types";
 
 /** One row of the rail, in render order. `key` is the cursor's identity and,
@@ -7,12 +7,12 @@ export type RailNode = {
   key: string;
   kind: "repo" | "folder" | "session";
   repoKey: string;
-  /** The checkout this row speaks for — null on a multi-checkout repo header. */
+  /** The checkout this row speaks for — null on a repo header. */
   dir: string | null;
   sessionId: string | null;
   /** Null on a session: a leaf has nothing to fold. */
   collapseKey: string | null;
-  /** Repo 0, checkout 1, session 2 — a solo repo's sessions sit at 1. */
+  /** Repo 0, checkout 1, session 2 — home's sessions sit at 1. */
   depth: number;
 };
 
@@ -46,9 +46,10 @@ export function railNodes(v: RailVisibility): RailNode[] {
     );
     if (shown.length === 0) continue;
 
-    // A solo repo wears one header for both levels, so its sessions hang
-    // straight off the repo row and the repo key is the only collapse key.
-    if (isSoloRepo(repo)) {
+    // Home wears one header for both levels, so its sessions hang straight off
+    // the repo row and the repo key is the only collapse key. Every other repo
+    // — however few checkouts — is a repo row over its checkout rows.
+    if (isHomeRepo(repo)) {
       const folder = shown[0];
       out.push({
         key: repo.key,

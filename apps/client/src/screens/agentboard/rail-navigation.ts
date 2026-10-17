@@ -195,9 +195,9 @@ export function railNavigation(a: {
     return true;
   }
 
-  // The tree cursor lands: a session row selects its session, a checkout row (a
-  // solo repo's header included) makes that checkout the working context, and a
-  // multi-checkout repo header speaks for no one checkout, so it only rings.
+  // The tree cursor lands: a session row selects its session, a checkout row
+  // (home's header included) makes that checkout the working context, and a
+  // repo header speaks for no one checkout, so it only rings.
   function landOnRow(key: string) {
     const node = a.railTree.find((n) => n.key === key);
     if (!node) return;

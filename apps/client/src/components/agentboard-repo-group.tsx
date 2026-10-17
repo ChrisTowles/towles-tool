@@ -34,7 +34,7 @@ import {
   folderRecreateBranch,
   folderPhaseLabel,
   folderTask,
-  isSoloRepo,
+  isHomeRepo,
   pathScope,
   prForFolder,
   taskForFolder,
@@ -184,7 +184,6 @@ export function RepoGroup({
   onCancelTaskForm: () => void;
   onSubmitTaskForm: (input: NewTaskSubmit) => void;
 }) {
-  const solo = isSoloRepo(repo);
   const idle = idleDirs ?? new Set<string>();
   const showIdle = idleRevealed ?? false;
   const unmanaged = unmanagedDirs ?? new Set<string>();
@@ -304,7 +303,7 @@ export function RepoGroup({
 
   // Home: one folder, no repo around it, and a heavier rule under it so it reads
   // as apart from the repos.
-  if (solo && folderIsHome(repo.folders[0])) {
+  if (isHomeRepo(repo)) {
     const folder = repo.folders[0];
     const isCollapsed = collapsed[repo.key];
     return (
@@ -328,88 +327,8 @@ export function RepoGroup({
     );
   }
 
-  // Solo repo: collapse repo + folder into one header (repo · branch).
-  if (solo) {
-    const folder = repo.folders[0];
-    const isCollapsed = collapsed[repo.key];
-    if (idle.has(folder.dir) && !showIdle) {
-      return <FoldedRepoStub name={repo.name} idle={1} unmanaged={0} onToggle={onToggleIdle} />;
-    }
-    // Phase rides on the folder, so a row is never dimmed for a departed one.
-    const deleting = folderBusy(folder);
-    const deletingLabel = folderPhaseLabel(folder);
-    const settingUpSince = settingUpDirs?.get(folder.dir);
-    return (
-      <div
-        className={cn("border-b", deleting && "pointer-events-none opacity-50")}
-        data-focus-kind="repo"
-        data-focus-id={repo.key}
-      >
-        <FolderHeader
-          scope="repo"
-          title={repo.name}
-          identity={repo}
-          folder={folder}
-          quiet={quiet.has(folder.dir)}
-          needs={repo.needs}
-          pr={prForFolder(prs, repo.originUrl, folder.branch)}
-          task={taskForFolder(tasks, folder.dir)}
-          collapsed={isCollapsed}
-          cursor={cursorKey === repo.key}
-          now={now}
-          active={activeFolderDir === folder.dir}
-          deleting={deleting}
-          onAdoptWorktree={adoptWorktree(folder)}
-          onSyncBranch={syncBranch(folder)}
-          deletingLabel={deletingLabel}
-          settingUpSince={settingUpSince}
-          actions={actions}
-          onToggle={() => {
-            onToggle(repo.key);
-            onSelectFolder(folder.dir);
-          }}
-          onNewSession={() => onNewSession(folder.dir)}
-          onNewTask={() => onNewTask({ name: repo.name, dir: folder.dir, key: repo.key })}
-          onRemoveRepo={() => onRemoveRepo([folder.dir], repo.name)}
-          onDeleteWorktree={
-            folderRemovableTask(folder) ? () => onDeleteWorktree(folder.dir, repo.name) : undefined
-          }
-          onRecreateWorktree={
-            folderRecreateBranch(folder) && folderDetached(folder)
-              ? () => onRecreateWorktree(folder)
-              : undefined
-          }
-          onOpenFiles={() => onOpenFiles(folder.dir)}
-          onOpenPreview={() => onOpenPreview(folder.dir)}
-          onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
-          onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
-        />
-        {taskFormOpen && (
-          <InlineNewTask
-            key={formSeedKey(taskFormSeed)}
-            repo={{ name: repo.name, dir: folder.dir, key: repo.key }}
-            onCancel={onCancelTaskForm}
-            onSubmit={onSubmitTaskForm}
-            initialGoal={taskFormSeed?.goal}
-            initialIssue={taskFormSeed?.issue}
-          />
-        )}
-        {!isCollapsed && sessionRows(folder, "pb-2")}
-        {idle.size > 0 && showIdle && (
-          <FoldToggleRow
-            count={idle.size}
-            noun="idle"
-            hint={IDLE_HINT}
-            revealed
-            onToggle={onToggleIdle}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // Multi-checkout repo: repo header, then each folder as a sub-header. A repo
-  // the filter has emptied shrinks to a single dim stub line.
+  // Repo header, then each checkout (primary first) as a sub-header, even when
+  // the primary is the only one. A repo the filter has emptied shrinks to a single dim stub line.
   const repoCollapsed = collapsed[repo.key];
   const shownFolders = withoutFolded(
     withoutFolded(repo.folders, unmanaged, showUnmanaged),
@@ -543,7 +462,6 @@ export function RepoGroup({
                 className={cn(deleting && "pointer-events-none")}
               >
                 <FolderHeader
-                  scope="folder"
                   title={folder.name}
                   folder={folder}
                   quiet={quiet.has(folder.dir)}
