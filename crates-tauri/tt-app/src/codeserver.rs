@@ -14,6 +14,7 @@ use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, State};
 use tt_codeserver::bridge;
 use tt_codeserver::install::{self, Phase, Progress};
+use tt_codeserver::prune;
 use tt_codeserver::{CodeServerChild, CodeServerConfig, find_code_server, workbench_url};
 
 use crate::ide::MAIN_WINDOW_LABEL;
@@ -108,6 +109,11 @@ pub(crate) fn on_new_window<R: tauri::Runtime>(url: tauri::Url) -> NewWindowResp
 fn binary(app: &AppHandle) -> Result<PathBuf, String> {
     let root = tt_config::code_server_install_dir().map_err(|e| e.to_string())?;
     if let Some(bin) = find_code_server(None, Some(&root)) {
+        // The pin is already there, so `ensure` won't run: this is the upgrade
+        // path, where the last pin's 700 MB is still on disk.
+        if install::installed_binary(&root).as_ref() == Some(&bin) {
+            prune::superseded(&root);
+        }
         return Ok(bin);
     }
     // One event per whole percent: 235 MB in 1 MiB reads is ~230 emits either
