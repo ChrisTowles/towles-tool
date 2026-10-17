@@ -1,22 +1,17 @@
 //! Every `tt` invocation must leave a `cli.command` record in the event log.
-//!
-//! Linux-only: the isolation relies on `dirs::data_dir()` honouring
-//! `XDG_DATA_HOME`, which it does on XDG platforms but not on macOS — where the
-//! test would write into the real data directory instead of the sandbox.
-#![cfg(target_os = "linux")]
 
 mod common;
 
-use common::cli_cmd;
+use common::{cli_cmd_in, data_home};
 use serde_json::Value;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// Point a `tt` command at a sandboxed data directory, so its event log is the
-/// only one this test can see or write.
-fn cmd_with_log(config_dir: &Path, data_home: &Path) -> assert_cmd::Command {
-    let mut cmd = cli_cmd(config_dir);
-    cmd.env("XDG_DATA_HOME", data_home);
-    cmd
+/// A sandboxed home for one test, plus the data directory a child of it logs under.
+fn sandbox() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let guard = tempfile::tempdir().unwrap();
+    let home = guard.path().join("home");
+    let data = data_home(&home);
+    (guard, home, data)
 }
 
 /// Every `cli.command` record written under `data_home`, oldest first.
@@ -43,11 +38,10 @@ fn cli_records(data_home: &Path) -> Vec<Value> {
 
 #[test]
 fn a_successful_command_is_recorded() {
-    let sandbox = tempfile::tempdir().unwrap();
+    let (sandbox, home, data_home) = sandbox();
     let config_dir = sandbox.path().join("config");
-    let data_home = sandbox.path().join("data");
 
-    cmd_with_log(&config_dir, &data_home).args(["journal", "list"]).assert().success();
+    cli_cmd_in(&config_dir, &home).args(["journal", "list"]).assert().success();
 
     let records = cli_records(&data_home);
     let record = records.first().expect("the invocation must leave a record");
@@ -64,13 +58,12 @@ fn a_failing_command_is_recorded_too() {
     // `process::exit`, which runs no destructors. Open the span across that call
     // and every *failing* command goes unlogged — the half of the record that
     // matters most for "which surface is giving trouble?".
-    let sandbox = tempfile::tempdir().unwrap();
+    let (sandbox, home, data_home) = sandbox();
     let config_dir = sandbox.path().join("config");
-    let data_home = sandbox.path().join("data");
     let not_a_repo = sandbox.path().join("not-a-repo");
     std::fs::create_dir_all(&not_a_repo).unwrap();
 
-    cmd_with_log(&config_dir, &data_home)
+    cli_cmd_in(&config_dir, &home)
         .args(["task", "env", "some-task", "--root"])
         .arg(&not_a_repo)
         .assert()
@@ -88,12 +81,11 @@ fn a_failing_command_is_recorded_too() {
 fn operands_never_reach_the_log() {
     // The event log is plaintext and excludes user content by rule, so the
     // record names the command and nothing the user typed after it.
-    let sandbox = tempfile::tempdir().unwrap();
+    let (sandbox, home, data_home) = sandbox();
     let config_dir = sandbox.path().join("config");
-    let data_home = sandbox.path().join("data");
     let secret = "moondust-rutabaga-77";
 
-    cmd_with_log(&config_dir, &data_home).args(["journal", "search", secret]).assert().success();
+    cli_cmd_in(&config_dir, &home).args(["journal", "search", secret]).assert().success();
 
     let dir = data_home.join(tt_config::TOOL_NAME).join("telemetry");
     let logged: String = std::fs::read_dir(&dir)

@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::cli_cmd;
+use common::{Tt, cli_cmd};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
@@ -75,7 +75,7 @@ impl FakeApp {
 }
 
 /// `tt open` pointed at `app`, with `TT_SESSION_ID` set unless `session` is None.
-fn open_cmd(app: &FakeApp, path: &Path, session: Option<&str>) -> assert_cmd::Command {
+fn open_cmd(app: &FakeApp, path: &Path, session: Option<&str>) -> Tt {
     let mut cmd = cli_cmd(Path::new("/nonexistent-config"));
     cmd.env("TT_MCP_PORT", app.port.to_string());
     match session {

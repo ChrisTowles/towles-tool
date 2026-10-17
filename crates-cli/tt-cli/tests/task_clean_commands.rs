@@ -6,8 +6,7 @@
 
 mod common;
 
-use assert_cmd::Command as Tt;
-use common::{canonical_temp, data_home};
+use common::{Tt, canonical_temp, data_home, tt_in};
 use std::path::{Path, PathBuf};
 
 fn git(dir: &Path, args: &[&str]) {
@@ -16,10 +15,8 @@ fn git(dir: &Path, args: &[&str]) {
 
 /// A `tt` command with the state tree sandboxed under `home`.
 fn tt(home: &Path) -> Tt {
-    let mut cmd = Tt::cargo_bin("tt").expect("binary `tt` should build");
-    cmd.env("HOME", home);
-    cmd.env("XDG_DATA_HOME", home.join(".local").join("share"));
-    cmd.env_remove("TT_STATE_SCOPE");
+    let mut cmd = tt_in(home);
+    cmd.env_remove(tt_config::STATE_SCOPE_ENV);
     cmd
 }
 

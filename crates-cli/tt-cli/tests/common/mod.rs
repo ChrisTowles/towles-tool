@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use assert_cmd::Command;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -15,15 +16,63 @@ pub fn canonical_temp() -> (TempDir, PathBuf) {
     (guard, path)
 }
 
-/// Build a `tt` command pointed at an isolated config directory, with
-/// `TT_STATE_SCOPE` forced empty so state paths stay *unscoped* even though the
-/// test binary runs from inside a task checkout, whose cwd would otherwise
-/// auto-derive a task scope.
-pub fn cli_cmd(config_dir: &Path) -> Command {
+/// A `tt` child whose `HOME` and XDG dirs are all inside a sandbox, so nothing it
+/// writes (state, config, its own `cli.command` telemetry span) reaches the real
+/// machine. A command that owns its sandbox keeps the directory alive for as long
+/// as the command, which is why callers get this wrapper and not a bare `Command`.
+pub struct Tt {
+    cmd: Command,
+    _home: Option<TempDir>,
+}
+
+impl Deref for Tt {
+    type Target = Command;
+    fn deref(&self) -> &Command {
+        &self.cmd
+    }
+}
+
+impl DerefMut for Tt {
+    fn deref_mut(&mut self) -> &mut Command {
+        &mut self.cmd
+    }
+}
+
+/// `tt` with every home pointed inside `home`, and `TT_STATE_SCOPE` forced empty
+/// so state paths stay *unscoped* even though the test binary runs from inside a
+/// task checkout, whose cwd would otherwise auto-derive a task scope. `HOME` is
+/// redirected as well as the XDG vars because macOS ignores the latter.
+pub fn tt_in(home: &Path) -> Tt {
     let mut cmd = Command::cargo_bin("tt").expect("binary `tt` should build");
-    cmd.arg("--config-dir").arg(config_dir);
-    cmd.env(tt_config::STATE_SCOPE_ENV, "");
-    cmd
+    cmd.env("HOME", home)
+        .env("XDG_DATA_HOME", home.join(".local").join("share"))
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("XDG_STATE_HOME", home.join(".local").join("state"))
+        .env("XDG_CACHE_HOME", home.join(".cache"))
+        .env(tt_config::STATE_SCOPE_ENV, "");
+    Tt { cmd, _home: None }
+}
+
+/// [`tt_in`] with a throwaway home of its own, for tests that never look inside it.
+pub fn tt_sandboxed() -> Tt {
+    let home = TempDir::new().unwrap();
+    let mut tt = tt_in(home.path());
+    tt._home = Some(home);
+    tt
+}
+
+/// [`tt_in`] with `--config-dir` pointed at an isolated config directory.
+pub fn cli_cmd_in(config_dir: &Path, home: &Path) -> Tt {
+    let mut tt = tt_in(home);
+    tt.arg("--config-dir").arg(config_dir);
+    tt
+}
+
+/// [`tt_sandboxed`] with `--config-dir` pointed at an isolated config directory.
+pub fn cli_cmd(config_dir: &Path) -> Tt {
+    let mut tt = tt_sandboxed();
+    tt.arg("--config-dir").arg(config_dir);
+    tt
 }
 
 /// Where a sandboxed child actually writes state. `tt-config` resolves it
