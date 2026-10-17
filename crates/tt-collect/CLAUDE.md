@@ -20,7 +20,7 @@ its own.
 ## Per-repo isolation
 
 `collect_issues`/`collect_prs` fan `gh` calls for each tracked repo across a
-bounded thread pool (`lib.rs` ~line 285) rather than a single call per repo
+bounded thread pool (`sweep.rs`'s `sweep_repos`) rather than a single call per repo
 serially. Each repo's outcome is independent — one repo's failure (a missing
 dir, a repo `gh` can't reach) never sinks another repo's rows. Preserve this
 when touching the per-repo path; a shared early-return would silently zero
@@ -31,7 +31,7 @@ out unrelated repos' data.
 Two mitigations, both load-bearing for keeping the GraphQL budget (per-token,
 not per-directory) from getting hammered:
 
-- `dedupe_repo_dirs` (`lib.rs`) runs before every sweep in `collect_issues`/
+- `dedupe_repo_dirs` (`sweep.rs`) runs before every sweep in `collect_issues`/
   `collect_prs`, collapsing tracked dirs to one per resolved `owner/repo`
   before the expensive PR/issue-list calls fire. Every worktree of a repo
   is a separate tracked dir sharing one GitHub identity, so without this an
@@ -103,7 +103,7 @@ concurrency-free work to this path.
 The run goes through [`tt_exec::claude`](../tt-exec/src/claude.rs) —
 `claude -p … --output-format json --json-schema <schema>` — so the CLI routes
 the model through a structured-output tool and validates the events before they
-reach `EventInput`. `CALENDAR_SCHEMA` in `lib.rs` is that contract; a prompt in
+reach `EventInput`. `CALENDAR_SCHEMA` in `calendar.rs` is that contract; a prompt in
 settings only has to say *which* calendar, *which* day and what to leave out,
 which is what lets a user point a source at whatever MCP works on their machine.
 Nothing here reads JSON out of prose, and adding a second `claude -p` caller
