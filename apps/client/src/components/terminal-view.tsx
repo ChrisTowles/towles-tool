@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Dialog, Input } from "@cloudflare/kumo";
-import { CaretDownIcon, CaretUpIcon, XIcon } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
 import {
   BOLD,
   FAINT,
@@ -17,7 +15,6 @@ import {
   isPasteChord,
   keyEventWire,
   scrollbackKey,
-  stepMatch,
   MODIFIER_KEYS,
   viewportMatches,
   TERM_CLEAR_COMMAND,
@@ -36,7 +33,6 @@ import {
   useCopyOnSelect,
   useTerminalFontSize,
 } from "@/lib/terminal-prefs";
-import { macKeymap } from "@/lib/keymap";
 import {
   matchesEditableOverride,
   matchesShortcut,
@@ -46,22 +42,15 @@ import { notePaneKey } from "@/lib/agentboard/prompt-submit";
 import { openExternalUrl } from "@/lib/open-url";
 import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
+import { useTerminalSearch, type TermBridge } from "@/components/terminal-view/search";
+import { PastePrompt, TermContextMenu, TermSearchBar } from "@/components/terminal-view/overlays";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuShortcut,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { IconBtn } from "@/components/agentboard-bits/primitives";
-
-/** Alpha washes, so they read on light and dark terminal themes. */
-const MATCH_FILL = "rgba(250, 204, 21, 0.3)";
-const CURRENT_MATCH_FILL = "rgba(249, 115, 22, 0.5)";
-const CURRENT_MATCH_STROKE = "rgba(249, 115, 22, 0.9)";
-
-const LINE_HEIGHT = 1.25;
+  CURRENT_MATCH_FILL,
+  CURRENT_MATCH_STROKE,
+  LINE_HEIGHT,
+  MATCH_FILL,
+  charAt,
+} from "@/components/terminal-view/paint";
 
 /** Rust owns the PTY and the state, keyed by `termId`; this paints
  * `terminal://frame` diffs. Many mount at once, so each filters events by id. */
@@ -108,31 +97,19 @@ export function TerminalView({
   const revealPathExternally = (link: Extract<TermLink, { kind: "path" }>) =>
     void invoke("term_reveal_path", { path: link.path, cwd, termId });
 
-  const searchRef = useRef<{ matches: SearchMatch[]; current: number }>({
-    matches: [],
-    current: -1,
-  });
-  const bridgeRef = useRef<{
-    search: (query: string) => Promise<SearchMatch[]>;
-    scrollTo: (row: number) => void;
-    repaint: () => void;
-    focusTerm: () => void;
-    copy: (markdown?: boolean) => void;
-    paste: () => void;
-    selectAll: () => void;
-    hasSelection: () => boolean;
-    clearScrollback: () => void;
-    openPath: (link: Extract<TermLink, { kind: "path" }>) => void;
-    linkAtPoint: (offsetX: number, offsetY: number) => TermLink | null;
-    setFontSize: (px: number) => void;
-  } | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [matchCount, setMatchCount] = useState(0);
-  const [currentMatch, setCurrentMatch] = useState(-1);
-  const [copyEnabled, setCopyEnabled] = useState(false);
-  const [menuLink, setMenuLink] = useState<TermLink | null>(null);
+  const bridgeRef = useRef<TermBridge | null>(null);
+  const {
+    searchRef,
+    searchInputRef,
+    searchOpen,
+    setSearchOpen,
+    query,
+    setQuery,
+    matchCount,
+    currentMatch,
+    step,
+    closeSearch,
+  } = useTerminalSearch(bridgeRef);
   // Held back because the shell lacks bracketed paste (every line would
   // execute); the dialog re-sends it with force.
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
@@ -152,50 +129,9 @@ export function TerminalView({
   const setTerminalFontSizeRef = useRef(setTerminalFontSize);
   setTerminalFontSizeRef.current = setTerminalFontSize;
 
-  const runSearch = useCallback(async (q: string) => {
-    const bridge = bridgeRef.current;
-    if (!bridge) return;
-    const matches = q ? await bridge.search(q) : [];
-    const current = matches.length - 1; // start at the most recent match
-    searchRef.current = { matches, current };
-    setMatchCount(matches.length);
-    setCurrentMatch(current);
-    if (current >= 0) bridge.scrollTo(matches[current].row);
-    bridge.repaint();
-  }, []);
-
-  const step = useCallback((dir: 1 | -1) => {
-    const sr = searchRef.current;
-    const next = stepMatch(sr.matches.length, sr.current, dir);
-    if (next < 0) return;
-    sr.current = next;
-    setCurrentMatch(next);
-    bridgeRef.current?.scrollTo(sr.matches[next].row);
-    bridgeRef.current?.repaint();
-  }, []);
-
-  const closeSearch = useCallback(() => {
-    setSearchOpen(false);
-    setQuery("");
-    setMatchCount(0);
-    setCurrentMatch(-1);
-    searchRef.current = { matches: [], current: -1 };
-    bridgeRef.current?.repaint();
-    bridgeRef.current?.focusTerm();
-  }, []);
-
-  useEffect(() => {
-    if (searchOpen) searchInputRef.current?.focus();
-  }, [searchOpen]);
   useEffect(() => {
     if (focusRequest !== undefined) inputRef.current?.focus({ preventScroll: true });
   }, [focusRequest]);
-  // Debounced — each keystroke otherwise round-trips the engine.
-  useEffect(() => {
-    if (!searchOpen) return;
-    const t = setTimeout(() => void runSearch(query), 150);
-    return () => clearTimeout(t);
-  }, [searchOpen, query, runSearch]);
 
   // Re-measure without re-running (and so restarting) the shell-owning effect.
   useEffect(() => {
@@ -1012,165 +948,36 @@ export function TerminalView({
       if (started) void invoke("term_kill", { termId });
     };
     // termId/cwd identify the shell; changing them means a different terminal.
-  }, [termId, cwd, copyOnSelectRef, shortcutsWorkInTerminalRef]);
+  }, [termId, cwd, copyOnSelectRef, shortcutsWorkInTerminalRef, searchRef, setSearchOpen]);
 
   return (
     <div ref={hostRef} className="relative size-full overflow-hidden bg-background p-1">
-      {/* Right-click menu; items route through `bridgeRef`. `finalFocus`
-          returns focus to the hidden input so typing/IME keep working. */}
-      <ContextMenu
-        onOpenChange={(open) => {
-          if (open) setCopyEnabled(bridgeRef.current?.hasSelection() ?? false);
-        }}
-      >
-        <ContextMenuTrigger
-          render={
-            <canvas
-              ref={canvasRef}
-              className="block"
-              onContextMenu={(e) =>
-                setMenuLink(
-                  bridgeRef.current?.linkAtPoint(e.nativeEvent.offsetX, e.nativeEvent.offsetY) ??
-                    null,
-                )
-              }
-            />
-          }
-        />
-        <ContextMenuContent
-          finalFocus={() => {
-            bridgeRef.current?.focusTerm();
-            return false;
-          }}
-        >
-          {menuLink && (
-            <>
-              <ContextMenuItem
-                onClick={() =>
-                  menuLink.kind === "url"
-                    ? void openExternalUrl(menuLink.url)
-                    : bridgeRef.current?.openPath(menuLink)
-                }
-              >
-                {menuLink.kind === "url"
-                  ? "Open link"
-                  : onOpenPath
-                    ? "Open in files"
-                    : "Open in external editor"}
-              </ContextMenuItem>
-              {menuLink.kind === "path" && onOpenPath && (
-                <ContextMenuItem onClick={() => openPathInEditor(menuLink)}>
-                  Open in external editor
-                </ContextMenuItem>
-              )}
-              {menuLink.kind === "path" && (
-                <>
-                  <ContextMenuSeparator />
-                  {onRevealPath && (
-                    <ContextMenuItem onClick={() => onRevealPath(menuLink.path)}>
-                      Open folder in files
-                    </ContextMenuItem>
-                  )}
-                  <ContextMenuItem onClick={() => revealPathExternally(menuLink)}>
-                    Open folder in file manager
-                  </ContextMenuItem>
-                </>
-              )}
-              <ContextMenuSeparator />
-            </>
-          )}
-          <ContextMenuItem disabled={!copyEnabled} onClick={() => bridgeRef.current?.copy()}>
-            Copy
-            <ContextMenuShortcut>{macKeymap() ? "⇧⌘C" : "Ctrl+Shift+C"}</ContextMenuShortcut>
-          </ContextMenuItem>
-          <ContextMenuItem disabled={!copyEnabled} onClick={() => bridgeRef.current?.copy(true)}>
-            Copy as Markdown
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => bridgeRef.current?.paste()}>Paste</ContextMenuItem>
-          <ContextMenuItem onClick={() => bridgeRef.current?.selectAll()}>
-            Select all
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={() => setSearchOpen(true)}>
-            Search scrollback
-            <ContextMenuShortcut>{macKeymap() ? "⇧⌘F" : "Ctrl+Shift+F"}</ContextMenuShortcut>
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => bridgeRef.current?.clearScrollback()}>
-            Clear scrollback
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-      {/* Scrollback search overlay (Ctrl/⌘+Shift+F). Enter/Shift+Enter step
-          through matches; Escape returns focus to the terminal. */}
+      <TermContextMenu
+        canvasRef={canvasRef}
+        bridgeRef={bridgeRef}
+        onOpenPath={onOpenPath}
+        onRevealPath={onRevealPath}
+        openPathInEditor={openPathInEditor}
+        revealPathExternally={revealPathExternally}
+        onSearch={() => setSearchOpen(true)}
+      />
       {searchOpen && (
-        <div className="absolute right-1 top-1 z-10 flex items-center gap-1 rounded-md border border-kumo-hairline bg-kumo-base p-1 shadow-md">
-          <Input
-            ref={searchInputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                step(e.shiftKey ? -1 : 1);
-              } else if (e.key === "Escape" || matchesShortcut("term-search", e.nativeEvent)) {
-                e.preventDefault();
-                closeSearch();
-              }
-            }}
-            placeholder="Search scrollback"
-            size="xs"
-            className="w-44 px-2 text-xs"
-            spellCheck={false}
-            aria-label="search scrollback"
-          />
-          <span className="min-w-10 text-center font-mono text-micro tabular-nums text-kumo-subtle">
-            {matchCount > 0 ? `${currentMatch + 1}/${matchCount}` : "0/0"}
-          </span>
-          <IconBtn title="Previous match (Shift+Enter)" onClick={() => step(-1)}>
-            <CaretUpIcon className="size-3" />
-          </IconBtn>
-          <IconBtn title="Next match (Enter)" onClick={() => step(1)}>
-            <CaretDownIcon className="size-3" />
-          </IconBtn>
-          <IconBtn title="Close search (Esc)" onClick={closeSearch}>
-            <XIcon className="size-3" />
-          </IconBtn>
-        </div>
+        <TermSearchBar
+          inputRef={searchInputRef}
+          query={query}
+          onQuery={setQuery}
+          matchCount={matchCount}
+          currentMatch={currentMatch}
+          step={step}
+          onClose={closeSearch}
+        />
       )}
-      {/* Confirm a multi-line paste the engine held back: the shell has no
-          bracketed paste, so every line would run the moment it lands. */}
-      <Dialog.Root
-        role="alertdialog"
-        open={pendingPaste !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingPaste(null);
-        }}
-        onOpenChangeComplete={(open) => {
-          if (!open) bridgeRef.current?.focusTerm();
-        }}
-      >
-        <Dialog size="lg" className="p-6">
-          <Dialog.Title className="text-lg font-semibold">
-            Paste {pendingPaste?.split("\n").length ?? 0} lines?
-          </Dialog.Title>
-          <Dialog.Description className="mt-2 text-sm text-kumo-subtle">
-            This shell isn't guarding pastes (no bracketed paste), so each line runs as soon as it
-            arrives — including the last one if it ends with a newline.
-          </Dialog.Description>
-          <div className="mt-6 flex justify-end gap-2">
-            <Dialog.Close
-              render={(p) => (
-                <Button {...p} variant="secondary">
-                  Cancel
-                </Button>
-              )}
-            />
-            <Button variant="primary" onClick={confirmPaste}>
-              Paste
-            </Button>
-          </div>
-        </Dialog>
-      </Dialog.Root>
+      <PastePrompt
+        pendingPaste={pendingPaste}
+        onCancel={() => setPendingPaste(null)}
+        onClosed={() => bridgeRef.current?.focusTerm()}
+        onConfirm={confirmPaste}
+      />
       {/* Hidden input: receives focus/keystrokes/IME composition/paste. */}
       <textarea
         ref={inputRef}
@@ -1182,20 +989,4 @@ export function TerminalView({
       />
     </div>
   );
-}
-
-/** The character at terminal column `x` in a row of runs, if any. */
-function charAt(runs: Run[], x: number): string | null {
-  for (const run of runs) {
-    if (x < run.x || x >= run.x + run.width) continue;
-    const clusters = graphemeClusters(run.text);
-    if (!isWideRun(run)) return clusters[x - run.x] ?? null;
-    let cx = run.x;
-    for (const cluster of clusters) {
-      const w = (cluster.codePointAt(0) ?? 0) > 0xff ? 2 : 1;
-      if (x >= cx && x < cx + w) return cluster;
-      cx += w;
-    }
-  }
-  return null;
 }
