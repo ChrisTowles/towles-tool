@@ -852,7 +852,7 @@ export function AgentBoardScreen() {
           />
         )}
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-          {/* Rail: the Queue/Tree switch, rollup tally, then the task queue or the
+          {/* Rail: the Tree/Queue switch, rollup tally, then the task queue or the
               Repo → Folder → Session tree. Only its contents swap: the panel
               keeps its identity, so the panes beside it never remount. */}
           {!railCollapsed && (

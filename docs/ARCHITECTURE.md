@@ -144,7 +144,7 @@ React 19 + Vite + Tailwind v4 + Kumo, a Yaak-style shell (resizable sidebar
 as the only nav, ⌘K palette, screens stay mounted across switches) with three
 Focus screens: **Agent Board**, **Board**, **Messages**. Agent Board, the
 cold-start screen, is one workspace — the same terminals, panes and selection —
-with two rails over the same checkouts, switched by the Queue/Tree tabs atop the
+with two rails over the same checkouts, switched by the Tree/Queue tabs atop the
 rail. Queue lays them out to work one at a time: the rail *is* the queue
 (On you, whose first row is Next up, then Idle / Running / Parked / Not open — idle waits on
 you, running needs nothing). When the head of On you

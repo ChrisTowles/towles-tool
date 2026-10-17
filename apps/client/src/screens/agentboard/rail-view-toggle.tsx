@@ -6,12 +6,12 @@ import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
 
 const VIEWS: { value: RailView; label: string; icon: typeof ListNumbersIcon }[] = [
-  { value: "queue", label: "Queue", icon: ListNumbersIcon },
   { value: "tree", label: "Tree", icon: TreeStructureIcon },
+  { value: "queue", label: "Queue", icon: ListNumbersIcon },
 ];
 
-/** Which rail Agent Board shows: tasks in the order to work them, or every
- * checkout by place. Only the rail swaps; the panes beside it stay put. */
+/** Which rail Agent Board shows: every checkout by place, or tasks in the
+ * order to work them. Only the rail swaps; the panes beside it stay put. */
 export function RailViewToggle({
   view,
   onChange,
