@@ -13,7 +13,7 @@ import {
   taskFor,
   untilLabel,
 } from './band'
-import { COPY_ALL_GAP_MS, clipAnswer, clipLabel, offersFrom } from './clip'
+import { COPY_ALL_GAP_MS, clipAnswer, clipShown, offersFrom } from './clip'
 import { type Appended, midTurnText, promptText, remember, stranded, unseen } from './inbox'
 import { parkArgs } from './park'
 import { emptyLog, logTool, taken, withAnswer } from './suggest'
@@ -222,7 +222,7 @@ async function copyOffers($: EngineInterface, offers: ClipOffer[], surface: Surf
     $.ui.toast('Nothing reached the clipboard.')
     return
   }
-  $.ui.toast(offers.length === 1 ? `Copied ${clipLabel(offers[0]!)}` : `Copied ${copied}, in order`)
+  $.ui.toast(offers.length === 1 ? `Copied ${clipShown(offers[0]!)}` : `Copied ${copied}, in order`)
   const args = { count: copied, ...(index === undefined ? {} : { index }) }
   void call($, 'clip_copied', args).catch(() => {})
 }
@@ -376,22 +376,18 @@ export const register: Register = on => {
         )}
         {offers.length > 0 && (
           <Box flexDirection="column">
-            <Text color="magenta">Copy</Text>
             {offers.map((offer, i) => (
-              <Box key={`clip:${i}`} flexDirection="column">
-                <Button
-                  key={`clip:${i}`}
-                  hotkey={String(i + 1)}
-                  plain
-                  onPress={press => void copyOffers($, [offer], press.surface, i)}
-                >
-                  {clipLabel(offer)}
-                </Button>
-                <Text dimColor wrap="truncate-end">
-                  {'   '}
-                  {offer.text}
+              <Button
+                key={`clip:${i}`}
+                hotkey={String(i + 1)}
+                plain
+                onPress={press => void copyOffers($, [offer], press.surface, i)}
+              >
+                <Text backgroundColor="magenta" color="black">
+                  {' copy '}
                 </Text>
-              </Box>
+                <Text> {offer.text.trim()}</Text>
+              </Button>
             ))}
             {offers.length > 1 && (
               <Button
@@ -456,7 +452,10 @@ export const register: Register = on => {
             plain
             onPress={press => void copyOffers($, [offer], press.surface, i)}
           >
-            {docked ? 'copy' : `copy ${clipLabel(offer)}`}
+            <Text backgroundColor="magenta" color="black">
+              {' copy '}
+            </Text>
+            {!docked && <Text> {clipShown(offer)}</Text>}
           </Button>
         ))}
         {offers.length > 1 && (

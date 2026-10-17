@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 
 import { midTurnText, promptText, remember, stranded, unseen } from '../hooks/inbox'
 import { parkArgs } from '../hooks/park'
-import { clipAnswer, clipLabel, offersFrom } from '../hooks/clip'
+import { clipAnswer, clipShown, offersFrom } from '../hooks/clip'
 import { emptyLog, logTool, taken, withAnswer } from '../hooks/suggest'
 
 const NOTE = { id: 4, body: 'also cover the empty state', images: ['/tmp/a.png'] }
@@ -80,9 +80,9 @@ describe('clip', () => {
     expect(offersFrom({ items: 'no' })).toEqual([])
   })
 
-  test('labels fall back to the text and stay short', async () => {
-    expect(clipLabel({ label: ' ', text: 'gh pr view 9' })).toBe('gh pr view 9')
-    expect(clipLabel({ label: 'x'.repeat(40), text: 't' }).length).toBe(28)
+  test('the shown text is one short line', async () => {
+    expect(clipShown({ label: 'x', text: ' gh pr\n view 9 ' })).toBe('gh pr view 9')
+    expect(clipShown({ label: 'x', text: 'x'.repeat(60) }).length).toBe(40)
     expect(clipAnswer('y'.repeat(5000)).length).toBe(4000)
   })
 })

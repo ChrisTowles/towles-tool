@@ -202,10 +202,10 @@ describe('band', () => {
     expect(calls.find(c => c.tool === 'clip_suggest')?.args).toEqual({ answer })
 
     const ui = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await ui.find({ text: 'copy PR' })).toBeDefined()
+    expect(await ui.find({ text: 'https://x.dev/pr/9' })).toBeDefined()
     await ui.press({ key: 'clip:1' })
     expect(copied).toEqual(['bun run e2e'])
-    expect(toasts.at(-1)).toBe('Copied run e2e')
+    expect(toasts.at(-1)).toBe('Copied bun run e2e')
 
     const all = ui.press({ key: 'clip:all' })
     await clock.advance(1000)
@@ -219,7 +219,7 @@ describe('band', () => {
 
     await $.turn.start({ text: 'next', turnId: 't2' } as never)
     const after = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await after.find({ text: 'copy PR' })).toBe(undefined)
+    expect(await after.find({ text: 'https://x.dev/pr/9' })).toBe(undefined)
     expect(await after.find({ text: 'engine' })).toBeDefined()
     await after.unmount()
   })
@@ -268,8 +268,8 @@ describe('band', () => {
       props: {},
     } as never)
     expect(await pane.find({ type: 'Text', text: '#7 Claude mods' })).toBeDefined()
-    expect(await pane.find({ text: 'run e2e' })).toBeDefined()
-    expect(await pane.find({ text: '   bun run e2e' })).toBeDefined()
+    expect(await pane.find({ text: ' copy ' })).toBeDefined()
+    expect(await pane.find({ text: ' bun run e2e' })).toBeDefined()
     await pane.unmount()
 
     const band = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })

@@ -144,7 +144,7 @@ the user's words from the app, into Claude Code itself.
 
 In a terminal 144 columns or wider, the mod docks a **tt** pane beside the
 transcript, full height: the task, its PR and the next meeting, then each copy
-offer on its own lines with the exact string it copies. While the pane shows,
+offer as a `copy` badge followed by the exact string it copies. While the pane shows,
 the band drops those facts and keeps only its keys (`n`, the digits, `a`): a
 pane's hotkeys need the pane focused, the band's work from the empty prompt.
 Narrower, the pane waits unplaced and the band carries everything as above.
@@ -193,10 +193,11 @@ cannot take a note; the app says so rather than type into its prompt box.
 When a turn ends with an answer, the mod sends its last message to
 `clip_suggest`. If it holds a code span, link, path or `#123` ref, the app asks
 one bare `claude -p` which exact strings you would copy, and keeps only those
-that appear verbatim in the message, at most three. The band then offers each:
+that appear verbatim in the message, at most three. The band then offers each as a
+`copy` badge and the text itself (cut at 40 characters; the pane shows it whole):
 
 ```
-✦ tt  …  n: next prompt  1: copy PR #9  2: copy run e2e  a: copy all
+✦ tt  …  n: next prompt  1:  copy  https://x.dev/pr/9  2:  copy  bun run e2e  a: copy all
 ```
 
 A digit in the empty prompt (or a click) copies that one; `a`, with the band
