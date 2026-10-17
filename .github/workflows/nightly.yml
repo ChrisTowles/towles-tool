@@ -6,6 +6,8 @@ name: Nightly
 #   - the WebdriverIO e2e suite against the real WebKitGTK shell under xvfb
 #   - dependency advisory scans
 # Scheduled daily plus manual dispatch. NOT wired into PR checks — best-effort.
+# No rust-cache: a once-a-day cold build costs nobody time, while its ~1.4GB
+# cache pushed the repo over the 10GB Actions-cache cap and evicted PR CI's.
 on:
   schedule:
     # 08:17 UTC daily — an off-peak, non-on-the-hour slot to dodge scheduler
@@ -82,7 +84,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ghostty-src
-          key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
+          key: ghostty-src-${{ runner.os }}-${{ env.GHOSTTY_COMMIT }}
 
       - name: Clone ghostty source
         if: steps.ghostty-cache.outputs.cache-hit != 'true'
@@ -90,10 +92,6 @@ jobs:
           git clone --filter=blob:none --no-checkout \
             https://github.com/ghostty-org/ghostty.git ghostty-src
           git -C ghostty-src checkout "$GHOSTTY_COMMIT"
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: nightly-full
 
       - name: test (whole workspace)
         env:
@@ -169,7 +167,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ghostty-src
-          key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
+          key: ghostty-src-${{ runner.os }}-${{ env.GHOSTTY_COMMIT }}
 
       - name: Clone ghostty source
         if: steps.ghostty-cache.outputs.cache-hit != 'true'
@@ -177,10 +175,6 @@ jobs:
           git clone --filter=blob:none --no-checkout \
             https://github.com/ghostty-org/ghostty.git ghostty-src
           git -C ghostty-src checkout "$GHOSTTY_COMMIT"
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: nightly-e2e
 
       # The runner has no task-rendered .env, so claim two free ports from the
       # OS; shell env overrides .env in scripts/task-port.mjs.

@@ -276,7 +276,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ghostty-src
-          key: ghostty-src-${{ env.GHOSTTY_COMMIT }}
+          key: ghostty-src-${{ runner.os }}-${{ env.GHOSTTY_COMMIT }}
 
       - name: Clone ghostty source
         if: steps.ghostty-cache.outputs.cache-hit != 'true'

@@ -1,0 +1,36 @@
+name: Prune caches
+
+# rust-cache and ghostty-src keys end in a lockfile/commit hash, so each bump
+# writes a fresh copy and the old one lingers until the 10GB repo cap evicts
+# something. Once a main run has saved, keep only the newest cache per key
+# family (the key minus its trailing hash). Other keys are left alone.
+on:
+  workflow_run:
+    workflows: [CI, Main build, Comment budget]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: prune-caches
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete superseded caches
+        run: |
+          gh cache list --ref refs/heads/main --limit 100 --json id,key,createdAt |
+            jq -r '
+              map(select(.key | test("^(v0-rust-.+-[0-9a-f]{8}-[0-9a-f]{8}|ghostty-src-[A-Za-z]+-[0-9a-f]{40})$"))
+                | .family = (.key | sub("-[0-9a-f]{8}-[0-9a-f]{8}$"; "") | sub("-[0-9a-f]{40}$"; "")))
+              | group_by(.family)[] | sort_by(.createdAt) | .[:-1][] | "\(.id) \(.key)"' |
+            while read -r id key; do
+              echo "deleting $key"
+              gh cache delete "$id"
+            done
