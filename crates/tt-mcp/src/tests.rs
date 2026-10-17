@@ -1886,6 +1886,66 @@ fn clip_suggest_turned_off_asks_nothing() {
     assert_eq!(call_tool(&mut dispatcher, "clip_copied", json!({ "count": 2 }))["recorded"], true);
 }
 
+/// A host that fails the test if asked: the gate must answer before any model call.
+struct NeverAsked;
+impl SuggestHost for NeverAsked {
+    fn suggest(&self, _: SuggestRequest) -> Result<SuggestAnswer, String> {
+        unreachable!("no next_prompt here")
+    }
+
+    fn clip(&self, _: ClipRequest) -> Result<ClipAnswer, String> {
+        panic!("a prose-only turn must not reach the model");
+    }
+}
+
+#[test]
+fn clip_suggest_skips_prose_without_asking_the_model() {
+    let mut dispatcher = dispatcher().with_suggest_host(Box::new(NeverAsked)).with_clip_settings(
+        tt_config::ClipSuggestSettings { daily_budget_usd: 1.0, ..Default::default() },
+    );
+    let prose = call_tool(
+        &mut dispatcher,
+        "clip_suggest",
+        json!({ "answer": "Done. Nothing else changed, and the tests pass." }),
+    );
+    assert_eq!(prose["items"], json!([]));
+    assert_eq!(prose["skipped"], "prose");
+}
+
+#[test]
+fn clip_suggest_asks_for_a_fence_a_url_or_a_path() {
+    for answer in [
+        "```sh\nbun run e2e\n```",
+        "See https://x.dev/pr/9",
+        "Wrote /tmp/report.html",
+    ] {
+        let mut dispatcher = clip_budgeted(0.0, 1.0, true);
+        let asked = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": answer }));
+        assert_eq!(asked["skipped"], Value::Null, "{answer}");
+        assert_eq!(asked["items"].as_array().map(Vec::len), Some(1), "{answer}");
+    }
+}
+
+#[test]
+fn clip_suggest_goes_quiet_after_three_ignored_offers_until_a_copy() {
+    let mut dispatcher = clip_budgeted(0.0, 1.0, true);
+    let args = json!({ "answer": "Run `cargo test`" });
+    let (mine, theirs) = (session("mine"), session("theirs"));
+    for _ in 0..3 {
+        let asked = call_tool_as(&mut dispatcher, "clip_suggest", args.clone(), &mine);
+        assert_eq!(asked["skipped"], Value::Null);
+    }
+    let quiet = call_tool_as(&mut dispatcher, "clip_suggest", args.clone(), &mine);
+    assert_eq!(quiet["items"], json!([]));
+    assert_eq!(quiet["skipped"], "ignored");
+    let other = call_tool_as(&mut dispatcher, "clip_suggest", args.clone(), &theirs);
+    assert_eq!(other["skipped"], Value::Null, "another session is not backed off");
+
+    call_tool_as(&mut dispatcher, "clip_copied", json!({ "count": 1 }), &mine);
+    let again = call_tool_as(&mut dispatcher, "clip_suggest", args, &mine);
+    assert_eq!(again["skipped"], Value::Null, "a copy resets the count");
+}
+
 fn budgeted(cost: f64, budget: f64) -> Dispatcher {
     dispatcher().with_suggest_host(Box::new(FakeSuggest(cost))).with_next_prompt_settings(
         tt_config::NextPromptSettings { daily_budget_usd: budget, ..Default::default() },

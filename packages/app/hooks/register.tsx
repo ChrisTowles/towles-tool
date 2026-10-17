@@ -164,7 +164,8 @@ async function askNext($: EngineInterface): Promise<string> {
 /** A turn's question, so a late answer to an older turn never replaces a newer one's. */
 let clipTurn = 0
 
-/** One model call per finished turn; the app skips it for prose and past the budget. */
+/** One model call per finished turn; the app skips it for prose, for a session ignoring its
+ * offers, and past the budget. */
 async function askClip($: EngineInterface, answer: string) {
   const turn = ++clipTurn
   try {

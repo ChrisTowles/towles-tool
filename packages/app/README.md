@@ -180,9 +180,12 @@ cannot take a note; the app says so rather than type into its prompt box.
 ### Copy suggestions
 
 When a turn ends with an answer, the mod sends its last message to
-`clip_suggest`. If it holds a code span, link, path or `#123` ref, the app asks
+`clip_suggest`. If it holds a fenced block, a command or identifier in
+backticks, a link, a path, a command line, a git SHA or a `#123` ref, the app asks
 one bare `claude -p` which exact strings you would copy, and keeps only those
-that appear verbatim in the message, at most three. The band grows into a
+that appear verbatim in the message, at most three. A session whose last three
+offers went uncopied is left alone until you copy one, and gets a single
+probe every 30 minutes. The band grows into a
 column, up to its 4 rows, and offers each on its own row as a `copy` badge and
 the text itself:
 

@@ -128,9 +128,6 @@ impl tt_mcp::SuggestHost for AppSuggestHost {
     }
 
     fn clip(&self, req: tt_mcp::ClipRequest) -> Result<tt_mcp::ClipAnswer, String> {
-        if !clip::worth_asking(&req.answer) {
-            return Ok(tt_mcp::ClipAnswer { items: Vec::new(), cost_usd: None });
-        }
         let prompt = clip_prompt(&req.question, req.goal.as_deref(), &req.answer);
         let started = Instant::now();
         let answered = tt_exec::claude::Ask::new(&prompt, CLIP_SCHEMA, CLAUDE_TIMEOUT)

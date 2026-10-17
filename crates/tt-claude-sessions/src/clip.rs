@@ -35,17 +35,6 @@ pub fn clip_prompt(question: &str, goal: Option<&str>, answer: &str) -> String {
     out
 }
 
-/// Whether a message holds anything a clipboard question could find: a code span, a link,
-/// a path or an issue ref. Plain prose skips the model call.
-pub fn worth_asking(answer: &str) -> bool {
-    answer.contains('`')
-        || answer.contains("://")
-        || answer.split_whitespace().any(|w| {
-            w.starts_with('/') && w.len() > 1
-                || w.starts_with('#') && w[1..].starts_with(|c: char| c.is_ascii_digit())
-        })
-}
-
 /// Only strings that appear verbatim in the message survive, deduplicated, at most
 /// [`MAX_ITEMS`]: a model that paraphrases a command must not put the paraphrase on the
 /// clipboard.
@@ -73,16 +62,6 @@ mod tests {
 
     fn item(label: &str, text: &str) -> ClipItem {
         ClipItem { label: label.to_string(), text: text.to_string() }
-    }
-
-    #[test]
-    fn prose_skips_the_call_and_anything_copyable_asks() {
-        assert!(!worth_asking("Done. The tests pass and nothing else changed."));
-        assert!(worth_asking("Run `cargo test -p tt-store`."));
-        assert!(worth_asking("Opened https://github.com/o/r/pull/9"));
-        assert!(worth_asking("See PR #745 for the rest."));
-        assert!(worth_asking("Wrote /tmp/out/report.html"));
-        assert!(!worth_asking("Tagged as # and / alone"));
     }
 
     #[test]
