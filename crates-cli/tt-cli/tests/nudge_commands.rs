@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{canonical_temp, cli_cmd, data_home};
+use common::{Tt, canonical_temp, cli_cmd, cli_cmd_in, data_home};
 use predicates::prelude::*;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -11,11 +11,8 @@ use tempfile::TempDir;
 /// or explicitly absent. `env_remove` is load-bearing: these tests inherit the
 /// environment of whatever ran them, and a session started from an app terminal
 /// already has a real `TT_SESSION_ID` that would leak into the "no session" cases.
-fn nudge(home: &Path, target: &str, session: Option<&str>) -> assert_cmd::Command {
-    let mut cmd = cli_cmd(&home.join(".config").join("towles-tool"));
-    cmd.env("HOME", home)
-        .env("XDG_DATA_HOME", home.join(".local").join("share"))
-        .env("XDG_CONFIG_HOME", home.join(".config"));
+fn nudge(home: &Path, target: &str, session: Option<&str>) -> Tt {
+    let mut cmd = cli_cmd_in(&home.join(".config").join("towles-tool"), home);
     match session {
         Some(id) => cmd.env("TT_SESSION_ID", id),
         None => cmd.env_remove("TT_SESSION_ID"),

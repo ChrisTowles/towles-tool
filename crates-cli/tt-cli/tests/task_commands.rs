@@ -3,8 +3,7 @@
 
 mod common;
 
-use assert_cmd::Command as Tt;
-use common::{canonical_temp, data_home};
+use common::{Tt, canonical_temp, data_home, tt_in};
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::path::{Path, PathBuf};
@@ -17,9 +16,7 @@ fn git(dir: &Path, args: &[&str]) {
 /// nests the shared stores too, so nothing reaches the real machine files. Tests that
 /// inspect the sandbox pass their own `home`; the rest go through [`tt`].
 fn tt_scoped(home: &Path, scope: &str) -> Tt {
-    let mut cmd = Tt::cargo_bin("tt").expect("binary `tt` should build");
-    cmd.env("HOME", home);
-    cmd.env("XDG_DATA_HOME", home.join(".local").join("share"));
+    let mut cmd = tt_in(home);
     cmd.env(tt_config::STATE_SCOPE_ENV, scope);
     cmd
 }
@@ -945,9 +942,8 @@ fn rm_closes_a_board_row_scoped_to_the_ambient_cwds_own_worktree() {
     // No `TT_STATE_SCOPE`: a forced scope resolves every store to one path and hides
     // the bug, so this needs real auto-detection.
     let cmd = || {
-        let mut c = Tt::cargo_bin("tt").expect("binary `tt` should build");
-        c.env("HOME", &home);
-        c.env("XDG_DATA_HOME", &data_home);
+        let mut c = tt_in(&home);
+        c.env_remove(tt_config::STATE_SCOPE_ENV);
         c
     };
 

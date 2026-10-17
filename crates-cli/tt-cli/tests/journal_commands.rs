@@ -1,7 +1,7 @@
 mod common;
 
 use chrono::{Datelike, Duration, Local, NaiveDate};
-use common::{cli_cmd, write_journal_settings};
+use common::{Tt, cli_cmd, write_journal_settings};
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ fn monday_of_this_week() -> NaiveDate {
     today - Duration::days(today.weekday().num_days_from_monday() as i64)
 }
 
-fn cmd(sandbox: &Sandbox) -> assert_cmd::Command {
+fn cmd(sandbox: &Sandbox) -> Tt {
     cli_cmd(&sandbox.config)
 }
 
