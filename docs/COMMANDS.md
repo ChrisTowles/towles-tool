@@ -94,6 +94,7 @@ bun start                           # reinstall `tt`, release build (`tauri buil
 bun run dev:drive                   # like dev, but the window is automatable (live-drive)
 bun run drive -- <verb>             # drive the dev:drive window (status|invoke|shot|click|…)
 bun run e2e                         # regression suite vs the real shell (see below)
+bun run typecheck:e2e               # tsc over e2e/ specs (CI: Frontend workflow)
 cd apps/client && bun run lint      # oxlint (warnings are non-blocking) + knip (unused exports/files)
 cd apps/client && bun run format    # oxfmt, in place (100-col, matches rustfmt's width)
 bun run check:bundle                # after a client build: gzipped-size ratchet (`--write` resets it)

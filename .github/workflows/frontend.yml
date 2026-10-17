@@ -6,6 +6,7 @@ on:
     paths: &client-paths
       - "apps/client/**"
       - "scripts/**"
+      - "e2e/**"
       - "package.json"
       - "bun.lock"
       - ".github/workflows/frontend.yml"
@@ -48,6 +49,12 @@ jobs:
       # `.mjs` sources, typechecked via JSDoc + checkJs (scripts/tsconfig.json).
       - name: typecheck scripts
         run: bun run typecheck:scripts
+        working-directory: .
+
+      # The e2e specs only run nightly against the real shell; this catches a
+      # broken spec (or lib/target drift) on the PR that introduces it.
+      - name: typecheck e2e
+        run: bun run typecheck:e2e
         working-directory: .
 
       - name: test scripts
