@@ -18,5 +18,8 @@ serde_json = { workspace = true }
 # One loopback `server/discover` per doctor run; plain HTTP like `tt open`'s client.
 ureq = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.14.0"
+
 [lints]
 workspace = true

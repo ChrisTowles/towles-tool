@@ -823,6 +823,7 @@ pub fn run() {
             telemetry::telemetry_prune,
             agentboard::ab_ensure_session,
             doctor::doctor_run,
+            doctor::doctor_state_on_disk,
             doctor::doctor_recent_crashes,
             doctor::doctor_repeated_errors,
             doctor::crash_report,

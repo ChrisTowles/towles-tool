@@ -113,7 +113,13 @@ the CLI and the app can consume it.
   title and the user's global `rank`; unranked checkouts follow ranked ones in a
   tier. A PR, CI run or backlog task with no checkout is not a row.
 - `tt-claude-code` — transcript/session parsing models.
-- `tt-doctor` — doctor checks logic (the app screen consumes it).
+- `tt-doctor` — doctor checks logic (the app screen consumes it). Its `disk`
+  module is the read-only "State on disk" report: it sizes the state root's
+  top-level entries (symlinks unfollowed, a time budget past which sizes are
+  floors), flags `tasks/<scope>` dirs no known checkout maps to, and counts
+  per-task app-data dirs `tt task clean` would sweep. Every root is a
+  parameter; `run_disk_report` is the only place that resolves the real ones,
+  and it has its own Doctor IPC command so the walk never gates the tool checks.
 
 ## `crates-tauri/`
 

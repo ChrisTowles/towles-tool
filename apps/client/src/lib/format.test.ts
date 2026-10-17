@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtDiffLines, fmtDuration, fmtElapsed, fmtTokens } from "./format";
+import { fmtBytes, fmtDiffLines, fmtDuration, fmtElapsed, fmtTokens } from "./format";
 
 describe("fmtTokens", () => {
   it("abbreviates to K and M", () => {
@@ -73,5 +73,20 @@ describe("fmtElapsed", () => {
     expect(fmtElapsed(200_000)).toBe("3:20");
     expect(fmtElapsed(3_750_000)).toBe("1:02:30");
     expect(fmtElapsed(-5_000)).toBe("0:00");
+  });
+});
+
+describe("fmtBytes", () => {
+  it("scales through the units, one decimal below 10", () => {
+    expect(fmtBytes(0)).toBe("0 B");
+    expect(fmtBytes(812)).toBe("812 B");
+    expect(fmtBytes(1536)).toBe("1.5 KB");
+    expect(fmtBytes(325 * 1024 ** 2)).toBe("325 MB");
+    expect(fmtBytes(2.2 * 1024 ** 3)).toBe("2.2 GB");
+  });
+
+  it("promotes on the rounded value, never reading '1024 KB'", () => {
+    expect(fmtBytes(1024 ** 2 - 1)).toBe("1.0 MB");
+    expect(fmtBytes(-5)).toBe("0 B");
   });
 });

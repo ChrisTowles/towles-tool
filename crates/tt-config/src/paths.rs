@@ -54,7 +54,8 @@ pub(crate) enum Scope {
     Forced(String),
 }
 
-pub(crate) const SCOPE_DIR: &str = "tasks";
+/// The dir under a state root that holds one subdir per checkout scope.
+pub const SCOPE_DIR: &str = "tasks";
 
 /// The single place either unscoped base is derived.
 pub(crate) fn state_base_dirs() -> (Result<PathBuf>, Result<PathBuf>) {

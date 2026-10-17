@@ -97,3 +97,24 @@ export const RepeatedErrorListSchema = z.array(
 );
 
 export type RepeatedError = z.infer<typeof RepeatedErrorListSchema>[number];
+
+/** `doctor_state_on_disk`: `tt_doctor::DiskReport`. Own command — sizing is the
+ * slow probe, so it never gates the main report. */
+export const DiskReportSchema = z.object({
+  root: z.string(),
+  entries: z.array(z.object({ name: z.string(), bytes: z.number(), partial: z.boolean() })),
+  scopes: z.array(
+    z.object({
+      name: z.string(),
+      path: z.string(),
+      bytes: z.number(),
+      partial: z.boolean(),
+      orphan: z.boolean(),
+    }),
+  ),
+  residue: z.object({ count: z.number(), bytes: z.number(), partial: z.boolean() }),
+  totalBytes: z.number(),
+  partial: z.boolean(),
+});
+
+export type DiskReport = z.infer<typeof DiskReportSchema>;

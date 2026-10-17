@@ -9429,6 +9429,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "tempfile",
  "tt-agentboard",
  "tt-browser",
  "tt-codeserver",

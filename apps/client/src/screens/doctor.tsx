@@ -16,9 +16,11 @@ import {
 import { Button } from "@cloudflare/kumo";
 import {
   CrashRecordListSchema,
+  DiskReportSchema,
   DoctorReportSchema,
   RepeatedErrorListSchema,
   type CrashRecord,
+  type DiskReport,
   type RepeatedError,
 } from "@/lib/schemas/doctor";
 import { fmtDuration } from "@/lib/format";
@@ -26,6 +28,7 @@ import { invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { useAsyncRefresh } from "@/lib/use-async-refresh";
 import { Empty, Panel } from "@/components/store-bits";
+import { StateOnDisk } from "@/components/state-on-disk";
 
 /** Doctor — the same environment checks as `tt doctor` (shared `tt-doctor`
  * crate). The probes spawn ~10 subprocesses, so runs are on-demand
@@ -63,10 +66,16 @@ export function DoctorScreen() {
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [crashes, setCrashes] = useState<CrashRecord[]>([]);
   const [repeated, setRepeated] = useState<RepeatedError[]>([]);
+  const [disk, setDisk] = useState<DiskReport | null | undefined>(undefined);
   const [running, setRunning] = useState(true);
 
   const refresh = useAsyncRefresh(async () => {
     setRunning(true);
+    // Not awaited: sizing the state root is the slow probe, and the checks
+    // above must not wait on it.
+    void invoke<DiskReport>("doctor_state_on_disk", {}, { schema: DiskReportSchema }).then((r) =>
+      setDisk(r.unwrapOr(null)),
+    );
     const [run, recent, repeats] = await Promise.all([
       invoke<DoctorReport>("doctor_run", {}, { schema: DoctorReportSchema }),
       invoke<CrashRecord[]>("doctor_recent_crashes", {}, { schema: CrashRecordListSchema }),
@@ -143,6 +152,8 @@ export function DoctorScreen() {
             <RecentCrashes crashes={crashes} />
 
             <RepeatedErrors errors={repeated} />
+
+            <StateOnDisk report={disk} />
 
             <Panel title="This checkout" icon={<GitBranchIcon className="size-4" />}>
               {report.checkout.map((c) => (
