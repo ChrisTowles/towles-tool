@@ -8,9 +8,12 @@ export const COPY_ALL_GAP_MS = 400
 /** The tail of the agent's last message, where what it just printed sits. */
 export const clipAnswer = (answer: string): string => answer.slice(-ANSWER_CHARS)
 
-/** The text a copy puts on the clipboard, flattened to one line and cut short for the band and toast. */
+/** The text a copy puts on the clipboard, flattened to one band row. */
+export const clipLine = (offer: ClipOffer): string => offer.text.trim().replace(/\s+/g, ' ')
+
+/** The same, cut short for the toast. */
 export function clipShown(offer: ClipOffer): string {
-  const line = offer.text.trim().replace(/\s+/g, ' ')
+  const line = clipLine(offer)
   return line.length > SHOWN_CHARS ? `${line.slice(0, SHOWN_CHARS - 1)}…` : line
 }
 
