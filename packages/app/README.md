@@ -140,6 +140,17 @@ the user's words from the app, into Claude Code itself.
   surfaces. It turns yellow inside 15 minutes, and a toast fires once per
   meeting at 5 minutes.
 
+### The pane on the right
+
+In a terminal 144 columns or wider, the mod docks a **tt** pane beside the
+transcript, full height: the task, its PR and the next meeting, then each copy
+offer on its own lines with the exact string it copies. While the pane shows,
+the band drops those facts and keeps only its keys (`n`, the digits, `a`): a
+pane's hotkeys need the pane focused, the band's work from the empty prompt.
+Narrower, the pane waits unplaced and the band carries everything as above.
+`/tt` opens it at any width; once you close it, only `/tt` brings it back that
+session. Claude Code has no render site under its status line.
+
 The same facts go on the status line too, in short form
 (`tt #7 · PR #42 passing · ready for /done · 4m to Standup`),
 alongside the band.
