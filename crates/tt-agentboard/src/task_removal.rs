@@ -310,6 +310,7 @@ mod tests {
             name: "gone-worktree".to_string(),
             force: false,
             ports_dir: None,
+            host_data: tt_tasks::HostData::Skip,
         };
 
         let outcome = remove_task_and_bindings(
@@ -347,6 +348,7 @@ mod tests {
             name: "feat-tpyo".to_string(),
             force: false,
             ports_dir: None,
+            host_data: tt_tasks::HostData::Skip,
         };
 
         let error = remove_task_and_bindings(

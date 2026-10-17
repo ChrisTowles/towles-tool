@@ -52,19 +52,7 @@ use tt_agentboard::fs_notify::{MultiFileNotifier, ScopedDirNotifier};
 /// The checkout this binary was built from, baked in from `CARGO_MANIFEST_DIR`
 /// so several tasks' windows tell apart with no runtime cwd/env plumbing.
 pub(crate) fn task_label() -> String {
-    label_from_manifest_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
-}
-
-/// The repo-root directory name, two ancestors up from the manifest dir. Pure
-/// so the rule is unit-testable without the compile-time `CARGO_MANIFEST_DIR`.
-fn label_from_manifest_dir(manifest_dir: &Path) -> String {
-    manifest_dir
-        .ancestors()
-        .nth(2)
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("towles-tool")
-        .to_string()
+    tt_config::label_from_manifest_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
 }
 
 /// What the header badge shows: the label and whether this is a task build.
@@ -79,7 +67,7 @@ struct AppTask {
 fn app_task() -> AppTask {
     AppTask {
         label: task_label(),
-        is_worktree: is_task_manifest_dir(Path::new(env!("CARGO_MANIFEST_DIR"))),
+        is_worktree: tt_config::is_task_manifest_dir(Path::new(env!("CARGO_MANIFEST_DIR"))),
     }
 }
 
@@ -90,32 +78,10 @@ fn ui_action(action: String, screen: String, detail: Option<String>) {
     tracing::info!(%action, %screen, detail = %detail.as_deref().unwrap_or(""), "ui.action");
 }
 
-/// A task build's manifest dir is `<repo>/.claude/worktrees/<task>/crates-tauri/tt-app`
-/// — ancestors 3/4 are the worktrees/.claude segments exactly then.
-fn is_task_manifest_dir(manifest_dir: &Path) -> bool {
-    manifest_dir.ancestors().nth(3).and_then(|p| p.file_name())
-        == Some(std::ffi::OsStr::new("worktrees"))
-        && manifest_dir.ancestors().nth(4).and_then(|p| p.file_name())
-            == Some(std::ffi::OsStr::new(".claude"))
-}
-
 /// Per-task app identifier, so each worktree's self-installed `.desktop` entry
 /// gets its own filename. Touches no GTK/D-Bus — see CLAUDE.md on `enableGTKAppId`.
 fn app_identifier(base: &str) -> String {
-    app_identifier_from(Path::new(env!("CARGO_MANIFEST_DIR")), base)
-}
-
-/// A task build gets `base.task-<label>`, folded to lowercase with
-/// non-alphanumerics as `-` so it's a legal reverse-DNS segment.
-fn app_identifier_from(manifest_dir: &Path, base: &str) -> String {
-    if !is_task_manifest_dir(manifest_dir) {
-        return base.to_string();
-    }
-    let suffix: String = label_from_manifest_dir(manifest_dir)
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
-        .collect();
-    format!("{base}.task-{suffix}")
+    tt_config::app_identifier_from(Path::new(env!("CARGO_MANIFEST_DIR")), base)
 }
 
 /// Build the Tauri app and run its event loop until the last window closes.
@@ -898,83 +864,4 @@ pub fn run() {
         ])
         .run(context)
         .expect("error while running Towles Tool application");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn label_is_the_repo_root_two_ancestors_up() {
-        assert_eq!(
-            label_from_manifest_dir(Path::new(
-                "/home/u/code/towles-tool-primary/crates-tauri/tt-app"
-            )),
-            "towles-tool-primary"
-        );
-        assert_eq!(
-            label_from_manifest_dir(Path::new(
-                "/home/u/repo/.claude/worktrees/feat-thing/crates-tauri/tt-app"
-            )),
-            "feat-thing"
-        );
-    }
-
-    #[test]
-    fn label_falls_back_when_the_path_is_too_shallow() {
-        assert_eq!(label_from_manifest_dir(Path::new("/tt-app")), "towles-tool");
-    }
-
-    #[test]
-    fn task_detection_requires_the_claude_worktrees_nesting() {
-        assert!(is_task_manifest_dir(Path::new(
-            "/home/u/repo/.claude/worktrees/feat-thing/crates-tauri/tt-app"
-        )));
-        assert!(!is_task_manifest_dir(Path::new(
-            "/home/u/code/towles-tool-primary/crates-tauri/tt-app"
-        )));
-        assert!(!is_task_manifest_dir(Path::new(
-            "/home/u/repo/worktrees/feat-thing/crates-tauri/tt-app"
-        )));
-    }
-
-    #[test]
-    fn identifier_stays_unscoped_for_a_main_checkout() {
-        assert_eq!(
-            app_identifier_from(
-                Path::new("/home/u/code/towles-tool-primary/crates-tauri/tt-app"),
-                "dev.towles.tool"
-            ),
-            "dev.towles.tool"
-        );
-    }
-
-    #[test]
-    fn identifier_is_task_scoped_and_sanitized_under_worktrees() {
-        assert_eq!(
-            app_identifier_from(
-                Path::new("/home/u/repo/.claude/worktrees/feat-thing/crates-tauri/tt-app"),
-                "dev.towles.tool"
-            ),
-            "dev.towles.tool.task-feat-thing"
-        );
-        assert_eq!(
-            app_identifier_from(
-                Path::new("/home/u/repo/.claude/worktrees/Chore_Repo.Audit/crates-tauri/tt-app"),
-                "dev.towles.tool"
-            ),
-            "dev.towles.tool.task-chore-repo-audit"
-        );
-    }
-
-    #[test]
-    fn identifier_requires_both_worktrees_and_claude_segments() {
-        assert_eq!(
-            app_identifier_from(
-                Path::new("/home/u/repo/worktrees/feat-thing/crates-tauri/tt-app"),
-                "dev.towles.tool"
-            ),
-            "dev.towles.tool"
-        );
-    }
 }

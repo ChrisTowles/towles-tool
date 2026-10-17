@@ -15,14 +15,12 @@ const ICON_BYTES: &[u8] = include_bytes!("../icons/icon.png");
 const WM_CLASS: &str = "tt-app";
 
 pub fn ensure_installed(app_id: &str) {
-    let Some(data_home) = dirs::data_local_dir() else {
+    let Some(paths) = tt_config::host_paths(app_id) else {
         return;
     };
 
-    let icon_path = data_home.join("icons/hicolor/512x512/apps").join(format!("{app_id}.png"));
-    write_if_changed(&icon_path, ICON_BYTES);
+    write_if_changed(&paths.icon, ICON_BYTES);
 
-    let desktop_path = data_home.join("applications").join(format!("{app_id}.desktop"));
     let entry = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
@@ -35,7 +33,7 @@ pub fn ensure_installed(app_id: &str) {
          StartupWMClass={WM_CLASS}\n",
         std::env::current_exe().unwrap_or_default().display(),
     );
-    write_if_changed(&desktop_path, entry.as_bytes());
+    write_if_changed(&paths.launcher, entry.as_bytes());
 }
 
 fn write_if_changed(path: &Path, contents: &[u8]) {

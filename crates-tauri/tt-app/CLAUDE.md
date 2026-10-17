@@ -72,8 +72,9 @@ invariants a single read won't surface: it is the largest crate in the repo
   second process involved, so a per-task identifier narrows the collision surface
   but can't close it; only no app-id does, since then `tao` never registers a bus
   name. The identifier is still patched per-task at runtime (`lib.rs`'s
-  `app_identifier`) so `linux_desktop::ensure_installed`'s `.desktop` entry and
-  icon get their own filename per task.
+  `app_identifier`, derived in `tt_config`) so `linux_desktop::ensure_installed`'s
+  `.desktop` entry and icon get their own filename per task. Task removal deletes
+  those and the WebKit data dir by the same derivation, so change it only there.
 - **`InstanceLock` is a generic, PID-tagged file lock** (`instance_lock.rs`)
   reused for two unrelated purposes; the name passed to `try_acquire` decides
   scope. `"slack-socket"` (`slack_socket.rs`) is **shared, cross-task** — every

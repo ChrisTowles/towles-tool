@@ -15,13 +15,31 @@ use super::{
 use crate::envfile;
 use crate::guards::{ForeignPort, RmBlocked};
 
-#[derive(Debug, Default)]
+/// Where the app's per-task WebKit data, launchers and icons live. The ops layer never
+/// looks the machine's dir up itself: the outermost entry point resolves it
+/// ([`From<Option<PathBuf>>`] with `tt_config::host_data_dir()`) and passes it down, so a
+/// caller or test that forgets cannot reach the real one — it fails to compile.
+#[derive(Debug, Clone)]
+pub enum HostData {
+    At(PathBuf),
+    /// Reclaim nothing outside the checkout.
+    Skip,
+}
+
+impl From<Option<PathBuf>> for HostData {
+    fn from(dir: Option<PathBuf>) -> Self {
+        dir.map_or(Self::Skip, Self::At)
+    }
+}
+
+#[derive(Debug)]
 pub struct RemoveOpts {
     pub root: Option<PathBuf>,
     pub name: String,
     pub force: bool,
     /// Port-ledger dir; `None` is the shared one (`tt_config::task_ports_dir`).
     pub ports_dir: Option<PathBuf>,
+    pub host_data: HostData,
 }
 
 /// A step of [`remove_task`] worth showing the user live, in the order they
@@ -115,6 +133,7 @@ pub fn remove_task(
     // The task's state scope must be read while the checkout still exists —
     // scope detection probes the directory (see `tt_config::task_scope_from_dir`).
     let state_scope = tt_config::task_scope_from_dir(&dir);
+    let app_identifier = tt_config::task_app_identifier_for_dir(&dir);
 
     on_phase(RemovePhase::CheckingGuards);
 
@@ -159,6 +178,7 @@ pub fn remove_task(
             release_task_ports(&sr.checkout, &path, &name);
         }
         state_cleanup(state_scope.as_deref(), &mut messages);
+        host_cleanup(app_identifier.as_deref(), &opts.host_data, &mut messages);
         remove_setup_log(&dir);
         return Ok(RemoveOutcome::Removed(RemovedTask {
             name,
@@ -280,6 +300,7 @@ pub fn remove_task(
         release_task_ports(&sr.checkout, &path, &name);
     }
     state_cleanup(state_scope.as_deref(), &mut messages);
+    host_cleanup(app_identifier.as_deref(), &opts.host_data, &mut messages);
     remove_setup_log(&dir);
     Ok(RemoveOutcome::Removed(RemovedTask {
         name,
@@ -438,15 +459,69 @@ fn state_cleanup(scope: Option<&str>, messages: &mut Vec<String>) {
     }
 }
 
+/// Delete what the removed task's app build left outside the checkout: WebKit's data dir
+/// and the launcher + icon. Only tasks of this repo build the app, so others skip cleanly.
+fn host_cleanup(identifier: Option<&str>, host_data: &HostData, messages: &mut Vec<String>) {
+    let (Some(identifier), HostData::At(data)) = (identifier, host_data) else {
+        return;
+    };
+    let paths = tt_config::host_paths_in(data, identifier);
+    for path in paths.all() {
+        match remove_path(path) {
+            Ok(true) => messages.push(format!("removed app residue {}", path.display())),
+            Ok(false) => {}
+            Err(e) => {
+                messages.push(format!("could not remove app residue {}: {e}", path.display()))
+            }
+        }
+    }
+}
+
+/// Remove a file or directory tree; `Ok(false)` when nothing was there.
+fn remove_path(path: &Path) -> std::io::Result<bool> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    if meta.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) }.map(|()| true)
+}
+
+/// Bytes under `path`, symlinks counted as themselves and never followed. A file with
+/// several hard links counts once across a sweep (`seen`), as `du` does: WebKit data dirs
+/// share most of their files, so a plain sum would double the reclaim.
+fn disk_bytes(path: &Path, seen: &mut BTreeSet<(u64, u64)>) -> u64 {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if meta.is_dir() {
+        return fs::read_dir(path)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| disk_bytes(&entry.path(), seen))
+            .sum();
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if meta.nlink() > 1 && !seen.insert((meta.dev(), meta.ino())) {
+            return 0;
+        }
+    }
+    meta.len()
+}
+
 // clean — remove every finished task and the state removed checkouts left behind
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CleanOpts {
     pub root: Option<PathBuf>,
     pub dry_run: bool,
     pub scope_parents: Vec<PathBuf>,
     /// Port-ledger dir to sweep; `None` is the shared one.
     pub ports_dir: Option<PathBuf>,
+    pub host_data: HostData,
 }
 
 /// A task `clean` removed (or, on dry-run, would remove).
@@ -466,6 +541,14 @@ pub struct KeptTask {
     pub why: Vec<String>,
 }
 
+/// What one removed task's app build left outside its checkout.
+pub struct HostResidue {
+    pub identifier: String,
+    /// The paths that existed — a launcher can outlive its icon.
+    pub paths: Vec<PathBuf>,
+    pub bytes: u64,
+}
+
 pub struct CleanReport {
     pub dry_run: bool,
     pub removed: Vec<FinishedTask>,
@@ -478,6 +561,8 @@ pub struct CleanReport {
     /// one leak the load-time prune can't reach, since nothing ever renders a
     /// gone repo again.
     pub swept_port_registries: Vec<PathBuf>,
+    /// Per-task app identifiers whose worktree is gone, with what they left on the host.
+    pub swept_host_residue: Vec<HostResidue>,
     /// State scopes of the checkouts that remain (checkout + kept tasks) —
     /// callers prune *these* agentboard stores plus the unscoped one.
     pub live_scopes: Vec<String>,
@@ -513,12 +598,14 @@ pub fn clean_tasks(
     let mut removed = Vec::new();
     let mut kept = Vec::new();
     let mut live_scopes: Vec<String> = scope_of(&sr.checkout).into_iter().collect();
+    let mut live_names: Vec<String> = Vec::new();
     let checkout_scoped = !live_scopes.is_empty();
 
     for (name, dir) in sr.tasks() {
         // Computed before removal — a removed task's dir is gone afterwards.
         let scope = scope_of(&dir);
         let mut keep = |name: String, branch: String, why: Vec<String>| {
+            live_names.push(name.clone());
             kept.push(KeptTask { name, branch, why });
             live_scopes.extend(scope.clone());
         };
@@ -594,6 +681,7 @@ pub fn clean_tasks(
             name: name.clone(),
             force: false,
             ports_dir: opts.ports_dir.clone(),
+            host_data: opts.host_data.clone(),
         };
         match remove_task(&rm, &mut |_| {}) {
             Ok(RemoveOutcome::Removed(r)) => {
@@ -670,6 +758,39 @@ pub fn clean_tasks(
         }
     }
 
+    // Sweep the app identifiers of removed tasks. A task still on disk after the loop is
+    // live whatever the loop decided, and the base identifier is never a candidate.
+    let mut swept_host_residue = Vec::new();
+    if checkout_scoped && let HostData::At(data) = &opts.host_data {
+        if !opts.dry_run {
+            live_names.extend(sr.tasks().into_iter().map(|(name, _)| name));
+        }
+        let live: BTreeSet<String> =
+            tt_config::live_identifiers(live_names.iter().map(String::as_str))
+                .into_iter()
+                .collect();
+        let on_disk = tt_config::per_task_identifiers_in(data);
+        let mut seen_links = BTreeSet::new();
+        for identifier in crate::clean::stale_host_identifiers(&on_disk, &live) {
+            let paths = tt_config::host_paths_in(data, &identifier);
+            let found: Vec<PathBuf> = paths
+                .all()
+                .into_iter()
+                .filter(|p| fs::symlink_metadata(p).is_ok())
+                .map(Path::to_path_buf)
+                .collect();
+            let bytes = found.iter().map(|p| disk_bytes(p, &mut seen_links)).sum();
+            if !opts.dry_run {
+                for path in &found {
+                    if let Err(e) = remove_path(path) {
+                        warnings.push(format!("could not remove {}: {e}", path.display()));
+                    }
+                }
+            }
+            swept_host_residue.push(HostResidue { identifier, paths: found, bytes });
+        }
+    }
+
     Ok(CleanReport {
         dry_run: opts.dry_run,
         removed,
@@ -677,6 +798,7 @@ pub fn clean_tasks(
         pruned_branches,
         swept_state_dirs,
         swept_port_registries,
+        swept_host_residue,
         live_scopes,
         warnings,
     })

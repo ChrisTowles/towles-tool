@@ -630,6 +630,7 @@ fn cmd_rm(
         name: name.to_string(),
         force,
         ports_dir: None,
+        host_data: tt_config::host_data_dir().into(),
     };
     // clap's value_parser guarantees the spelling; parse never fails here.
     let outcome = outcome.and_then(tt_store::TaskOutcome::parse);
@@ -741,6 +742,7 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         dry_run,
         scope_parents: bases.scope_parents().to_vec(),
         ports_dir: None,
+        host_data: tt_config::host_data_dir().into(),
     };
     let report =
         ops::clean_tasks(&opts, tt_config::task_scope_from_dir).map_err(|e| e.to_string())?;
@@ -791,6 +793,11 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
                 .map(|p| p.display().to_string()).collect::<Vec<_>>(),
             "sweptPortRegistries": report.swept_port_registries.iter()
                 .map(|p| p.display().to_string()).collect::<Vec<_>>(),
+            "sweptHostResidue": report.swept_host_residue.iter().map(|r| serde_json::json!({
+                "identifier": r.identifier,
+                "paths": r.paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+                "bytes": r.bytes,
+            })).collect::<Vec<_>>(),
             "agentboard": prunes.iter().map(|p| serde_json::json!({
                 "dir": p.dir.display().to_string(),
                 "sessionFoldersDropped": p.session_folders_dropped,
@@ -837,6 +844,18 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
             println!("  {}", path.display());
         }
     }
+    if !report.swept_host_residue.is_empty() {
+        let verb = if dry_run { "would sweep" } else { "swept" };
+        let total: u64 = report.swept_host_residue.iter().map(|r| r.bytes).sum();
+        println!(
+            "{verb} app data of removed tasks: {} identifier(s), {}",
+            report.swept_host_residue.len(),
+            human_bytes(total)
+        );
+        for residue in &report.swept_host_residue {
+            println!("  {} ({})", residue.identifier, human_bytes(residue.bytes));
+        }
+    }
     for prune in &prunes {
         let verb = if dry_run { "would prune" } else { "pruned" };
         println!(
@@ -851,11 +870,23 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         && report.pruned_branches.is_empty()
         && report.swept_state_dirs.is_empty()
         && report.swept_port_registries.is_empty()
+        && report.swept_host_residue.is_empty()
         && prunes.is_empty()
     {
         println!("nothing to clean");
     }
     Ok(())
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 { format!("{bytes} B") } else { format!("{value:.1} {}", UNITS[unit]) }
 }
 
 /// The repo's port picture, or a single-port listener probe. `scripts/task-port.mjs`

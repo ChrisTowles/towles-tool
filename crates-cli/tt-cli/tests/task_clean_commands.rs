@@ -299,3 +299,102 @@ fn clean_dry_run_touches_nothing() {
     assert_eq!(swept.len(), 1, "reports the orphan scope: {swept:?}");
     assert!(swept[0].ends_with("demo-gone"));
 }
+
+/// Plant the app's WebKit dir, launcher and icon for `identifier` under the sandbox's
+/// user data dir, returning the three paths.
+#[cfg(target_os = "linux")]
+fn plant_app_residue(home: &Path, identifier: &str) -> tt_config::HostPaths {
+    let paths = tt_config::host_paths_in(&data_home(home), identifier);
+    std::fs::create_dir_all(paths.webkit_data.join("localstorage")).unwrap();
+    std::fs::write(paths.webkit_data.join("localstorage/db"), "12345").unwrap();
+    for file in [&paths.launcher, &paths.icon] {
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "x").unwrap();
+    }
+    paths
+}
+
+#[cfg(target_os = "linux")]
+fn residue_exists(paths: &tt_config::HostPaths) -> bool {
+    paths.all().iter().any(|p| p.exists())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn clean_sweeps_app_residue_of_gone_tasks_never_the_base_or_live_ones() {
+    let (_guard, tmp) = canonical_temp();
+    let home = tmp.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+
+    new_task(&home, &root_s, "feat/done");
+    commit_file(&task_dir(&checkout, "feat-done"), "done.txt");
+    git(&checkout, &["merge", "--no-ff", "feat/done", "-m", "merge done"]);
+    new_task(&home, &root_s, "feat/fresh");
+
+    let base = plant_app_residue(&home, tt_config::APP_IDENTIFIER);
+    let fresh = plant_app_residue(&home, "dev.towles.tool.task-feat-fresh");
+    let done = plant_app_residue(&home, "dev.towles.tool.task-feat-done");
+    let gone = plant_app_residue(&home, "dev.towles.tool.task-feat-gone");
+    let old = plant_app_residue(&home, "dev.towles.tool.slot-feat-old");
+    std::fs::remove_file(&gone.icon).unwrap();
+
+    let dry = clean_json(&home, &root_s, &["--dry-run"]);
+    let identifiers = |report: &serde_json::Value| -> Vec<String> {
+        report["sweptHostResidue"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["identifier"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(
+        identifiers(&dry),
+        [
+            "dev.towles.tool.slot-feat-old",
+            "dev.towles.tool.task-feat-done",
+            "dev.towles.tool.task-feat-gone",
+        ]
+    );
+    let gone_entry = &dry["sweptHostResidue"][2];
+    assert_eq!(gone_entry["bytes"], 6, "webkit file + launcher: {gone_entry}");
+    assert_eq!(gone_entry["paths"].as_array().unwrap().len(), 2, "the icon was already gone");
+    for planted in [&base, &fresh, &done, &gone, &old] {
+        assert!(planted.all().iter().any(|p| p.exists()), "a dry run deletes nothing");
+    }
+
+    let report = clean_json(&home, &root_s, &[]);
+    let removed = &report["removed"][0];
+    assert_eq!(removed["name"], "feat-done");
+    let notes = removed["messages"].to_string();
+    assert!(notes.contains("removed app residue"), "removal reclaims its own: {notes}");
+    assert!(!residue_exists(&done) && !residue_exists(&gone) && !residue_exists(&old));
+    assert!(base.all().iter().all(|p| p.exists()), "the daily driver's data is untouchable");
+    assert!(fresh.all().iter().all(|p| p.exists()), "a live task's data is untouchable");
+
+    assert!(identifiers(&clean_json(&home, &root_s, &[])).is_empty(), "nothing left to sweep");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn rm_reclaims_the_removed_tasks_app_residue_only() {
+    let (_guard, tmp) = canonical_temp();
+    let home = tmp.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    new_task(&home, &root_s, "feat/rm-me");
+    new_task(&home, &root_s, "feat/stay");
+
+    let base = plant_app_residue(&home, tt_config::APP_IDENTIFIER);
+    let stay = plant_app_residue(&home, "dev.towles.tool.task-feat-stay");
+    let mine = plant_app_residue(&home, "dev.towles.tool.task-feat-rm-me");
+
+    let out = tt(&home).args(["task", "rm", "feat-rm-me", "--root", &root_s]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+
+    assert!(!residue_exists(&mine));
+    assert!(base.all().iter().all(|p| p.exists()));
+    assert!(stay.all().iter().all(|p| p.exists()));
+}
