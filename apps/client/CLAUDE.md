@@ -9,7 +9,7 @@ overview; this file has the frontend-internal conventions a read won't surface.
 (`lib/workspace.tsx`, persisted by `workspace-persistence.ts`). No visible tab
 strip (the sidebar is the only nav), but screens stay mounted when you switch
 away and `close-tab`/`next-tab`/`tab-1`…`9` act on this set headlessly; this is
-what "tab" usually means. **Settings' sub-tab panel** and Agent Board's Queue/Tree switch are Kumo's `Tabs`
+what "tab" usually means. **Settings' sub-tab panel** and Agent Board's Tree/Queue switch are Kumo's `Tabs`
 strips, not navigation. **Editor tabs** are the code-server workbench's,
 inside a cross-origin iframe — nothing here can see or drive them.
 
@@ -76,7 +76,7 @@ chords Cocoa takes before any DOM keydown are `tt-app`'s `macos_keys.rs`.
 ## Two rails, one workspace, one cursor each
 
 Agent Board is **one mounted `AgentBoardScreen`** with two rails over the same
-PTYs, panes and selection, picked by the Queue/Tree tabs atop the rail.
+PTYs, panes and selection, picked by the Tree/Queue tabs atop the rail.
 `railView` lives in `useWorkspace()` (persisted, `Mod+Shift+T` flips it) so
 `App` can activate its shortcut scope: bindings both rails share are scope
 `agentboard`, and each rail's own chords are scope `queue` or `tree`, in the

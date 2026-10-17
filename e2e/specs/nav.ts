@@ -116,8 +116,8 @@ export async function expectTabPanelShown(label: string): Promise<void> {
   });
 }
 
-/** Agent Board with its rail switched to `view` — the Queue/Tree tabs atop the rail. */
-export async function gotoRail(view: "Queue" | "Tree"): Promise<void> {
+/** Agent Board with its rail switched to `view` — the Tree/Queue tabs atop the rail. */
+export async function gotoRail(view: "Tree" | "Queue"): Promise<void> {
   await gotoScreen("Agent Board");
   const tab = await browser.$(`//*[@role="tab" and normalize-space()="${view}"]`);
   await tab.waitForDisplayed({ timeout: 10000 });

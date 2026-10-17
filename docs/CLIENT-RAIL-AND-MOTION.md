@@ -6,7 +6,7 @@ pays for, and which keeps the conventions that apply everywhere.
 
 ## Two rails over one workspace
 
-`screens/agentboard.tsx` is one screen with two rails, picked by the Queue/Tree
+`screens/agentboard.tsx` is one screen with two rails, picked by the Tree/Queue
 tabs atop it (`railView` in `useWorkspace`, persisted; `Mod+Shift+T` flips it);
 only the rail's contents swap, so the panes never remount. On Queue,
 `components/queue-rail.tsx` is the rail: one strip of repo pills (filter, `+` new task), then the queue's lanes. Every

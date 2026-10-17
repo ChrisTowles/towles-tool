@@ -8,7 +8,7 @@ import { RailViewToggle } from "./rail-view-toggle";
 import type { RailView } from "@/lib/screens";
 import { SimBar } from "./sim-bar";
 
-/** The expanded rail: the Queue/Tree switch, rollup tally, then whichever body
+/** The expanded rail: the Tree/Queue switch, rollup tally, then whichever body
  * the screen hands it. Only the contents swap, so the panel keeps its identity
  * and the panes beside it never remount. */
 export function RailPanel({
