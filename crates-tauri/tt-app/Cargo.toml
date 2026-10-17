@@ -122,6 +122,7 @@ bevy = ["tt-pane/bevy"]
 
 [dev-dependencies]
 tempfile = "3.14.0"
+tt-git = { workspace = true, features = ["test-support"] }
 
 # Only for the terminal.rs unit test that spawns a real POSIX session leader
 # (setsid via pre_exec) to exercise kill_session_stragglers end to end.

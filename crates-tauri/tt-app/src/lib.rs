@@ -6,6 +6,7 @@
 
 mod agentboard;
 mod browser;
+mod build_behind;
 mod claude_sessions;
 mod codeserver;
 mod diagnostics;
@@ -583,8 +584,11 @@ pub fn run() {
             // without this "behind main" never moves. The tick is the *fastest*
             // cadence any repo can earn — `fetch_targets` decides which repos
             // are actually due, so an idle fork costs an hour, not 3 minutes.
+            app.manage(build_behind::BuildBehindState::default());
+            build_behind::spawn(app.handle().clone());
             {
                 let engine = engine.clone();
+                let app = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let mut interval = tokio::time::interval(Duration::from_secs(180));
                     loop {
@@ -595,6 +599,7 @@ pub fn run() {
                             tt_agentboard::git_info::fetch_all(&targets);
                         })
                         .await;
+                        build_behind::nudge(&app);
                     }
                 });
             }
@@ -884,6 +889,7 @@ pub fn run() {
             terminal::open_path::term_resolve_path,
             terminal::open_path::term_reveal_path,
             ide::ide_status,
+            build_behind::build_behind,
             update::update_pending,
             update::update_install,
             update::update_status,
