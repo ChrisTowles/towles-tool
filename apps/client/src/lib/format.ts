@@ -56,3 +56,19 @@ export function fmtUsd(n: number): string {
   if (n >= 100) return `$${n.toFixed(0)}`;
   return `$${n.toFixed(2)}`;
 }
+
+/** On-disk sizes, 1024-based like `du -h`: `812 B`, `1.5 MB`, `325 MB`. One decimal
+ * below 10 of a unit, none above, so a column of sizes stays short. */
+export function fmtBytes(n: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Math.max(0, n);
+  let i = 0;
+  // Promote on the *rounded* value, like `fmtTokens`: 1023.96 KB must not read "1024 KB".
+  while (i < units.length - 1 && Math.round(value * 10) / 10 >= 1024) {
+    value /= 1024;
+    i++;
+  }
+  if (i === 0) return `${Math.round(value)} B`;
+  const shown = value < 10 ? (Math.round(value * 10) / 10).toFixed(1) : String(Math.round(value));
+  return `${shown} ${units[i]}`;
+}

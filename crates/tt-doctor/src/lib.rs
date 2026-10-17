@@ -6,10 +6,12 @@
 //! Run records serialize camelCase for the app's IPC/JSON consumers.
 
 mod checkout;
+pub mod disk;
 
 use serde::{Deserialize, Serialize};
 
 pub use checkout::CheckoutCheck;
+pub use disk::DiskReport;
 
 /// Result of probing one tool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +143,26 @@ pub fn run_report(bound_mcp_port: Option<u16>) -> DoctorReport {
         agentboard: agentboard.iter().map(|a| NameOk { name: a.name.clone(), ok: a.ok }).collect(),
     };
     DoctorReport { result, plugins, agentboard, stale_tasks, port_health, checkout }
+}
+
+/// The "State on disk" panel's data, resolved from the real dirs — the one place
+/// they are. Sizing a multi-GB tree is the slowest thing the Doctor does, so this
+/// is its own entry point rather than a field of [`run_report`], which would hold
+/// every other check behind it.
+pub fn run_disk_report() -> Result<DiskReport, String> {
+    let root = tt_config::instance_state_bases().map_err(|e| e.to_string())?.data;
+    let mut checkouts = tt_agentboard::load_repos(&tt_agentboard::default_repos_path())
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .collect::<Vec<_>>();
+    checkouts.extend(tt_tasks::discover_root(None).ok().map(|r| r.checkout));
+    let host_data = tt_config::host_data_dir();
+    Ok(disk::scan(&disk::DiskScan {
+        state_root: &root,
+        host_data: host_data.as_deref(),
+        checkouts: &checkouts,
+        budget: disk::SIZING_BUDGET,
+    }))
 }
 
 /// Read-only like every doctor probe ([`tt_tasks::ops::port_report`] neither

@@ -21,6 +21,16 @@ pub async fn doctor_run(
     .map_err(|e| format!("doctor task failed: {e}"))
 }
 
+/// What the app keeps under its state root. Its own command, not part of
+/// `doctor_run`: sizing GBs of small files must not hold the tool checks.
+#[tauri::command]
+pub async fn doctor_state_on_disk() -> Result<tt_doctor::DiskReport, String> {
+    tracing::info!("doctor.state_on_disk");
+    tauri::async_runtime::spawn_blocking(tt_doctor::run_disk_report)
+        .await
+        .map_err(|e| format!("disk report task failed: {e}"))?
+}
+
 /// How far back the Doctor screen's crash panel looks.
 const CRASH_WINDOW_DAYS: usize = 7;
 const CRASH_LIMIT: usize = 20;
