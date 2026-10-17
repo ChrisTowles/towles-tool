@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowSquareOutIcon, ChatCircleDotsIcon, CheckIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Composer } from "@/components/slack/composer";
 import { MessageBubble } from "@/components/slack/message-bubble";
+import { NewDivider } from "@/components/slack/new-divider";
 import { usePinToBottom } from "@/components/slack/use-pin-to-bottom";
 import { cn } from "@/lib/utils";
 import {
@@ -21,6 +22,7 @@ import { slackDmReact, slackDmSend, slackWriteError, useSlackDm } from "@/lib/sl
 import { isTauri } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
+import { useSlackSeen } from "@/lib/use-slack-seen";
 import { useWorkspace } from "@/lib/workspace";
 
 /** Unanswered this long → the age turns into a chip. */
@@ -73,7 +75,9 @@ function DrawerBody({
   const now = useNow();
   const { view, refresh } = useSlackDm();
   const [sending, setSending] = useState(false);
-  const { viewportRef, listRef, composerRef, repin } = usePinToBottom(true);
+  const messages = (view?.messages ?? []).slice(-RECENT_MESSAGES);
+  const firstUnseen = useSlackSeen(messages, true);
+  const { viewportRef, listRef, composerRef, repin } = usePinToBottom(true, messages.length > 0);
   const flashedTs = useRef(0);
 
   useEffect(() => {
@@ -132,8 +136,6 @@ function DrawerBody({
     },
     [refresh],
   );
-
-  const messages = (view?.messages ?? []).slice(-RECENT_MESSAGES);
 
   return (
     <>
@@ -205,13 +207,15 @@ function DrawerBody({
             <p className="py-6 text-center text-sm text-kumo-default/75">{dm.text}</p>
           )}
           {messages.map((m, i) => (
-            <MessageBubble
-              key={m.tsRaw || `${m.ts}-${i}`}
-              message={m}
-              watchUserId={view?.watchUserId}
-              watchName={view?.watchName}
-              actions={{ onToggleReaction: toggleReaction }}
-            />
+            <Fragment key={m.tsRaw || `${m.ts}-${i}`}>
+              {i === firstUnseen && <NewDivider />}
+              <MessageBubble
+                message={m}
+                watchUserId={view?.watchUserId}
+                watchName={view?.watchName}
+                actions={{ onToggleReaction: toggleReaction }}
+              />
+            </Fragment>
           ))}
           <button
             type="button"

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { ArrowClockwiseIcon, ChatCircleIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
 import { Button } from "@cloudflare/kumo";
@@ -10,7 +10,10 @@ import { Composer } from "@/components/slack/composer";
 import { MessageBubble } from "@/components/slack/message-bubble";
 import { AppManifestDialog, FetchError, SetupGuide } from "@/components/slack/setup-guide";
 import { ThreadPanel } from "@/components/slack/thread-panel";
+import { NewDivider } from "@/components/slack/new-divider";
 import { usePinToBottom } from "@/components/slack/use-pin-to-bottom";
+import { useSlackSeen } from "@/lib/use-slack-seen";
+import { useWorkspace } from "@/lib/workspace";
 
 /** Messages — the chat panel for the one watched Slack DM. Ignores the
  * collector's `enabled` flag, so it works with the watcher off; the list is
@@ -22,7 +25,12 @@ export function SlackScreen() {
 
   const messages = view?.messages ?? [];
   const showThread = (view?.configured ?? true) && !(error && messages.length === 0);
-  const { viewportRef, listRef, composerRef, repin } = usePinToBottom(showThread);
+  const visible = useWorkspace().activeTab === "slack";
+  const firstUnseen = useSlackSeen(messages, visible);
+  const { viewportRef, listRef, composerRef, repin } = usePinToBottom(
+    showThread && visible,
+    messages.length > 0,
+  );
 
   const send = useCallback(
     async (text: string, threadTs?: string) => {
@@ -109,13 +117,15 @@ export function SlackScreen() {
                   </p>
                 )}
                 {messages.map((m, i) => (
-                  <MessageBubble
-                    key={m.tsRaw || `${m.ts}-${i}`}
-                    message={m}
-                    watchUserId={view?.watchUserId}
-                    watchName={view?.watchName}
-                    actions={{ onToggleReaction: toggleReaction, onOpenThread: openThreadPanel }}
-                  />
+                  <Fragment key={m.tsRaw || `${m.ts}-${i}`}>
+                    {i === firstUnseen && <NewDivider />}
+                    <MessageBubble
+                      message={m}
+                      watchUserId={view?.watchUserId}
+                      watchName={view?.watchName}
+                      actions={{ onToggleReaction: toggleReaction, onOpenThread: openThreadPanel }}
+                    />
+                  </Fragment>
                 ))}
               </div>
             </ScrollArea>
