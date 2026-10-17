@@ -53,8 +53,8 @@ tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>         # (Re)render a checkout's .env (or `primary`) — idempotent, keeps claims
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)
 tt task sync [<name>]      # Record the branch a task's worktree is on now (default: cwd's task); a worktree with no Board row gets one
-tt task rm <name>          # Guarded removal; deletes the branch too when its work landed (or it has none)
-tt task clean              # Remove every merged/gone task, then delete landed branches no worktree holds
+tt task rm <name>          # Guarded removal; deletes the branch too when its work landed (or it has none), and the task app build's WebKit data + launcher + icon
+tt task clean              # Remove every merged/gone task, delete landed branches no worktree holds, sweep what gone tasks' app builds left on disk
 tt task nudge <prs|issues|slack:dm>  # Refresh that collector now instead of on the app's next poll
 ```
 
@@ -79,6 +79,12 @@ More flags:
 - `rm --force` skips the guards (each skip is printed); `rm --outcome done|abandoned`
   sets what the closed Board row records (default: done if the work landed).
 - `clean --dry-run` reports what it would remove without touching anything.
+- Inside the towles-tool repo itself, each task's app build owns a WebKit data dir, a
+  `.desktop` launcher and an icon under the user data dir, named by its per-task identifier
+  (`dev.towles.tool.task-<name>`, Linux only). `rm` deletes the removed task's; `clean`
+  also sweeps `dev.towles.tool.task-*` / `dev.towles.tool.slot-*` ones whose worktree is
+  gone (`--json`: `sweptHostResidue`). The base `dev.towles.tool` — the daily driver's
+  data — and any task still on disk are never touched.
 - `nudge --trigger <label>` tags the telemetry event only (e.g. `pr:create`).
 - Every subcommand except `nudge` takes `--root <DIR>` for a checkout other than the
   one containing cwd; `ls`, `sync`, `ports`, `clean` and `new` take `--json`.

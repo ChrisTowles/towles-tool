@@ -15,10 +15,12 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+mod app_identity;
 mod collectors;
 mod paths;
 mod telemetry_views;
 
+pub use app_identity::*;
 pub use collectors::*;
 pub use paths::*;
 pub use telemetry_views::*;

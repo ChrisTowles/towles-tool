@@ -327,6 +327,7 @@ fn clean(sr: &TaskRoot, dry_run: bool) -> CleanReport {
         dry_run,
         scope_parents: Vec::new(),
         ports_dir: Some(ports_dir(sr)),
+        host_data_dir: Some(sr.checkout.join("host-data")),
     };
     clean_tasks(&opts, |_| None).unwrap()
 }
@@ -452,6 +453,7 @@ fn clean_sweeps_state_dirs_of_removed_checkouts_of_this_repo_only() {
         dry_run: false,
         scope_parents: vec![scope_parent.clone()],
         ports_dir: Some(ports_dir(&sr)),
+        host_data_dir: Some(tmp.path().join("host-data")),
     };
 
     let report = clean_tasks(&opts, |dir| {
@@ -489,4 +491,90 @@ fn clean_prunes_landed_branches_no_worktree_holds_and_keeps_the_rest() {
     assert_eq!(clean(&sr, false).pruned_branches, ["feat/empty", "feat/shipped"]);
     let branches = git(&sr.checkout, &["branch", "--list", "feat/*"]);
     assert_eq!(branches.trim(), "feat/unshipped");
+}
+
+/// Writes the three host paths of `identifier` under `data`, returning them.
+fn plant_host_residue(data: &Path, identifier: &str) -> tt_config::HostPaths {
+    let paths = tt_config::host_paths_in(data, identifier);
+    fs::create_dir_all(paths.webkit_data.join("localstorage")).unwrap();
+    fs::write(paths.webkit_data.join("localstorage/db"), "12345").unwrap();
+    for file in [&paths.launcher, &paths.icon] {
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, "x").unwrap();
+    }
+    paths
+}
+
+#[test]
+fn clean_sweeps_host_residue_of_gone_tasks_but_never_live_or_base() {
+    let (tmp, sr) = repo_with_origin();
+    add_task(&sr, "feat-live", "feat/live");
+    let data = tmp.path().join("data");
+    let base = plant_host_residue(&data, tt_config::APP_IDENTIFIER);
+    let live = plant_host_residue(&data, "dev.towles.tool.task-feat-live");
+    let live_old = plant_host_residue(&data, "dev.towles.tool.slot-feat-live");
+    let gone = plant_host_residue(&data, "dev.towles.tool.task-feat-gone");
+    let gone_old = plant_host_residue(&data, "dev.towles.tool.slot-feat-old");
+    fs::remove_file(&gone.icon).unwrap();
+    let opts = |dry_run| CleanOpts {
+        root: Some(sr.checkout.clone()),
+        dry_run,
+        scope_parents: Vec::new(),
+        ports_dir: Some(ports_dir(&sr)),
+        host_data_dir: Some(data.clone()),
+    };
+    let scope_of = |dir: &Path| Some(dir.file_name()?.to_str()?.to_string());
+
+    let dry = clean_tasks(&opts(true), scope_of).unwrap();
+    let ids: Vec<&str> = dry.swept_host_residue.iter().map(|r| r.identifier.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "dev.towles.tool.slot-feat-old",
+            "dev.towles.tool.task-feat-gone"
+        ]
+    );
+    assert!(gone.webkit_data.exists(), "a dry run deletes nothing");
+    let gone_entry = &dry.swept_host_residue[1];
+    assert_eq!(gone_entry.paths, [gone.webkit_data.clone(), gone.launcher.clone()]);
+    assert_eq!(gone_entry.bytes, 5 + 1, "webkit file + launcher; the icon was already gone");
+
+    let report = clean_tasks(&opts(false), scope_of).unwrap();
+    assert_eq!(report.swept_host_residue.len(), 2);
+    for swept in [&gone, &gone_old] {
+        assert!(swept.all().iter().all(|p| !p.exists()), "{swept:?}");
+    }
+    for kept in [&base, &live, &live_old] {
+        assert!(kept.all().iter().all(|p| p.exists()), "{kept:?}");
+    }
+}
+
+#[test]
+fn clean_skips_host_residue_for_a_repo_without_the_app() {
+    let (tmp, sr) = repo_with_origin();
+    let data = tmp.path().join("data");
+    let gone = plant_host_residue(&data, "dev.towles.tool.task-feat-gone");
+    let opts = CleanOpts {
+        root: Some(sr.checkout.clone()),
+        dry_run: false,
+        scope_parents: Vec::new(),
+        ports_dir: Some(ports_dir(&sr)),
+        host_data_dir: Some(data),
+    };
+
+    let report = clean_tasks(&opts, |_| None).unwrap();
+
+    assert!(report.swept_host_residue.is_empty());
+    assert!(gone.webkit_data.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn disk_bytes_counts_a_hard_linked_file_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("a"), "12345").unwrap();
+    fs::hard_link(tmp.path().join("a"), tmp.path().join("b")).unwrap();
+    fs::write(tmp.path().join("c"), "12").unwrap();
+
+    assert_eq!(disk_bytes(tmp.path(), &mut BTreeSet::new()), 5 + 2);
 }

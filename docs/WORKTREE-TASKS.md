@@ -30,7 +30,7 @@ tt task env primary                       # same, for the main checkout
 tt task ports [--probe <port>] [--json]   # repo's port picture: every checkout's claims + registry, each probed for a listener
 tt task sync [<name>] [--json]            # record the worktree's current branch on its board task
 tt task rm <name> [--force]               # guarded removal + docker cleanup
-tt task clean [--dry-run]                 # rm every merged/gone task, prune landed branches, sweep stale state
+tt task clean [--dry-run]                 # rm every merged/gone task, prune landed branches, sweep stale state + gone tasks' app data
 ```
 
 **Claude Code's own worktree surfaces are not tasks.** `claude --worktree`,
@@ -173,3 +173,12 @@ Rules when working in a task:
   against a directory with no `.git` on every tick; skip the row-close and
   the board keeps a card claiming a worktree that no longer exists. `tt task
   rm`/`clean` and the app's `task_delete` are all shells over it.
+- **A towles-tool task's app build leaves residue outside the checkout.** Its Tauri
+  identifier is `dev.towles.tool.task-<name>` (`tt_config::task_app_identifier`), which
+  names WebKit's data dir, the `.desktop` launcher and its icon under the user data dir
+  (`tt_config::host_paths`, Linux only). `ops::remove_task` deletes the removed task's
+  three; `tt task clean` sweeps the `task-*` and pre-rename `slot-*` identifiers whose
+  worktree is gone. The base `dev.towles.tool` (the daily driver's localStorage) and any
+  identifier whose task dir still exists are never candidates
+  (`clean::stale_host_identifiers`). Another clone of the repo that shares a task name
+  shares the identifier, so keep task names distinct across clones.
