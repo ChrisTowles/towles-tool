@@ -1,0 +1,6 @@
+# zip 4.x reaches us only through tauri-plugin-updater 2.x, which extracts an
+# update archive after verifying its minisign signature against the app's
+# pubkey, so a hostile archive never gets extracted. The fix (zip >= 9) needs
+# tauri-plugin-updater 3, still alpha. Drop these once the updater moves.
+[advisories]
+ignore = ["RUSTSEC-2026-0367", "RUSTSEC-2026-0368", "RUSTSEC-2026-0369"]
