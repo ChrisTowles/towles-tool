@@ -17,6 +17,7 @@ use std::time::Instant;
 use chrono::{Local, NaiveDate, TimeZone};
 
 mod calendar_tools;
+mod clip_gate;
 mod hosts;
 mod inbox;
 mod output;
@@ -84,6 +85,8 @@ pub struct Dispatcher {
     next_prompt_settings: Option<tt_config::NextPromptSettings>,
     /// Test hook: keeps `clip_suggest` off the real settings file.
     clip_settings: Option<tt_config::ClipSuggestSettings>,
+    /// In memory only: a restart gives every session a fresh three offers.
+    clip_backoff: clip_gate::Backoff,
 }
 
 /// What the transport knows that the body cannot say: the caller's app terminal (`X-TT-Session`).
@@ -280,6 +283,7 @@ impl Dispatcher {
             calendar_sources: None,
             next_prompt_settings: None,
             clip_settings: None,
+            clip_backoff: clip_gate::Backoff::default(),
         }
     }
 
@@ -513,7 +517,7 @@ impl Dispatcher {
             "next_prompt" => self.next_prompt(args, now_ms, ctx),
             "next_prompt_taken" => self.next_prompt_taken(args),
             "clip_suggest" => self.clip_suggest(args, now_ms, ctx),
-            "clip_copied" => self.clip_copied(args),
+            "clip_copied" => self.clip_copied(args, ctx),
             _ => return Err(ToolError::Unknown),
         };
         result.map_err(ToolError::Failed)

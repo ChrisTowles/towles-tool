@@ -135,8 +135,12 @@ persistence) with the question from settings, the session's work profile and
 the prompts typed after similar turns in the last 30 days of transcripts
 (`tt_claude_sessions::next_prompt`, rebuilt hourly off the call path).
 `clip_suggest` is held the same way against `clipSuggest` and its own
-`clip_spend` row; its host skips the call for a message with nothing copyable
-in it and drops any offered string that is not verbatim in the message
+`clip_spend` row. Before the model call the dispatcher skips a message with
+nothing copyable in it (`skipped: "prose"`, `clip_gate`) and a session that left
+its last 3 offers uncopied (`skipped: "ignored"`, in memory, per
+`X-TT-Session`), each as a `clip_suggest.skipped` event; a `clip_copied` from the
+session resets the count, and a quiet session gets one probe offer every 30
+minutes. The host drops any offered string that is not verbatim in the message
 (`tt_claude_sessions::clip`). The mod denies the model all six of these tools.
 
 **`summon` is the one tool that interrupts**: one desktop notification, then
