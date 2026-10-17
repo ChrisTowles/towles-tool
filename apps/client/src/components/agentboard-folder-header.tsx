@@ -62,6 +62,11 @@ import { folderPortDrift } from "@/lib/agentboard/session";
 import type { FolderData } from "@/lib/agentboard/types";
 import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
 
+/** The title block's floor. Its flex-basis is 0, so without one a wide git block
+ * (long branch plus chips) takes the row and leaves the name a sliver; with it,
+ * the git block gives way first and the branch label truncates. */
+const TITLE_BLOCK_MIN = "min-w-40";
+
 export function FolderHeader({
   scope,
   title,
@@ -218,7 +223,7 @@ export function FolderHeader({
           that actually matters — does this row have room — rather than
           measuring the window. */}
       <div className="flex flex-wrap items-center gap-x-2 py-1.5 @[26rem]/row:flex-nowrap">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className={cn("flex flex-1 items-center gap-2", TITLE_BLOCK_MIN)}>
           {/* Split from a single button into a button (toggle only) + a
               span/input sibling, per this repo's "swap the element, don't nest
               one" rule for inline rename — an <Input> can't live inside a
@@ -326,7 +331,7 @@ export function FolderHeader({
                 )}
           </div>
         ) : (
-          <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 pl-11 @[26rem]/row:order-2 @[26rem]/row:basis-auto @[26rem]/row:pl-0">
+          <div className="order-3 flex min-w-0 basis-full items-center justify-end gap-x-1.5 overflow-hidden pl-11 @[26rem]/row:order-2 @[26rem]/row:basis-auto @[26rem]/row:pl-0">
             {/* `mr-auto` so the branch and links hug the left of their own
                 line in the wrapped layout, and do nothing in the inline one. */}
             <span className="mr-auto flex min-w-0 items-center gap-x-1.5">
