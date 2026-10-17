@@ -25,7 +25,8 @@
     "test:scripts": "node --test \"scripts/*.test.mjs\"",
     "check:md-links": "node scripts/check-md-links.mjs",
     "check:bundle": "node scripts/bundle-budget.mjs",
-    "typecheck:scripts": "tsc -p scripts/tsconfig.json"
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.json"
   },
   "overrides": {
     "@wdio/native-utils": "2.5.0",
