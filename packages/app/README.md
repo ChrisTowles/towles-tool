@@ -140,17 +140,6 @@ the user's words from the app, into Claude Code itself.
   surfaces. It turns yellow inside 15 minutes, and a toast fires once per
   meeting at 5 minutes.
 
-### The pane on the right
-
-In a terminal 144 columns or wider, the mod docks a **tt** pane beside the
-transcript, full height: the task, its PR and the next meeting, then each copy
-offer as a `copy` badge followed by the exact string it copies. While the pane shows,
-the band drops those facts and keeps only its keys (`n`, the digits, `a`): a
-pane's hotkeys need the pane focused, the band's work from the empty prompt.
-Narrower, the pane waits unplaced and the band carries everything as above.
-`/tt` opens it at any width; once you close it, only `/tt` brings it back that
-session. Claude Code has no render site under its status line.
-
 The same facts go on the status line too, in short form
 (`tt #7 · PR #42 passing · ready for /done · 4m to Standup`),
 alongside the band.
@@ -193,12 +182,19 @@ cannot take a note; the app says so rather than type into its prompt box.
 When a turn ends with an answer, the mod sends its last message to
 `clip_suggest`. If it holds a code span, link, path or `#123` ref, the app asks
 one bare `claude -p` which exact strings you would copy, and keeps only those
-that appear verbatim in the message, at most three. The band then offers each as a
-`copy` badge and the text itself (cut at 40 characters; the pane shows it whole):
+that appear verbatim in the message, at most three. The band grows into a
+column, up to its 4 rows, and offers each on its own row as a `copy` badge and
+the text itself:
 
 ```
-✦ tt  …  n: next prompt  1:  copy  https://x.dev/pr/9  2:  copy  bun run e2e  a: copy all
+✦ tt  #7 Claude mods (doing)  …  n: next prompt  a: copy all
+1:  copy  https://x.dev/pr/9
+2:  copy  bun run e2e
 ```
+
+Claude Code has no render site under its status line, and a pane docks on the
+right in any terminal wider than about 110 columns, so the band is the bottom
+of the screen a mod can draw.
 
 A digit in the empty prompt (or a click) copies that one; `a`, with the band
 focused, copies all of them in order, apart enough that a clipboard manager
