@@ -2,7 +2,7 @@ name: Main build
 
 # Every push to main builds and signs the installers exactly as a release
 # would, so breakage surfaces on the commit that caused it rather than when a
-# release is cut. Each commit's bundles stay downloadable for 30 days, and they
+# release is cut. Each commit's bundles stay downloadable for 3 days, and they
 # replace the assets of the rolling `main-build` prerelease — the manifest an
 # installed app on the "every push to main" update channel polls.
 on:
