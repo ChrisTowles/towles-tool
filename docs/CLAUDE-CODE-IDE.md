@@ -108,7 +108,14 @@ reach into ([CODE-SERVER.md](CODE-SERVER.md)).
   (`{termId, connected}`) behind the panes' "✦ claude" badge.
 - **Advertised tools**: `getWorkspaceFolders`, `getDiagnostics` and `openFile`,
   and nothing else. `getDiagnostics` serves real cargo/tsc results from the app's
-  DiagHub (`crates-tauri/tt-app/src/diagnostics.rs`). `openFile` is intercepted
+  DiagHub (`crates-tauri/tt-app/src/diagnostics.rs`). The hub runs each
+  project's **own** `node_modules/.bin/tsc` (found by `tt_ide::checker::resolve_tsc`,
+  walking up to the folder root for hoisted installs), never `npx tsc`: with no
+  local TypeScript `npx` fetches the unrelated `tsc` npm package, which prints
+  "This is not the tsc command you are looking for" and checks nothing. A
+  project with no local `tsc` is skipped. A checker (cargo or tsc) that exits
+  non-zero with zero diagnostics logs `diagnostics.check_failed`
+  (`folder`, `tool`, `exit_code`) instead of failing silently. `openFile` is intercepted
   in the app shell before the pure dispatcher and opens the file in that
   checkout's Files pane (the `startText`/`endText` anchors have no receiver in a
   cross-origin workbench) — **but only when `makeFrontmost` isn't `false`**,
