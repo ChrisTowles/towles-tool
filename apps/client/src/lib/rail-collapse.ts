@@ -1,4 +1,4 @@
-import { isSoloRepo } from "@/lib/agentboard/folder";
+import { isHomeRepo } from "@/lib/agentboard/folder";
 import type { RepoData } from "@/lib/agentboard/types";
 import { folderNodeKey } from "@/lib/rail-nodes";
 
@@ -21,7 +21,7 @@ export function railExpandAll(
   const out: CollapseChange[] = [];
   for (const repo of repos) {
     if (collapsed[repo.key]) out.push({ key: repo.key, collapsed: false });
-    if (isSoloRepo(repo)) continue;
+    if (isHomeRepo(repo)) continue;
     for (const folder of repo.folders) {
       const key = folderNodeKey(repo.key, folder.dir);
       if (collapsed[key]) out.push({ key, collapsed: false });

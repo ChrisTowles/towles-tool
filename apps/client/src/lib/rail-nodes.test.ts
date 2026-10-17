@@ -3,6 +3,8 @@ import type { RepoData, WindowsPayload } from "@/lib/agentboard/types";
 import { railCollapseAll, railExpandAll } from "@/lib/rail-collapse";
 import { railMove, railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
 
+const HOME = "/home/me";
+
 /** Only the fields the walk reads — the fixture shape `rail-hotkeys.test.ts` uses. */
 function repo(dir: string, folders: Record<string, string[]>): RepoData {
   return {
@@ -12,20 +14,27 @@ function repo(dir: string, folders: Record<string, string[]>): RepoData {
     folders: Object.entries(folders).map(([d, sessions]) => ({
       dir: d,
       name: d.split("/").pop() ?? d,
+      record: { origin: d === HOME ? "home" : "checkout" },
       sessions: sessions.map((id) => ({ id })),
     })),
   } as unknown as RepoData;
 }
 
 const SOLO = repo("/code/dotfiles", { "/code/dotfiles": ["a", "b"] });
+const HOME_REPO = repo(HOME, { [HOME]: ["h"] });
 const MULTI = repo("/code/tt", { "/code/tt": ["c"], "/code/tt/wt/feat-x": ["d", "e"] });
 const REPOS = [SOLO, MULTI];
 const REPO_KEY = "path:/code/tt";
+const DOT_FOLDER_KEY = "path:/code/dotfiles::/code/dotfiles";
 const FOLDER_KEY = "path:/code/tt::/code/tt/wt/feat-x";
 
-function nodes(collapsed: Record<string, boolean> = {}, wins: WindowsPayload | null = null) {
+function nodes(
+  collapsed: Record<string, boolean> = {},
+  wins: WindowsPayload | null = null,
+  repos: RepoData[] = REPOS,
+) {
   return railNodes({
-    repos: REPOS,
+    repos,
     idleDirs: new Map(),
     idleRevealed: new Set(),
     unmanagedDirs: new Map(),
@@ -50,8 +59,9 @@ describe("railNodes", () => {
   it("emits every visible row in render order, sessions under their checkout", () => {
     expect(keys(nodes())).toEqual([
       "r0:dotfiles",
-      "s1:a",
-      "s1:b",
+      "f1:dotfiles",
+      "s2:a",
+      "s2:b",
       "r0:tt",
       "f1:tt",
       "s2:c",
@@ -64,14 +74,21 @@ describe("railNodes", () => {
   it("keeps a folded row and drops only what it holds", () => {
     expect(keys(nodes({ [FOLDER_KEY]: true }))).toEqual([
       "r0:dotfiles",
-      "s1:a",
-      "s1:b",
+      "f1:dotfiles",
+      "s2:a",
+      "s2:b",
       "r0:tt",
       "f1:tt",
       "s2:c",
       "f1:feat-x",
     ]);
-    expect(keys(nodes({ [REPO_KEY]: true }))).toEqual(["r0:dotfiles", "s1:a", "s1:b", "r0:tt"]);
+    expect(keys(nodes({ [REPO_KEY]: true }))).toEqual([
+      "r0:dotfiles",
+      "f1:dotfiles",
+      "s2:a",
+      "s2:b",
+      "r0:tt",
+    ]);
     expect(keys(nodes({ "path:/code/dotfiles": true }))).toEqual([
       "r0:dotfiles",
       "r0:tt",
@@ -83,14 +100,31 @@ describe("railNodes", () => {
     ]);
   });
 
-  it("gives a solo repo one row carrying its checkout, and the repo key to fold", () => {
-    const [solo] = nodes();
-    expect(solo).toMatchObject({
+  it("gives a single-checkout repo a header of its own over its primary checkout row", () => {
+    const [header, primary] = nodes();
+    expect(header).toMatchObject({
       kind: "repo",
-      dir: "/code/dotfiles",
+      dir: null,
       collapseKey: "path:/code/dotfiles",
       depth: 0,
     });
+    expect(primary).toMatchObject({
+      kind: "folder",
+      dir: "/code/dotfiles",
+      collapseKey: "path:/code/dotfiles::/code/dotfiles",
+      depth: 1,
+    });
+  });
+
+  it("keeps a repo with no sessions as a header over its primary checkout row", () => {
+    const empty = repo("/code/empty", { "/code/empty": [] });
+    expect(keys(nodes({}, null, [empty]))).toEqual(["r0:empty", "f1:empty"]);
+  });
+
+  it("gives home one row carrying its checkout, sessions straight under it", () => {
+    const ns = nodes({}, null, [HOME_REPO]);
+    expect(keys(ns)).toEqual(["r0:me", "s1:h"]);
+    expect(ns[0]).toMatchObject({ dir: HOME, collapseKey: HOME_REPO.key, depth: 0 });
   });
 
   it("drops a repo the filter emptied — it renders as a stub, not a header", () => {
@@ -138,8 +172,8 @@ describe("railNodes", () => {
 
 describe("railMove", () => {
   it("steps one visible row and stops at both ends", () => {
-    expect(move("down", "path:/code/dotfiles")).toEqual({ kind: "cursor", key: "session:a" });
-    expect(move("up", "session:a")).toEqual({ kind: "cursor", key: "path:/code/dotfiles" });
+    expect(move("down", "path:/code/dotfiles")).toEqual({ kind: "cursor", key: DOT_FOLDER_KEY });
+    expect(move("up", "session:a")).toEqual({ kind: "cursor", key: DOT_FOLDER_KEY });
     expect(move("up", "path:/code/dotfiles")).toBeNull();
     expect(move("down", "session:e")).toBeNull();
   });
@@ -191,7 +225,7 @@ describe("railMove", () => {
           collapsed: {},
           wins: null,
         }),
-        cursor: "path:/code/empty",
+        cursor: "path:/code/empty::/code/empty",
         direction: "right",
         collapsed: {},
       }),

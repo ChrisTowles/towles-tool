@@ -10,7 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
 import { invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { isSoloRepo } from "@/lib/agentboard/folder";
+import { isHomeRepo } from "@/lib/agentboard/folder";
 import { agentRollup, collapsedLiveColor } from "@/lib/agentboard/status";
 import type { FolderData, RepoData } from "@/lib/agentboard/types";
 import { mouseAction } from "@/lib/shortcut-coach";
@@ -39,11 +39,11 @@ export function RailIconStrip({
   const liveColor = collapsedLiveColor(allSessions);
   const liveN = allSessions.filter((s) => s.live).length;
 
-  const folderIcon = (repo: RepoData, folder: FolderData, solo: boolean) => {
+  const folderIcon = (repo: RepoData, folder: FolderData, home: boolean) => {
     const active = folder.dir === activeFolderDir;
-    const needs = solo ? repo.needs : folder.needs;
+    const needs = home ? repo.needs : folder.needs;
     const live = collapsedLiveColor(folder.sessions);
-    const label = solo ? repo.name : `${repo.name} / ${folder.name}`;
+    const label = home ? repo.name : `${repo.name} / ${folder.name}`;
     // The collapsed strip is where a chosen icon+color earns its keep — the
     // only thing distinguishing one 36px square from the next. Status still
     // outranks it; a needs-you square never takes the calmer identity wash.
@@ -76,7 +76,7 @@ export function RailIconStrip({
               needs > 0 && "border-l-warn",
             )}
           >
-            {solo ? (
+            {home ? (
               <RepoIcon className="size-4" style={accent.iconStyle} />
             ) : (
               <FolderIcon className="size-4" style={accent.iconStyle} />
@@ -139,11 +139,11 @@ export function RailIconStrip({
       <div className="my-1.5 h-px w-6 shrink-0 bg-border" />
       <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
         {repos.map((repo, i) => {
-          const solo = isSoloRepo(repo);
+          const home = isHomeRepo(repo);
           return (
             <div key={repo.key} className="flex flex-col items-center gap-1">
               {i > 0 && <div className="my-0.5 h-px w-6 bg-border" />}
-              {(solo ? [repo.folders[0]] : repo.folders).map((f) => folderIcon(repo, f, solo))}
+              {(home ? [repo.folders[0]] : repo.folders).map((f) => folderIcon(repo, f, home))}
             </div>
           );
         })}

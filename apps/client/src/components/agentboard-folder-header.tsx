@@ -1,6 +1,5 @@
-// A checkout's header row. A single-checkout repo renders it at `scope="repo"`
-// instead of a separate repo header, which is why identity, accent and the
-// toolbar all branch on `scope`.
+// A checkout's row under its repo header: the primary checkout is always one of
+// these, never merged into the repo header, so branch, diff and cost live here.
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import {
@@ -44,7 +43,6 @@ import { RepoMenu } from "@/components/agentboard-bits/repo-menu";
 import { Chevron, CollapsedLive } from "@/components/agentboard-bits/status-dots";
 import { DevServersButton } from "@/components/dev-servers";
 import { Input } from "@cloudflare/kumo";
-import { repoAccentStyles, repoIcon, type RepoIdentity } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import type { SessionActions } from "@/lib/agentboard/actions";
 import {
@@ -54,7 +52,6 @@ import {
   folderDetached,
   folderIsUnclaimed,
   folderRemoving,
-  pathScope,
 } from "@/lib/agentboard/folder";
 import { humanizeFolderName } from "@/lib/agentboard/folder-name";
 import { folderSafeToDelete } from "@/lib/agentboard/landing";
@@ -68,9 +65,7 @@ import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
 const TITLE_BLOCK_MIN = "min-w-40";
 
 export function FolderHeader({
-  scope,
   title,
-  identity,
   folder,
   quiet,
   needs,
@@ -97,10 +92,7 @@ export function FolderHeader({
   onOpenJarvis,
   onOpenBrowser,
 }: {
-  scope: "repo" | "folder";
   title: string;
-  /** Set only at repo scope; absent renders the default look. */
-  identity?: RepoIdentity;
   folder: FolderData;
   /** Marked quiet *and* on screen anyway — peeked, or the active checkout. The
    * badge is the row admitting it: quiet normally means gone. */
@@ -127,8 +119,7 @@ export function FolderHeader({
   actions: SessionActions;
   onToggle: () => void;
   onNewSession: () => void;
-  /** Set only on a solo task-convention repo's collapsed repo+folder header —
-   * the multi-checkout repo tier renders its own button. */
+  /** Absent on rail rows: the repo header owns the new-task button. */
   onNewTask?: () => void;
   onRemoveRepo?: () => void;
   /** Set only on worktree checkouts, where untracking makes no sense: they are
@@ -142,15 +133,12 @@ export function FolderHeader({
   onOpenJarvis?: () => void;
   onOpenBrowser?: () => void;
 }) {
-  const scopePrefix = pathScope(folder.dir);
-  const HeaderIcon = repoIcon(identity?.meta);
-  const accent = repoAccentStyles(identity);
   const missing = folder.dirMissing;
   // A task's human-authored title applies to worktree rows only — on the
   // primary checkout it would misname the repo itself (see `taskForFolder`).
   const humanTitle = folder.isWorktree ? task?.text?.trim() : undefined;
   // "Root" so the sub-header reads as an entry, not a repeat of the repo title.
-  const isMainWorktreeSubrow = scope === "folder" && !folder.isWorktree;
+  const isMainWorktreeSubrow = !folder.isWorktree;
   const displayTitle =
     humanTitle ||
     (folder.isWorktree ? humanizeFolderName(title) : isMainWorktreeSubrow ? "Root" : title);
@@ -190,23 +178,11 @@ export function FolderHeader({
     // The transparent border-l-2 is always present so the active violet edge
     // never shifts content.
     <div
-      style={
-        // Identity never outranks true status: needs-you or missing keep the
-        // row to themselves. An edge, not a wash, the same as the queue's rows.
-        scope === "repo" && needs === 0 && !missing ? accent.headerStyle : undefined
-      }
       className={cn(
         // pr-3: the rail's trailing controls all land on one right edge.
         "group @container/row border-b border-l-2 border-border border-l-transparent pr-3",
-        // A sticky repo-scope header must stay opaque or the rows scrolling
-        // beneath show through, so its active state is a ring rather than a
-        // fill. Folder rows sit in normal flow and keep the fill.
-        scope === "repo"
-          ? cn(
-              "sticky top-0 z-10 border-l-[3px] pl-3 hover:bg-accent",
-              accent.headerStyle && needs === 0 && !missing ? "bg-(--repo-wash)" : "bg-card",
-            )
-          : cn("bg-card pl-6 hover:bg-accent/50", active && "bg-accent/60"),
+        "bg-card pl-6 hover:bg-accent/50",
+        active && "bg-accent/60",
         active && "border-l-agent",
         // The cursor is the one ring on the rail: exactly one row wears it, so
         // "where am I" never has to be inferred from a fill or an edge.
@@ -240,15 +216,8 @@ export function FolderHeader({
               <Chevron collapsed={collapsed} />
               {missing ? (
                 <FolderMinusIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
-              ) : scope === "repo" ? (
-                <HeaderIcon className="size-3.5 shrink-0" style={accent.iconStyle} />
               ) : (
                 <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
-              )}
-              {scope === "repo" && scopePrefix && (
-                <span className="shrink-0 font-mono text-sm text-muted-foreground/60">
-                  {scopePrefix}
-                </span>
               )}
             </button>
             {renaming ? (
@@ -268,7 +237,6 @@ export function FolderHeader({
             ) : (
               <Hint label={titleHint} side="right">
                 <span
-                  style={scope === "repo" && !missing ? accent.iconStyle : undefined}
                   onClick={onToggle}
                   onDoubleClick={
                     task && !missing
@@ -280,9 +248,7 @@ export function FolderHeader({
                   }
                   className={cn(
                     "min-w-0 flex-1 cursor-pointer break-words line-clamp-2 leading-snug",
-                    scope === "repo"
-                      ? "text-sm font-semibold"
-                      : "text-sm font-medium text-muted-foreground",
+                    "text-sm font-medium text-muted-foreground",
                     missing && "line-through decoration-muted-foreground/40",
                   )}
                 >
