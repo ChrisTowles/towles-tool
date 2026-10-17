@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListChecksIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { Button, Input, Switch } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,7 +8,18 @@ import { requestAgentboardNav } from "@/lib/agentboard/requests";
 import { useAgentboardState } from "@/lib/agentboard/state";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import { LandedTodayDialog, WatchedIssues } from "@/components/board-github-bits";
-import { issueIndex, landedToday, suggestedIssues } from "@/lib/board-github";
+import { issueIndex, issueKey, landedToday, suggestedIssues } from "@/lib/board-github";
+import {
+  cardPrimary,
+  liveCursor,
+  moveCursor,
+  primaryPr,
+  type CursorGrid,
+  type CursorMove,
+  type CursorTarget,
+} from "@/lib/board-cursor";
+import { openExternalUrl } from "@/lib/open-url";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { boardAgentStatus } from "@/lib/board-agent-status";
 import { repoAccentStyles, type RepoIdentity } from "@/lib/repo-identity";
 import { useBoardGroupByRepo } from "@/lib/board-prefs";
@@ -64,6 +75,11 @@ async function commit(mutation: Promise<Result<unknown, IpcError>>, what: string
   if (done.isErr()) toast.error(`Couldn't ${what} — ${done.error.message}`);
 }
 
+/** The board's keys step aside for an open menu or dialog, which owns the keyboard. */
+function overlayOpen(): boolean {
+  return document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"]') !== null;
+}
+
 /** Optimistic edits (text/notes) applied over a snapshot todo until it
  * re-arrives. */
 type TaskEdit = { text?: string; notes?: string | undefined };
@@ -101,20 +117,10 @@ export function BoardScreen() {
   } | null>(null);
   const [filter, setFilter] = useState("");
   const [landedOpen, setLandedOpen] = useState(false);
+  const [watchedOpen, setWatchedOpen] = useState(true);
+  const [cursorTarget, setCursorTarget] = useState<CursorTarget | null>(null);
+  const cursorScopeRef = useRef<HTMLDivElement>(null);
 
-  // Board-scoped shortcuts (see lib/shortcuts.tsx for the registry). Gated on
-  // the tab being active: this screen stays mounted while hidden, so without
-  // the gate "n"/"/" would steal keystrokes from whatever tab is showing.
-  useShortcuts(
-    useMemo(
-      () => ({
-        "board-filter": () => filterInputRef.current?.focus(),
-      }),
-      [],
-    ),
-    "board",
-    activeTab === "board",
-  );
   const agentState = useAgentboardState();
 
   // Keyed the way lanes are: GitHub `owner/name`, bridged from each repo's
@@ -219,7 +225,6 @@ export function BoardScreen() {
       toast.error("Couldn't reopen that task — its repo isn't tracked on Agentboard");
       return;
     }
-    uiAction("board.reopen_task", "board");
     requestAgentboardNav({
       kind: "reopen-task",
       repoDir: repo.dir,
@@ -243,7 +248,6 @@ export function BoardScreen() {
   function startFromIssue(issue: IssueItem) {
     const repo = railRepoForIssue(issue);
     if (!repo) return;
-    uiAction("board.start_watched_issue", "board");
     requestAgentboardNav({
       kind: "new-task-from-issue",
       repoDir: repo.dir,
@@ -362,7 +366,6 @@ export function BoardScreen() {
   // the rail simply doesn't offer the jump.
   const openOnAgentboard = useCallback(
     (railKey: string) => {
-      uiAction("board.open_agentboard", "board");
       openTabWithFocus({ screen: "agentboard", kind: "repo", id: railKey });
     },
     [openTabWithFocus],
@@ -375,6 +378,94 @@ export function BoardScreen() {
       openTab("agentboard");
     },
     [openTab],
+  );
+
+  const cursorGrid = useMemo<CursorGrid>(
+    () => ({
+      issues: watchedOpen ? watched.map((i) => issueKey(i.repo, i.number)) : [],
+      lanes: lanes.map((lane) => TASK_STATUSES.map((s) => lane.columns[s].map((t) => t.id))),
+    }),
+    [watched, watchedOpen, lanes],
+  );
+  const cursor = liveCursor(cursorGrid, cursorTarget);
+  const cursorTask = cursor?.kind === "task" ? visible.find((t) => t.id === cursor.id) : undefined;
+  const cursorIssue =
+    cursor?.kind === "issue"
+      ? watched.find((i) => issueKey(i.repo, i.number) === cursor.key)
+      : undefined;
+
+  // Keep the ring on screen. The sticky status row is cleared by the card's
+  // own `scroll-mt`.
+  useEffect(() => {
+    if (cursor) {
+      cursorScopeRef.current
+        ?.querySelector("[data-board-cursor]")
+        ?.scrollIntoView({ block: "nearest" });
+    }
+  }, [cursor]);
+
+  // Board-scoped shortcuts (see lib/shortcuts.tsx for the registry). Gated on
+  // the tab being active: this screen stays mounted while hidden, so without
+  // the gate "j"/"/" would steal keystrokes from whatever tab is showing.
+  // A handler returning false declines, leaving the key to whoever else wants
+  // it: an open menu or dialog, a focused button's native Enter.
+  const step = (move: CursorMove) => () => {
+    if (overlayOpen()) return false;
+    const next = moveCursor(cursorGrid, cursor, move);
+    if (!next) return false;
+    // A clicked button keeps focus, and would swallow the next Enter.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && cursorScopeRef.current?.contains(focused)) {
+      focused.blur();
+    }
+    setCursorTarget(next);
+  };
+  const onButton = () => {
+    const focused = document.activeElement;
+    return (
+      focused instanceof HTMLElement &&
+      cursorScopeRef.current?.contains(focused) === true &&
+      focused.closest("button, a") !== null
+    );
+  };
+  useShortcuts(
+    {
+      "board-filter": () => filterInputRef.current?.focus(),
+      "board-down": step("down"),
+      "board-up": step("up"),
+      "board-left": step("left"),
+      "board-right": step("right"),
+      "board-open": () => {
+        if (overlayOpen() || onButton() || !cursorTask) return false;
+        const railKey = railRepoKeyForTask(agentState.repos, cursorTask);
+        if (!railKey || cardPrimary(cursorTask, true) !== "open") return false;
+        openOnAgentboard(railKey);
+      },
+      "board-start": () => {
+        if (overlayOpen()) return false;
+        if (cursorIssue) {
+          if (!railRepoForIssue(cursorIssue)) return false;
+          startFromIssue(cursorIssue);
+          return;
+        }
+        if (!cursorTask) return false;
+        const onRail = railRepoKeyForTask(agentState.repos, cursorTask) !== null;
+        if (cardPrimary(cursorTask, onRail) !== "start") return false;
+        reopen(cursorTask);
+      },
+      "board-open-link": () => {
+        if (overlayOpen()) return false;
+        const url = cursorIssue?.url ?? (cursorTask ? primaryPr(cursorTask)?.url : undefined);
+        if (!url) return false;
+        void openExternalUrl(url);
+      },
+      "board-cursor-clear": () => {
+        if (overlayOpen() || !cursor) return false;
+        setCursorTarget(null);
+      },
+    },
+    "board",
+    activeTab === "board",
   );
 
   const blockedTask = merged.find((t) => t.id === blockedDelete?.id);
@@ -508,114 +599,136 @@ export function BoardScreen() {
       ) : (
         <ScrollArea className="min-h-0 flex-1">
           <div ref={focusRef} className="min-w-[900px] p-3">
-            <WatchedIssues
-              issues={watched}
-              canStart={(issue) =>
-                railRepoForIssue(issue) ? null : `${issue.repo} isn't tracked on Agentboard`
-              }
-              onStart={startFromIssue}
-              onDismiss={dismissWatched}
-            />
-            {/* One status header for the whole board — the columns are shared
+            <div ref={cursorScopeRef}>
+              <WatchedIssues
+                issues={watched}
+                open={watchedOpen}
+                onOpenChange={setWatchedOpen}
+                cursorKey={cursorIssue ? issueKey(cursorIssue.repo, cursorIssue.number) : null}
+                canStart={(issue) =>
+                  railRepoForIssue(issue) ? null : `${issue.repo} isn't tracked on Agentboard`
+                }
+                onStart={(issue) => {
+                  mouseAction("board-start", "board");
+                  startFromIssue(issue);
+                }}
+                onDismiss={dismissWatched}
+              />
+              {/* One status header for the whole board — the columns are shared
                 across every lane, so repeating the labels per lane would be
                 mostly noise. Sticky so they stay readable while scrolling
                 a long list of repos. */}
-            <div className="sticky top-0 z-10 grid grid-cols-3 gap-3 bg-background pb-2">
-              {TASK_STATUSES.map((status) => (
-                <div key={status} className="flex items-center justify-between gap-1 px-2.5">
-                  <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {TASK_STATUS_LABEL[status]}
-                  </span>
-                  <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
-                    {counts[status]}
-                  </span>
-                </div>
-              ))}
-            </div>
+              <div className="sticky top-0 z-10 grid grid-cols-3 gap-3 bg-background pb-2">
+                {TASK_STATUSES.map((status) => (
+                  <div key={status} className="flex items-center justify-between gap-1 px-2.5">
+                    <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {TASK_STATUS_LABEL[status]}
+                    </span>
+                    <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
+                      {counts[status]}
+                    </span>
+                  </div>
+                ))}
+              </div>
 
-            <div className="flex flex-col gap-4">
-              {lanes.map((lane) => {
-                const laneRepo = lane.key === ALL_TASKS_LANE ? undefined : repoByKey.get(lane.key);
-                const laneAccent = repoAccentStyles(laneRepo);
-                return (
-                  <section key={lane.key}>
-                    {/* Flat mode's single lane is every repo's, so it gets no
+              <div className="flex flex-col gap-4">
+                {lanes.map((lane) => {
+                  const laneRepo =
+                    lane.key === ALL_TASKS_LANE ? undefined : repoByKey.get(lane.key);
+                  const laneAccent = repoAccentStyles(laneRepo);
+                  return (
+                    <section key={lane.key}>
+                      {/* Flat mode's single lane is every repo's, so it gets no
                       header — the sticky status row above is enough. */}
-                    {lane.key !== ALL_TASKS_LANE && (
-                      <div
-                        // A transparent edge keeps unthemed lanes aligned with
-                        // themed ones.
-                        className="mb-1 flex items-center gap-1.5 rounded-md border-l-2 border-l-transparent px-1.5 py-1"
-                        style={{ ...laneAccent.edgeStyle, ...laneAccent.surfaceStyle }}
-                      >
-                        <LaneGlyph repo={laneRepo} />
-                        <span
-                          className={cn(
-                            // `pr-px`: the italic variant's final glyph overhangs
-                            // its content box, and `truncate`'s overflow:hidden
-                            // clips the overhang without ever showing an ellipsis.
-                            "truncate pr-px text-sm font-semibold",
-                            lane.key === NO_REPO_GROUP &&
-                              "font-normal italic text-muted-foreground",
-                          )}
-                          title={lane.key === NO_REPO_GROUP ? undefined : lane.slug}
-                        >
-                          {lane.label}
-                        </span>
-                        <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
-                          {lane.tasks.length}
-                        </span>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-3 gap-3">
-                      {TASK_STATUSES.map((status) => (
+                      {lane.key !== ALL_TASKS_LANE && (
                         <div
-                          key={status}
-                          className="flex min-h-12 flex-col gap-2 rounded-lg border bg-muted/30 p-2"
+                          // A transparent edge keeps unthemed lanes aligned with
+                          // themed ones.
+                          className="mb-1 flex items-center gap-1.5 rounded-md border-l-2 border-l-transparent px-1.5 py-1"
+                          style={{ ...laneAccent.edgeStyle, ...laneAccent.surfaceStyle }}
                         >
-                          {lane.columns[status].map((task) => {
-                            const repoKey = taskRepoKey(task);
-                            const repoSlug = taskRepoSlug(task);
-                            const railKey = railRepoKeyForTask(agentState.repos, task);
-                            return (
-                              <Card
-                                key={task.id}
-                                task={task}
-                                repos={repos}
-                                repoIdentity={repoByKey.get(repoKey)}
-                                repoLabel={
-                                  groupByRepo || repoKey === NO_REPO_GROUP
-                                    ? undefined
-                                    : repoGroupLabel(repoSlug)
-                                }
-                                onOpenAgentboard={
-                                  railKey ? () => openOnAgentboard(railKey) : undefined
-                                }
-                                agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
-                                onOpenSession={openSession}
-                                openIssues={snapshot.issues}
-                                issuesByKey={issuesByKey}
-                                openPrs={openPrs}
-                                onReopen={reopen}
-                                onPromote={promote}
-                                onAttachIssue={attachIssue}
-                                onDetachIssue={detachIssue}
-                                onAttachPr={attachPr}
-                                onDetachPr={detachPr}
-                                onRename={rename}
-                                onSetNotes={setNotes}
-                                onClose={(id, outcome) => void remove(id, { outcome })}
-                                onRestore={restore}
-                                onPurge={(id) => void remove(id, { purge: true })}
-                              />
-                            );
-                          })}
+                          <LaneGlyph repo={laneRepo} />
+                          <span
+                            className={cn(
+                              // `pr-px`: the italic variant's final glyph overhangs
+                              // its content box, and `truncate`'s overflow:hidden
+                              // clips the overhang without ever showing an ellipsis.
+                              "truncate pr-px text-sm font-semibold",
+                              lane.key === NO_REPO_GROUP &&
+                                "font-normal italic text-muted-foreground",
+                            )}
+                            title={lane.key === NO_REPO_GROUP ? undefined : lane.slug}
+                          >
+                            {lane.label}
+                          </span>
+                          <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
+                            {lane.tasks.length}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </section>
-                );
-              })}
+                      )}
+                      <div className="grid grid-cols-3 gap-3">
+                        {TASK_STATUSES.map((status) => (
+                          <div
+                            key={status}
+                            className="flex min-h-12 flex-col gap-2 rounded-lg border bg-muted/30 p-2"
+                          >
+                            {lane.columns[status].map((task) => {
+                              const repoKey = taskRepoKey(task);
+                              const repoSlug = taskRepoSlug(task);
+                              const railKey = railRepoKeyForTask(agentState.repos, task);
+                              return (
+                                <Card
+                                  key={task.id}
+                                  task={task}
+                                  repos={repos}
+                                  repoIdentity={repoByKey.get(repoKey)}
+                                  repoLabel={
+                                    groupByRepo || repoKey === NO_REPO_GROUP
+                                      ? undefined
+                                      : repoGroupLabel(repoSlug)
+                                  }
+                                  onOpenAgentboard={
+                                    railKey
+                                      ? () => {
+                                          mouseAction("board-open", "board");
+                                          openOnAgentboard(railKey);
+                                        }
+                                      : undefined
+                                  }
+                                  agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
+                                  cursor={cursorTask?.id === task.id}
+                                  onOpenSession={openSession}
+                                  openIssues={snapshot.issues}
+                                  issuesByKey={issuesByKey}
+                                  openPrs={openPrs}
+                                  onReopen={(t) => {
+                                    uiAction("board.reopen_task", "board");
+                                    reopen(t);
+                                  }}
+                                  onStart={(t) => {
+                                    mouseAction("board-start", "board");
+                                    reopen(t);
+                                  }}
+                                  onPromote={promote}
+                                  onAttachIssue={attachIssue}
+                                  onDetachIssue={detachIssue}
+                                  onAttachPr={attachPr}
+                                  onDetachPr={detachPr}
+                                  onRename={rename}
+                                  onSetNotes={setNotes}
+                                  onClose={(id, outcome) => void remove(id, { outcome })}
+                                  onRestore={restore}
+                                  onPurge={(id) => void remove(id, { purge: true })}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </ScrollArea>

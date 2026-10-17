@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { CaretDownIcon, CaretRightIcon, XIcon } from "@phosphor-icons/react";
 import { Button, Dialog } from "@cloudflare/kumo";
 import { fmtClock, journalToday, type IssueItem } from "@/lib/data";
-import type { LandedToday } from "@/lib/board-github";
+import { issueKey, type LandedToday } from "@/lib/board-github";
+import { cn } from "@/lib/utils";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { NotInTauri } from "@/lib/errors";
 import { openExternalUrl } from "@/lib/open-url";
 
@@ -19,24 +21,30 @@ export function IssueFacts({ issue }: { issue: IssueItem }) {
  * header so a long list never pushes the lanes off screen. */
 export function WatchedIssues({
   issues,
+  open,
+  onOpenChange,
+  cursorKey,
   canStart,
   onStart,
   onDismiss,
 }: {
   issues: IssueItem[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The `issueKey` the board's keyboard cursor is on, if it is on one of these. */
+  cursorKey: string | null;
   /** Why an issue can't be started here, or null when it can. */
   canStart: (issue: IssueItem) => string | null;
   onStart: (issue: IssueItem) => void;
   onDismiss: (issue: IssueItem) => void;
 }) {
-  const [open, setOpen] = useState(true);
   if (issues.length === 0) return null;
   const Caret = open ? CaretDownIcon : CaretRightIcon;
   return (
     <section className="mb-4 rounded-lg border bg-muted/30 p-2">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => onOpenChange(!open)}
         aria-expanded={open}
         className="flex w-full items-center gap-1.5 px-1 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground"
       >
@@ -50,10 +58,16 @@ export function WatchedIssues({
         <ul className="mt-1.5 flex flex-col gap-1">
           {issues.map((issue) => {
             const blocked = canStart(issue);
+            const cursor = cursorKey === issueKey(issue.repo, issue.number);
             return (
               <li
                 key={`${issue.repo}#${issue.number}`}
-                className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-accent/50"
+                data-board-cursor={cursor || undefined}
+                aria-current={cursor || undefined}
+                className={cn(
+                  "flex scroll-mb-3 items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-accent/50",
+                  cursor && "ring-1 ring-inset ring-agent",
+                )}
               >
                 <a
                   href={issue.url}
@@ -61,6 +75,7 @@ export function WatchedIssues({
                   rel="noreferrer"
                   onClick={(e) => {
                     e.preventDefault();
+                    mouseAction("board-open-link", "board");
                     void openExternalUrl(issue.url);
                   }}
                   title={`${issue.repo}#${issue.number} on GitHub`}
