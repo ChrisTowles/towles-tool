@@ -16,7 +16,9 @@ import {
   type TaskOutcome,
   type TaskPrLink,
 } from "@/lib/data";
+import { cardPrimary, primaryPr } from "@/lib/board-cursor";
 import { taskRollup } from "@/lib/board-rollup";
+import { mouseAction } from "@/lib/shortcut-coach";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE, prTone } from "@/lib/pr-tone";
 import { AgentStatusChip, NotesField } from "@/screens/board/card-bits";
@@ -28,11 +30,13 @@ export function Card({
   repoLabel,
   onOpenAgentboard,
   agent,
+  cursor,
   onOpenSession,
   openIssues,
   issuesByKey,
   openPrs,
   onReopen,
+  onStart,
   onPromote,
   onAttachIssue,
   onDetachIssue,
@@ -53,14 +57,18 @@ export function Card({
   onOpenAgentboard?: () => void;
   /** The rail's loudest session in this task's worktree; null when it has none. */
   agent: BoardAgentStatus | null;
+  /** The board's keyboard cursor is on this card. */
+  cursor: boolean;
   onOpenSession: (folderDir: string, sessionId: string) => void;
   openIssues: IssueItem[];
   /** Cached issue rows, for a linked issue's labels and assignees. */
   issuesByKey: Map<string, IssueItem>;
   openPrs: PrItem[];
-  /** Mints a fresh worktree bound to the task's existing id — both reopening a
-   * closed task and starting a worktree-less "task only" one. */
+  /** Mints a fresh worktree bound to the task's existing id: reopening a
+   * closed task. */
   onReopen: (task: TaskItem) => void;
+  /** The same for starting a task that has no checkout, which `s` also does. */
+  onStart: (task: TaskItem) => void;
   onPromote: (id: number, repo: string) => void;
   onAttachIssue: (id: number, issue: IssueItem) => void;
   onDetachIssue: (id: number, link: TaskIssueLink) => void;
@@ -97,6 +105,8 @@ export function Card({
   const attachablePrs = openPrs.filter(
     (p) => !task.prs.some((l) => l.repo === p.repo && l.number === p.number),
   );
+  const primary = cardPrimary(task, onOpenAgentboard !== undefined);
+  const openPr = primaryPr(task);
   const hasLinks = task.issues.length > 0 || task.prs.length > 0;
   // The collector moves a fully-resolved linked task to `done` on its own, so
   // a card can finish without anyone touching it (see `lib/board-rollup.ts`).
@@ -135,8 +145,11 @@ export function Card({
     <div
       data-focus-kind="todo"
       data-focus-id={String(task.id)}
+      data-board-cursor={cursor || undefined}
+      aria-current={cursor || undefined}
       className={cn(
-        "group rounded-md border border-l-2 bg-background p-2.5 text-sm shadow-sm",
+        "group scroll-mt-9 scroll-mb-3 rounded-md border border-l-2 bg-background p-2.5 text-sm shadow-sm",
+        cursor && "ring-1 ring-inset ring-agent",
         closed && "opacity-60",
         archived && "opacity-40",
       )}
@@ -189,21 +202,20 @@ export function Card({
             }
           />
           <DropdownMenu.Content align="end" className="w-48">
-            {hasWorktree && onOpenAgentboard ? (
+            {primary === "open" && (
               <>
                 <DropdownMenu.Item onClick={onOpenAgentboard}>Open on Agentboard</DropdownMenu.Item>
                 <DropdownMenu.Separator />
               </>
-            ) : (
-              !closed && (
-                <>
-                  <DropdownMenu.Item onClick={() => onReopen(task)}>
-                    Start task
-                    <span className="ml-auto text-micro text-kumo-subtle">new worktree</span>
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Separator />
-                </>
-              )
+            )}
+            {primary === "start" && (
+              <>
+                <DropdownMenu.Item onClick={() => onStart(task)}>
+                  Start task
+                  <span className="ml-auto text-micro text-kumo-subtle">new worktree</span>
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator />
+              </>
             )}
             <DropdownMenu.Item onClick={startRename}>Rename</DropdownMenu.Item>
             <DropdownMenu.Group>
@@ -357,7 +369,7 @@ export function Card({
             detached && "italic text-muted-foreground/70",
           )}
         >
-          {!identityRowText ? null : hasWorktree && onOpenAgentboard ? (
+          {!identityRowText ? null : primary === "open" ? (
             <button
               type="button"
               onClick={onOpenAgentboard}
@@ -366,10 +378,10 @@ export function Card({
             >
               {identityRowText}
             </button>
-          ) : !closed ? (
+          ) : primary === "start" ? (
             <button
               type="button"
-              onClick={() => onReopen(task)}
+              onClick={() => onStart(task)}
               title="Start this task — mints a new worktree"
               className="min-w-0 truncate text-left hover:text-foreground hover:underline"
             >
@@ -452,6 +464,7 @@ export function Card({
                 rel="noreferrer"
                 onClick={(e) => {
                   e.preventDefault();
+                  if (link === openPr) mouseAction("board-open-link", "board");
                   void openExternalUrl(link.url);
                 }}
                 title={`${link.repo}#${link.number} · ${link.state}${link.checks !== "none" ? ` · checks ${link.checks}` : ""}`}

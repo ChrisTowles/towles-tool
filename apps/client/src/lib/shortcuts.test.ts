@@ -130,6 +130,24 @@ describe("board shortcuts", () => {
     expect(matchesShortcut("board-filter", key({ key: "/" }))).toBe(true);
   });
 
+  it("registers the cursor walk and card actions as plain board keys", () => {
+    const keys = {
+      "board-down": "j",
+      "board-up": "k",
+      "board-left": "h",
+      "board-right": "l",
+      "board-open": "Enter",
+      "board-start": "s",
+      "board-open-link": "o",
+      "board-cursor-clear": "Escape",
+    };
+    for (const [id, k] of Object.entries(keys)) {
+      expect(SHORTCUTS[id].scope).toBe("board");
+      expect(matchesShortcut(id, key({ key: k }))).toBe(true);
+      expect(matchesShortcut(id, key({ ctrlKey: true, key: k }))).toBe(false);
+    }
+  });
+
   it("has no new-task binding — tasks are created on the Agentboard", () => {
     expect("board-new-todo" in SHORTCUTS).toBe(false);
   });
