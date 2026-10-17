@@ -52,9 +52,8 @@ jobs:
         with:
           tool: cargo-audit
 
-      # Blocking: the tree is clean (quick-xml bumped to 0.41 for
-      # RUSTSEC-2026-0194/0195); unmaintained-crate notices are warnings and
-      # don't fail the scan.
+      # Blocking. Ignores, each with its reason, live in .cargo/audit.toml;
+      # unmaintained-crate notices are warnings and don't fail the scan.
       - name: cargo audit
         run: cargo audit
 

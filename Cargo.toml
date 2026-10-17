@@ -53,7 +53,7 @@ dirs = "6.0.0"
 # needs no C toolchain on either Linux or macOS.
 gix = { version = "0.86.0", features = ["status", "dirwalk", "blob-diff", "revision", "index", "attributes"] }
 indexmap = "2.7.1"
-inquire = "0.7.5"
+inquire = "0.9.4"
 # jsonc-parser: reads the JSON-with-comments dialect editors write (VS Code /
 # Claude Desktop `launch.json`) — comments and trailing commas, which
 # serde_json rejects outright.
