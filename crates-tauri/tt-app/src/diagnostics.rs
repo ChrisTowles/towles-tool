@@ -1,5 +1,6 @@
 //! Compiler-diagnostics hub for the Claude Code IDE bridge (no LSP):
-//! per-folder `cargo check --message-format=json` + `tsc --noEmit` runs,
+//! per-folder `cargo check --message-format=json` + `tsc` runs (the project's
+//! own `node_modules/.bin/tsc`, never `npx`),
 //! parsed by `tt_ide::diagnostics` into the `getDiagnostics` wire shape and
 //! pushed to connected CLIs as `diagnostics_changed` staleness signals.
 //!
@@ -167,7 +168,8 @@ fn wire_uris(wire: &Value) -> Vec<String> {
 
 /// Run cargo and/or tsc for whatever project files exist under `folder`,
 /// merging per-file results. Subprocess failures degrade to empty output —
-/// a broken toolchain must never wedge the hub.
+/// a broken toolchain must never wedge the hub — but a non-zero exit that
+/// yields no diagnostics is logged as `diagnostics.check_failed`.
 fn run_checks(folder: &Path) -> tt_ide::diagnostics::DiagnosticsByFile {
     let mut maps = Vec::new();
 
@@ -179,11 +181,17 @@ fn run_checks(folder: &Path) -> tt_ide::diagnostics::DiagnosticsByFile {
             CARGO_TIMEOUT,
         );
         if let Ok(out) = out {
-            maps.push(tt_ide::diagnostics::parse_cargo_json(&out.stdout, folder));
+            let map = tt_ide::diagnostics::parse_cargo_json(&out.stdout, folder);
+            report_if_silent_failure(folder, "cargo", out.exit_code, &map);
+            maps.push(map);
         }
     }
 
     for project in find_tsconfig_dirs(folder) {
+        let Some(tsc) = tt_ide::checker::resolve_tsc(&project, folder) else {
+            tracing::debug!(project = %project.display(), "diagnostics.tsc_not_installed");
+            continue;
+        };
         // Solution-style configs (`files: []` + `references`, the Vite
         // template) check NOTHING under plain `tsc --noEmit` — they need
         // `tsc -b`, which walks the referenced projects.
@@ -191,17 +199,32 @@ fn run_checks(folder: &Path) -> tt_ide::diagnostics::DiagnosticsByFile {
             .map(|s| s.contains("\"references\""))
             .unwrap_or(false);
         let args: &[&str] = if solution {
-            &["tsc", "-b", "--pretty", "false"]
+            &["-b", "--pretty", "false"]
         } else {
-            &["tsc", "--noEmit", "--pretty", "false"]
+            &["--noEmit", "--pretty", "false"]
         };
-        let out = tt_exec::run_in_dir_with_timeout("npx", args, &project, TSC_TIMEOUT);
+        let out =
+            tt_exec::run_in_dir_with_timeout(&tsc.to_string_lossy(), args, &project, TSC_TIMEOUT);
         if let Ok(out) = out {
-            maps.push(tt_ide::diagnostics::parse_tsc(&out.stdout, &project));
+            let map = tt_ide::diagnostics::parse_tsc(&out.stdout, &project);
+            report_if_silent_failure(folder, "tsc", out.exit_code, &map);
+            maps.push(map);
         }
     }
 
     tt_ide::diagnostics::merge(maps)
+}
+
+fn report_if_silent_failure(
+    folder: &Path,
+    tool: &str,
+    exit_code: i32,
+    parsed: &tt_ide::diagnostics::DiagnosticsByFile,
+) {
+    let count = parsed.values().map(Vec::len).sum();
+    if tt_ide::checker::is_silent_failure(exit_code, count) {
+        tracing::warn!(folder = %folder.display(), tool, exit_code, "diagnostics.check_failed");
+    }
 }
 
 /// Directories holding a `tsconfig.json`, from the folder root down
