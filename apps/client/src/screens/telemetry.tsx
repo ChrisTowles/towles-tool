@@ -1,29 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowClockwiseIcon,
-  CalendarDotsIcon,
-  ChartBarIcon,
-  DatabaseIcon,
-  GaugeIcon,
-  GitDiffIcon,
-  KeyboardIcon,
-  LightbulbIcon,
-  LightningIcon,
-  RobotIcon,
-  ScrollIcon,
-  ShieldCheckIcon,
-  SquaresFourIcon,
-  WarningCircleIcon,
-} from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, LightningIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
-import { Button, DatePicker, Dialog, Popover, Tabs } from "@cloudflare/kumo";
-import { BarRow, Card, Empty, maxCount, StatTile } from "@/components/store-bits";
+import { Button, Tabs } from "@cloudflare/kumo";
+import { Card, Empty, StatTile } from "@/components/store-bits";
 import { cn } from "@/lib/utils";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { keyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import {
   effectiveFilters,
-  LEVELS,
   loadTelemetryFilters,
   nearestRange,
   saveTelemetryFilters,
@@ -36,7 +20,6 @@ import {
   telemetryEvents,
   telemetryRecords,
   telemetryRules,
-  telemetryTrace,
   type AttentionSummary,
   type BuildSnapshot,
   type AgentsSummary,
@@ -67,23 +50,19 @@ import type { LogPoint } from "@/screens/telemetry/dashboard-charts";
 import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { LogFilterBar } from "@/screens/telemetry/log-filter-bar";
 import { DEFAULT_RULES_RANGE, RulesTab, type RulesRange } from "@/screens/telemetry/rules-tab";
-import { TraceTree } from "@/screens/telemetry/trace-tree";
 import { QueryTab } from "@/screens/telemetry/query-tab";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
+import { DayPicker } from "@/screens/telemetry/day-picker";
+import { TELEMETRY_TABS } from "@/screens/telemetry/tab-strip";
+import { InsightsTab } from "@/screens/telemetry/insights-tab";
+import { OverviewTab, countBy } from "@/screens/telemetry/overview-tab";
+import { RecordDialog, TelemetryRow, fieldsSummary } from "@/screens/telemetry/telemetry-row";
 
 /** Telemetry — a viewer over `tt-telemetry`'s `events-<date>.jsonl`, re-read on
  * Refresh and on focus, never live-tailed. Overview/Attention/Insights hold the
  * picked day in memory (75,000+ records is normal); the Log tab asks Rust for
  * a filtered page over its own day range, since a fortnight is far more. */
-
-const LEVEL_TONE: Record<string, string> = {
-  ERROR: "text-danger",
-  WARN: "text-warn",
-  INFO: "text-foreground",
-  DEBUG: "text-muted-foreground",
-  TRACE: "text-muted-foreground/70",
-};
 
 /** Rendering a day's rows as plain DOM nodes is what froze the page before this
  * cap existed; narrowing the search/filters is the way to see past it. */
@@ -95,29 +74,6 @@ const QUERY_DEBOUNCE_MS = 200;
 // Read once at module load, so the Log tab reopens with the filters last left on
 // it — the same restore-at-import pattern the workspace tabs use.
 const restoredFilters = loadTelemetryFilters(localStorage.getItem(TELEMETRY_FILTERS_KEY));
-
-/** Groups `items` by `key`, one pass. */
-function countBy<T>(items: T[], key: (item: T) => string): { key: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    const k = key(item);
-    counts.set(k, (counts.get(k) ?? 0) + 1);
-  }
-  return [...counts.entries()].map(([k, count]) => ({ key: k, count }));
-}
-
-/** Telemetry days are local `YYYY-MM-DD` keys; parse at local midnight so the
- * calendar highlights the same day it names. */
-function parseDay(day: string): Date {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function formatDay(date: Date): string {
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${mm}-${dd}`;
-}
 
 export function TelemetryScreen() {
   const { activeTab, openSettingsTab } = useWorkspace();
@@ -495,36 +451,14 @@ export function TelemetryScreen() {
           Telemetry
         </h2>
         <div className="flex items-center gap-2">
-          <Popover>
-            <Popover.Trigger
-              render={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label="Telemetry day"
-                  icon={<CalendarDotsIcon className="size-3.5" />}
-                  disabled={days === null || days.length === 0}
-                  className="w-40 justify-start"
-                />
-              }
-            >
-              {day ?? (days === null ? "Loading…" : "No logs")}
-            </Popover.Trigger>
-            <Popover.Content align="end" className="p-2">
-              <DatePicker
-                mode="single"
-                selected={day ? parseDay(day) : undefined}
-                defaultMonth={day ? parseDay(day) : undefined}
-                disabled={(date) => !days?.includes(formatDay(date))}
-                onChange={(date) => {
-                  if (!date) return;
-                  const v = formatDay(date);
-                  setDay(v);
-                  uiAction("telemetry.day_change", "telemetry", v);
-                }}
-              />
-            </Popover.Content>
-          </Popover>
+          <DayPicker
+            days={days}
+            day={day}
+            onDay={(v) => {
+              setDay(v);
+              uiAction("telemetry.day_change", "telemetry", v);
+            }}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -565,98 +499,7 @@ export function TelemetryScreen() {
         value={tab}
         onValueChange={switchTab}
         className="shrink-0 border-b border-kumo-hairline bg-kumo-base px-2"
-        tabs={[
-          {
-            value: "overview",
-            label: (
-              <span className="flex items-center gap-2">
-                <SquaresFourIcon className="size-4" />
-                Overview
-              </span>
-            ),
-          },
-          {
-            value: "dashboard",
-            label: (
-              <span className="flex items-center gap-2">
-                <ChartBarIcon className="size-4" />
-                Dashboard
-              </span>
-            ),
-          },
-          {
-            value: "agents",
-            label: (
-              <span className="flex items-center gap-2">
-                <RobotIcon className="size-4" />
-                Agents
-              </span>
-            ),
-          },
-          {
-            value: "builds",
-            label: (
-              <span className="flex items-center gap-2">
-                <GitDiffIcon className="size-4" />
-                Builds
-              </span>
-            ),
-          },
-          {
-            value: "rules",
-            label: (
-              <span className="flex items-center gap-2">
-                <ShieldCheckIcon className="size-4" />
-                Rules
-              </span>
-            ),
-          },
-          {
-            value: "attention",
-            label: (
-              <span className="flex items-center gap-2">
-                <GaugeIcon className="size-4" />
-                Attention
-              </span>
-            ),
-          },
-          {
-            value: "keyboard",
-            label: (
-              <span className="flex items-center gap-2">
-                <KeyboardIcon className="size-4" />
-                Keyboard
-              </span>
-            ),
-          },
-          {
-            value: "query",
-            label: (
-              <span className="flex items-center gap-2">
-                <DatabaseIcon className="size-4" />
-                Query
-              </span>
-            ),
-          },
-          {
-            value: "log",
-            label: (
-              <span className="flex items-center gap-2">
-                <ScrollIcon className="size-4" />
-                Log
-              </span>
-            ),
-          },
-          {
-            value: "insights",
-            label: (
-              <span className="flex items-center gap-2">
-                <LightbulbIcon className="size-4" />
-                Insights
-              </span>
-            ),
-          },
-        ]}
+        tabs={TELEMETRY_TABS}
       />
 
       <div
@@ -828,315 +671,4 @@ export function TelemetryScreen() {
       <RecordDialog record={selected} onOpen={openRecord} onClose={() => setSelected(null)} />
     </div>
   );
-}
-
-// ── Overview ────────────────────────────────────────────────────────────────
-
-/** A single source (target or name) is this dominant before Overview calls it
- * out — the log being this lopsided is itself a signal something may be
- * over-logging, not just a UI-scale problem to page past. */
-const DOMINANCE_THRESHOLD = 0.8;
-
-function OverviewTab({
-  events,
-  levelCounts,
-  day,
-  onOpenLog,
-}: {
-  events: TelemetryRecord[];
-  levelCounts: { key: string; count: number }[];
-  day: string | null;
-  onOpenLog: () => void;
-}) {
-  const byLevel = useMemo(() => {
-    const counts = new Map(levelCounts.map((r) => [r.key, r.count]));
-    return LEVELS.map((l) => ({ level: l, count: counts.get(l) ?? 0 })).filter((r) => r.count > 0);
-  }, [levelCounts]);
-  const byTarget = useMemo(
-    () =>
-      countBy(events, (e) => e.target)
-        .toSorted((a, b) => b.count - a.count)
-        .slice(0, 8),
-    [events],
-  );
-  const recentErrors = useMemo(
-    () => events.filter((e) => e.level === "ERROR").slice(0, 6),
-    [events],
-  );
-  const dominant = byTarget[0];
-
-  if (events.length === 0) {
-    return (
-      <Card title="No telemetry">
-        <Empty inline>
-          {day ? `No records for ${day}.` : "No telemetry logs found for this checkout yet."}
-        </Empty>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      {dominant && dominant.count / events.length >= DOMINANCE_THRESHOLD && (
-        <div className="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
-          <WarningCircleIcon className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            <span className="font-mono">{dominant.key}</span> accounts for{" "}
-            {Math.round((dominant.count / events.length) * 100)}% of today's records (
-            {dominant.count} of {events.length}) — if that's more than you'd expect, something may
-            be over-logging rather than this just being a busy day.
-          </span>
-        </div>
-      )}
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card title="By level">
-          <div className="flex flex-col gap-1.5">
-            {byLevel.map((r) => (
-              <BarRow
-                key={r.level}
-                label={r.level}
-                count={r.count}
-                max={maxCount(byLevel)}
-                tone={LEVEL_TONE[r.level]}
-              />
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Busiest targets" note={`${byTarget.length}`}>
-          <div className="flex flex-col gap-1.5">
-            {byTarget.map((r) => (
-              <BarRow key={r.key} label={r.key} count={r.count} max={maxCount(byTarget)} />
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      <Card
-        title="Recent errors"
-        note={recentErrors.length > 0 ? undefined : "none"}
-        action={
-          <Button variant="outline" size="sm" onClick={onOpenLog}>
-            Open log
-          </Button>
-        }
-      >
-        {recentErrors.length === 0 ? (
-          <Empty inline>No errors today.</Empty>
-        ) : (
-          <div className="-mx-1 flex flex-col">
-            {recentErrors.map((e, i) => (
-              <div key={`${e.ts}-${i}`} className="flex items-center gap-2.5 px-1 py-1">
-                <span className="font-mono text-xs text-foreground">{e.name}</span>
-                <span className="font-mono text-mini text-muted-foreground/60">{e.target}</span>
-                <span className="ml-auto font-mono text-mini text-muted-foreground">
-                  {timeOf(e.ts)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
-
-// ── Insights ────────────────────────────────────────────────────────────────
-
-function InsightsTab({
-  events,
-  onSelect,
-}: {
-  events: TelemetryRecord[];
-  onSelect: (record: TelemetryRecord) => void;
-}) {
-  const slowestSpans = useMemo(
-    () =>
-      events
-        .filter((e): e is TelemetryRecord & { durationMs: number } => e.durationMs !== null)
-        .toSorted((a, b) => b.durationMs - a.durationMs)
-        .slice(0, 10),
-    [events],
-  );
-  const byName = useMemo(
-    () =>
-      countBy(events, (e) => e.name)
-        .toSorted((a, b) => b.count - a.count)
-        .slice(0, 10),
-    [events],
-  );
-
-  if (events.length === 0) {
-    return (
-      <Card title="Insights">
-        <Empty inline>No telemetry to analyze for this day.</Empty>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Card title="Slowest spans" note={`${slowestSpans.length}`}>
-        {slowestSpans.length === 0 ? (
-          <Empty inline>No spans recorded.</Empty>
-        ) : (
-          <div className="-mx-1.5 flex flex-col">
-            {slowestSpans.map((e, i) => (
-              <button
-                key={`${e.ts}-${i}`}
-                type="button"
-                onClick={() => onSelect(e)}
-                className="flex w-full items-center gap-2.5 rounded-md px-1.5 py-1.5 text-left hover:bg-accent/50"
-              >
-                <span className="font-mono text-xs text-foreground">{e.name}</span>
-                <span className="font-mono text-mini text-muted-foreground/60">{e.target}</span>
-                <span className="ml-auto font-mono text-xs text-muted-foreground">
-                  {e.durationMs}ms
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <Card title="Busiest names" note={`${byName.length}`}>
-        <div className="flex flex-col gap-1.5">
-          {byName.map((r) => (
-            <BarRow key={r.key} label={r.key} count={r.count} max={maxCount(byName)} />
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-/** `HH:MM:SS` of an RFC 3339 timestamp, for a compact time column. */
-function timeOf(ts: string): string {
-  const d = new Date(ts);
-  return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString([], { hour12: false });
-}
-
-/** A one-line summary of a record's extra fields, for the row's second line. */
-function fieldsSummary(fields: Record<string, unknown>): string | null {
-  const entries = Object.entries(fields);
-  if (entries.length === 0) return null;
-  return entries.map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(" ");
-}
-
-function TelemetryRow({
-  record,
-  summary,
-  showDay,
-  onSelect,
-}: {
-  record: TelemetryRecord;
-  summary: string | null;
-  /** A multi-day range needs the date; a single day would only repeat it. */
-  showDay: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "flex w-full flex-col gap-0.5 rounded-md border-l-2 border-transparent px-3 py-2 text-left hover:bg-accent/50",
-        record.level === "ERROR" && "border-l-danger bg-danger/5",
-      )}
-    >
-      <div className="flex w-full items-center gap-2.5">
-        <span
-          className={cn(
-            "shrink-0 font-mono text-mini text-muted-foreground",
-            showDay ? "w-36" : "w-20",
-          )}
-        >
-          {showDay && <span className="text-muted-foreground/60">{record.ts.slice(5, 10)} </span>}
-          {timeOf(record.ts)}
-        </span>
-        <span
-          className={cn("w-12 shrink-0 font-mono text-mini font-medium", LEVEL_TONE[record.level])}
-        >
-          {record.level}
-        </span>
-        <span className="font-mono text-xs text-foreground">{record.name}</span>
-        <span className="font-mono text-mini text-muted-foreground/60">{record.target}</span>
-        <div className="ml-auto flex shrink-0 items-center gap-3 font-mono text-mini text-muted-foreground">
-          {record.durationMs !== null && <span>{record.durationMs}ms</span>}
-        </div>
-      </div>
-      {summary && (
-        <span
-          className={cn(
-            "w-full truncate font-mono text-mini text-muted-foreground/70",
-            showDay ? "pl-[150px]" : "pl-[86px]",
-          )}
-        >
-          {summary}
-        </span>
-      )}
-    </button>
-  );
-}
-
-function RecordDialog({
-  record,
-  onOpen,
-  onClose,
-}: {
-  record: TelemetryRecord | null;
-  onOpen: (record: TelemetryRecord) => void;
-  onClose: () => void;
-}) {
-  const [children, setChildren] = useState<TelemetryRecord[] | null>(null);
-
-  // Children are fetched, not derived: with a multi-day range the page holds
-  // a few hundred rows, and the siblings live in the day file.
-  useEffect(() => {
-    setChildren(null);
-    if (!record || record.durationMs === null) return;
-    let live = true;
-    void telemetryTrace(record.ts, record.ts.slice(0, 10)).then((r) => {
-      if (live) setChildren(r.unwrapOr([]));
-    });
-    return () => {
-      live = false;
-    };
-  }, [record]);
-
-  return (
-    <Dialog.Root open={!!record} onOpenChange={(o) => !o && onClose()}>
-      <Dialog size="xl" className="max-h-[85vh] overflow-y-auto p-6">
-        <div className="mb-4 flex flex-col gap-1.5">
-          <Dialog.Title className="pr-6 font-mono text-base">{record?.name}</Dialog.Title>
-          <Dialog.Description className="text-sm">
-            {record?.kind} · {record?.target}
-            {record?.durationMs !== null && record?.durationMs !== undefined
-              ? ` · ${record.durationMs}ms`
-              : ""}
-            {record ? ` · ${record.ts}` : ""}
-          </Dialog.Description>
-        </div>
-
-        {record && (
-          <pre className="overflow-x-auto rounded-md border border-kumo-hairline bg-kumo-recessed p-2.5 font-mono text-xs whitespace-pre-wrap text-kumo-default">
-            {prettyRaw(record.raw)}
-          </pre>
-        )}
-
-        {record && children && children.length > 0 && (
-          <TraceTree parent={record} descendants={children} onOpen={onOpen} />
-        )}
-      </Dialog>
-    </Dialog.Root>
-  );
-}
-
-function prettyRaw(raw: string): string {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
-  } catch {
-    return raw;
-  }
 }
