@@ -5,6 +5,11 @@ use crate::ops::claims::{record_task_ports, registry_claims};
 use crate::ops::test_support::{add_task, git, repo_with_origin};
 use crate::ops::{TEARDOWN_ENV_KEY, TaskRoot};
 
+/// A sandbox beside the fixture checkout: no test may point at the machine's data dir.
+fn host_data_dir(sr: &TaskRoot) -> PathBuf {
+    sr.checkout.parent().unwrap().join("host-data")
+}
+
 fn ports_dir(sr: &TaskRoot) -> PathBuf {
     sr.checkout.parent().unwrap().join("ports")
 }
@@ -15,6 +20,7 @@ fn opts(sr: &TaskRoot, name: &str, force: bool) -> RemoveOpts {
         name: name.to_string(),
         force,
         ports_dir: Some(ports_dir(sr)),
+        host_data: HostData::At(host_data_dir(sr)),
     }
 }
 
@@ -327,7 +333,7 @@ fn clean(sr: &TaskRoot, dry_run: bool) -> CleanReport {
         dry_run,
         scope_parents: Vec::new(),
         ports_dir: Some(ports_dir(sr)),
-        host_data_dir: Some(sr.checkout.join("host-data")),
+        host_data: HostData::At(host_data_dir(sr)),
     };
     clean_tasks(&opts, |_| None).unwrap()
 }
@@ -453,7 +459,7 @@ fn clean_sweeps_state_dirs_of_removed_checkouts_of_this_repo_only() {
         dry_run: false,
         scope_parents: vec![scope_parent.clone()],
         ports_dir: Some(ports_dir(&sr)),
-        host_data_dir: Some(tmp.path().join("host-data")),
+        host_data: HostData::At(host_data_dir(&sr)),
     };
 
     let report = clean_tasks(&opts, |dir| {
@@ -521,7 +527,7 @@ fn clean_sweeps_host_residue_of_gone_tasks_but_never_live_or_base() {
         dry_run,
         scope_parents: Vec::new(),
         ports_dir: Some(ports_dir(&sr)),
-        host_data_dir: Some(data.clone()),
+        host_data: HostData::At(data.clone()),
     };
     let scope_of = |dir: &Path| Some(dir.file_name()?.to_str()?.to_string());
 
@@ -559,7 +565,7 @@ fn clean_skips_host_residue_for_a_repo_without_the_app() {
         dry_run: false,
         scope_parents: Vec::new(),
         ports_dir: Some(ports_dir(&sr)),
-        host_data_dir: Some(data),
+        host_data: HostData::At(data),
     };
 
     let report = clean_tasks(&opts, |_| None).unwrap();

@@ -15,13 +15,31 @@ use super::{
 use crate::envfile;
 use crate::guards::{ForeignPort, RmBlocked};
 
-#[derive(Debug, Default)]
+/// Where the app's per-task WebKit data, launchers and icons live. The ops layer never
+/// looks the machine's dir up itself: the outermost entry point resolves it
+/// ([`From<Option<PathBuf>>`] with `tt_config::host_data_dir()`) and passes it down, so a
+/// caller or test that forgets cannot reach the real one — it fails to compile.
+#[derive(Debug, Clone)]
+pub enum HostData {
+    At(PathBuf),
+    /// Reclaim nothing outside the checkout.
+    Skip,
+}
+
+impl From<Option<PathBuf>> for HostData {
+    fn from(dir: Option<PathBuf>) -> Self {
+        dir.map_or(Self::Skip, Self::At)
+    }
+}
+
+#[derive(Debug)]
 pub struct RemoveOpts {
     pub root: Option<PathBuf>,
     pub name: String,
     pub force: bool,
     /// Port-ledger dir; `None` is the shared one (`tt_config::task_ports_dir`).
     pub ports_dir: Option<PathBuf>,
+    pub host_data: HostData,
 }
 
 /// A step of [`remove_task`] worth showing the user live, in the order they
@@ -160,7 +178,7 @@ pub fn remove_task(
             release_task_ports(&sr.checkout, &path, &name);
         }
         state_cleanup(state_scope.as_deref(), &mut messages);
-        host_cleanup(app_identifier.as_deref(), &mut messages);
+        host_cleanup(app_identifier.as_deref(), &opts.host_data, &mut messages);
         remove_setup_log(&dir);
         return Ok(RemoveOutcome::Removed(RemovedTask {
             name,
@@ -282,7 +300,7 @@ pub fn remove_task(
         release_task_ports(&sr.checkout, &path, &name);
     }
     state_cleanup(state_scope.as_deref(), &mut messages);
-    host_cleanup(app_identifier.as_deref(), &mut messages);
+    host_cleanup(app_identifier.as_deref(), &opts.host_data, &mut messages);
     remove_setup_log(&dir);
     Ok(RemoveOutcome::Removed(RemovedTask {
         name,
@@ -443,10 +461,11 @@ fn state_cleanup(scope: Option<&str>, messages: &mut Vec<String>) {
 
 /// Delete what the removed task's app build left outside the checkout: WebKit's data dir
 /// and the launcher + icon. Only tasks of this repo build the app, so others skip cleanly.
-fn host_cleanup(identifier: Option<&str>, messages: &mut Vec<String>) {
-    let Some(paths) = identifier.and_then(tt_config::host_paths) else {
+fn host_cleanup(identifier: Option<&str>, host_data: &HostData, messages: &mut Vec<String>) {
+    let (Some(identifier), HostData::At(data)) = (identifier, host_data) else {
         return;
     };
+    let paths = tt_config::host_paths_in(data, identifier);
     for path in paths.all() {
         match remove_path(path) {
             Ok(true) => messages.push(format!("removed app residue {}", path.display())),
@@ -495,16 +514,14 @@ fn disk_bytes(path: &Path, seen: &mut BTreeSet<(u64, u64)>) -> u64 {
 
 // clean — remove every finished task and the state removed checkouts left behind
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CleanOpts {
     pub root: Option<PathBuf>,
     pub dry_run: bool,
     pub scope_parents: Vec<PathBuf>,
     /// Port-ledger dir to sweep; `None` is the shared one.
     pub ports_dir: Option<PathBuf>,
-    /// User data dir holding the app's WebKit dirs and launchers; `None` is the
-    /// machine's (`tt_config::host_data_dir`).
-    pub host_data_dir: Option<PathBuf>,
+    pub host_data: HostData,
 }
 
 /// A task `clean` removed (or, on dry-run, would remove).
@@ -664,6 +681,7 @@ pub fn clean_tasks(
             name: name.clone(),
             force: false,
             ports_dir: opts.ports_dir.clone(),
+            host_data: opts.host_data.clone(),
         };
         match remove_task(&rm, &mut |_| {}) {
             Ok(RemoveOutcome::Removed(r)) => {
@@ -743,9 +761,7 @@ pub fn clean_tasks(
     // Sweep the app identifiers of removed tasks. A task still on disk after the loop is
     // live whatever the loop decided, and the base identifier is never a candidate.
     let mut swept_host_residue = Vec::new();
-    if checkout_scoped
-        && let Some(data) = opts.host_data_dir.clone().or_else(tt_config::host_data_dir)
-    {
+    if checkout_scoped && let HostData::At(data) = &opts.host_data {
         if !opts.dry_run {
             live_names.extend(sr.tasks().into_iter().map(|(name, _)| name));
         }
@@ -753,10 +769,10 @@ pub fn clean_tasks(
             tt_config::live_identifiers(live_names.iter().map(String::as_str))
                 .into_iter()
                 .collect();
-        let on_disk = tt_config::per_task_identifiers_in(&data);
+        let on_disk = tt_config::per_task_identifiers_in(data);
         let mut seen_links = BTreeSet::new();
         for identifier in crate::clean::stale_host_identifiers(&on_disk, &live) {
-            let paths = tt_config::host_paths_in(&data, &identifier);
+            let paths = tt_config::host_paths_in(data, &identifier);
             let found: Vec<PathBuf> = paths
                 .all()
                 .into_iter()
