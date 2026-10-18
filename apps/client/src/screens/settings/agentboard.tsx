@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DotsSixVerticalIcon, FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
@@ -24,7 +25,7 @@ import {
 } from "@/lib/repo-identity";
 import { liveSessionIds, trackRepo, untrackRepo } from "@/lib/repo-actions";
 import { uiAction } from "@/lib/ui-action";
-import { invoke } from "@/lib/tauri";
+import { invoke, ipcOr, runIpc } from "@/lib/tauri";
 import { matchesFilter } from "@/lib/settings-filter";
 import { NotInTauri } from "@/lib/errors";
 import {
@@ -407,7 +408,7 @@ function AgentboardSettings() {
   const pending = useRef<string | null>(null);
 
   useEffect(() => {
-    void invoke<string[]>("ab_get_scan_roots").then((r) => setRoots(r.unwrapOr([]).join("\n")));
+    void ipcOr(invoke<string[]>("ab_get_scan_roots"), []).then((r) => setRoots(r.join("\n")));
   }, []);
 
   // Autosave, like the rest of this screen. Deliberately does *not* write the
@@ -425,10 +426,10 @@ function AgentboardSettings() {
       .split("\n")
       .map((s) => s.trim())
       .filter(Boolean);
-    const stored = await invoke("ab_set_scan_roots", { roots: list });
-    if (stored.isErr()) {
-      if (!NotInTauri.is(stored.error)) {
-        toast.error(`Couldn't save scan roots — ${stored.error.message}`);
+    const stored = await runIpc(invoke("ab_set_scan_roots", { roots: list }));
+    if (Result.isFailure(stored)) {
+      if (!NotInTauri.is(stored.failure)) {
+        toast.error(`Couldn't save scan roots — ${stored.failure.message}`);
       }
       return;
     }
@@ -502,7 +503,7 @@ function RepoManager() {
   const [dropBefore, setDropBefore] = useState<string | null>(null);
 
   const refresh = async () => {
-    setCandidates((await invoke<RepoCandidate[]>("ab_discover_repos")).unwrapOr([]));
+    setCandidates(await ipcOr(invoke<RepoCandidate[]>("ab_discover_repos"), []));
   };
 
   // This pane only exists while the Agentboard tab is the selected one (only
@@ -554,9 +555,9 @@ function RepoManager() {
     if (sameOrder(current, next)) return;
     setOrder(next);
     uiAction("repo.reordered", "settings");
-    void invoke("ab_set_repo_order", { dirs: next }).then((res) => {
-      if (res.isErr() && !NotInTauri.is(res.error)) {
-        toast.error(`Couldn't save the repo order — ${res.error.message}`);
+    void runIpc(invoke("ab_set_repo_order", { dirs: next })).then((res) => {
+      if (Result.isFailure(res) && !NotInTauri.is(res.failure)) {
+        toast.error(`Couldn't save the repo order — ${res.failure.message}`);
         setOrder(null);
       }
     });
@@ -752,14 +753,16 @@ function RepoIdentityRow({
 
   const commit = async (next: RepoMeta | null, action: string, detail?: string) => {
     latest.current = next ?? undefined;
-    const res = await invoke("ab_set_repo_meta", {
-      dir,
-      icon: next?.icon ?? null,
-      color: next?.color ?? null,
-    });
-    if (res.isErr()) {
-      if (!NotInTauri.is(res.error)) {
-        toast.error(`Couldn't save ${repo.name} — ${res.error.message}`);
+    const res = await runIpc(
+      invoke("ab_set_repo_meta", {
+        dir,
+        icon: next?.icon ?? null,
+        color: next?.color ?? null,
+      }),
+    );
+    if (Result.isFailure(res)) {
+      if (!NotInTauri.is(res.failure)) {
+        toast.error(`Couldn't save ${repo.name} — ${res.failure.message}`);
       }
       // Roll the optimistic ref back so the next edit doesn't build on a value
       // the backend rejected.
@@ -928,7 +931,7 @@ function NextPromptEditor({
 }) {
   const [spent, setSpent] = useState<number | null>(null);
   useEffect(() => {
-    void invoke<number>("next_prompt_spend_today").then((r) => setSpent(r.unwrapOr(null)));
+    void ipcOr(invoke<number>("next_prompt_spend_today"), null).then(setSpent);
   }, []);
   const budget = value.dailyBudgetUsd ?? 0.2;
   return (

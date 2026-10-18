@@ -1,35 +1,37 @@
-import { z } from "zod";
+import { Schema } from "effect";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
 import type { RepoData } from "@/lib/agentboard/types";
 import { nextOpenFileNonce } from "@/lib/agentboard/windows";
-import { invoke, isTauri } from "@/lib/tauri";
+import { list } from "@/lib/schemas/shape";
+import { invoke, runIpc } from "@/lib/tauri";
+import { subscribe } from "@/lib/run";
 
 // Delivery for the MCP `preview_file` tool: `preview://show` → the Preview pane
 // of the folder owning the *calling agent's terminal*. The file's location is
 // consulted only when the caller didn't identify itself.
 
 /** Validated, not trusted — it crosses the IPC boundary. */
-const PreviewShowPayloadSchema = z.object({
-  path: z.string(),
-  title: z.string(),
+const PreviewShowPayloadSchema = Schema.Struct({
+  path: Schema.String,
+  title: Schema.String,
   /** The caller's PTY session (`X-TT-Session`) — the routing key. */
-  session: z.string().nullish(),
+  session: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
-export type PreviewShowPayload = z.infer<typeof PreviewShowPayloadSchema>;
+export type PreviewShowPayload = typeof PreviewShowPayloadSchema.Type;
 
 /** The `nonce` is why re-showing a rewritten file isn't a no-op. */
 export type PreviewRequest = { path: string; title: string; nonce: number };
 
 /** `kind` comes from the extension, in Rust, so it can't flip between reloads
  * of a file still being written. */
-const PreviewDocSchema = z.object({
-  path: z.string(),
-  kind: z.enum(["html", "markdown", "text"]),
-  content: z.string(),
+const PreviewDocSchema = Schema.Struct({
+  path: Schema.String,
+  kind: Schema.Literals(["html", "markdown", "text"]),
+  content: Schema.String,
 });
 
-export type PreviewDoc = z.infer<typeof PreviewDocSchema>;
+export type PreviewDoc = typeof PreviewDocSchema.Type;
 
 /** Absolute-only, like the tool: there is no cwd to resolve against. */
 export function typedPreviewRequest(raw: string): PreviewRequest | null {
@@ -46,36 +48,24 @@ export function fileUrl(path: string) {
 }
 
 export const previewReadFile = (path: string) =>
-  invoke("preview_read_file", { path }, { schema: PreviewDocSchema, timeoutMs: 10_000 });
+  runIpc(invoke("preview_read_file", { path }, { schema: PreviewDocSchema, timeout: 10_000 }));
 
 /** Refcounted in Rust, so two panes on one file share a watch. */
-export const previewWatchFile = (path: string) => invoke("preview_watch_file", { path });
-export const previewUnwatchFile = (path: string) => invoke("preview_unwatch_file", { path });
+export const previewWatchFile = (path: string) => runIpc(invoke("preview_watch_file", { path }));
+export const previewUnwatchFile = (path: string) =>
+  runIpc(invoke("preview_unwatch_file", { path }));
 
 /** One event per debounce batch, so a pane filters for its own path. */
-const PreviewChangedSchema = z.object({ paths: z.array(z.string()) });
+const PreviewChangedSchema = Schema.Struct({ paths: list(Schema.String) });
 
 export function onPreviewFileChanged(path: string, cb: () => void): () => void {
-  if (!isTauri()) return () => {};
-  let cancelled = false;
-  let unlisten: (() => void) | undefined;
-  void (async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    const sub = await listen<unknown>("preview://file-changed", (event) => {
-      const parsed = PreviewChangedSchema.safeParse(event.payload);
-      if (!parsed.success) {
-        console.error("preview://file-changed: unexpected payload", parsed.error);
-        return;
-      }
-      if (parsed.data.paths.includes(path)) cb();
-    });
-    if (cancelled) sub();
-    else unlisten = sub;
-  })();
-  return () => {
-    cancelled = true;
-    unlisten?.();
-  };
+  return subscribe(
+    "preview://file-changed",
+    (payload) => {
+      if (payload.paths.includes(path)) cb();
+    },
+    PreviewChangedSchema,
+  );
 }
 
 /** Resolved from the caller rather than the file, so it is exact. Undefined
@@ -130,26 +120,12 @@ export function showFileNav(payload: PreviewShowPayload, repos: RepoData[]) {
 /** `reposNow` reads the repo list at delivery time, so a file shown before the
  * first snapshot loses only its *preferred* folder. */
 export function subscribePreviewShow(reposNow: () => RepoData[], onRouted: () => void): () => void {
-  if (!isTauri()) return () => {};
-  let unlisten: (() => void) | undefined;
-  let cancelled = false;
-  void (async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    const sub = await listen<unknown>("preview://show", (event) => {
-      const parsed = PreviewShowPayloadSchema.safeParse(event.payload);
-      // Drifted from the Rust struct — drop it loudly, don't open an empty pane.
-      if (!parsed.success) {
-        console.error("preview://show: unexpected payload", parsed.error);
-        return;
-      }
-      requestAgentboardNav(showFileNav(parsed.data, reposNow()));
+  return subscribe(
+    "preview://show",
+    (payload) => {
+      requestAgentboardNav(showFileNav(payload, reposNow()));
       onRouted();
-    });
-    if (cancelled) sub();
-    else unlisten = sub;
-  })();
-  return () => {
-    cancelled = true;
-    unlisten?.();
-  };
+    },
+    PreviewShowPayloadSchema,
+  );
 }

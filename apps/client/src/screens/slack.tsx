@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { Fragment, useCallback, useState } from "react";
 import { ArrowClockwiseIcon, ChatCircleIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
@@ -40,12 +41,12 @@ export function SlackScreen() {
       setSending(true);
       const sent = await slackDmSend(text, threadTs);
       setSending(false);
-      return sent.match({
-        ok: () => {
+      return Result.match(sent, {
+        onSuccess: () => {
           refresh();
           return true;
         },
-        err: (e) => {
+        onFailure: (e) => {
           toast.error(slackWriteError(e.message, "send"));
           return false;
         },
@@ -58,9 +59,9 @@ export function SlackScreen() {
     (ts: string, name: string, add: boolean) => {
       uiAction(add ? "slack.react" : "slack.unreact", "slack");
       void slackDmReact(ts, name, add).then((done) =>
-        done.match({
-          ok: refresh,
-          err: (e) => toast.error(slackWriteError(e.message, "react")),
+        Result.match(done, {
+          onSuccess: refresh,
+          onFailure: (e) => toast.error(slackWriteError(e.message, "react")),
         }),
       );
     },

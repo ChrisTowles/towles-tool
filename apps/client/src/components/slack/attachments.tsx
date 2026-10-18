@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { ImageBrokenIcon, PaperclipIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
@@ -47,9 +48,9 @@ function ImageAttachment({ file }: { file: DmFile }) {
     }
     void slackDmFile(url).then((fetched) => {
       if (!alive) return;
-      fetched.match({
-        ok: ({ mimetype, dataBase64 }) => setSrc(`data:${mimetype};base64,${dataBase64}`),
-        err: (e) => setError(e.message),
+      Result.match(fetched, {
+        onSuccess: ({ mimetype, dataBase64 }) => setSrc(`data:${mimetype};base64,${dataBase64}`),
+        onFailure: (e) => setError(e.message),
       });
     });
     return () => {

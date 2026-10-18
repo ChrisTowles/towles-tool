@@ -3,8 +3,8 @@
  * above the webview, so CSS can't draw in its rect and its rect must be pushed.
  */
 
-import { invoke } from "@/lib/tauri";
-import type { Result } from "better-result";
+import { invoke, runIpc } from "@/lib/tauri";
+import type { Result } from "effect";
 import type { IpcError } from "@/lib/errors";
 
 export interface CssRect {
@@ -27,17 +27,20 @@ export interface PaneInfo {
  */
 const scale = () => (typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
 
-export const paneAttach = (id: string, rect: CssRect): Promise<Result<PaneInfo, IpcError>> =>
-  invoke<PaneInfo>("pane_attach", { id, rect, scale: scale() });
+export const paneAttach = (id: string, rect: CssRect): Promise<Result.Result<PaneInfo, IpcError>> =>
+  runIpc(invoke<PaneInfo>("pane_attach", { id, rect, scale: scale() }));
 
-export const paneSetRect = (id: string, rect: CssRect): Promise<Result<void, IpcError>> =>
-  invoke<void>("pane_set_rect", { id, rect, scale: scale() });
+export const paneSetRect = (id: string, rect: CssRect): Promise<Result.Result<void, IpcError>> =>
+  runIpc(invoke<void>("pane_set_rect", { id, rect, scale: scale() }));
 
-export const paneSetVisible = (id: string, visible: boolean): Promise<Result<void, IpcError>> =>
-  invoke<void>("pane_set_visible", { id, visible });
+export const paneSetVisible = (
+  id: string,
+  visible: boolean,
+): Promise<Result.Result<void, IpcError>> =>
+  runIpc(invoke<void>("pane_set_visible", { id, visible }));
 
-export const paneDetach = (id: string): Promise<Result<void, IpcError>> =>
-  invoke<void>("pane_detach", { id });
+export const paneDetach = (id: string): Promise<Result.Result<void, IpcError>> =>
+  runIpc(invoke<void>("pane_detach", { id }));
 
 export const sameRect = (a: CssRect | null, b: CssRect): boolean =>
   a !== null && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;

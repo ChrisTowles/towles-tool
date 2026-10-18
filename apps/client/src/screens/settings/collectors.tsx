@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState } from "react";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
@@ -133,12 +134,12 @@ function ResetImproversButton({
     setBusy(true);
     const defaults = await defaultPromptImprovers();
     setBusy(false);
-    if (defaults.isErr()) {
-      if (!NotInTauri.is(defaults.error)) toast.error(defaults.error.message);
+    if (Result.isFailure(defaults)) {
+      if (!NotInTauri.is(defaults.failure)) toast.error(defaults.failure.message);
       return;
     }
     setOpen(false);
-    onChange(withDefaultPromptImprovers(improvers, defaults.value));
+    onChange(withDefaultPromptImprovers(improvers, defaults.success));
     uiAction("prompt_improver.reset", "settings");
     toast.success("Prompt improvers reset to defaults");
   };
@@ -251,7 +252,8 @@ export function RefreshNowButton() {
     uiAction("collectors.refresh_now", "settings");
     setRunning(true);
     const started = await storeCollectNow();
-    if (started.isErr() && !NotInTauri.is(started.error)) toast.error(started.error.message);
+    if (Result.isFailure(started) && !NotInTauri.is(started.failure))
+      toast.error(started.failure.message);
     setRunning(false);
   };
   return (

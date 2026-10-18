@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import {
   ArrowClockwiseIcon,
@@ -16,7 +17,7 @@ import type { CommitStat, FolderData } from "@/lib/agentboard/types";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { withHint } from "@/lib/shortcuts";
 import { errorMessage } from "@/lib/errors";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke, ipcOr, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { fmtDiffLines, fmtUsd } from "@/lib/format";
@@ -41,12 +42,15 @@ export function ComparedBaseBadge({
     const trimmed = value.trim();
     if (trimmed === (folder.baseBranch ?? "")) return;
     uiAction("folder.base_branch_set", "agentboard");
-    const stored = await invoke<void>("ab_set_folder_base_branch", {
-      dir: folder.dir,
-      branch: trimmed || null,
-    });
+    const stored = await runIpc(
+      invoke<void>("ab_set_folder_base_branch", {
+        dir: folder.dir,
+        branch: trimmed || null,
+      }),
+    );
     // Silence reads as success while every count keeps the old baseline.
-    if (stored.isErr()) toast.error(`Couldn't set base branch — ${errorMessage(stored.error)}`);
+    if (Result.isFailure(stored))
+      toast.error(`Couldn't set base branch — ${errorMessage(stored.failure)}`);
   }
 
   // Either the input or the chip, never nested: the chip is a button.
@@ -284,7 +288,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
             e.stopPropagation();
             mouseAction("ab-toggle-files", "agentboard");
             onOpen();
-            if (!clean) void invoke("code_server_show_changes", { dir: stats.dir });
+            if (!clean) fire(invoke("code_server_show_changes", { dir: stats.dir }));
           }}
           className={`${CHIP_CLASS} hover:bg-kumo-tint ${
             clean ? "text-kumo-subtle" : "font-medium text-kumo-default"
@@ -326,10 +330,13 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
     <HoverCard
       onOpenChange={(open) => {
         if (open && commits == null) {
-          void invoke<CommitStat[]>("ab_get_commit_stats", {
-            dir,
-            baseBranch: comparedBase || null,
-          }).then((c) => setCommits(c.unwrapOr([])));
+          void ipcOr(
+            invoke<CommitStat[]>("ab_get_commit_stats", {
+              dir,
+              baseBranch: comparedBase || null,
+            }),
+            [],
+          ).then(setCommits);
         }
       }}
     >

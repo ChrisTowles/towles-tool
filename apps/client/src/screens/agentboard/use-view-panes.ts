@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { FilesOpenRequest } from "@/components/files-pane";
 import {
@@ -13,11 +14,11 @@ import { codeServerOpenClaudeSession, codeServerRevealInExplorer } from "@/lib/c
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import type { OpenFileRequest } from "@/lib/ide";
 import type { PreviewRequest } from "@/lib/preview-artifact";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke, ipcOr } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import type { RailSnapshot } from "./selection-actions";
-import { useTauriEvent } from "./use-tauri-event";
+import { useTauriEvent } from "@/lib/run";
 
 /** Files, preview, browser and Jarvis panes: the tiles that show a folder
  * rather than run a shell, and the requests that point them at something. */
@@ -138,8 +139,8 @@ export function useViewPanes(args: {
     }
     focusFiles(dir);
     const opened = await codeServerOpenClaudeSession(dir, sessionId);
-    if (opened.isErr()) {
-      toast.error(`Couldn't open the session in the editor — ${opened.error.message}`);
+    if (Result.isFailure(opened)) {
+      toast.error(`Couldn't open the session in the editor — ${opened.failure.message}`);
     }
   }
 
@@ -162,12 +163,13 @@ export function useViewPanes(args: {
   // all falls through to the external editor.
   async function openTerminalPath(dir: string, termId: string, path: string, line: number | null) {
     uiAction("terminal.link_open_file", "agentboard");
-    const resolved = (
-      await invoke<string | null>("term_resolve_path", { path, cwd: dir, termId })
-    ).unwrapOr(null);
+    const resolved = await ipcOr(
+      invoke<string | null>("term_resolve_path", { path, cwd: dir, termId }),
+      null,
+    );
     const target = filesPaneTarget(dir, resolved ?? path);
     if (target == null) {
-      void invoke("term_open_path", { path, cwd: dir, line, termId });
+      fire(invoke("term_open_path", { path, cwd: dir, line, termId }));
       return;
     }
     setFilesOpenRequests((prev) => ({
@@ -182,18 +184,19 @@ export function useViewPanes(args: {
   // it goes to the OS file manager instead.
   async function revealTerminalPath(dir: string, termId: string, path: string) {
     uiAction("terminal.link_reveal_in_files", "agentboard");
-    const resolved = (
-      await invoke<string | null>("term_resolve_path", { path, cwd: dir, termId })
-    ).unwrapOr(null);
+    const resolved = await ipcOr(
+      invoke<string | null>("term_resolve_path", { path, cwd: dir, termId }),
+      null,
+    );
     const target = resolved && filesPaneTarget(dir, resolved);
     if (target == null || target.startsWith("/")) {
-      void invoke("term_reveal_path", { path, cwd: dir, termId });
+      fire(invoke("term_reveal_path", { path, cwd: dir, termId }));
       return;
     }
     openFiles(dir);
     const revealed = await codeServerRevealInExplorer(dir, target);
-    if (revealed.isErr() && !NotInTauri.is(revealed.error)) {
-      toast.error(`Couldn't show ${target} in files — ${errorMessage(revealed.error)}`);
+    if (Result.isFailure(revealed) && !NotInTauri.is(revealed.failure)) {
+      toast.error(`Couldn't show ${target} in files — ${errorMessage(revealed.failure)}`);
     }
   }
 

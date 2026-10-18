@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import {
   ArrowSquareOutIcon,
@@ -84,7 +85,7 @@ export function IssueChip({ taskId, issue }: { taskId: number; issue: TaskIssueL
 
   async function detach() {
     const result = await storeDetachTaskIssue(taskId, issue.repo, issue.number);
-    if (result.isErr()) toast.error(`Couldn't detach — ${result.error.message}`);
+    if (Result.isFailure(result)) toast.error(`Couldn't detach — ${result.failure.message}`);
     else toast.success(`Detached #${issue.number}`);
   }
 
@@ -156,7 +157,7 @@ export function AttachIssueDialog({
     setSearching(true);
     const handle = setTimeout(() => {
       void storeSearchIssues(dir, q).then((r) => {
-        setResults(r.unwrapOr([]));
+        setResults(Result.getOrElse(r, () => []));
         setSearching(false);
       });
     }, 300);
@@ -166,9 +167,9 @@ export function AttachIssueDialog({
   async function attach(issue: IssueItem) {
     onOpenChange(false);
     const result = await storeAttachTaskIssue(taskId, issue.repo, issue.number, issue.url);
-    result.match({
-      ok: () => toast.success(`Attached #${issue.number}`),
-      err: (e) => toast.error(`Couldn't attach — ${e.message}`),
+    Result.match(result, {
+      onSuccess: () => toast.success(`Attached #${issue.number}`),
+      onFailure: (e) => toast.error(`Couldn't attach — ${e.message}`),
     });
   }
 

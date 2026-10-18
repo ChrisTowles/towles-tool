@@ -1,8 +1,9 @@
+import { Result } from "effect";
 import { useState, type ReactNode } from "react";
 import { toast } from "@/lib/toast";
 import { Button, Dialog, Input } from "@cloudflare/kumo";
 import { NotInTauri } from "@/lib/errors";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { cloneDirName } from "@/lib/new-repo";
 import { uiAction } from "@/lib/ui-action";
 
@@ -74,19 +75,19 @@ function NewRepoForm({
     if (!ready || busy) return;
     setBusy(true);
     const result = clone
-      ? await invoke<string>("ab_clone_repo", { source, parent, name: name.trim() || null })
-      : await invoke<string>("ab_create_repo", { parent, name: effectiveName });
+      ? await runIpc(invoke<string>("ab_clone_repo", { source, parent, name: name.trim() || null }))
+      : await runIpc(invoke<string>("ab_create_repo", { parent, name: effectiveName }));
     setBusy(false);
-    if (result.isErr()) {
-      if (!NotInTauri.is(result.error)) {
+    if (Result.isFailure(result)) {
+      if (!NotInTauri.is(result.failure)) {
         toast.error(
-          `Couldn't ${clone ? "clone" : "create"} ${effectiveName} — ${result.error.message}`,
+          `Couldn't ${clone ? "clone" : "create"} ${effectiveName} — ${result.failure.message}`,
         );
       }
       return;
     }
     uiAction(clone ? "repo.cloned" : "repo.created", "agentboard");
-    toast.success(`${clone ? "Cloned" : "Created"} ${result.value} — it's on the rail`);
+    toast.success(`${clone ? "Cloned" : "Created"} ${result.success} — it's on the rail`);
     onClose();
   };
 

@@ -1,5 +1,8 @@
+import { Effect } from "effect";
 import { useEffect, useState } from "react";
-import { invoke, isTauri } from "@/lib/tauri";
+import { useTauriEvent } from "@/lib/run";
+import { subscribeThen } from "@/lib/subscribe-then";
+import { invoke, ipcOr, runIpc } from "@/lib/tauri";
 
 /** Mirrors `update::UpdateInfo` (crates-tauri/tt-app/src/update.rs). */
 export type UpdateInfo = {
@@ -34,25 +37,20 @@ type UpdateProgress = {
 export function useUpdateAvailable(): UpdateInfo | null {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const unlistenFound = await listen<UpdateInfo>("update://available", (event) => {
-        setUpdate(event.payload);
-      });
-      const unlistenCleared = await listen("update://cleared", () => setUpdate(null));
-      unlisten = () => {
-        unlistenFound();
-        unlistenCleared();
-      };
-      const pending = await invoke<UpdateInfo | null>("update_pending");
-      const found = pending.unwrapOr(null);
-      if (found) setUpdate(found);
-    })();
-    return () => unlisten?.();
-  }, []);
+  useEffect(
+    () =>
+      subscribeThen(
+        {
+          "update://available": (payload) => setUpdate(payload as UpdateInfo),
+          "update://cleared": () => setUpdate(null),
+        },
+        Effect.promise(async () => {
+          const found = await ipcOr(invoke<UpdateInfo | null>("update_pending"), null);
+          if (found) setUpdate(found);
+        }),
+      ),
+    [],
+  );
 
   return update;
 }
@@ -60,41 +58,31 @@ export function useUpdateAvailable(): UpdateInfo | null {
 /** Download progress of the install in flight, as a 0–100 percentage, or `null` before the first chunk. */
 export function useUpdateProgress(): number | null {
   const [percent, setPercent] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      unlisten = await listen<UpdateProgress>("update://progress", ({ payload }) => {
-        setPercent(
-          payload.total ? Math.min(100, Math.round((payload.downloaded / payload.total) * 100)) : 0,
-        );
-      });
-    })();
-    return () => unlisten?.();
-  }, []);
-
+  useTauriEvent<UpdateProgress>("update://progress", (payload) => {
+    setPercent(
+      payload.total ? Math.min(100, Math.round((payload.downloaded / payload.total) * 100)) : 0,
+    );
+  });
   return percent;
 }
 
 /** Download, install and relaunch. Resolves only on failure — success restarts the app. */
 export function installUpdate() {
-  return invoke<void>("update_install");
+  return runIpc(invoke<void>("update_install"));
 }
 
 export function updateStatus() {
-  return invoke<UpdateStatus>("update_status");
+  return runIpc(invoke<UpdateStatus>("update_status"));
 }
 
 /** Check the saved channel now; the banner hears the result as events too. */
 export function checkForUpdate() {
-  return invoke<UpdateInfo | null>("update_check_now");
+  return runIpc(invoke<UpdateInfo | null>("update_check_now"));
 }
 
 /** Reinstall the release the last install replaced. Resolves only on failure. */
 export function rollbackUpdate() {
-  return invoke<void>("update_rollback");
+  return runIpc(invoke<void>("update_rollback"));
 }
 
 /** "0.3.0", or "main build abc1234" when the version can't tell builds apart. */

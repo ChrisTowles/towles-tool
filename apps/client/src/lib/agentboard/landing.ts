@@ -1,6 +1,5 @@
-import type { z } from "zod";
 import type { PrItem } from "@/lib/data";
-import { TaskBlockerSchema } from "@/lib/schemas/task";
+import type { TaskBlockerSchema } from "@/lib/schemas/task";
 import { comparedBaseLabel, prForFolder } from "./folder";
 import { folderPortDrift } from "./session";
 import type { FolderData, RepoData } from "./types";
@@ -39,7 +38,7 @@ const TASK_BLOCKER_KINDS = ["dirtyTree", "unreachableCommits", "foreignPort"] as
 
 export type TaskBlockerKind = (typeof TASK_BLOCKER_KINDS)[number];
 
-export type TaskBlocker = z.infer<typeof TaskBlockerSchema>;
+export type TaskBlocker = typeof TaskBlockerSchema.Type;
 
 /** What forcing past a blocker would discard, as a noun for the button. */
 const DISCARDED: Record<string, string> = {

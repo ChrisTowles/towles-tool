@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import type {
@@ -14,7 +15,7 @@ import { abSetSessionPurpose } from "@/lib/agentboard/ipc";
 import { storeAttachTaskPr, storeSetTaskStatus, storeTaskSetWorktree } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
 import { TaskCreatedSchema } from "@/lib/schemas/task";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
 import { nextOpenFileNonce } from "@/lib/agentboard/windows";
 import { uiAction } from "@/lib/ui-action";
@@ -39,8 +40,8 @@ export type TaskCreation = {
 // Needed *before* the create, for an MCP `task_start` caller that skipped the
 // form's preflight.
 async function resolveWorktreeDir(root: string, branch: string): Promise<string | null> {
-  const check = await invoke<BranchCheck>("task_check_branch", { root, branch });
-  return check.isOk() ? check.value.dir : null;
+  const check = await runIpc(invoke<BranchCheck>("task_check_branch", { root, branch }));
+  return Result.isSuccess(check) ? check.success.dir : null;
 }
 
 export function useTaskCreation(args: {
@@ -119,17 +120,16 @@ export function useTaskCreation(args: {
   // Setup can fail without invalidating the task — give it a one-click retry.
   async function retrySetup(dir: string, templateSetup: string) {
     markSetupRunning(dir);
-    const result = await invoke<SetupRun>("task_run_setup", {
-      dir,
-      templateSetup: templateSetup || null,
-    });
+    const result = await runIpc(
+      invoke<SetupRun>("task_run_setup", { dir, templateSetup: templateSetup || null }),
+    );
     clearSetupRunning(dir);
-    result.match({
-      ok: (run) => {
+    Result.match(result, {
+      onSuccess: (run) => {
         if (run.warning) toast(run.warning, { actions: setupActions(dir, run, templateSetup) });
         else toast("setup succeeded");
       },
-      err: (e) => toast(e.message),
+      onFailure: (e) => toast(e.message),
     });
   }
 
@@ -153,16 +153,15 @@ export function useTaskCreation(args: {
   // The pane opens as soon as the worktree exists; setup runs after it.
   function runSetupInBackground(dir: string, templateSetup: string) {
     markSetupRunning(dir);
-    void invoke<SetupRun>("task_run_setup", {
-      dir,
-      templateSetup: templateSetup || null,
-    }).then((result) => {
+    void runIpc(
+      invoke<SetupRun>("task_run_setup", { dir, templateSetup: templateSetup || null }),
+    ).then((result) => {
       clearSetupRunning(dir);
-      result.match({
-        ok: (run) => {
+      Result.match(result, {
+        onSuccess: (run) => {
           if (run.warning) toast(run.warning, { actions: setupActions(dir, run, templateSetup) });
         },
-        err: (e) => toast(e.message),
+        onFailure: (e) => toast(e.message),
       });
     });
   }
@@ -183,7 +182,8 @@ export function useTaskCreation(args: {
     // Clear the frozen closed status first; live-agent sync settles it after.
     if (input.reopen && taskId !== undefined) {
       const reopened = await storeSetTaskStatus(taskId, "backlog");
-      if (reopened.isErr()) toast.error(`Couldn't reopen that task — ${reopened.error.message}`);
+      if (Result.isFailure(reopened))
+        toast.error(`Couldn't reopen that task — ${reopened.failure.message}`);
     }
     // The binding is what puts the row on the rail, so it is bound to the dir
     // the worktree is *going* to live in, and awaited before the create starts.
@@ -197,8 +197,8 @@ export function useTaskCreation(args: {
           dir: worktreeDir ?? undefined,
         },
       );
-      if (bound.isErr() && !NotInTauri.is(bound.error)) {
-        toast(`couldn't bind the task to its repo: ${bound.error.message}`);
+      if (Result.isFailure(bound) && !NotInTauri.is(bound.failure)) {
+        toast(`couldn't bind the task to its repo: ${bound.failure.message}`);
       }
     }
     // Linked explicitly: a fork PR's owner-prefixed branch never matches by name.
@@ -212,23 +212,25 @@ export function useTaskCreation(args: {
     }
     const imagePaths = input.imagePaths;
     // 60s covers a fetch (10s server-side cap) plus a worktree add.
-    const result = await invoke<TaskCreated>(
-      "task_create",
-      {
-        root: repo.dir,
-        source: input.pr
-          ? { kind: "pr", number: input.pr.number }
-          : { kind: "branch", branch: input.branch, base: input.base },
-        dir: worktreeDir ?? "",
-      },
-      { schema: TaskCreatedSchema, timeoutMs: 60_000 },
+    const result = await runIpc(
+      invoke<TaskCreated>(
+        "task_create",
+        {
+          root: repo.dir,
+          source: input.pr
+            ? { kind: "pr", number: input.pr.number }
+            : { kind: "branch", branch: input.branch, base: input.base },
+          dir: worktreeDir ?? "",
+        },
+        { schema: TaskCreatedSchema, timeout: 60_000 },
+      ),
     );
-    if (result.isErr()) {
+    if (Result.isFailure(result)) {
       // The row stays and reads `detached`, where its retry and delete live.
-      toast.error(`couldn't create the worktree: ${result.error.message}`);
+      toast.error(`couldn't create the worktree: ${result.failure.message}`);
       return;
     }
-    const created = result.value;
+    const created = result.success;
     // Re-bind: a branch can normalize on the way through the create.
     if (taskId !== undefined) {
       void storeTaskSetWorktree(taskId, repo.dir, created.branch, {
@@ -262,11 +264,11 @@ export function useTaskCreation(args: {
     // Deliberately NOT tracked as a repo: a task worktree is never a
     // `repos.json` entry (`RowRecord`'s doc), and an entry would shadow the
     // record as a bare "Root" row and strand a ghost on removal.
-    const ensured = await invoke<{ id: string; name: string }>("ab_ensure_session", {
-      dir: created.dir,
-    });
-    if (ensured.isErr()) return;
-    const rec = ensured.value;
+    const ensured = await runIpc(
+      invoke<{ id: string; name: string }>("ab_ensure_session", { dir: created.dir }),
+    );
+    if (Result.isFailure(ensured)) return;
+    const rec = ensured.success;
     mountSession(created.dir, rec.id);
     // Label even without a launch, or the task sits in the rail unnamed.
     if (label) void abSetSessionPurpose(rec.id, label);

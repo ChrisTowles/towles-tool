@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Result } from "better-result";
+import { Result } from "effect";
 import { SlackDmViewSchema, SlackFileDataSchema, SlackThreadSchema } from "./schemas/slack";
 import { errorMessage, type IpcError } from "./errors";
-import { invoke, isTauri } from "./tauri";
+import { invoke, isTauri, runIpc } from "./tauri";
+import { usePoll } from "./run";
 import { useStoreSnapshot } from "./store-snapshot";
 import type { DmItem } from "./data";
 
@@ -205,13 +206,15 @@ export function useSlackDm(): {
       setLoading(false);
       return;
     }
-    const loaded = await invoke<SlackDmView>("slack_dm_history", {}, { schema: SlackDmViewSchema });
-    loaded.match({
-      ok: (next) => {
+    const loaded = await runIpc(
+      invoke<SlackDmView>("slack_dm_history", {}, { schema: SlackDmViewSchema }),
+    );
+    Result.match(loaded, {
+      onSuccess: (next) => {
         setView((prev) => (sameView(prev, next) ? prev : next));
         setError(null);
       },
-      err: (e) => setError(errorMessage(e)),
+      onFailure: (e) => setError(errorMessage(e)),
     });
     setLoading(false);
   }, []);
@@ -222,10 +225,8 @@ export function useSlackDm(): {
 
   useEffect(() => {
     void load();
-    if (!isTauri()) return;
-    const idle = window.setInterval(() => void load(), IDLE_REFETCH_MS);
-    return () => window.clearInterval(idle);
   }, [load, signal]);
+  usePoll(load, isTauri() ? IDLE_REFETCH_MS : null, [signal]);
 
   return { view, loading, error, revision, refresh };
 }
@@ -236,12 +237,14 @@ export function slackDmSend(
   text: string,
   threadTs?: string,
   images: readonly { name: string; dataBase64: string }[] = [],
-): Promise<Result<void, IpcError>> {
-  return invoke<void>("slack_dm_send", {
-    text,
-    threadTs: threadTs ?? null,
-    images: images.map(({ name, dataBase64 }) => ({ name, dataBase64 })),
-  });
+): Promise<Result.Result<void, IpcError>> {
+  return runIpc(
+    invoke<void>("slack_dm_send", {
+      text,
+      threadTs: threadTs ?? null,
+      images: images.map(({ name, dataBase64 }) => ({ name, dataBase64 })),
+    }),
+  );
 }
 
 /** Toggle one of my reactions on a message. Slack treats a redundant toggle as
@@ -250,20 +253,22 @@ export function slackDmReact(
   ts: string,
   name: string,
   add: boolean,
-): Promise<Result<void, IpcError>> {
-  return invoke<void>("slack_dm_react", { ts, name, add });
+): Promise<Result.Result<void, IpcError>> {
+  return runIpc(invoke<void>("slack_dm_react", { ts, name, add }));
 }
 
 /** A thread's parent followed by its replies, oldest first. */
-export function slackDmThread(threadTs: string): Promise<Result<DmMessage[], IpcError>> {
-  if (!isTauri()) return Promise.resolve(Result.ok(mockThread()));
-  return invoke<DmMessage[]>("slack_dm_thread", { threadTs }, { schema: SlackThreadSchema });
+export function slackDmThread(threadTs: string): Promise<Result.Result<DmMessage[], IpcError>> {
+  if (!isTauri()) return Promise.resolve(Result.succeed(mockThread()));
+  return runIpc(
+    invoke<DmMessage[]>("slack_dm_thread", { threadTs }, { schema: SlackThreadSchema }),
+  );
 }
 
 /** The webview can't load `url_private` directly, so bytes come back base64 over
  * IPC. Fails with {@link isFileScopeError} when the token lacks `files:read`. */
-export function slackDmFile(url: string): Promise<Result<SlackFileData, IpcError>> {
-  return invoke<SlackFileData>("slack_dm_file", { url }, { schema: SlackFileDataSchema });
+export function slackDmFile(url: string): Promise<Result.Result<SlackFileData, IpcError>> {
+  return runIpc(invoke<SlackFileData>("slack_dm_file", { url }, { schema: SlackFileDataSchema }));
 }
 
 export type SlackUser = {
@@ -272,8 +277,8 @@ export type SlackUser = {
 };
 
 /** Empty when the token is blank, so the picker degrades to a text input. */
-export function slackListUsers(): Promise<Result<SlackUser[], IpcError>> {
-  return invoke<SlackUser[]>("slack_list_users");
+export function slackListUsers(): Promise<Result.Result<SlackUser[], IpcError>> {
+  return runIpc(invoke<SlackUser[]>("slack_list_users"));
 }
 
 /** Slack's raw error, mapped to the fix the user can act on. */

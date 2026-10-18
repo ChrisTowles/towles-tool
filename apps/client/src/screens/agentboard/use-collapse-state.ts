@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import type { StatePayload } from "@/lib/agentboard/types";
 import type { ScreenId } from "@/lib/screens";
@@ -31,7 +31,7 @@ export function useCollapseState(state: StatePayload, screen: ScreenId): Collaps
   function toggleCollapsed(key: string) {
     setCollapsed((c) => {
       const next = !c[key];
-      void invoke("ab_save_collapsed", { key, collapsed: next });
+      fire(invoke("ab_save_collapsed", { key, collapsed: next }));
       return { ...c, [key]: next };
     });
   }
@@ -39,7 +39,7 @@ export function useCollapseState(state: StatePayload, screen: ScreenId): Collaps
   function applyCollapse(changes: CollapseChange[]) {
     if (changes.length === 0) return;
     for (const c of changes)
-      void invoke("ab_save_collapsed", { key: c.key, collapsed: c.collapsed });
+      fire(invoke("ab_save_collapsed", { key: c.key, collapsed: c.collapsed }));
     setCollapsed((c) => ({
       ...c,
       ...Object.fromEntries(changes.map((n) => [n.key, n.collapsed])),

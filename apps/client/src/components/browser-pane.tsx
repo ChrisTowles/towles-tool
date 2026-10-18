@@ -2,6 +2,7 @@
 // CDP. The process lives in Rust, so this is only a view and may unmount
 // freely — the logins live in the profile directory.
 import { Button, Input } from "@cloudflare/kumo";
+import { Result } from "effect";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppWindowIcon,
@@ -99,7 +100,7 @@ export function BrowserPane({
     if (!dir) return;
     let live = true;
     void (async () => {
-      const status = (await browserStatus()).unwrapOr(null);
+      const status = Result.getOrElse(await browserStatus(), () => null);
       if (!live) return;
       if (status && !status.chromeFound) {
         setUnavailable("No Chrome or Chromium found on this machine.");
@@ -117,8 +118,8 @@ export function BrowserPane({
           () => {},
         );
       });
-      if (live && opened.isErr() && !NotInTauri.is(opened.error)) {
-        setUnavailable(errorMessage(opened.error));
+      if (live && Result.isFailure(opened) && !NotInTauri.is(opened.failure)) {
+        setUnavailable(errorMessage(opened.failure));
       }
     })();
     return () => {

@@ -1,3 +1,4 @@
+import { Result } from "effect";
 // The new-task form's "Review PR" source: pick an open pull request (or type any
 // number) and preflight it with `task_check_pr`, which answers the branch and dir
 // the review task would get — its existing head, never a new branch.
@@ -10,7 +11,7 @@ import {
   type PullRequest,
   PullRequestsSchema,
 } from "@/lib/schemas/task";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 
 /** `#12` or `12`, for a PR the open list doesn't show. */
@@ -49,10 +50,12 @@ export function ReviewPrPicker({
     let cancelled = false;
     setPrs(null);
     setListError(null);
-    void invoke("task_list_prs", { root }, { schema: PullRequestsSchema }).then((result) => {
-      if (cancelled) return;
-      result.match({ ok: setPrs, err: (e) => setListError(e.message) });
-    });
+    void runIpc(invoke("task_list_prs", { root }, { schema: PullRequestsSchema })).then(
+      (result) => {
+        if (cancelled) return;
+        Result.match(result, { onSuccess: setPrs, onFailure: (e) => setListError(e.message) });
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -64,9 +67,11 @@ export function ReviewPrPicker({
     setCheckError(null);
     onCheck(null);
     uiAction("task.pick_pr", "agentboard");
-    const result = await invoke("task_check_pr", { root, number }, { schema: PrCheckSchema });
+    const result = await runIpc(
+      invoke("task_check_pr", { root, number }, { schema: PrCheckSchema }),
+    );
     setChecking(null);
-    result.match({ ok: onCheck, err: (e) => setCheckError(e.message) });
+    Result.match(result, { onSuccess: onCheck, onFailure: (e) => setCheckError(e.message) });
   }
 
   const typed = parsePrNumber(search);

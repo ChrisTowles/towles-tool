@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { StartClaudeTarget } from "@/lib/agentboard/actions";
 import { claudeCommand, type ClaudeLaunchOptions } from "@/lib/agentboard/claude-command";
@@ -8,7 +9,7 @@ import type { FolderData, RepoData, SessionData, WindowsPayload } from "@/lib/ag
 import { nextWindowId, type FocusLevel } from "@/lib/agentboard/windows";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { launchCommand, launchRegister, type LaunchConfigStatus } from "@/lib/launch";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 
@@ -55,9 +56,11 @@ export function useSessionSpawn(args: {
   }
 
   async function newSession(folderDir: string, launchClaude = false) {
-    const added = await invoke<SessionData>("ab_add_session", { dir: folderDir, name: null });
-    if (added.isErr()) return;
-    const rec = added.value;
+    const added = await runIpc(
+      invoke<SessionData>("ab_add_session", { dir: folderDir, name: null }),
+    );
+    if (Result.isFailure(added)) return;
+    const rec = added.success;
     selectSession(folderDir, rec.id);
     if (launchClaude) {
       setStartClaudeTarget({ folderDir, sessionId: rec.id, sessionName: rec.name, restart: false });
@@ -68,12 +71,14 @@ export function useSessionSpawn(args: {
   // the keyboard goes straight into it — unfolding whatever would hide its row.
   async function newRootShell(repo: RepoData) {
     uiAction("agentboard.new_root_shell", "agentboard");
-    const added = await invoke<SessionData>("ab_add_session", { dir: repo.dir, name: null });
-    if (added.isErr()) {
-      if (!NotInTauri.is(added.error)) toast.error(errorMessage(added.error));
+    const added = await runIpc(
+      invoke<SessionData>("ab_add_session", { dir: repo.dir, name: null }),
+    );
+    if (Result.isFailure(added)) {
+      if (!NotInTauri.is(added.failure)) toast.error(errorMessage(added.failure));
       return;
     }
-    const rec = added.value;
+    const rec = added.success;
     applyCollapse(
       [repo.key, `${repo.key}::${repo.dir}`]
         .filter((key) => collapsed[key])
@@ -86,9 +91,11 @@ export function useSessionSpawn(args: {
 
   // A window can't exist without panes, so "+ window" spawns a session too.
   async function newWindow(folderDir: string) {
-    const added = await invoke<SessionData>("ab_add_session", { dir: folderDir, name: null });
-    if (added.isErr()) return;
-    const sessionId = added.value.id;
+    const added = await runIpc(
+      invoke<SessionData>("ab_add_session", { dir: folderDir, name: null }),
+    );
+    if (Result.isFailure(added)) return;
+    const sessionId = added.success.id;
     const id = nextWindowId();
     updateWins([folderDir], (cur) => {
       const count = cur.windows.filter((w) => w.folderDir === folderDir).length;
@@ -135,15 +142,14 @@ export function useSessionSpawn(args: {
   // path (no backend spawn). The config→session mapping is what lets the popover
   // offer "focus" instead of a second launch while the pane lives.
   async function launchDevServer(folderDir: string, cfg: LaunchConfigStatus) {
-    const added = await invoke<SessionData>("ab_add_session", {
-      dir: folderDir,
-      name: `dev: ${cfg.name}`,
-    });
-    if (added.isErr()) {
-      toast(errorMessage(added.error));
+    const added = await runIpc(
+      invoke<SessionData>("ab_add_session", { dir: folderDir, name: `dev: ${cfg.name}` }),
+    );
+    if (Result.isFailure(added)) {
+      toast(errorMessage(added.failure));
       return;
     }
-    const rec = added.value;
+    const rec = added.success;
     const command = launchCommand(cfg);
     toast(`▶ ${command} — in ${rec.name}`);
     void abSetSessionPurpose(rec.id, command);
@@ -151,8 +157,8 @@ export function useSessionSpawn(args: {
       rec.id,
       async () => {
         const wrote = await termWriteRetry(rec.id, `${command}\r`);
-        if (wrote.isErr()) {
-          toast(`could not start ${cfg.name}: ${errorMessage(wrote.error)}`);
+        if (Result.isFailure(wrote)) {
+          toast(`could not start ${cfg.name}: ${errorMessage(wrote.failure)}`);
           return;
         }
         void launchRegister(folderDir, cfg.name, rec.id, cfg.port ?? null, command);

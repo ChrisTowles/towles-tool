@@ -1,81 +1,84 @@
-import { z } from "zod";
+import { Schema } from "effect";
+import { list } from "@/lib/schemas/shape";
 
-export const TaskCreatedSchema = z.object({
-  name: z.string(),
-  dir: z.string(),
-  branch: z.string(),
-  base: z.string(),
-  warnings: z.array(z.string()),
+export const TaskCreatedSchema = Schema.Struct({
+  name: Schema.String,
+  dir: Schema.String,
+  branch: Schema.String,
+  base: Schema.String,
+  warnings: list(Schema.String),
 });
 
 /** `name` is submitted, `label` is the ref creation really branches from
  * (`origin/main`). The inverse of `comparedBaseLabel` (lib/agentboard.ts),
  * which strips `origin/` on purpose — don't unify them. */
-export const BaseBranchesSchema = z.array(
-  z.object({
-    name: z.string(),
-    label: z.string(),
+export const BaseBranchesSchema = list(
+  Schema.Struct({
+    name: Schema.String,
+    label: Schema.String,
   }),
 );
 
-export type BaseBranch = z.infer<typeof BaseBranchesSchema>[number];
+export type BaseBranch = (typeof BaseBranchesSchema.Type)[number];
+
+const positiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 
 /** Mirrors `tt_tasks::pr::PullRequest`. */
-const PullRequestSchema = z.object({
-  number: z.number().int().positive(),
-  title: z.string(),
-  url: z.string(),
-  state: z.string(),
-  isDraft: z.boolean(),
-  headBranch: z.string(),
-  baseBranch: z.string(),
-  crossRepository: z.boolean(),
-  headOwner: z.string(),
-  author: z.string(),
+const PullRequestSchema = Schema.Struct({
+  number: positiveInt,
+  title: Schema.String,
+  url: Schema.String,
+  state: Schema.String,
+  isDraft: Schema.Boolean,
+  headBranch: Schema.String,
+  baseBranch: Schema.String,
+  crossRepository: Schema.Boolean,
+  headOwner: Schema.String,
+  author: Schema.String,
 });
 
-export type PullRequest = z.infer<typeof PullRequestSchema>;
+export type PullRequest = typeof PullRequestSchema.Type;
 
-export const PullRequestsSchema = z.array(PullRequestSchema);
+export const PullRequestsSchema = list(PullRequestSchema);
 
 /** Mirrors `tt_tasks::ops::PrCheck`: where a review task for the PR would land. */
-export const PrCheckSchema = z.object({
+export const PrCheckSchema = Schema.Struct({
   pr: PullRequestSchema,
-  branch: z.string(),
-  dir: z.string().nullable(),
-  error: z.string().nullable(),
+  branch: Schema.String,
+  dir: Schema.NullOr(Schema.String),
+  error: Schema.NullOr(Schema.String),
 });
 
-export type PrCheck = z.infer<typeof PrCheckSchema>;
+export type PrCheck = typeof PrCheckSchema.Type;
 
-export const PastedImagePathsSchema = z.array(z.string());
+export const PastedImagePathsSchema = list(Schema.String);
 
 /** `kind` stays an open `string`, not an enum: an older frontend can meet a
  * backend that grew a new guard, and `BlockerIcon` renders unknown kinds. */
-export const TaskBlockerSchema = z.object({
-  kind: z.string(),
-  message: z.string(),
-  remedy: z.string(),
-  losesWork: z.boolean(),
-  port: z.number().int().positive().max(65535).nullish(),
+export const TaskBlockerSchema = Schema.Struct({
+  kind: Schema.String,
+  message: Schema.String,
+  remedy: Schema.String,
+  losesWork: Schema.Boolean,
+  port: Schema.optional(Schema.NullOr(positiveInt.check(Schema.isLessThanOrEqualTo(65535)))),
 });
 
 /** "Blocked" means **nothing** went: the guards refuse before the first
  * destructive step, so a refusal always leaves the task exactly as it was. */
-export const TaskDeleteOutcomeSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("deleted"),
-    name: z.string(),
-    messages: z.array(z.string()),
+export const TaskDeleteOutcomeSchema = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("deleted"),
+    name: Schema.String,
+    messages: list(Schema.String),
   }),
-  z.object({
-    status: z.literal("blocked"),
-    name: z.string(),
-    blockers: z.array(TaskBlockerSchema),
+  Schema.Struct({
+    status: Schema.Literal("blocked"),
+    name: Schema.String,
+    blockers: list(TaskBlockerSchema),
     /** Caveats gathered before the verdict — usually a failed `fetch --prune`,
      * meaning the guards judged against stale `origin/*`. */
-    messages: z.array(z.string()),
+    messages: list(Schema.String),
   }),
 ]);
 
-export type TaskDeleteOutcome = z.infer<typeof TaskDeleteOutcomeSchema>;
+export type TaskDeleteOutcome = typeof TaskDeleteOutcomeSchema.Type;

@@ -1,7 +1,8 @@
-import { z } from "zod";
+import { Schema } from "effect";
+import { list } from "@/lib/schemas/shape";
 
 /** Mirrors `tt_agentboard::queue` — validated because it crosses IPC. */
-const WaitReasonSchema = z.enum([
+const WaitReasonSchema = Schema.Literals([
   "unblock",
   "answer",
   "review",
@@ -10,55 +11,55 @@ const WaitReasonSchema = z.enum([
   "land",
   "cleanup",
 ]);
-export type WaitReason = z.infer<typeof WaitReasonSchema>;
+export type WaitReason = typeof WaitReasonSchema.Type;
 
-const LaneSchema = z.enum(["on_you", "idle", "running", "parked", "no_shell"]);
-export type Lane = z.infer<typeof LaneSchema>;
+const LaneSchema = Schema.Literals(["on_you", "idle", "running", "parked", "no_shell"]);
+export type Lane = typeof LaneSchema.Type;
 
-const QueuePrSchema = z.object({
-  repo: z.string(),
-  number: z.number(),
-  url: z.string(),
-  state: z.string(),
-  checks: z.string(),
-  reviewState: z.string(),
+const QueuePrSchema = Schema.Struct({
+  repo: Schema.String,
+  number: Schema.Number,
+  url: Schema.String,
+  state: Schema.String,
+  checks: Schema.String,
+  reviewState: Schema.String,
 });
 
-const QueueCiSchema = z.object({
-  workflow: z.string(),
-  url: z.string(),
-  conclusion: z.string(),
-  updatedMs: z.number(),
+const QueueCiSchema = Schema.Struct({
+  workflow: Schema.String,
+  url: Schema.String,
+  conclusion: Schema.String,
+  updatedMs: Schema.Number,
 });
 
 /** One checkout — a task's worktree or a repo root; `folderDir` is its identity. */
-const QueueItemSchema = z.object({
-  taskId: z.number().nullable(),
+const QueueItemSchema = Schema.Struct({
+  taskId: Schema.NullOr(Schema.Number),
   lane: LaneSchema,
-  reason: WaitReasonSchema.nullable(),
+  reason: Schema.NullOr(WaitReasonSchema),
   /** `reason` in words — `WaitReason::phrase` in Rust. */
-  why: z.string().nullable(),
-  also: z.array(WaitReasonSchema),
-  title: z.string(),
-  repo: z.string(),
-  branch: z.string(),
-  folderDir: z.string(),
-  sessionId: z.string().nullable(),
-  said: z.string().nullable(),
-  runningAgents: z.number(),
-  pr: QueuePrSchema.nullable(),
-  ci: z.array(QueueCiSchema),
-  rank: z.number().nullable(),
-  sinceMs: z.number().nullable(),
-  snoozedUntilMs: z.number().nullable(),
-  snoozedUntilCi: z.boolean(),
-  snoozed: z.boolean(),
+  why: Schema.NullOr(Schema.String),
+  also: list(WaitReasonSchema),
+  title: Schema.String,
+  repo: Schema.String,
+  branch: Schema.String,
+  folderDir: Schema.String,
+  sessionId: Schema.NullOr(Schema.String),
+  said: Schema.NullOr(Schema.String),
+  runningAgents: Schema.Number,
+  pr: Schema.NullOr(QueuePrSchema),
+  ci: list(QueueCiSchema),
+  rank: Schema.NullOr(Schema.Number),
+  sinceMs: Schema.NullOr(Schema.Number),
+  snoozedUntilMs: Schema.NullOr(Schema.Number),
+  snoozedUntilCi: Schema.Boolean,
+  snoozed: Schema.Boolean,
 });
-export type QueueItem = z.infer<typeof QueueItemSchema>;
+export type QueueItem = typeof QueueItemSchema.Type;
 
-export const TaskQueueSchema = z.object({
+export const TaskQueueSchema = Schema.Struct({
   /** The `folderDir` of the first row on you. */
-  next: z.string().nullable(),
-  items: z.array(QueueItemSchema),
+  next: Schema.NullOr(Schema.String),
+  items: list(QueueItemSchema),
 });
-export type TaskQueue = z.infer<typeof TaskQueueSchema>;
+export type TaskQueue = typeof TaskQueueSchema.Type;

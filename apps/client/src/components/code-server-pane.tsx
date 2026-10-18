@@ -2,6 +2,7 @@
  * checkout against the app's one server (docs/CODE-SERVER.md). Keyed on the URL alone — a
  * remount drops the workbench session and re-pays the several-second boot. */
 
+import { Result } from "effect";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
@@ -62,9 +63,9 @@ export function CodeServerPane({
       if (!alive) return;
       setInstall(undefined);
       setPhase(
-        r.match<Phase>({
-          ok: (info) => ({ at: "live", url: info.url }),
-          err: (e) =>
+        Result.match(r, {
+          onSuccess: (info): Phase => ({ at: "live", url: info.url }),
+          onFailure: (e): Phase =>
             NotInTauri.is(e) ? { at: "browser" } : { at: "failed", detail: errorMessage(e) },
         }),
       );
@@ -82,7 +83,9 @@ export function CodeServerPane({
   useEffect(() => {
     if (!live || !openRequest || openRequest === servedByUrl.current) return;
     void codeServerReveal(dir, openRequest.path, openRequest.line).then((r) => {
-      if (r.isErr()) toast.error(`Couldn't open ${openRequest.path} — ${errorMessage(r.error)}`);
+      if (Result.isFailure(r)) {
+        toast.error(`Couldn't open ${openRequest.path} — ${errorMessage(r.failure)}`);
+      }
     });
   }, [dir, live, openRequest]);
 

@@ -9,7 +9,7 @@ import {
   placePane,
   pruneWins,
 } from "@/lib/agentboard/windows";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 
 export type WindowLayout = {
   wins: WindowsPayload | null;
@@ -40,7 +40,7 @@ export function useWindowLayout(args: {
     saveTimer.current = setTimeout(() => {
       const touchedFolders = [...dirtyWinFolders.current];
       dirtyWinFolders.current = new Set();
-      void invoke("ab_save_windows", { payload: next, touchedFolders });
+      fire(invoke("ab_save_windows", { payload: next, touchedFolders }));
     }, 400);
   }
 

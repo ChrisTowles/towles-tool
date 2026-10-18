@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { UserSettingsSchema } from "./settings";
 
@@ -58,24 +59,42 @@ const valid = {
   },
 };
 
+const parse = Schema.decodeUnknownSync(UserSettingsSchema);
+
 describe("UserSettingsSchema", () => {
   it("parses a well-formed settings object", () => {
-    expect(UserSettingsSchema.parse(valid)).toEqual(valid);
+    expect(parse(valid)).toEqual(valid);
   });
 
   it("keeps unknown top-level fields (TS-CLI compat)", () => {
     const withExtra = { ...valid, someFutureField: "kept" };
-    expect(UserSettingsSchema.parse(withExtra)).toMatchObject({ someFutureField: "kept" });
+    expect(parse(withExtra)).toMatchObject({ someFutureField: "kept" });
   });
 
   it("keeps unknown agentboard keys", () => {
     const withAgentboard = { ...valid, agentboard: { compactRecommendPercent: 40, futureKey: 1 } };
-    const parsed = UserSettingsSchema.parse(withAgentboard);
+    const parsed = parse(withAgentboard);
     expect(parsed.agentboard).toEqual({ compactRecommendPercent: 40, futureKey: 1 });
+  });
+
+  it("reads an unrecognized agentboard level or rail mode as unset, not a parse failure", () => {
+    const odd = {
+      ...valid,
+      agentboard: { notifyThreshold: "loud", railFilter: "weird", notify: true },
+    };
+    const parsed = parse(odd);
+    expect(parsed.agentboard?.notifyThreshold).toBeUndefined();
+    expect(parsed.agentboard?.railFilter).toBeUndefined();
+    expect(parsed.agentboard?.notify).toBe(true);
+  });
+
+  it("defaults taskTemplates to empty when the key is absent", () => {
+    const { taskTemplates: _taskTemplates, ...without } = valid;
+    expect(parse(without).taskTemplates).toEqual([]);
   });
 
   it("rejects a payload missing a required field", () => {
     const { preferredEditor: _preferredEditor, ...missing } = valid;
-    expect(() => UserSettingsSchema.parse(missing)).toThrow("preferredEditor");
+    expect(() => parse(missing)).toThrow("preferredEditor");
   });
 });

@@ -4,7 +4,7 @@ import { liveSessions } from "@/lib/agentboard/session";
 import type { RepoData, Selected, SessionData, WindowsPayload } from "@/lib/agentboard/types";
 import { paneCloseTarget, successorPane } from "@/lib/agentboard/windows";
 import { untrackRepo } from "@/lib/repo-actions";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { exitIsCrash, exitLabel, type TermExit } from "@/lib/term-protocol";
 import { toast } from "@/lib/toast";
 
@@ -47,7 +47,7 @@ export function sessionLifecycle(a: {
   }
 
   async function closeSession(sessionId: string) {
-    await invoke("ab_close_session", { id: sessionId });
+    await runIpc(invoke("ab_close_session", { id: sessionId }));
     shiftFocusFrom(sessionId);
     a.setOpen((prev) => prev.filter((id) => id !== sessionId));
     a.setSelected((cur) => (cur?.sessionId === sessionId ? null : cur));
@@ -104,7 +104,7 @@ export function sessionLifecycle(a: {
   async function commitRename(sessionId: string, name: string) {
     a.setRenaming(null);
     const trimmed = name.trim();
-    if (trimmed) await invoke("ab_rename_session", { id: sessionId, name: trimmed });
+    if (trimmed) await runIpc(invoke("ab_rename_session", { id: sessionId, name: trimmed }));
   }
 
   return {

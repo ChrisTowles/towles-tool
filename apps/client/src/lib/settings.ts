@@ -5,7 +5,8 @@ import {
   TelemetryRuleListSchema,
   UserSettingsSchema,
 } from "./schemas/settings";
-import { invoke } from "./tauri";
+import { Result } from "effect";
+import { invoke, runIpc } from "./tauri";
 import { slugify } from "./slug";
 import type { Filter, RuleKind } from "./telemetry";
 import type { UpdateChannel } from "./update";
@@ -108,10 +109,12 @@ export type TaskTemplate = {
 
 /** Read from `tt_config` — a second copy of prompts this long drifts. */
 export function defaultPromptImprovers() {
-  return invoke<PromptImprover[]>(
-    "settings_default_prompt_improvers",
-    {},
-    { schema: PromptImproverListSchema },
+  return runIpc(
+    invoke<PromptImprover[]>(
+      "settings_default_prompt_improvers",
+      {},
+      { schema: PromptImproverListSchema },
+    ),
   );
 }
 
@@ -194,10 +197,8 @@ export function nextTelemetryRuleId(rules: TelemetryRule[], label: string): stri
 
 /** Read from `tt_config`, like {@link defaultPromptImprovers}. */
 export function defaultSavedQueries() {
-  return invoke<SavedQuery[]>(
-    "settings_default_saved_queries",
-    {},
-    { schema: SavedQueryListSchema },
+  return runIpc(
+    invoke<SavedQuery[]>("settings_default_saved_queries", {}, { schema: SavedQueryListSchema }),
   );
 }
 
@@ -213,10 +214,12 @@ export function withMissingSavedQueries(
 
 /** Read from `tt_config`, like {@link defaultPromptImprovers}. */
 export function defaultTelemetryRules() {
-  return invoke<TelemetryRule[]>(
-    "settings_default_telemetry_rules",
-    {},
-    { schema: TelemetryRuleListSchema },
+  return runIpc(
+    invoke<TelemetryRule[]>(
+      "settings_default_telemetry_rules",
+      {},
+      { schema: TelemetryRuleListSchema },
+    ),
   );
 }
 
@@ -326,15 +329,17 @@ const SETTINGS_SAVED_EVENT = "tt:settings-saved";
 
 /** `null` in browser dev or on a failed read; every consumer has a default. */
 export async function loadUserSettings(): Promise<UserSettings | null> {
-  const result = await invoke<UserSettings>("settings_get", {}, { schema: UserSettingsSchema });
-  return result.unwrapOr(null);
+  const result = await runIpc(
+    invoke<UserSettings>("settings_get", {}, { schema: UserSettingsSchema }),
+  );
+  return Result.getOrElse(result, () => null);
 }
 
 /** The full object, never a patch, so the TS CLI's unknown keys survive. */
 export async function saveUserSettings(settings: UserSettings): Promise<boolean> {
-  const saved = await invoke("settings_set", { settings });
-  if (saved.isOk()) window.dispatchEvent(new Event(SETTINGS_SAVED_EVENT));
-  return saved.isOk();
+  const saved = await runIpc(invoke("settings_set", { settings }));
+  if (Result.isSuccess(saved)) window.dispatchEvent(new Event(SETTINGS_SAVED_EVENT));
+  return Result.isSuccess(saved);
 }
 
 export type AgentboardBlock = NonNullable<UserSettings["agentboard"]>;

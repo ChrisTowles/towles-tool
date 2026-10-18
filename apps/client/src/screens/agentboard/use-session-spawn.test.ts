@@ -1,3 +1,4 @@
+import { Result } from "effect";
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
@@ -12,8 +13,8 @@ vi.mock("@/lib/agentboard/ipc", () => ({
 vi.mock("@/lib/agentboard/pty", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/agentboard/pty")>()),
   sleep: vi.fn<() => Promise<void>>(async () => {}),
-  termWriteRetry: vi.fn<(id: string, data: string) => Promise<{ isErr: () => boolean }>>(
-    async () => ({ isErr: () => false }),
+  termWriteRetry: vi.fn<(id: string, data: string) => Promise<Result.Result<void, never>>>(
+    async () => Result.succeed(undefined),
   ),
   waitForFirstFrame: vi.fn<() => Promise<void>>(async () => {}),
 }));

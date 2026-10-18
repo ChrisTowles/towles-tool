@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownIcon,
@@ -224,7 +225,7 @@ export function BreakdownDialog({
     setData(null);
     setLoading(true);
     void claudeSessionsBreakdown(sessionId).then((r) => {
-      r.match({ ok: setData, err: reportSessionsError });
+      Result.match(r, { onSuccess: setData, onFailure: reportSessionsError });
       setLoading(false);
     });
   }, [sessionId]);

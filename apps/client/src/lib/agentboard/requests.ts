@@ -1,5 +1,5 @@
 import type { IssueItem } from "@/lib/data";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 
 /** A cross-screen handoff — Agentboard may not be mounted when it's made. */
 export type PendingOpenSession = {
@@ -45,7 +45,7 @@ export type ResumeCandidate = {
 };
 
 /** Panes to offer resuming from the previous run, however it ended. */
-export const resumeCandidates = () => invoke<ResumeCandidate[]>("ab_resume_candidates");
+export const resumeCandidates = () => runIpc(invoke<ResumeCandidate[]>("ab_resume_candidates"));
 
 /** A read-only "reveal this in Agentboard" handoff. */
 export type AgentboardNav =

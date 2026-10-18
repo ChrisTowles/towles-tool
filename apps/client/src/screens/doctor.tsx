@@ -24,7 +24,7 @@ import {
   type RepeatedError,
 } from "@/lib/schemas/doctor";
 import { fmtDuration } from "@/lib/format";
-import { invoke } from "@/lib/tauri";
+import { invoke, ipcOr } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { useAsyncRefresh } from "@/lib/use-async-refresh";
 import { Empty, Panel } from "@/components/store-bits";
@@ -73,17 +73,24 @@ export function DoctorScreen() {
     setRunning(true);
     // Not awaited: sizing the state root is the slow probe, and the checks
     // above must not wait on it.
-    void invoke<DiskReport>("doctor_state_on_disk", {}, { schema: DiskReportSchema }).then((r) =>
-      setDisk(r.unwrapOr(null)),
-    );
+    void ipcOr(
+      invoke<DiskReport>("doctor_state_on_disk", {}, { schema: DiskReportSchema }),
+      null,
+    ).then(setDisk);
     const [run, recent, repeats] = await Promise.all([
-      invoke<DoctorReport>("doctor_run", {}, { schema: DoctorReportSchema }),
-      invoke<CrashRecord[]>("doctor_recent_crashes", {}, { schema: CrashRecordListSchema }),
-      invoke<RepeatedError[]>("doctor_repeated_errors", {}, { schema: RepeatedErrorListSchema }),
+      ipcOr(invoke<DoctorReport>("doctor_run", {}, { schema: DoctorReportSchema }), null),
+      ipcOr(
+        invoke<CrashRecord[]>("doctor_recent_crashes", {}, { schema: CrashRecordListSchema }),
+        [],
+      ),
+      ipcOr(
+        invoke<RepeatedError[]>("doctor_repeated_errors", {}, { schema: RepeatedErrorListSchema }),
+        [],
+      ),
     ]);
-    setReport(run.unwrapOr(null));
-    setCrashes(recent.unwrapOr([]));
-    setRepeated(repeats.unwrapOr([]));
+    setReport(run);
+    setCrashes(recent);
+    setRepeated(repeats);
     setRunning(false);
   }, []);
 

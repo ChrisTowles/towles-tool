@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { invoke, isTauri } from "@/lib/tauri";
+import { Result } from "effect";
+import { useState } from "react";
+import { usePoll } from "@/lib/run";
+import { invoke, isTauri, runIpc } from "@/lib/tauri";
 
 /** The keyboard-shortcut habit: how much of the day's *bound* work used the
  * keys. Aggregated by `tt-telemetry`'s `keyboard.rs` from the `shortcut.<id>`
@@ -41,7 +43,7 @@ export type KeyboardScore = {
   practiceMinActions: number;
 };
 
-export const keyboardScore = () => invoke<KeyboardScore>("telemetry_keyboard");
+export const keyboardScore = () => runIpc(invoke<KeyboardScore>("telemetry_keyboard"));
 
 /** Deliberately slower than the resource poll beside it: today's log file is
  * re-parsed on every call. */
@@ -57,22 +59,15 @@ export function latestKeyboardScore(): KeyboardScore | null {
 
 export function useKeyboardScore(): KeyboardScore | null {
   const [score, setScore] = useState<KeyboardScore | null>(latest);
-  useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    const tick = async () => {
+  usePoll(
+    async () => {
       const r = await keyboardScore();
-      if (cancelled || r.isErr()) return;
-      latest = r.value;
-      setScore(r.value);
-    };
-    tick();
-    const id = window.setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+      if (Result.isFailure(r)) return;
+      latest = r.success;
+      setScore(r.success);
+    },
+    isTauri() ? POLL_MS : null,
+  );
   return score;
 }
 

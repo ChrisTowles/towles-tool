@@ -11,7 +11,7 @@ import { useColumnDrag } from "./agentboard/use-column-drag";
 import { useAttention } from "./agentboard/use-attention";
 import { useRailIndex } from "./agentboard/use-rail-index";
 import { useTaskCreation } from "./agentboard/use-task-creation";
-import { useTauriEvent } from "./agentboard/use-tauri-event";
+import { useTauriEvent } from "@/lib/run";
 import { useWindowLayout } from "./agentboard/use-window-layout";
 import { useWorktreeDelete } from "./agentboard/use-worktree-delete";
 import { useCacheExpiryToast } from "./agentboard/use-cache-expiry-toast";

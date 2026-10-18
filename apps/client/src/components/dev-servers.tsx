@@ -1,6 +1,8 @@
 import { Button, Popover } from "@cloudflare/kumo";
 import { GlobeIcon, HardDrivesIcon, PlayIcon, TerminalWindowIcon } from "@phosphor-icons/react";
+import { Result } from "effect";
 import { useEffect, useState } from "react";
+import { startPoll } from "@/lib/run";
 import { Hint } from "@/components/hint";
 import type { SessionActions } from "@/lib/agentboard/actions";
 import type { FolderData } from "@/lib/agentboard/types";
@@ -48,22 +50,21 @@ export function DevServersButton({
     if (!open) return;
     let cancelled = false;
     const refresh = async () => {
-      (await launchConfigs(folder.dir)).match({
-        ok: (r) => {
+      Result.match(await launchConfigs(folder.dir), {
+        onSuccess: (r) => {
           if (cancelled) return;
           setRows(r);
           setError(null);
         },
-        err: (e) => {
+        onFailure: (e) => {
           if (!cancelled) setError(errorMessage(e));
         },
       });
     };
-    void refresh();
-    const timer = setInterval(() => void refresh(), REFRESH_MS);
+    const stop = startPoll(refresh, REFRESH_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stop();
     };
   }, [open, folder.dir]);
 

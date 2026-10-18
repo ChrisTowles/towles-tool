@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState } from "react";
 import { pointBrowserPane } from "@/components/browser-pane";
 import type { SessionActions } from "@/lib/agentboard/actions";
@@ -7,7 +8,7 @@ import { errorMessage, NotInTauri } from "@/lib/errors";
 import { openExternalUrl } from "@/lib/open-url";
 import { ciLogUrl, landable, restartable } from "@/lib/queue";
 import type { QueueItem } from "@/lib/schemas/queue";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 
@@ -100,19 +101,21 @@ export function useQueueActions(a: {
     if (!landRows) return;
     setLandBusy(true);
     uiAction("queue.land_batch", "agentboard", String(landRows.length));
-    const result = await invoke<LandResult[]>(
-      "queue_land",
-      { folderDirs: landRows.map((r) => r.folderDir) },
-      // A merge plus a fetch and a worktree removal, per row.
-      { timeoutMs: 120_000 * landRows.length },
+    const result = await runIpc(
+      invoke<LandResult[]>(
+        "queue_land",
+        { folderDirs: landRows.map((r) => r.folderDir) },
+        // A merge plus a fetch and a worktree removal, per row.
+        { timeout: 120_000 * landRows.length },
+      ),
     );
     setLandBusy(false);
     setLandRows(null);
-    if (result.isErr()) {
-      if (!NotInTauri.is(result.error)) toast.error(errorMessage(result.error));
+    if (Result.isFailure(result)) {
+      if (!NotInTauri.is(result.failure)) toast.error(errorMessage(result.failure));
       return;
     }
-    const { ok, problems } = landSummary(result.value);
+    const { ok, problems } = landSummary(result.success);
     if (problems.length === 0) toast.success(ok);
     else toast.error(`${ok}. ${problems.join("; ")}`);
   }

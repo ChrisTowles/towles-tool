@@ -13,7 +13,7 @@ import {
   type DiffViewTarget,
 } from "@/lib/diff-view";
 import { fmtDiffLines } from "@/lib/format";
-import { invoke } from "@/lib/tauri";
+import { invoke, ipcOr } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
@@ -45,12 +45,14 @@ function DiffBody({ target }: { target: DiffViewTarget }) {
 
   useEffect(() => {
     let live = true;
-    void invoke<BranchDiff | null>("ab_get_branch_diff", {
-      dir: target.dir,
-      baseBranch: target.baseBranch,
-    }).then((r) => {
+    void ipcOr(
+      invoke<BranchDiff | null>("ab_get_branch_diff", {
+        dir: target.dir,
+        baseBranch: target.baseBranch,
+      }),
+      null,
+    ).then((d) => {
       if (!live) return;
-      const d = r.unwrapOr(null);
       setDiff(d);
       setPicked(d?.files.find((f) => f.status !== "?")?.path ?? d?.files[0]?.path ?? null);
     });
@@ -173,13 +175,16 @@ function FilePatchView({ target, file }: { target: DiffViewTarget; file: BranchD
   const [patch, setPatch] = useState<FilePatch | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    void invoke<FilePatch | null>("ab_get_file_patch", {
-      dir: target.dir,
-      baseBranch: target.baseBranch,
-      path: file.path,
-      oldPath: file.oldPath,
-    }).then((r) => {
-      if (live) setPatch(r.unwrapOr(null));
+    void ipcOr(
+      invoke<FilePatch | null>("ab_get_file_patch", {
+        dir: target.dir,
+        baseBranch: target.baseBranch,
+        path: file.path,
+        oldPath: file.oldPath,
+      }),
+      null,
+    ).then((r) => {
+      if (live) setPatch(r);
     });
     return () => {
       live = false;

@@ -1,5 +1,5 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useState } from "react";
-import { DelayedLoading } from "@/components/delayed-loading";
 import {
   ArrowClockwiseIcon,
   ChartBarIcon,
@@ -58,9 +58,9 @@ export function ClaudeSessionsScreen() {
 
   async function refresh(d: string) {
     setLoading(true);
-    (await claudeSessionsSummary(Number(d))).match({
-      ok: setSummary,
-      err: (e) => {
+    Result.match(await claudeSessionsSummary(Number(d)), {
+      onSuccess: setSummary,
+      onFailure: (e) => {
         setSummary(null);
         reportSessionsError(e);
       },
@@ -82,9 +82,9 @@ export function ClaudeSessionsScreen() {
     }
     const t = setTimeout(() => {
       void claudeSessionsSearch(Number(days), q).then((r) =>
-        r.match({
-          ok: setResults,
-          err: (e) => {
+        Result.match(r, {
+          onSuccess: setResults,
+          onFailure: (e) => {
             setResults([]);
             reportSessionsError(e);
           },
@@ -137,7 +137,7 @@ export function ClaudeSessionsScreen() {
         </header>
 
         {loading && !summary ? (
-          <DelayedLoading className="p-6">Scanning sessions…</DelayedLoading>
+          <p className="p-6 text-sm text-muted-foreground">Scanning sessions…</p>
         ) : summary && totals ? (
           <>
             <div

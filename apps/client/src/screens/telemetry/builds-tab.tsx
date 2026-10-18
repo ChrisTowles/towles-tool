@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
@@ -83,9 +84,9 @@ export function BuildsTab({
     setComparing(true);
     void telemetryBuildCompare(pair.base, pair.other).then((r) => {
       if (stale) return;
-      r.match({
-        ok: setDeltas,
-        err: (e) => {
+      Result.match(r, {
+        onSuccess: setDeltas,
+        onFailure: (e) => {
           setDeltas(null);
           if (!NotInTauri.is(e)) toast.error(`Could not compare builds: ${errorMessage(e)}`);
         },

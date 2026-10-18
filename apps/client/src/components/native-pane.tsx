@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NotInTauri } from "@/lib/errors";
 import {
@@ -35,9 +36,9 @@ export function NativePane({
     (rect: CssRect) => {
       attached.current = true;
       void paneAttach(paneId, rect).then((r) =>
-        r.match({
-          ok: () => setUnavailable(null),
-          err: (e) => {
+        Result.match(r, {
+          onSuccess: () => setUnavailable(null),
+          onFailure: (e) => {
             attached.current = false;
             if (!NotInTauri.is(e)) setUnavailable(e.message);
           },

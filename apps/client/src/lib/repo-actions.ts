@@ -4,7 +4,8 @@
 import { toast } from "@/lib/toast";
 import { NotInTauri } from "@/lib/errors";
 import type { ScreenId } from "@/lib/screens";
-import { invoke } from "@/lib/tauri";
+import { Result } from "effect";
+import { invoke, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 
 /** What {@link untrackRepo} must close, and what a caller counts when
@@ -20,9 +21,11 @@ export function liveSessionIds(repo: {
 export async function trackRepo(rawPath: string, screen: ScreenId): Promise<boolean> {
   const path = rawPath.trim();
   if (!path) return false;
-  const added = await invoke("ab_add_repo", { path });
-  if (added.isErr()) {
-    if (!NotInTauri.is(added.error)) toast.error(`Couldn't track ${path} — ${added.error.message}`);
+  const added = await runIpc(invoke("ab_add_repo", { path }));
+  if (Result.isFailure(added)) {
+    if (!NotInTauri.is(added.failure)) {
+      toast.error(`Couldn't track ${path} — ${added.failure.message}`);
+    }
     return false;
   }
   uiAction("repo.tracked", screen);
@@ -39,12 +42,12 @@ export async function untrackRepo(
   screen: ScreenId,
 ): Promise<boolean> {
   for (const id of sessionIds) {
-    await invoke("ab_close_session", { id });
+    await runIpc(invoke("ab_close_session", { id }));
   }
-  const removed = await invoke("ab_remove_repo", { dir });
-  if (removed.isErr()) {
-    if (!NotInTauri.is(removed.error)) {
-      toast.error(`Couldn't untrack ${name} — ${removed.error.message}`);
+  const removed = await runIpc(invoke("ab_remove_repo", { dir }));
+  if (Result.isFailure(removed)) {
+    if (!NotInTauri.is(removed.failure)) {
+      toast.error(`Couldn't untrack ${name} — ${removed.failure.message}`);
     }
     return false;
   }

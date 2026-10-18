@@ -1,4 +1,4 @@
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 import { isKnownBenignEntry } from "@/lib/wdio-console";
 
 /** The WebView half of crash capture: uncaught errors and unhandled rejections
@@ -72,7 +72,7 @@ export function installCrashReporter() {
   const allow = crashGate();
   const send = (report: CrashReport) => {
     if (!allow(report)) return;
-    void invoke("crash_report", report);
+    fire(invoke("crash_report", report));
   };
   window.addEventListener("error", (e) => send(reportOfError(e)));
   window.addEventListener("unhandledrejection", (e) => {

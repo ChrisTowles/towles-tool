@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import type { BlockedDelete, RemoveTarget } from "@/lib/agentboard/actions";
@@ -5,7 +6,7 @@ import { landingSummaryForDir } from "@/lib/agentboard/landing";
 import { liveSessions } from "@/lib/agentboard/session";
 import type { RepoData } from "@/lib/agentboard/types";
 import { taskDelete, type PrItem, type TaskItem, type TaskOutcome } from "@/lib/data";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 
 export type WorktreeDelete = {
@@ -118,11 +119,11 @@ export function useWorktreeDelete(args: {
     // Cancelled or forced past while the call ran: a stale result must not
     // resurrect the dialog, but the `deletingDirs` release below still must run.
     const current = deleteFlowOf(dir) === flow;
-    if (removed.isErr() || removed.value.status === "blocked") {
+    if (Result.isFailure(removed) || removed.success.status === "blocked") {
       for (const id of target.sessionIds) expectedKills.current.delete(id);
     }
-    removed.match({
-      ok: (verdict) => {
+    Result.match(removed, {
+      onSuccess: (verdict) => {
         if (verdict.status === "blocked") {
           if (current)
             setBlockedDelete({
@@ -143,7 +144,7 @@ export function useWorktreeDelete(args: {
             : `Deleted worktree ${verdict.name || target.label}`,
         );
       },
-      err: (e) => {
+      onFailure: (e) => {
         if (current) toast.error(e.message);
       },
     });
@@ -162,11 +163,11 @@ export function useWorktreeDelete(args: {
     // see the post-cancel value and delete a worktree the user chose to keep.
     const flow = deleteFlowOf(dir);
     setStoppingPort(port);
-    const stopped = await invoke<string>("task_stop_port", { dir, port });
-    if (stopped.isErr()) {
-      toast.error(stopped.error.message);
+    const stopped = await runIpc(invoke<string>("task_stop_port", { dir, port }));
+    if (Result.isFailure(stopped)) {
+      toast.error(stopped.failure.message);
     } else {
-      toast.success(stopped.value);
+      toast.success(stopped.success);
       if (deleteFlowOf(dir) === flow)
         await performDeleteWorktree(blocked.target, { outcome: blocked.outcome });
     }

@@ -1,120 +1,123 @@
-import { z } from "zod";
+import { Schema } from "effect";
+import { list } from "@/lib/schemas/shape";
 
 /** Runtime validator for `DoctorReport` (`screens/doctor.tsx`), the
  * `doctor_run` command's result — a few subprocess-probed checks, worth
  * catching a shape drift on rather than rendering a blank screen. */
 
-const CheckResultSchema = z.object({
-  name: z.string(),
-  version: z.string().nullable(),
-  ok: z.boolean(),
-  warning: z.string().optional(),
+const CheckResultSchema = Schema.Struct({
+  name: Schema.String,
+  version: Schema.NullOr(Schema.String),
+  ok: Schema.Boolean,
+  warning: Schema.optional(Schema.String),
 });
 
-const NameOkSchema = z.object({
-  name: z.string(),
-  ok: z.boolean(),
+const NameOkSchema = Schema.Struct({
+  name: Schema.String,
+  ok: Schema.Boolean,
 });
 
-const PluginCheckSchema = z.object({
-  name: z.string(),
-  ok: z.boolean(),
-  installHint: z.string().optional(),
+const PluginCheckSchema = Schema.Struct({
+  name: Schema.String,
+  ok: Schema.Boolean,
+  installHint: Schema.optional(Schema.String),
 });
 
-const AgentBoardCheckSchema = z.object({
-  name: z.string(),
-  value: z.string(),
-  ok: z.boolean(),
-  warning: z.string().optional(),
-  hint: z.string().optional(),
+const AgentBoardCheckSchema = Schema.Struct({
+  name: Schema.String,
+  value: Schema.String,
+  ok: Schema.Boolean,
+  warning: Schema.optional(Schema.String),
+  hint: Schema.optional(Schema.String),
 });
 
-const StaleTaskCheckSchema = z.object({
-  name: z.string(),
-  branch: z.string(),
-  reason: z.string(),
+const StaleTaskCheckSchema = Schema.Struct({
+  name: Schema.String,
+  branch: Schema.String,
+  reason: Schema.String,
 });
 
-const PortHealthCheckSchema = z.object({
-  port: z.number(),
-  owner: z.string(),
-  var: z.string(),
-  finding: z.string(),
-  hint: z.string(),
+const PortHealthCheckSchema = Schema.Struct({
+  port: Schema.Number,
+  owner: Schema.String,
+  var: Schema.String,
+  finding: Schema.String,
+  hint: Schema.String,
 });
 
-const CheckoutCheckSchema = z.object({
-  name: z.string(),
-  value: z.string(),
-  ok: z.boolean(),
-  warning: z.string().optional(),
-  hint: z.string().optional(),
+const CheckoutCheckSchema = Schema.Struct({
+  name: Schema.String,
+  value: Schema.String,
+  ok: Schema.Boolean,
+  warning: Schema.optional(Schema.String),
+  hint: Schema.optional(Schema.String),
 });
 
-export const DoctorReportSchema = z.object({
-  result: z.object({
-    timestamp: z.string(),
-    tools: z.array(CheckResultSchema),
-    ghAuth: z.boolean(),
-    plugins: z.array(NameOkSchema),
-    agentboard: z.array(NameOkSchema),
+export const DoctorReportSchema = Schema.Struct({
+  result: Schema.Struct({
+    timestamp: Schema.String,
+    tools: list(CheckResultSchema),
+    ghAuth: Schema.Boolean,
+    plugins: list(NameOkSchema),
+    agentboard: list(NameOkSchema),
   }),
-  plugins: z.array(PluginCheckSchema),
-  agentboard: z.array(AgentBoardCheckSchema),
-  staleTasks: z.array(StaleTaskCheckSchema),
-  portHealth: z.array(PortHealthCheckSchema),
-  checkout: z.array(CheckoutCheckSchema),
+  plugins: list(PluginCheckSchema),
+  agentboard: list(AgentBoardCheckSchema),
+  staleTasks: list(StaleTaskCheckSchema),
+  portHealth: list(PortHealthCheckSchema),
+  checkout: list(CheckoutCheckSchema),
 });
 
 /** `doctor_recent_crashes`: `tt_telemetry::CrashRecord`, newest first. */
-export const CrashRecordListSchema = z.array(
-  z.object({
-    ts: z.string(),
-    kind: z.string(),
-    message: z.string(),
-    location: z.string().nullable(),
-    stack: z.string().nullable(),
-    ttTask: z.string().nullable(),
-    ttBuildSha: z.string().nullable(),
+export const CrashRecordListSchema = list(
+  Schema.Struct({
+    ts: Schema.String,
+    kind: Schema.String,
+    message: Schema.String,
+    location: Schema.NullOr(Schema.String),
+    stack: Schema.NullOr(Schema.String),
+    ttTask: Schema.NullOr(Schema.String),
+    ttBuildSha: Schema.NullOr(Schema.String),
   }),
 );
 
-export type CrashRecord = z.infer<typeof CrashRecordListSchema>[number];
+export type CrashRecord = (typeof CrashRecordListSchema.Type)[number];
 
 /** `doctor_repeated_errors`: `tt_telemetry::RepeatedError`, most frequent first. */
-export const RepeatedErrorListSchema = z.array(
-  z.object({
-    key: z.string(),
-    level: z.string(),
-    target: z.string(),
-    message: z.string(),
-    error: z.string().nullable(),
-    count: z.number(),
-    firstTs: z.string(),
-    lastTs: z.string(),
+export const RepeatedErrorListSchema = list(
+  Schema.Struct({
+    key: Schema.String,
+    level: Schema.String,
+    target: Schema.String,
+    message: Schema.String,
+    error: Schema.NullOr(Schema.String),
+    count: Schema.Number,
+    firstTs: Schema.String,
+    lastTs: Schema.String,
   }),
 );
 
-export type RepeatedError = z.infer<typeof RepeatedErrorListSchema>[number];
+export type RepeatedError = (typeof RepeatedErrorListSchema.Type)[number];
 
 /** `doctor_state_on_disk`: `tt_doctor::DiskReport`. Own command — sizing is the
  * slow probe, so it never gates the main report. */
-export const DiskReportSchema = z.object({
-  root: z.string(),
-  entries: z.array(z.object({ name: z.string(), bytes: z.number(), partial: z.boolean() })),
-  scopes: z.array(
-    z.object({
-      name: z.string(),
-      path: z.string(),
-      bytes: z.number(),
-      partial: z.boolean(),
-      orphan: z.boolean(),
+export const DiskReportSchema = Schema.Struct({
+  root: Schema.String,
+  entries: list(
+    Schema.Struct({ name: Schema.String, bytes: Schema.Number, partial: Schema.Boolean }),
+  ),
+  scopes: list(
+    Schema.Struct({
+      name: Schema.String,
+      path: Schema.String,
+      bytes: Schema.Number,
+      partial: Schema.Boolean,
+      orphan: Schema.Boolean,
     }),
   ),
-  residue: z.object({ count: z.number(), bytes: z.number(), partial: z.boolean() }),
-  totalBytes: z.number(),
-  partial: z.boolean(),
+  residue: Schema.Struct({ count: Schema.Number, bytes: Schema.Number, partial: Schema.Boolean }),
+  totalBytes: Schema.Number,
+  partial: Schema.Boolean,
 });
 
-export type DiskReport = z.infer<typeof DiskReportSchema>;
+export type DiskReport = typeof DiskReportSchema.Type;

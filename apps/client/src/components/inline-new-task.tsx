@@ -36,7 +36,8 @@ import {
   type PullRequest,
 } from "@/lib/schemas/task";
 import { ReviewPrPicker } from "@/components/review-pr-picker";
-import { invoke } from "@/lib/tauri";
+import { Result } from "effect";
+import { invoke, ipcOr, runIpc } from "@/lib/tauri";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 import { baseChips, parseRecentBases, rememberBase } from "@/lib/recent-bases";
@@ -326,18 +327,20 @@ export function InlineNewTask({
 
   useEffect(() => {
     let cancelled = false;
-    void invoke<BaseBranch[]>(
-      "task_base_branches",
-      { root: repo.dir },
-      { schema: BaseBranchesSchema },
+    void runIpc(
+      invoke<BaseBranch[]>(
+        "task_base_branches",
+        { root: repo.dir },
+        { schema: BaseBranchesSchema },
+      ),
     ).then((result) => {
       if (cancelled) return;
-      result.match({
-        ok: (list) => {
+      Result.match(result, {
+        onSuccess: (list) => {
           setBranches(list);
           setBase(list[0]?.name ?? "main");
         },
-        err: (e) => showError(e.message),
+        onFailure: (e) => showError(e.message),
       });
     });
     return () => {
@@ -360,12 +363,15 @@ export function InlineNewTask({
 
   useEffect(() => {
     let cancelled = false;
-    void invoke<TaskTemplate[]>(
-      "task_templates",
-      { name: repo.name, dir: repo.dir },
-      { schema: TaskTemplateListSchema },
-    ).then((result) => {
-      if (!cancelled) setTemplates(result.unwrapOr([]));
+    void ipcOr(
+      invoke<TaskTemplate[]>(
+        "task_templates",
+        { name: repo.name, dir: repo.dir },
+        { schema: TaskTemplateListSchema },
+      ),
+      [],
+    ).then((loaded) => {
+      if (!cancelled) setTemplates(loaded);
     });
     return () => {
       cancelled = true;
@@ -381,9 +387,11 @@ export function InlineNewTask({
     }
     let cancelled = false;
     const timer = setTimeout(() => {
-      void invoke<BranchCheck>("task_check_branch", { root: repo.dir, branch }).then((check) => {
-        if (!cancelled) setBranchCheck(check.unwrapOr(null));
-      });
+      void ipcOr(invoke<BranchCheck>("task_check_branch", { root: repo.dir, branch }), null).then(
+        (check) => {
+          if (!cancelled) setBranchCheck(check);
+        },
+      );
     }, 300);
     return () => {
       cancelled = true;
@@ -418,14 +426,16 @@ export function InlineNewTask({
     setSuggesting(improver.id);
     setNotice(null);
     uiAction("task.improve_prompt", "agentboard", improver.id);
-    const suggestion = await invoke<TaskSuggestion>("task_suggest", {
-      dir: repo.dir,
-      goal,
-      imagePaths,
-      instruction: improver.prompt,
-    });
-    suggestion.match({
-      ok: (s) => {
+    const suggestion = await runIpc(
+      invoke<TaskSuggestion>("task_suggest", {
+        dir: repo.dir,
+        goal,
+        imagePaths,
+        instruction: improver.prompt,
+      }),
+    );
+    Result.match(suggestion, {
+      onSuccess: (s) => {
         setPreOverwrite({ goal, branchEdit, titleEdit });
         setGoal(s.goal);
         setBranchEdit(s.branch);
@@ -434,7 +444,7 @@ export function InlineNewTask({
           setNotice({ text: `Filled in without claude — ${s.fallback}`, kind: "note" });
         }
       },
-      err: (e) => showError(e.message),
+      onFailure: (e) => showError(e.message),
     });
     setSuggesting(null);
   }
@@ -473,7 +483,7 @@ export function InlineNewTask({
     setIssuesError(null);
     void storeGhIssuesList(repo.dir, issueAssignedToMe).then((result) => {
       if (cancelled) return;
-      result.match({ ok: setIssues, err: (e) => setIssuesError(e.message) });
+      Result.match(result, { onSuccess: setIssues, onFailure: (e) => setIssuesError(e.message) });
     });
     return () => {
       cancelled = true;
@@ -530,18 +540,20 @@ export function InlineNewTask({
       return;
     }
     setStaging(true);
-    const staged = await invoke<string[]>(
-      "task_write_pasted_images",
-      {
-        repo: repo.name,
-        branch: draftScope,
-        images: list.map(({ mime, dataBase64 }) => ({ mime, dataBase64 })),
-      },
-      { schema: PastedImagePathsSchema },
+    const staged = await runIpc(
+      invoke<string[]>(
+        "task_write_pasted_images",
+        {
+          repo: repo.name,
+          branch: draftScope,
+          images: list.map(({ mime, dataBase64 }) => ({ mime, dataBase64 })),
+        },
+        { schema: PastedImagePathsSchema },
+      ),
     );
-    staged.match({
-      ok: setImagePaths,
-      err: (e) => {
+    Result.match(staged, {
+      onSuccess: setImagePaths,
+      onFailure: (e) => {
         setImages([]);
         setImagePaths([]);
         showError(`Couldn't attach that image: ${e.message}`);
@@ -551,9 +563,9 @@ export function InlineNewTask({
   }
 
   async function pasteImages(data: DataTransfer | null) {
-    (await imagesFromDataTransfer(data)).match({
-      ok: (imgs) => void addImages(imgs),
-      err: (e) => showError(e.message),
+    Result.match(await imagesFromDataTransfer(data), {
+      onSuccess: (imgs) => void addImages(imgs),
+      onFailure: (e) => showError(e.message),
     });
   }
 

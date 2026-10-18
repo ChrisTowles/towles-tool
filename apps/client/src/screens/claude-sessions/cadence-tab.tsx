@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, StatTile } from "@/components/store-bits";
 import { claudeSessionsCadence, type CadenceSummary } from "@/lib/claude-sessions";
@@ -227,9 +228,9 @@ export function CadenceTab({
     fetchedKey.current = key;
     setLoading(true);
     void claudeSessionsCadence(Number(days)).then((r) => {
-      r.match({
-        ok: setCadence,
-        err: (e) => {
+      Result.match(r, {
+        onSuccess: setCadence,
+        onFailure: (e) => {
           setCadence(null);
           reportSessionsError(e);
         },

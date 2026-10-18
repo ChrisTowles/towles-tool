@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState } from "react";
 import {
   ArchiveIcon,
@@ -17,7 +18,7 @@ import { openInExternalEditor } from "@/lib/external-editor";
 import { useShowQuiet } from "@/lib/rail-prefs";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { AttachIssueDialog } from "./pr-issue-chips";
 
@@ -64,14 +65,14 @@ export function RepoMenu({
   const [showQuiet] = useShowQuiet();
 
   async function syncNow() {
-    (await abSyncRepo(dir)).match({
-      ok: (result) => {
+    Result.match(await abSyncRepo(dir), {
+      onSuccess: (result) => {
         // Already in flight elsewhere — ignore rather than double-toast.
         if (!result.started) return;
         if (result.ok) toast.success("Synced with GitHub");
         else toast.error(result.message ?? "Sync failed");
       },
-      err: (e) => toast.error(e.message),
+      onFailure: (e) => toast.error(e.message),
     });
   }
 
@@ -81,12 +82,14 @@ export function RepoMenu({
   async function toggleQuiet() {
     const next = !quiet;
     uiAction("agentboard.quiet_mark", "agentboard", next ? "mark" : "unmark");
-    const result = await invoke<void>("ab_set_folder_quiet", {
-      dirs: quietDirs ?? [dir],
-      quiet: next,
-    });
-    if (result.isErr()) {
-      toast.error(`Couldn't update — ${result.error.message}`);
+    const result = await runIpc(
+      invoke<void>("ab_set_folder_quiet", {
+        dirs: quietDirs ?? [dir],
+        quiet: next,
+      }),
+    );
+    if (Result.isFailure(result)) {
+      toast.error(`Couldn't update — ${result.failure.message}`);
       return;
     }
     if (!next) toast.success("No longer quiet");

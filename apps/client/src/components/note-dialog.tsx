@@ -1,5 +1,6 @@
 // The note box: words for an agent, read at its next step instead of typed into its
 // terminal. Mounted once at the root; a session row's menu or Mod+Shift+M opens it.
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { Button, Dialog, InputArea } from "@cloudflare/kumo";
 import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
@@ -28,13 +29,13 @@ export function NoteDialog() {
     setSending(true);
     const sent = await inboxSend(target.sessionId, body, [], false);
     setSending(false);
-    uiAction("agentboard.note.send", "agentboard", sent.isOk() ? "ok" : "err");
-    sent.match({
-      ok: () => {
+    uiAction("agentboard.note.send", "agentboard", Result.isSuccess(sent) ? "ok" : "err");
+    Result.match(sent, {
+      onSuccess: () => {
         toast.success(`Note queued for ${target.label}`);
         closeNoteDialog();
       },
-      err: (e) => toast.error(`Note not sent: ${errorMessage(e)}`),
+      onFailure: (e) => toast.error(`Note not sent: ${errorMessage(e)}`),
     });
   }
 

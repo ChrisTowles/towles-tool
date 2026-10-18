@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FolderIcon } from "@phosphor-icons/react";
 
@@ -5,7 +6,7 @@ import { Button, Checkbox, Dialog } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { requestOpenSession, resumeCandidates } from "@/lib/agentboard/requests";
 import { DEFAULT_AUTO_RESUME, loadUserSettings } from "@/lib/settings";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import type { ResumeCandidate } from "@/lib/agentboard/requests";
@@ -26,7 +27,7 @@ export function ResumePicker() {
 
   useEffect(() => {
     void (async () => {
-      const found = (await resumeCandidates()).unwrapOr([]);
+      const found = Result.getOrElse(await resumeCandidates(), () => []);
       if (found.length === 0) return;
       const auto = (await loadUserSettings())?.agentboard?.autoResume ?? DEFAULT_AUTO_RESUME;
       if (auto) {
@@ -62,7 +63,7 @@ export function ResumePicker() {
     if (settled.current) return;
     settled.current = true;
     for (const c of candidates) {
-      if (!picked.has(c.paneId)) void invoke("ab_close_session", { id: c.paneId });
+      if (!picked.has(c.paneId)) fire(invoke("ab_close_session", { id: c.paneId }));
     }
   }
 

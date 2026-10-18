@@ -1,4 +1,6 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
+import { startPoll } from "@/lib/run";
 import { Button, Input, Select } from "@cloudflare/kumo";
 import {
   AppWindowIcon,
@@ -71,7 +73,7 @@ export function PreviewPane({
     const probe = async () => {
       const res = await launchConfigs(dir);
       if (cancelled) return;
-      const found = res.isOk() ? devServersOf(folder?.name ?? "", dir, res.value) : [];
+      const found = Result.isSuccess(res) ? devServersOf(folder?.name ?? "", dir, res.success) : [];
       setServers(found);
       setUrl((cur) => {
         if (cur) return cur;
@@ -79,11 +81,10 @@ export function PreviewPane({
         return auto?.url ?? cur;
       });
     };
-    void probe();
-    const timer = setInterval(() => void probe(), 15_000);
+    const stop = startPoll(probe, 15_000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-probe only on a changed dir, not when the label-only folder name changes
   }, [dir]);
@@ -103,13 +104,13 @@ export function PreviewPane({
     const readFile = async (initial: boolean) => {
       const res = await previewReadFile(filePath);
       if (cancelled) return;
-      res.match({
-        ok: (loaded) => {
+      Result.match(res, {
+        onSuccess: (loaded) => {
           setDoc(loaded);
           setDocError(null);
           if (initial) setShowing("file");
         },
-        err: (e) => {
+        onFailure: (e) => {
           // The old doc goes too, else `sourceLabel` names what isn't on screen.
           if (!initial) return;
           setDoc(null);
@@ -133,12 +134,12 @@ export function PreviewPane({
   async function reloadFile() {
     if (!filePath) return;
     const res = await previewReadFile(filePath);
-    res.match({
-      ok: (loaded) => {
+    Result.match(res, {
+      onSuccess: (loaded) => {
         setDoc(loaded);
         setDocError(null);
       },
-      err: (e) => {
+      onFailure: (e) => {
         setDoc(null);
         setDocError(errorMessage(e));
       },

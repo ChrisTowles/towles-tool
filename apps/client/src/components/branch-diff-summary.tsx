@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CommitStatRow } from "@/components/agentboard-bits/diff-chips";
 import { comparedBaseLabel } from "@/lib/agentboard/folder";
 import type { BranchDiff, BranchDiffFile } from "@/lib/agentboard/types";
-import { invoke } from "@/lib/tauri";
+import { invoke, ipcOr } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { fmtDiffLines } from "@/lib/format";
 
@@ -32,11 +32,14 @@ export function BranchDiffSummary({
   const [loaded, setLoaded] = useState<{ dir: string; diff: BranchDiff | null } | null>(null);
   useEffect(() => {
     let live = true;
-    void invoke<BranchDiff | null>("ab_get_branch_diff", {
-      dir,
-      baseBranch: baseBranch?.trim() || null,
-    }).then((r) => {
-      if (live) setLoaded({ dir, diff: r.unwrapOr(null) });
+    void ipcOr(
+      invoke<BranchDiff | null>("ab_get_branch_diff", {
+        dir,
+        baseBranch: baseBranch?.trim() || null,
+      }),
+      null,
+    ).then((diff) => {
+      if (live) setLoaded({ dir, diff });
     });
     return () => {
       live = false;
