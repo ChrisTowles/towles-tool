@@ -11,6 +11,7 @@
 import { Key } from "webdriverio";
 import { expectObject } from "../ipc.js";
 import { bootReady, gotoRail, waitForAnyDisplayed } from "./nav.js";
+import { trackRepo } from "./seed.js";
 
 const BADGE = '[aria-label^="jump key"]';
 
@@ -22,10 +23,7 @@ type AgentboardState = { repos: { folders: { sessions: { id: string }[] }[] }[] 
 
 async function seedRailSession(): Promise<void> {
   const repoRoot = process.cwd();
-  await browser.tauri.execute(
-    ({ core }, dir) => core.invoke("ab_add_repo", { path: dir }),
-    repoRoot,
-  );
+  await trackRepo(repoRoot);
   await browser.tauri.execute(
     ({ core }, dir) => core.invoke("ab_ensure_session", { dir }),
     repoRoot,
@@ -100,7 +98,13 @@ async function tagVisibleTerminal(): Promise<boolean> {
 }
 
 describe("Agent Board", () => {
-  before(bootReady);
+  // The queue rail's "New task in" chips are one per tracked repo, and a fresh
+  // `TT_STATE_SCOPE` tracks none: without this the first run on a scope fails
+  // here, and only passes later because a later test's seed persisted the repo.
+  before(async () => {
+    await bootReady();
+    await trackRepo(process.cwd());
+  });
 
   it("switches its rail between the checkout tree and the queue", async () => {
     await gotoRail("Tree");
