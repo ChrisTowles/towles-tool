@@ -16,7 +16,7 @@ import {
 import { CommandPalette as Palette } from "@cloudflare/kumo";
 import { useTheme } from "@/components/theme-provider";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
-import { useAgentboardState } from "@/lib/agentboard/state";
+import { useRepos } from "@/lib/agentboard/state";
 import { storeAddTask, useStoreSnapshot } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import {
@@ -53,7 +53,7 @@ export function CommandPalette() {
     toggleSidebar,
   } = useWorkspace();
   const { theme, setTheme } = useTheme();
-  const { repos } = useAgentboardState();
+  const repos = useRepos();
   const { snapshot } = useStoreSnapshot();
   const [query, setQuery] = useState("");
 

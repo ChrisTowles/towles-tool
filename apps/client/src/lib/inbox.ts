@@ -1,3 +1,4 @@
+import { replaceEqualDeep } from "@/lib/replace-equal-deep";
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 import { invoke, isTauri } from "@/lib/tauri";
@@ -70,7 +71,10 @@ class InboxStore {
   private async refresh(): Promise<void> {
     const res = await invoke("inbox_state", {}, { schema: InboxStateSchema });
     if (res.isErr()) return;
-    this.state = res.value;
+    // Every row reads this: an unchanged poll must wake none of them.
+    const next = replaceEqualDeep(this.state, res.value);
+    if (next === this.state) return;
+    this.state = next;
     for (const fn of this.listeners) fn();
   }
 

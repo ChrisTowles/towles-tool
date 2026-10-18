@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createStore, useStoreSelector, type Store } from "./external-store";
+import { replaceEqualDeep } from "./replace-equal-deep";
 import { invoke, isTauri } from "./tauri";
 import {
   EMPTY_SNAPSHOT,
@@ -10,16 +12,25 @@ import {
 
 /** A single app-wide subscription to the live store snapshot: screens stay
  * mounted, so ~14 consumers each listening meant ~14 parses per event. Empty
- * with `live` false until the store answers, {@link mockSnapshot} outside Tauri. */
+ * with `live` false until the store answers, {@link mockSnapshot} outside Tauri.
+ * Each event is merged into the held snapshot so an unchanged list keeps its
+ * identity, and one that changed nothing wakes no reader. */
 type StoreSnapshotValue = { snapshot: StoreSnapshot; live: boolean };
 
-const StoreSnapshotContext = createContext<StoreSnapshotValue | null>(null);
+type SnapshotStore = { snapshot: Store<StoreSnapshot>; live: Store<boolean> };
+
+const StoreSnapshotContext = createContext<SnapshotStore | null>(null);
 
 export function StoreSnapshotProvider({ children }: { children: ReactNode }) {
-  const [snapshot, setSnapshot] = useState<StoreSnapshot>(EMPTY_SNAPSHOT);
-  const [live, setLive] = useState(false);
+  const [store] = useState<SnapshotStore>(() => ({
+    snapshot: createStore(EMPTY_SNAPSHOT),
+    live: createStore(false),
+  }));
 
   useEffect(() => {
+    const setSnapshot = (next: StoreSnapshot) =>
+      store.snapshot.set(replaceEqualDeep(store.snapshot.get(), next));
+    const setLive = store.live.set;
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
@@ -62,15 +73,21 @@ export function StoreSnapshotProvider({ children }: { children: ReactNode }) {
       disposed = true;
       unlisten?.();
     };
-  }, []);
+  }, [store]);
 
-  const value = useMemo<StoreSnapshotValue>(() => ({ snapshot, live }), [snapshot, live]);
-  return <StoreSnapshotContext.Provider value={value}>{children}</StoreSnapshotContext.Provider>;
+  return <StoreSnapshotContext.Provider value={store}>{children}</StoreSnapshotContext.Provider>;
 }
 
 /** The live store snapshot and whether the real store has answered yet. Must be
  * used under a {@link StoreSnapshotProvider}. */
 export function useStoreSnapshot(): StoreSnapshotValue {
+  const ctx = useSnapshotStore();
+  const snapshot = useStoreSelector(ctx.snapshot, (s) => s);
+  const live = useStoreSelector(ctx.live, (l) => l);
+  return useMemo(() => ({ snapshot, live }), [snapshot, live]);
+}
+
+function useSnapshotStore(): SnapshotStore {
   const ctx = useContext(StoreSnapshotContext);
   if (ctx === null) {
     throw new Error("useStoreSnapshot must be used within a StoreSnapshotProvider");

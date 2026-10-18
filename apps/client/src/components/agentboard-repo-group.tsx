@@ -203,8 +203,8 @@ export function RepoGroup({
         hotkey={hotkeys?.get(s.id)}
         renaming={renaming === s.id}
         actions={actions}
-        onSelect={() => onSelect(folder.dir, s.id)}
-        onRenameCommit={(name) => onRenameCommit(s.id, name)}
+        onSelect={onSelect}
+        onRenameCommit={onRenameCommit}
       />
     </motion.div>
   );
