@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { DelayedLoading } from "@/components/delayed-loading";
 import {
   ArrowClockwiseIcon,
   ChartBarIcon,
@@ -136,7 +137,7 @@ export function ClaudeSessionsScreen() {
         </header>
 
         {loading && !summary ? (
-          <p className="p-6 text-sm text-muted-foreground">Scanning sessions…</p>
+          <DelayedLoading className="p-6">Scanning sessions…</DelayedLoading>
         ) : summary && totals ? (
           <>
             <div

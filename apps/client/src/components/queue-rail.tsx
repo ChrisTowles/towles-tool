@@ -249,7 +249,7 @@ export function QueueRail({
         </div>
       )}
       {!live ? (
-        <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
+        <div aria-busy className="min-h-24" />
       ) : queue.items.length === 0 && repoFilter.size > 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
           Nothing queued in the picked repos.

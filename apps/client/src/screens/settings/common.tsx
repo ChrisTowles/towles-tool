@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { DelayedLoading } from "@/components/delayed-loading";
 import { Combobox, Input, SensitiveInput, Switch } from "@cloudflare/kumo";
 import { isEmptyQuery, matchesFilter } from "@/lib/settings-filter";
 import { slackListUsers, type SlackUser } from "@/lib/slack";
@@ -349,7 +350,7 @@ export function SlackUserPicker({
 
 /** Shown in wired tabs while settings load, or when there's no Tauri host. */
 export function SettingsLoading() {
-  return <div className="text-sm text-kumo-subtle">Loading settings…</div>;
+  return <DelayedLoading>Loading settings…</DelayedLoading>;
 }
 
 function rowKeywords(section: FilterSection, row: FilterRow): string[] {
