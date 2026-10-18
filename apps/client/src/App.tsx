@@ -13,7 +13,7 @@ import { ZenIndicator } from "@/components/zen-indicator";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider, Toasty } from "@cloudflare/kumo";
-import { AgentboardStateProvider, useAgentboardState } from "@/lib/agentboard/state";
+import { AgentboardStateProvider, useAgentboardRead } from "@/lib/agentboard/state";
 import { subscribeEditorOpenFile } from "@/lib/editor-open";
 import { subscribePreviewShow } from "@/lib/preview-artifact";
 import { repeatDetail, repeatTitle, watchRepeatedErrors } from "@/lib/repeated-errors";
@@ -104,11 +104,9 @@ function TaskStartBridge() {
   const { openTab, activeTab } = useWorkspace();
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
-  const state = useAgentboardState();
   // Read repos at delivery time, not capture time — a start can land before the
   // first agentboard snapshot has arrived.
-  const reposRef = useRef(state.repos);
-  reposRef.current = state.repos;
+  const readState = useAgentboardRead();
 
   // `openTab` via a ref for the same reason as `repos`: resubscribing the
   // backend listener on every tab change would risk dropping an event.
@@ -118,14 +116,14 @@ function TaskStartBridge() {
   useEffect(
     () =>
       subscribeTaskStart(
-        () => reposRef.current,
+        () => readState().repos,
         (payload) =>
           toast.error(
             `Couldn't start task ${payload.taskId} — ${payload.repoRoot} isn't tracked on Agentboard`,
           ),
         () => openTabRef.current("agentboard"),
       ),
-    [],
+    [readState],
   );
 
   useEffect(
@@ -150,27 +148,27 @@ function TaskStartBridge() {
   useEffect(
     () =>
       subscribePreviewShow(
-        () => reposRef.current,
+        () => readState().repos,
         () => openTabRef.current("agentboard"),
       ),
-    [],
+    [readState],
   );
   useEffect(
     () =>
       subscribeSummon(
-        () => reposRef.current,
+        () => readState().repos,
         () => openTabRef.current("agentboard"),
       ),
-    [],
+    [readState],
   );
   useEffect(() => subscribeAutoClosed(), []);
   useEffect(
     () =>
       subscribeEditorOpenFile(
-        () => reposRef.current,
+        () => readState().repos,
         () => openTabRef.current("agentboard"),
       ),
-    [],
+    [readState],
   );
 
   return null;

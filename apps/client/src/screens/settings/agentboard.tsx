@@ -5,7 +5,7 @@ import { ToggleGroup } from "@cloudflare/kumo/primitives/toggle-group";
 import { Toggle } from "@cloudflare/kumo/primitives/toggle";
 import { Button, Dialog, Input, InputArea, Popover, Select } from "@cloudflare/kumo";
 import type { RepoCandidate } from "@/lib/agentboard/actions";
-import { useAgentboardState } from "@/lib/agentboard/state";
+import { useRepos } from "@/lib/agentboard/state";
 import type { RepoData } from "@/lib/agentboard/types";
 import {
   applyRepoOrder,
@@ -486,7 +486,7 @@ function AgentboardSettings() {
  * *tracked* repos: an untracked candidate has nowhere to show an icon, so
  * those rows carry a Track action rather than dead controls. */
 function RepoManager() {
-  const { repos } = useAgentboardState();
+  const repos = useRepos();
   const [candidates, setCandidates] = useState<RepoCandidate[]>([]);
   const [query, setQuery] = useState("");
   const [confirm, setConfirm] = useState<{

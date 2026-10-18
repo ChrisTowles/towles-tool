@@ -1,6 +1,6 @@
 // One PTY session in the rail — the row that has to hold the most status in
 // the least width, since a folder can have several.
-import { useState } from "react";
+import { memo, useState } from "react";
 import { DotsThreeVerticalIcon, EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { PortDriftBadge } from "@/components/agentboard-bits/badges";
@@ -22,7 +22,9 @@ import {
 import type { SessionData } from "@/lib/agentboard/types";
 import { fmtElapsed } from "@/lib/format";
 
-export function SessionRow({
+/** Memoised: with the snapshot structurally shared, a row whose session and
+ * props held is skipped when a sibling's status moves. */
+export const SessionRow = memo(function SessionRow({
   session,
   folderDir,
   now,
@@ -48,8 +50,8 @@ export function SessionRow({
   hotkey?: number;
   renaming: boolean;
   actions: SessionActions;
-  onSelect: () => void;
-  onRenameCommit: (name: string) => void;
+  onSelect: (folderDir: string, sessionId: string) => void;
+  onRenameCommit: (sessionId: string, name: string) => void;
 }) {
   const needs = sessionCatchesEye(session);
   const agent = isAgent(session);
@@ -72,9 +74,9 @@ export function SessionRow({
         role="button"
         tabIndex={0}
         aria-current={active || undefined}
-        onClick={onSelect}
+        onClick={() => onSelect(folderDir, session.id)}
         onDoubleClick={() => actions.renameStart(session.id)}
-        onKeyDown={(e) => e.key === "Enter" && onSelect()}
+        onKeyDown={(e) => e.key === "Enter" && onSelect(folderDir, session.id)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={cn(
@@ -100,10 +102,11 @@ export function SessionRow({
             autoFocus
             defaultValue={session.name}
             onClick={(e) => e.stopPropagation()}
-            onBlur={(e) => onRenameCommit(e.target.value)}
+            onBlur={(e) => onRenameCommit(session.id, e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") onRenameCommit((e.target as HTMLInputElement).value);
-              if (e.key === "Escape") onRenameCommit(session.name);
+              if (e.key === "Enter")
+                onRenameCommit(session.id, (e.target as HTMLInputElement).value);
+              if (e.key === "Escape") onRenameCommit(session.id, session.name);
             }}
             className="min-w-0 flex-1 rounded-sm border border-input bg-background px-1 text-sm outline-none"
           />
@@ -190,7 +193,7 @@ export function SessionRow({
       </div>
     </Hint>
   );
-}
+});
 
 /** ✕ close stays inline as the one action every row has; the rest vary by state
  * and live behind "···" instead of crowding the row. */

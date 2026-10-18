@@ -16,7 +16,7 @@ import {
   type ClaudeSession,
   type ClaudeSessionsSummary,
 } from "@/lib/claude-sessions";
-import { useAgentboardState } from "@/lib/agentboard/state";
+import { useRepos } from "@/lib/agentboard/state";
 import { seriesColors } from "@/lib/repo-identity";
 import { uiAction } from "@/lib/ui-action";
 import { fmtTokens, fmtUsd } from "@/lib/format";
@@ -47,7 +47,7 @@ export function ClaudeSessionsScreen() {
   const [refreshNonce, setRefreshNonce] = useState(0);
   // Keyed on the identities, not the snapshot: the board re-sends `repos` every
   // tick, and a new map would rebuild every chart.
-  const { repos } = useAgentboardState();
+  const repos = useRepos();
   const repoKey = repos.map((r) => `${r.name}=${r.color}`).join(",");
   const projectColors = useMemo(
     () => seriesColors(summary?.byProject.map((b) => b.project) ?? [], repos),

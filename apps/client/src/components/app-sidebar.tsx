@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { RollupDots } from "@/components/agentboard-bits/status-dots";
 import { Button, Tooltip } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useAgentboardState } from "@/lib/agentboard/state";
+import { useAgentboardSelector, useRepos } from "@/lib/agentboard/state";
 import { agentRollup, rollupAlertColor, rollupAlertTextColor } from "@/lib/agentboard/status";
 import { dmsNeedingAttention, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils";
 
 /** The shared clock, not `Date.now()`: a cache going cold emits no state event. */
 function useAgentRollup() {
-  const { repos, compactRecommendPercent } = useAgentboardState();
+  const repos = useRepos();
+  const compactRecommendPercent = useAgentboardSelector((s) => s.compactRecommendPercent);
   const now = useNow();
   return useMemo(
     () => agentRollup(repos, now, compactRecommendPercent),

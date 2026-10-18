@@ -47,6 +47,7 @@ import {
   isHomeRepo,
 } from "@/lib/agentboard/folder";
 import { claudeTitleName, sessionLabel } from "@/lib/agentboard/session";
+import { useStableFn, useStableFns } from "@/lib/use-stable-fn";
 import { useAgentboardState, useSetAgentOverlay } from "@/lib/agentboard/state";
 import type { FolderData, RepoData, Selected, SessionData } from "@/lib/agentboard/types";
 import { paneCloseTarget, type FocusLevel } from "@/lib/agentboard/windows";
@@ -433,19 +434,25 @@ export function AgentBoardScreen() {
   });
   const { closeSession, closePane, closeFocusedPane, requestRemoveRepo } = lifecycle;
 
-  const actions = sessionActions({
-    wins,
-    setOverlay,
-    selectSession,
-    selectFolder,
-    setStartClaudeTarget: spawn.setStartClaudeTarget,
-    setRenaming,
-    setFocusLevel,
-    withLiveSession: (sessionId, fn) => spawn.withLiveSession(sessionId, fn),
-    closeSession,
-    launchDevServer: spawn.launchDevServer,
-    updateWins,
-  });
+  // Fixed identity, so the memoised session rows are not re-rendered by it.
+  const actions = useStableFns(
+    sessionActions({
+      wins,
+      setOverlay,
+      selectSession,
+      selectFolder,
+      setStartClaudeTarget: spawn.setStartClaudeTarget,
+      setRenaming,
+      setFocusLevel,
+      withLiveSession: (sessionId, fn) => spawn.withLiveSession(sessionId, fn),
+      closeSession,
+      launchDevServer: spawn.launchDevServer,
+      updateWins,
+    }),
+  );
+
+  const stableSelect = useStableFn(selectSession);
+  const stableRenameCommit = useStableFn(lifecycle.commitRename);
 
   const nav = railNavigation({
     tree,
@@ -785,12 +792,12 @@ export function AgentBoardScreen() {
         actions,
         onToggle: toggleCollapsed,
         onSelectFolder: selectFolder,
-        onSelect: selectSession,
+        onSelect: stableSelect,
         onNewSession: newSession,
         onRemoveRepo: requestRemoveRepo,
         onDeleteWorktree: requestDeleteWorktree,
         settingUpDirs: taskCreation.settingUpDirs,
-        onRenameCommit: lifecycle.commitRename,
+        onRenameCommit: stableRenameCommit,
         onOpenFiles: openFiles,
         onOpenPreview: openPreview,
         // Undefined while `agentboard.jarvisPane` is off:
