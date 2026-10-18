@@ -279,11 +279,9 @@ struct ClipOfferOut {
 #[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct ClipSuggested {
-    /// Empty when nothing is worth copying, or no call was made (see `skipped`).
+    /// The `! <command>` lines the message hands the user, empty when none (see `skipped`).
     items: Vec<ClipOfferOut>,
-    #[schemars(schema_with = "number_or_null")]
-    cost_usd: Option<f64>,
-    /// `disabled` or `budget` when no call was made; `null` otherwise.
+    /// `disabled`, `no-bang-command` or `ignored` when nothing is offered; `null` otherwise.
     skipped: Option<String>,
 }
 

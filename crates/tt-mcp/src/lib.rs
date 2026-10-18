@@ -34,7 +34,7 @@ pub use task_tools::task_start_request;
 pub use tool_defs::tool_definitions;
 
 pub use inbox::InboxHost;
-pub use suggest::{ClipAnswer, ClipOffer, ClipRequest, SuggestAnswer, SuggestHost, SuggestRequest};
+pub use suggest::{SuggestAnswer, SuggestHost, SuggestRequest};
 
 use serde_json::{Value, json};
 use tt_store::{EventInput, McpCallInput, Store};

@@ -1,6 +1,6 @@
-//! The Claude mod's model questions — the next-prompt suggestion (one per keystroke of
-//! the user's) and the end-of-turn clipboard offer — each held to its own daily budget
-//! here so no caller can spend past it.
+//! The Claude mod's next-prompt suggestion (one model call per keystroke of the user's,
+//! held to a daily budget here so no caller can spend past it) and the end-of-turn
+//! clipboard offer, which makes no model call.
 
 use chrono::{Local, TimeZone};
 use serde_json::{Value, json};
@@ -27,30 +27,9 @@ pub struct SuggestAnswer {
     pub cost_usd: Option<f64>,
 }
 
-/// The finished turn's last message, for the clipboard question.
-pub struct ClipRequest {
-    pub session: Option<String>,
-    pub answer: String,
-    pub goal: Option<String>,
-    pub question: String,
-    pub model: String,
-}
-
-pub struct ClipOffer {
-    pub label: String,
-    pub text: String,
-}
-
-pub struct ClipAnswer {
-    pub items: Vec<ClipOffer>,
-    /// `None` when no model call was made.
-    pub cost_usd: Option<f64>,
-}
-
-/// The app-side half: the user's history and the `claude -p` spawn live there.
+/// The app-side half of `next_prompt`: the user's history and the `claude -p` spawn live there.
 pub trait SuggestHost: Send {
     fn suggest(&self, request: SuggestRequest) -> Result<SuggestAnswer, String>;
-    fn clip(&self, request: ClipRequest) -> Result<ClipAnswer, String>;
 }
 
 pub(crate) fn local_day(now_ms: i64) -> String {
@@ -154,52 +133,27 @@ impl Dispatcher {
         now_ms: i64,
         ctx: &RequestContext,
     ) -> Result<Value, String> {
-        if self.suggest_host.is_none() {
-            return Err("clip_suggest is unavailable: no suggest host is attached".to_string());
-        }
-        let settings = self.clip_settings();
-        let none = |skipped: &str| Ok(json!({ "items": [], "costUsd": null, "skipped": skipped }));
-        if !settings.enabled {
+        let none = |skipped: &str| Ok(json!({ "items": [], "skipped": skipped }));
+        if !self.clip_settings().enabled {
             return none("disabled");
         }
         let said = args.get("answer").and_then(Value::as_str).unwrap_or_default();
-        if !clip_gate::copyable(said) {
-            tracing::info!(reason = "prose", "clip_suggest.skipped");
-            return none("prose");
+        let offers = clip_gate::offers(said);
+        if offers.is_empty() {
+            tracing::info!(reason = "no-bang-command", "clip_suggest.skipped");
+            return none("no-bang-command");
         }
         if ctx.session.as_deref().is_some_and(|s| self.clip_backoff.quiet(s, now_ms)) {
             tracing::info!(reason = "ignored", "clip_suggest.skipped");
             return none("ignored");
         }
-        let day = local_day(now_ms);
-        let spent = self.store.model_spend(SpendLedger::Clip, &day).map_err(|e| e.to_string())?;
-        if spent >= settings.daily_budget_usd {
-            tracing::info!(spent, budget = settings.daily_budget_usd, "clip_suggest.over_budget");
-            return none("budget");
-        }
-        let host = self.suggest_host.as_ref().expect("checked above");
-        let answer = host.clip(ClipRequest {
-            session: ctx.session.clone(),
-            answer: said.to_string(),
-            goal: self.goal_of(args),
-            question: if settings.question.trim().is_empty() {
-                tt_config::DEFAULT_CLIP_SUGGEST_QUESTION.to_string()
-            } else {
-                settings.question
-            },
-            model: settings.model,
-        })?;
-        let cost = answer.cost_usd.unwrap_or(0.0);
-        if cost > 0.0 {
-            self.store.add_model_spend(SpendLedger::Clip, &day, cost).map_err(|e| e.to_string())?;
-        }
-        tracing::info!(cost_usd = cost, items = answer.items.len(), "clip_suggest.asked");
-        if let (Some(session), false) = (ctx.session.as_deref(), answer.items.is_empty()) {
+        tracing::info!(items = offers.len(), "clip_suggest.asked");
+        if let Some(session) = ctx.session.as_deref() {
             self.clip_backoff.offered(session, now_ms);
         }
         let items: Vec<Value> =
-            answer.items.iter().map(|i| json!({ "label": i.label, "text": i.text })).collect();
-        Ok(json!({ "items": items, "costUsd": answer.cost_usd, "skipped": null }))
+            offers.iter().map(|o| json!({ "label": o.label, "text": o.text })).collect();
+        Ok(json!({ "items": items, "skipped": null }))
     }
 
     pub(crate) fn clip_copied(

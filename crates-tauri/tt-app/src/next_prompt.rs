@@ -1,11 +1,10 @@
 //! The app half of the Claude mod's model questions: `next_prompt` (the user's prompt
 //! history, kept warm off the call path, and the bare `claude -p` question it is the
-//! context of) and `clip_suggest` (what of the last message to copy).
+//! context of).
 
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use tt_claude_sessions::clip::{self, CLIP_SCHEMA, ClipAnswer as ClipModelAnswer, clip_prompt};
 use tt_claude_sessions::next_prompt::{
     History, SUGGEST_SCHEMA, SuggestAnswer as ModelAnswer, TurnFacts, bucket, corpus,
     suggest_prompt, work_profile,
@@ -126,52 +125,6 @@ impl tt_mcp::SuggestHost for AppSuggestHost {
             }
         }
     }
-
-    fn clip(&self, req: tt_mcp::ClipRequest) -> Result<tt_mcp::ClipAnswer, String> {
-        let prompt = clip_prompt(&req.question, req.goal.as_deref(), &req.answer);
-        let started = Instant::now();
-        let answered = tt_exec::claude::Ask::new(&prompt, CLIP_SCHEMA, CLAUDE_TIMEOUT)
-            .model(&req.model)
-            .bare()
-            .run::<ClipModelAnswer>();
-        let wall_ms = started.elapsed().as_millis() as u64;
-        let session = req.session.as_deref().unwrap_or("-");
-        match answered {
-            Ok(answered) => {
-                let stats = answered.stats;
-                let offered = answered.answer.items.len();
-                let items = clip::grounded(answered.answer.items, &req.answer);
-                tracing::info!(
-                    session,
-                    outcome = "ok",
-                    wall_ms,
-                    offered,
-                    kept = items.len(),
-                    model = stats.model.as_str(),
-                    num_turns = stats.num_turns,
-                    duration_ms = stats.duration_ms,
-                    cost_usd = stats.cost_usd,
-                    "clip_suggest.model_call"
-                );
-                let items = items
-                    .into_iter()
-                    .map(|i| tt_mcp::ClipOffer { label: i.label, text: i.text })
-                    .collect();
-                Ok(tt_mcp::ClipAnswer { items, cost_usd: stats.cost_usd })
-            }
-            Err(error) => {
-                let reason = error.brief();
-                tracing::warn!(
-                    session,
-                    outcome = "error",
-                    reason,
-                    wall_ms,
-                    "clip_suggest.model_call"
-                );
-                Err(reason)
-            }
-        }
-    }
 }
 
 fn spend_today(
@@ -190,9 +143,4 @@ pub fn next_prompt_spend_today(
     state: tauri::State<crate::store::StoreState>,
 ) -> Result<f64, String> {
     spend_today(&state, tt_store::SpendLedger::NextPrompt)
-}
-
-#[tauri::command]
-pub fn clip_spend_today(state: tauri::State<crate::store::StoreState>) -> Result<f64, String> {
-    spend_today(&state, tt_store::SpendLedger::Clip)
 }

@@ -973,7 +973,6 @@ function NextPromptEditor({
 
 type ClipSuggest = NonNullable<UserSettings["clipSuggest"]>;
 
-/** Rust holds the defaults, so a blank field here means "use them". */
 function ClipSuggestEditor({
   value,
   onChange,
@@ -983,54 +982,16 @@ function ClipSuggestEditor({
   onChange: (next: ClipSuggest) => void;
   onCommit: () => void;
 }) {
-  const [spent, setSpent] = useState<number | null>(null);
-  useEffect(() => {
-    void invoke<number>("clip_spend_today").then((r) => setSpent(r.unwrapOr(null)));
-  }, []);
-  const budget = value.dailyBudgetUsd ?? 0.2;
   return (
-    <div className="flex flex-col gap-2">
-      <ToggleRow
-        id="clip-suggest"
-        label="Copy suggestions"
-        description="After each turn that printed a command, link, path or snippet, the tt Claude mod asks one model call, with no tools, MCP or CLAUDE.md, what you'd copy. Its band then offers each: 1–3 copies one, a copies all in order."
-        checked={value.enabled ?? true}
-        onCheckedChange={(enabled) => {
-          onChange({ ...value, enabled });
-          onCommit();
-        }}
-        extra={
-          spent != null && (
-            <span className="font-mono text-xs text-kumo-subtle">
-              ${spent.toFixed(4)} of ${budget.toFixed(2)} today
-            </span>
-          )
-        }
-      />
-      <SettingRow label="Daily budget" description="Past this, no copy suggestions until tomorrow.">
-        <Input
-          aria-label="Copy suggestions daily budget in US dollars"
-          type="number"
-          step="0.05"
-          min="0"
-          className="w-24"
-          value={value.dailyBudgetUsd ?? ""}
-          placeholder="0.20"
-          onChange={(e) => {
-            const n = Number.parseFloat(e.target.value);
-            onChange({ ...value, dailyBudgetUsd: Number.isFinite(n) ? n : undefined });
-          }}
-          onBlur={onCommit}
-        />
-      </SettingRow>
-      <InputArea
-        aria-label="Copy suggestions question"
-        rows={3}
-        value={value.question ?? ""}
-        placeholder="Default: which exact strings from the agent's last message would you want on your clipboard…"
-        onChange={(e) => onChange({ ...value, question: e.target.value || undefined })}
-        onBlur={onCommit}
-      />
-    </div>
+    <ToggleRow
+      id="clip-suggest"
+      label="Copy suggestions"
+      description="When Claude hands you a command to run with the ! prefix, the tt Claude mod's band offers it, ! included, so a paste into the prompt runs it. 1–3 copies one, a copies all in order."
+      checked={value.enabled ?? true}
+      onCheckedChange={(enabled) => {
+        onChange({ ...value, enabled });
+        onCommit();
+      }}
+    />
   );
 }

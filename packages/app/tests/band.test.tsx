@@ -185,10 +185,9 @@ describe('band', () => {
             : e.tool === 'clip_suggest'
               ? {
                   items: [
-                    { label: 'PR', text: 'https://x.dev/pr/9' },
-                    { label: 'run e2e', text: 'bun run e2e' },
+                    { label: 'gh pr', text: '! gh pr merge 9 --squash --admin' },
+                    { label: 'bun run', text: '! bun run e2e' },
                   ],
-                  costUsd: 0.001,
                   skipped: null,
                 }
               : e.tool === 'clip_copied'
@@ -197,20 +196,20 @@ describe('band', () => {
       return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
     })
     await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
-    const answer = 'Opened https://x.dev/pr/9 — run `bun run e2e` next.'
+    const answer = 'Run `! gh pr merge 9 --squash --admin`, then `! bun run e2e`.'
     await $.turn.complete({ answer, reason: 'answer', turnId: 't1' } as never)
     expect(calls.find(c => c.tool === 'clip_suggest')?.args).toEqual({ answer })
 
     const ui = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await ui.find({ text: 'https://x.dev/pr/9' })).toBeDefined()
+    expect(await ui.find({ text: '! gh pr merge 9 --squash --admin' })).toBeDefined()
     await ui.press({ key: 'clip:1' })
-    expect(copied).toEqual(['bun run e2e'])
-    expect(toasts.at(-1)).toBe('Copied bun run e2e')
+    expect(copied).toEqual(['! bun run e2e'])
+    expect(toasts.at(-1)).toBe('Copied ! bun run e2e')
 
     const all = ui.press({ key: 'clip:all' })
     await clock.advance(1000)
     await all
-    expect(copied).toEqual(['bun run e2e', 'https://x.dev/pr/9', 'bun run e2e'])
+    expect(copied).toEqual(['! bun run e2e', '! gh pr merge 9 --squash --admin', '! bun run e2e'])
     expect(calls.filter(c => c.tool === 'clip_copied').map(c => c.args)).toEqual([
       { count: 1, index: 1 },
       { count: 2 },
@@ -219,7 +218,7 @@ describe('band', () => {
 
     await $.turn.start({ text: 'next', turnId: 't2' } as never)
     const after = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await after.find({ text: 'https://x.dev/pr/9' })).toBe(undefined)
+    expect(await after.find({ text: '! gh pr merge 9 --squash --admin' })).toBe(undefined)
     expect(await after.find({ text: 'engine' })).toBeDefined()
     await after.unmount()
   })

@@ -180,19 +180,20 @@ cannot take a note; the app says so rather than type into its prompt box.
 ### Copy suggestions
 
 When a turn ends with an answer, the mod sends its last message to
-`clip_suggest`. If it holds a fenced block, a command or identifier in
-backticks, a link, a path, a command line, a git SHA or a `#123` ref, the app asks
-one bare `claude -p` which exact strings you would copy, and keeps only those
-that appear verbatim in the message, at most three. A session whose last three
-offers went uncopied is left alone until you copy one, and gets a single
-probe every 30 minutes. The band grows into a
+`clip_suggest`. The app offers only what Claude hands you to run in the prompt
+with the `!` prefix: a line, indented or inside a fence, that opens with `! `, or
+an inline code span that does. SHAs, paths, links, PR numbers and identifiers are
+never offered, and neither is a message with no such command. Each command is
+offered with its `! ` so a paste into the prompt runs it, deduplicated, at most
+three, with no model call. A session whose last three offers went uncopied is
+left alone until you copy one, and gets a single probe every 30 minutes. The band grows into a
 column, up to its 4 rows, and offers each on its own row as a `copy` badge and
 the text itself:
 
 ```
 ✦ tt  #7 Claude mods (doing)  …  n: next prompt  a: copy all
-1:  copy  https://x.dev/pr/9
-2:  copy  bun run e2e
+1:  copy  ! gh pr merge 9 --squash --admin
+2:  copy  ! gcloud auth login
 ```
 
 Claude Code has no render site under its status line, and a pane docks on the
@@ -202,8 +203,7 @@ of the screen a mod can draw.
 A digit in the empty prompt (or a click) copies that one; `a`, with the band
 focused, copies all of them in order, apart enough that a clipboard manager
 keeps each entry. The offer clears when the next turn starts. It is on by
-default, held to its own daily budget, and its question is editable
-(Settings → Agent Board → Copy suggestions). Each copy is recorded through
+default (Settings → Agent Board → Copy suggestions). Each copy is recorded through
 `clip_copied` as a `clip_suggest.copied` event.
 
 The `$.state` contract is `types/index.d.ts`, and the pure logic in

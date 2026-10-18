@@ -396,33 +396,17 @@ impl Default for NextPromptSettings {
     }
 }
 
-/// The Claude mod's end-of-turn clipboard question: after each turn that printed something
-/// copyable, one bare `claude -p` asks what the user would copy. `question` is the instruction.
+/// The Claude mod's end-of-turn copy offer: the `! <command>` lines Claude hands the user.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
 pub struct ClipSuggestSettings {
     pub enabled: bool,
-    pub question: String,
-    pub model: String,
-    /// Spend past this in a local day stops asking until tomorrow.
-    pub daily_budget_usd: f64,
 }
-
-pub const DEFAULT_CLIP_SUGGEST_QUESTION: &str = "Which exact strings from this coding agent's \
-last message would the person want on their clipboard next: a command to run, a URL, a PR or \
-issue link, a path, a value, a short snippet? Answer each verbatim as it should be pasted, with \
-a label of a few words, most useful first, at most three. Answer an empty list if nothing is \
-worth copying.";
 
 impl Default for ClipSuggestSettings {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            question: DEFAULT_CLIP_SUGGEST_QUESTION.to_string(),
-            model: "haiku".to_string(),
-            daily_budget_usd: 0.20,
-        }
+        Self { enabled: true }
     }
 }
 

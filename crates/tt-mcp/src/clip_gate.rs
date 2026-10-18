@@ -1,5 +1,6 @@
-//! When a finished turn is worth a clipboard question at all: the message must hold
-//! something copyable, and a session whose last offers went unused is left alone.
+//! What a finished turn offers the clipboard: only the `! <command>` lines Claude hands
+//! the user to run in the Claude Code prompt, and never again for a session whose last
+//! offers went unused.
 
 use std::collections::HashMap;
 
@@ -8,93 +9,64 @@ const IGNORED_LIMIT: u32 = 3;
 /// How long a quiet session stays quiet before one probe offer is allowed through, so a
 /// copy (which needs an offer) can still reset it.
 const QUIET_MS: i64 = 30 * 60 * 1000;
+const MAX_OFFERS: usize = 3;
+const LABEL_MAX_CHARS: usize = 40;
 
-const COMMANDS: &[&str] = &[
-    "git", "cargo", "bun", "bunx", "npm", "npx", "pnpm", "yarn", "gh", "tt", "docker", "kubectl",
-    "curl", "ssh", "sudo", "brew", "apt", "pip", "python", "python3", "node", "rustup", "jq",
-    "grep", "chmod", "export", "cd", "ls", "rm", "mv", "cp", "mkdir", "just", "tsc",
-];
-
-/// Whether `answer` holds a fenced block, a useful inline code span, a URL, an absolute or
-/// `~/` path, a command line, a git SHA or a `#123` ref. Plain prose holds none.
-pub(crate) fn copyable(answer: &str) -> bool {
-    has_fence(answer)
-        || has_code_span(answer)
-        || answer.lines().any(command_line)
-        || answer.split_whitespace().any(|raw| {
-            let word = raw.trim_matches(is_wrapper);
-            url(word) || path(word) || issue_ref(word)
-        })
-        || answer.split(|c: char| !c.is_ascii_alphanumeric()).any(sha)
+/// One command to copy, `text` as it is pasted into the Claude Code prompt.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Offer {
+    pub label: String,
+    pub text: String,
 }
 
-fn has_fence(answer: &str) -> bool {
-    answer.lines().any(|l| {
-        let l = l.trim_start();
-        l.starts_with("```") || l.starts_with("~~~")
-    })
-}
-
-/// Backtick spans that read as a command, path or identifier rather than an emphasised word.
-fn has_code_span(answer: &str) -> bool {
-    answer.lines().any(|line| line.split('`').skip(1).step_by(2).any(code_like))
-}
-
-fn code_like(span: &str) -> bool {
-    let span = span.trim();
-    if span.chars().count() < 3 {
-        return false;
+/// The `! <command>` the answer hands the user, in order, deduplicated, at most three. A
+/// command is a line (indented, or inside a fence) that opens with `! `, or an inline code
+/// span that does; a trailing `\` continues it onto the next line. The text keeps the `! `
+/// so a paste into the prompt runs it.
+pub(crate) fn offers(answer: &str) -> Vec<Offer> {
+    let mut found: Vec<String> = Vec::new();
+    let mut lines = answer.lines();
+    while let Some(line) = lines.next() {
+        let line = line.trim();
+        if line.starts_with("```") || line.starts_with("~~~") {
+            continue;
+        }
+        if let Some(mut command) = bang(line).map(str::to_string) {
+            while command.ends_with('\\') {
+                let Some(next) = lines.next() else { break };
+                command.push('\n');
+                command.push_str(next.trim_end());
+            }
+            found.push(command);
+        } else {
+            found.extend(line.split('`').skip(1).step_by(2).filter_map(bang).map(str::to_string));
+        }
     }
-    let symbolic = span.chars().any(|c| !c.is_ascii_alphanumeric());
-    let camel = span.chars().skip(1).any(|c| c.is_ascii_uppercase())
-        && span.chars().any(|c| c.is_ascii_lowercase());
-    symbolic || camel
-}
-
-fn is_wrapper(c: char) -> bool {
-    matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '"' | '\'' | '`' | '*')
-        || matches!(c, ',' | ';' | ':' | '.' | '!' | '?')
-}
-
-fn url(word: &str) -> bool {
-    word.split_once("://").is_some_and(|(scheme, rest)| {
-        !rest.is_empty()
-            && !scheme.is_empty()
-            && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
-    })
-}
-
-fn path(word: &str) -> bool {
-    let rest = word.strip_prefix("~/").or_else(|| word.strip_prefix('/'));
-    rest.is_some_and(|r| r.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '.' || c == '_'))
-}
-
-fn issue_ref(word: &str) -> bool {
-    let digits = word.rsplit_once('#').map(|(_, n)| n);
-    digits.is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
-}
-
-/// 7–40 hex digits with both a digit and a letter, so counts and words like `defaced`
-/// are not SHAs.
-fn sha(piece: &str) -> bool {
-    (7..=40).contains(&piece.len())
-        && piece.chars().all(|c| c.is_ascii_hexdigit())
-        && piece.chars().any(|c| c.is_ascii_digit())
-        && piece.chars().any(|c| c.is_ascii_alphabetic())
-}
-
-/// A `$ ` prompt line, or a line opening with a well-known tool and an argument and not
-/// closing like a sentence.
-fn command_line(line: &str) -> bool {
-    let line = line.trim().trim_start_matches(['-', '*', ' ']);
-    if line.starts_with("$ ") {
-        return true;
+    let mut out: Vec<Offer> = Vec::new();
+    for command in found {
+        let text = format!("! {}", command.trim_end());
+        if out.len() < MAX_OFFERS && !out.iter().any(|o| o.text == text) {
+            out.push(Offer { label: label(&text[2..]), text });
+        }
     }
-    let mut words = line.split_whitespace();
-    let (Some(first), Some(_)) = (words.next(), words.next()) else {
-        return false;
-    };
-    COMMANDS.contains(&first) && !line.ends_with(['.', '?'])
+    out
+}
+
+/// The command after a leading `! `, or `None` when `text` does not open with one.
+fn bang(text: &str) -> Option<&str> {
+    let command = text.trim_start().strip_prefix("! ")?.trim();
+    (!command.is_empty()).then_some(command)
+}
+
+/// The program and its first argument, past any `cd dir &&` that only sets the stage.
+fn label(command: &str) -> String {
+    let step = command
+        .split(['&', ';', '|'])
+        .map(str::trim)
+        .find(|s| !s.is_empty() && !s.starts_with("cd "))
+        .unwrap_or(command);
+    let label: Vec<&str> = step.split_whitespace().take(2).collect();
+    label.join(" ").chars().take(LABEL_MAX_CHARS).collect()
 }
 
 /// Per-session count of offers that went uncopied.
@@ -136,49 +108,62 @@ impl Backoff {
 mod tests {
     use super::*;
 
+    fn texts(answer: &str) -> Vec<String> {
+        offers(answer).into_iter().map(|o| o.text).collect()
+    }
+
     #[test]
-    fn prose_holds_nothing_copyable() {
-        for prose in [
-            "Done. The tests pass and nothing else changed.",
-            "I looked at the `config` and the `main` branch, and it is fine.",
-            "Tagged as # and / alone, and and/or either.",
-            "The 1234567 items took 100 ms, a defaced page.",
-            "Make sure it works. Cargo is great.",
+    fn a_status_report_with_identifiers_offers_nothing() {
+        let report = "Merged as 58f357dd (#783).\n\nThe `clip_suggest.skipped` and \
+`clip_suggest.asked` events fire from crates/tt-mcp/src/suggest.rs, see \
+https://github.com/o/r/pull/783 and ~/code/p/notes.md.\n```sh\ncargo test --all\n```";
+        assert_eq!(texts(report), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_bang_line_in_a_fence_is_offered_with_its_bang() {
+        let reply = "Run this:\n\n```sh\n! cd ~/x && gh pr merge 780 --squash --admin\n```\n";
+        let got = offers(reply);
+        assert_eq!(
+            got,
+            vec![Offer {
+                label: "gh pr".to_string(),
+                text: "! cd ~/x && gh pr merge 780 --squash --admin".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn indented_and_inline_bang_commands_are_offered() {
+        assert_eq!(texts("Sign in:\n    ! gcloud auth login\n"), ["! gcloud auth login"]);
+        assert_eq!(texts("Type `! gcloud auth login` first."), ["! gcloud auth login"]);
+        assert_eq!(label("gcloud auth login"), "gcloud auth");
+    }
+
+    #[test]
+    fn a_bang_elsewhere_is_not_a_command() {
+        for text in [
+            "Done! All green.",
+            "Skip it ! really",
+            "```rust\nif a != b {}\n```",
+            "![img](x.png)",
+            "Use `a != b` here and `!x` there.",
             "",
         ] {
-            assert!(!copyable(prose), "{prose:?}");
+            assert_eq!(texts(text), Vec::<String>::new(), "{text:?}");
         }
     }
 
     #[test]
-    fn each_kind_of_copyable_is_found() {
-        for text in [
-            "Try:\n```sh\nbun run e2e\n```",
-            "Run `cargo test -p tt-store` now.",
-            "It lives in `Dispatcher::clip_suggest`.",
-            "Rename `clipGate` first.",
-            "Open https://github.com/o/r/pull/9.",
-            "(see https://x.dev)",
-            "Wrote /tmp/out/report.html",
-            "Saved to ~/code/p/notes.md.",
-            "$ tt task ls",
-            "- git push -u origin main",
-            "cargo test --all",
-            "Fixed in 3bb216b9 upstream.",
-            "range 9ff29d3..e615ca3",
-            "See PR #745 for the rest.",
-            "Merged (#779)",
-            "o/r#12 is related",
-        ] {
-            assert!(copyable(text), "{text:?}");
-        }
+    fn continued_lines_stay_one_command() {
+        let reply = "```\n! cargo test \\\n  -p tt-mcp\n```";
+        assert_eq!(texts(reply), ["! cargo test \\\n  -p tt-mcp"]);
     }
 
     #[test]
-    fn sentences_that_start_like_commands_are_prose() {
-        assert!(!copyable("git is a version control system."));
-        assert!(!copyable("cd"));
-        assert!(!copyable("Did you run cargo test?"));
+    fn offers_are_deduplicated_and_capped_at_three() {
+        let reply = "! a one\n! a one\n`! b two`\n! c three\n! d four";
+        assert_eq!(texts(reply), ["! a one", "! b two", "! c three"]);
     }
 
     #[test]

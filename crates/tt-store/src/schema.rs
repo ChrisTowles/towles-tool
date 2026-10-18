@@ -225,14 +225,8 @@ CREATE TABLE IF NOT EXISTS watched_issues (
 );
 ";
 
-/// v29: the clip suggester's own daily spend ledger.
-const SCHEMA_CLIP_SPEND_V29: &str = "\
-CREATE TABLE IF NOT EXISTS clip_spend (
-    day TEXT PRIMARY KEY,
-    calls INTEGER NOT NULL,
-    cost_usd REAL NOT NULL
-);
-";
+/// v31: the clip suggester makes no model call, so its spend ledger is gone.
+const DROP_CLIP_SPEND_V31: &str = "DROP TABLE IF EXISTS clip_spend;";
 
 /// v30: the personal Slack agents are gone; their tables go with them.
 const DROP_AGENTS_V30: &str = "\
@@ -305,8 +299,8 @@ impl Store {
         self.migrate_queue_snoozes_until_ci_v27()?;
         self.migrate_issues_assignees_v28()?;
         self.conn.execute_batch(SCHEMA_WATCHED_ISSUES_V28)?;
-        self.conn.execute_batch(SCHEMA_CLIP_SPEND_V29)?;
         self.conn.execute_batch(DROP_AGENTS_V30)?;
+        self.conn.execute_batch(DROP_CLIP_SPEND_V31)?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",

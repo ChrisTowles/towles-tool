@@ -8,18 +8,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Result, Store};
 
-/// Each of the mod's model questions keeps its own daily budget.
+/// The mod's model questions each keep their own daily budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpendLedger {
     NextPrompt,
-    Clip,
 }
 
 impl SpendLedger {
     fn table(self) -> &'static str {
         match self {
             SpendLedger::NextPrompt => "suggest_spend",
-            SpendLedger::Clip => "clip_spend",
         }
     }
 }
@@ -248,8 +246,5 @@ mod tests {
         store.add_model_spend(next, "2026-10-15", 0.5).unwrap();
         assert!((store.model_spend(next, "2026-10-15").unwrap() - 0.75).abs() < 1e-9);
         assert_eq!(store.model_spend(next, "2026-10-16").unwrap(), 0.0);
-        assert_eq!(store.model_spend(SpendLedger::Clip, "2026-10-15").unwrap(), 0.0);
-        store.add_model_spend(SpendLedger::Clip, "2026-10-15", 0.1).unwrap();
-        assert!((store.model_spend(next, "2026-10-15").unwrap() - 0.75).abs() < 1e-9);
     }
 }
