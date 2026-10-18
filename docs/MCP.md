@@ -134,14 +134,15 @@ PTY's `input_at_ms` through `InboxHost`, as a keystroke would.
 persistence) with the question from settings, the session's work profile and
 the prompts typed after similar turns in the last 30 days of transcripts
 (`tt_claude_sessions::next_prompt`, rebuilt hourly off the call path).
-`clip_suggest` is held the same way against `clipSuggest` and its own
-`clip_spend` row. Before the model call the dispatcher skips a message with
-nothing copyable in it (`skipped: "prose"`, `clip_gate`) and a session that left
-its last 3 offers uncopied (`skipped: "ignored"`, in memory, per
-`X-TT-Session`), each as a `clip_suggest.skipped` event; a `clip_copied` from the
-session resets the count, and a quiet session gets one probe offer every 30
-minutes. The host drops any offered string that is not verbatim in the message
-(`tt_claude_sessions::clip`). The mod denies the model all six of these tools.
+`clip_suggest` makes no model call and spends nothing. It extracts the
+`! <command>` lines Claude hands the user (a line opening with `! `, indented or
+fenced, or an inline code span that does; `clip_gate`) and returns the command after the `! `
+(a pasted `! ` would stack on the prompt's own bash mode), deduplicated, at
+most three. A message with none is skipped (`skipped: "no-bang-command"`), as is
+a session that left its last 3 offers uncopied (`skipped: "ignored"`, in memory,
+per `X-TT-Session`), each as a `clip_suggest.skipped` event; offers emit
+`clip_suggest.asked` with `items`. A `clip_copied` from the session resets the
+count, and a quiet session gets one probe offer every 30 minutes. The mod denies the model all six of these tools.
 
 **`summon` is the one tool that interrupts**: one desktop notification, then
 a chime every 4 s until the user types into the *caller's* terminal, its PTY

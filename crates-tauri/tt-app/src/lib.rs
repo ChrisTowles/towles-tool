@@ -753,7 +753,6 @@ pub fn run() {
             inbox::inbox_send,
             inbox::inbox_state,
             next_prompt::next_prompt_spend_today,
-            next_prompt::clip_spend_today,
             task::task_base_branches,
             task::task_check_branch,
             task::task_create,

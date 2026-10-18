@@ -233,12 +233,11 @@ pub fn tool_definitions() -> Value {
         },
         {
             "name": "clip_suggest",
-            "description": "For the towles-tool Claude mod only; agents never call it. Asks one context-free model question for which strings of the agent's last message the user would copy, within their daily budget.",
+            "description": "For the towles-tool Claude mod only; agents never call it. Offers the `! <command>` lines of the agent's last message for the user to copy; makes no model call.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "answer": { "type": "string", "description": "The agent's last message." },
-                    "taskId": { "type": "integer", "description": "The session's board task, for its goal." },
                 },
                 "required": ["answer"],
             },

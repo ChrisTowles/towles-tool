@@ -1848,88 +1848,68 @@ impl SuggestHost for FakeSuggest {
             cost_usd: Some(self.0),
         })
     }
+}
 
-    fn clip(&self, request: ClipRequest) -> Result<ClipAnswer, String> {
-        let offer = ClipOffer { label: request.goal.unwrap_or_default(), text: request.answer };
-        Ok(ClipAnswer { items: vec![offer], cost_usd: Some(self.0) })
+fn clip_dispatcher(enabled: bool) -> Dispatcher {
+    dispatcher().with_clip_settings(tt_config::ClipSuggestSettings { enabled })
+}
+
+const STATUS_REPORT: &str = "Merged as 58f357dd (#783). The `clip_suggest.skipped` and \
+`clip_suggest.asked` events fire from crates/tt-mcp/src/suggest.rs; see \
+https://github.com/o/r/pull/783.";
+
+#[test]
+fn clip_suggest_offers_nothing_for_a_status_report_of_identifiers() {
+    let mut dispatcher = clip_dispatcher(true);
+    let report = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": STATUS_REPORT }));
+    assert_eq!(report["items"], json!([]));
+    assert_eq!(report["skipped"], "no-bang-command");
+    for answer in ["Done!", "a != b", "![img](x.png)"] {
+        let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": answer }));
+        assert_eq!(got["skipped"], "no-bang-command", "{answer}");
     }
 }
 
-fn clip_budgeted(cost: f64, budget: f64, enabled: bool) -> Dispatcher {
-    dispatcher().with_suggest_host(Box::new(FakeSuggest(cost))).with_clip_settings(
-        tt_config::ClipSuggestSettings { daily_budget_usd: budget, enabled, ..Default::default() },
-    )
+#[test]
+fn clip_suggest_offers_the_bang_commands_without_their_bang() {
+    let mut dispatcher = clip_dispatcher(true);
+    let fenced = "Merge it:\n```sh\n! cd ~/x && gh pr merge 780 --squash --admin\n```";
+    let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": fenced }));
+    assert_eq!(
+        got["items"],
+        json!([{ "label": "gh pr", "text": "cd ~/x && gh pr merge 780 --squash --admin" }])
+    );
+    assert_eq!(got["skipped"], Value::Null);
+    let inline = call_tool(
+        &mut dispatcher,
+        "clip_suggest",
+        json!({ "answer": "Sign in with `! gcloud auth login` first." }),
+    );
+    assert_eq!(inline["items"], json!([{ "label": "gcloud auth", "text": "gcloud auth login" }]));
 }
 
 #[test]
-fn clip_suggest_offers_the_hosts_items_until_the_budget_is_spent() {
-    let mut dispatcher = clip_budgeted(0.5, 1.0, true);
-    let task = dispatcher.store.add_task("t", "doing", None, Some("ship it"), NOW).unwrap();
-    let args = json!({ "answer": "`cargo test`", "taskId": task.id });
-    let first = call_tool(&mut dispatcher, "clip_suggest", args.clone());
-    assert_eq!(first["items"], json!([{ "label": "ship it", "text": "`cargo test`" }]));
-    assert_eq!(first["skipped"], Value::Null);
-    call_tool(&mut dispatcher, "clip_suggest", args.clone());
-    let over = call_tool(&mut dispatcher, "clip_suggest", args);
-    assert_eq!(over["items"], json!([]));
-    assert_eq!(over["skipped"], "budget");
-    let day = suggest::local_day(NOW);
-    let next = dispatcher.store.model_spend(tt_store::SpendLedger::NextPrompt, &day).unwrap();
-    assert_eq!(next, 0.0, "clip spend leaves /next's budget alone");
+fn clip_suggest_dedupes_and_caps_at_three() {
+    let mut dispatcher = clip_dispatcher(true);
+    let answer = "! a 1\n! a 1\n! b 2\n! c 3\n! d 4";
+    let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": answer }));
+    let texts: Vec<&str> =
+        got["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
+    assert_eq!(texts, ["a 1", "b 2", "c 3"]);
 }
 
 #[test]
-fn clip_suggest_turned_off_asks_nothing() {
-    let mut dispatcher = clip_budgeted(0.5, 1.0, false);
-    let off = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": "`x`" }));
+fn clip_suggest_turned_off_offers_nothing() {
+    let mut dispatcher = clip_dispatcher(false);
+    let off = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": "! cargo test" }));
     assert_eq!(off["skipped"], "disabled");
     assert_eq!(call_tool(&mut dispatcher, "clip_copied", json!({ "count": 2 }))["recorded"], true);
 }
 
-/// A host that fails the test if asked: the gate must answer before any model call.
-struct NeverAsked;
-impl SuggestHost for NeverAsked {
-    fn suggest(&self, _: SuggestRequest) -> Result<SuggestAnswer, String> {
-        unreachable!("no next_prompt here")
-    }
-
-    fn clip(&self, _: ClipRequest) -> Result<ClipAnswer, String> {
-        panic!("a prose-only turn must not reach the model");
-    }
-}
-
-#[test]
-fn clip_suggest_skips_prose_without_asking_the_model() {
-    let mut dispatcher = dispatcher().with_suggest_host(Box::new(NeverAsked)).with_clip_settings(
-        tt_config::ClipSuggestSettings { daily_budget_usd: 1.0, ..Default::default() },
-    );
-    let prose = call_tool(
-        &mut dispatcher,
-        "clip_suggest",
-        json!({ "answer": "Done. Nothing else changed, and the tests pass." }),
-    );
-    assert_eq!(prose["items"], json!([]));
-    assert_eq!(prose["skipped"], "prose");
-}
-
-#[test]
-fn clip_suggest_asks_for_a_fence_a_url_or_a_path() {
-    for answer in [
-        "```sh\nbun run e2e\n```",
-        "See https://x.dev/pr/9",
-        "Wrote /tmp/report.html",
-    ] {
-        let mut dispatcher = clip_budgeted(0.0, 1.0, true);
-        let asked = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": answer }));
-        assert_eq!(asked["skipped"], Value::Null, "{answer}");
-        assert_eq!(asked["items"].as_array().map(Vec::len), Some(1), "{answer}");
-    }
-}
-
 #[test]
 fn clip_suggest_goes_quiet_after_three_ignored_offers_until_a_copy() {
-    let mut dispatcher = clip_budgeted(0.0, 1.0, true);
-    let args = json!({ "answer": "Run `cargo test`" });
+    let mut dispatcher = clip_dispatcher(true);
+    let args = json!({ "answer": "Run `! cargo test`" });
     let (mine, theirs) = (session("mine"), session("theirs"));
     for _ in 0..3 {
         let asked = call_tool_as(&mut dispatcher, "clip_suggest", args.clone(), &mine);

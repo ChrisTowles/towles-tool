@@ -287,7 +287,7 @@ export type UserSettings = {
   telemetry?: { retainDays?: number };
   /** The tt Claude mod's end-of-turn copy offer, capped per day. Rust reads it
    * (`tt_config::ClipSuggestSettings`); unset keys take its defaults. */
-  clipSuggest?: { enabled?: boolean; question?: string; model?: string; dailyBudgetUsd?: number };
+  clipSuggest?: { enabled?: boolean };
   /** Rust reads it (`tt_config::UpdatesSettings`); unset means the stable channel. */
   updates?: { channel?: UpdateChannel };
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is

@@ -164,16 +164,12 @@ async function askNext($: EngineInterface): Promise<string> {
 /** A turn's question, so a late answer to an older turn never replaces a newer one's. */
 let clipTurn = 0
 
-/** One model call per finished turn; the app skips it for prose, for a session ignoring its
- * offers, and past the budget. */
+/** The app offers the `! <command>` lines of a finished turn's message, and nothing for any
+ * other message or a session ignoring its offers. No model is involved. */
 async function askClip($: EngineInterface, answer: string) {
   const turn = ++clipTurn
   try {
-    const task = (await read($, snapshot))?.task
-    const raw = await call<unknown>($, 'clip_suggest', {
-      answer: clipAnswer(answer),
-      ...(task ? { taskId: task.id } : {}),
-    })
+    const raw = await call<unknown>($, 'clip_suggest', { answer: clipAnswer(answer) })
     if (turn !== clipTurn) return
     await update($, clips, () => offersFrom(raw))
   } catch {
