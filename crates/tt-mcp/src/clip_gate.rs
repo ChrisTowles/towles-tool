@@ -21,8 +21,8 @@ pub(crate) struct Offer {
 
 /// The `! <command>` the answer hands the user, in order, deduplicated, at most three. A
 /// command is a line (indented, or inside a fence) that opens with `! `, or an inline code
-/// span that does; a trailing `\` continues it onto the next line. The text keeps the `! `
-/// so a paste into the prompt runs it.
+/// span that does; a trailing `\` continues it onto the next line. The text is the command
+/// alone: the prompt is already in bash mode when it is pasted, so a pasted `! ` would stack.
 pub(crate) fn offers(answer: &str) -> Vec<Offer> {
     let mut found: Vec<String> = Vec::new();
     let mut lines = answer.lines();
@@ -44,9 +44,9 @@ pub(crate) fn offers(answer: &str) -> Vec<Offer> {
     }
     let mut out: Vec<Offer> = Vec::new();
     for command in found {
-        let text = format!("! {}", command.trim_end());
+        let text = command.trim_end().to_string();
         if out.len() < MAX_OFFERS && !out.iter().any(|o| o.text == text) {
-            out.push(Offer { label: label(&text[2..]), text });
+            out.push(Offer { label: label(&text), text });
         }
     }
     out
@@ -121,23 +121,29 @@ https://github.com/o/r/pull/783 and ~/code/p/notes.md.\n```sh\ncargo test --all\
     }
 
     #[test]
-    fn a_bang_line_in_a_fence_is_offered_with_its_bang() {
+    fn a_bang_line_in_a_fence_is_offered_without_its_bang() {
         let reply = "Run this:\n\n```sh\n! cd ~/x && gh pr merge 780 --squash --admin\n```\n";
         let got = offers(reply);
         assert_eq!(
             got,
             vec![Offer {
                 label: "gh pr".to_string(),
-                text: "! cd ~/x && gh pr merge 780 --squash --admin".to_string()
+                text: "cd ~/x && gh pr merge 780 --squash --admin".to_string()
             }]
         );
     }
 
     #[test]
     fn indented_and_inline_bang_commands_are_offered() {
-        assert_eq!(texts("Sign in:\n    ! gcloud auth login\n"), ["! gcloud auth login"]);
-        assert_eq!(texts("Type `! gcloud auth login` first."), ["! gcloud auth login"]);
+        assert_eq!(texts("Sign in:\n    ! gcloud auth login\n"), ["gcloud auth login"]);
+        assert_eq!(texts("Type `! gcloud auth login` first."), ["gcloud auth login"]);
         assert_eq!(label("gcloud auth login"), "gcloud auth");
+    }
+
+    #[test]
+    fn no_offer_text_starts_with_a_bang() {
+        let reply = "! a one\n`! b two`\n    ! c three";
+        assert!(offers(reply).iter().all(|o| !o.text.starts_with('!')));
     }
 
     #[test]
@@ -157,13 +163,13 @@ https://github.com/o/r/pull/783 and ~/code/p/notes.md.\n```sh\ncargo test --all\
     #[test]
     fn continued_lines_stay_one_command() {
         let reply = "```\n! cargo test \\\n  -p tt-mcp\n```";
-        assert_eq!(texts(reply), ["! cargo test \\\n  -p tt-mcp"]);
+        assert_eq!(texts(reply), ["cargo test \\\n  -p tt-mcp"]);
     }
 
     #[test]
     fn offers_are_deduplicated_and_capped_at_three() {
         let reply = "! a one\n! a one\n`! b two`\n! c three\n! d four";
-        assert_eq!(texts(reply), ["! a one", "! b two", "! c three"]);
+        assert_eq!(texts(reply), ["a one", "b two", "c three"]);
     }
 
     #[test]

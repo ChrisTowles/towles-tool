@@ -184,7 +184,7 @@ When a turn ends with an answer, the mod sends its last message to
 with the `!` prefix: a line, indented or inside a fence, that opens with `! `, or
 an inline code span that does. SHAs, paths, links, PR numbers and identifiers are
 never offered, and neither is a message with no such command. Each command is
-offered with its `! ` so a paste into the prompt runs it, deduplicated, at most
+offered without its `! `, since the prompt is already in bash mode when you paste, deduplicated, at most
 three, with no model call. A session whose last three offers went uncopied is
 left alone until you copy one, and gets a single probe every 30 minutes. The band grows into a
 column, up to its 4 rows, and offers each on its own row as a `copy` badge and
@@ -192,8 +192,8 @@ the text itself:
 
 ```
 ✦ tt  #7 Claude mods (doing)  …  n: next prompt  a: copy all
-1:  copy  ! gh pr merge 9 --squash --admin
-2:  copy  ! gcloud auth login
+1:  copy  gh pr merge 9 --squash --admin
+2:  copy  gcloud auth login
 ```
 
 Claude Code has no render site under its status line, and a pane docks on the

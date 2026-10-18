@@ -136,8 +136,8 @@ the prompts typed after similar turns in the last 30 days of transcripts
 (`tt_claude_sessions::next_prompt`, rebuilt hourly off the call path).
 `clip_suggest` makes no model call and spends nothing. It extracts the
 `! <command>` lines Claude hands the user (a line opening with `! `, indented or
-fenced, or an inline code span that does; `clip_gate`) and returns them, `! `
-kept so a paste into the Claude Code prompt runs the command, deduplicated, at
+fenced, or an inline code span that does; `clip_gate`) and returns the command after the `! `
+(a pasted `! ` would stack on the prompt's own bash mode), deduplicated, at
 most three. A message with none is skipped (`skipped: "no-bang-command"`), as is
 a session that left its last 3 offers uncopied (`skipped: "ignored"`, in memory,
 per `X-TT-Session`), each as a `clip_suggest.skipped` event; offers emit

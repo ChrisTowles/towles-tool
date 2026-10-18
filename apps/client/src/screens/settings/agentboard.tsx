@@ -986,7 +986,7 @@ function ClipSuggestEditor({
     <ToggleRow
       id="clip-suggest"
       label="Copy suggestions"
-      description="When Claude hands you a command to run with the ! prefix, the tt Claude mod's band offers it, ! included, so a paste into the prompt runs it. 1–3 copies one, a copies all in order."
+      description="When Claude hands you a command to run with the ! prefix, the tt Claude mod's band offers the command to paste into the prompt. 1–3 copies one, a copies all in order."
       checked={value.enabled ?? true}
       onCheckedChange={(enabled) => {
         onChange({ ...value, enabled });

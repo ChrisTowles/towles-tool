@@ -1871,13 +1871,13 @@ fn clip_suggest_offers_nothing_for_a_status_report_of_identifiers() {
 }
 
 #[test]
-fn clip_suggest_offers_the_bang_commands_with_their_bang() {
+fn clip_suggest_offers_the_bang_commands_without_their_bang() {
     let mut dispatcher = clip_dispatcher(true);
     let fenced = "Merge it:\n```sh\n! cd ~/x && gh pr merge 780 --squash --admin\n```";
     let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": fenced }));
     assert_eq!(
         got["items"],
-        json!([{ "label": "gh pr", "text": "! cd ~/x && gh pr merge 780 --squash --admin" }])
+        json!([{ "label": "gh pr", "text": "cd ~/x && gh pr merge 780 --squash --admin" }])
     );
     assert_eq!(got["skipped"], Value::Null);
     let inline = call_tool(
@@ -1885,7 +1885,7 @@ fn clip_suggest_offers_the_bang_commands_with_their_bang() {
         "clip_suggest",
         json!({ "answer": "Sign in with `! gcloud auth login` first." }),
     );
-    assert_eq!(inline["items"], json!([{ "label": "gcloud auth", "text": "! gcloud auth login" }]));
+    assert_eq!(inline["items"], json!([{ "label": "gcloud auth", "text": "gcloud auth login" }]));
 }
 
 #[test]
@@ -1895,7 +1895,7 @@ fn clip_suggest_dedupes_and_caps_at_three() {
     let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": answer }));
     let texts: Vec<&str> =
         got["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
-    assert_eq!(texts, ["! a 1", "! b 2", "! c 3"]);
+    assert_eq!(texts, ["a 1", "b 2", "c 3"]);
 }
 
 #[test]

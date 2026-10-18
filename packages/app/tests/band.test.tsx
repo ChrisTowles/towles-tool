@@ -185,8 +185,8 @@ describe('band', () => {
             : e.tool === 'clip_suggest'
               ? {
                   items: [
-                    { label: 'gh pr', text: '! gh pr merge 9 --squash --admin' },
-                    { label: 'bun run', text: '! bun run e2e' },
+                    { label: 'gh pr', text: 'gh pr merge 9 --squash --admin' },
+                    { label: 'bun run', text: 'bun run e2e' },
                   ],
                   skipped: null,
                 }
@@ -201,15 +201,15 @@ describe('band', () => {
     expect(calls.find(c => c.tool === 'clip_suggest')?.args).toEqual({ answer })
 
     const ui = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await ui.find({ text: '! gh pr merge 9 --squash --admin' })).toBeDefined()
+    expect(await ui.find({ text: 'gh pr merge 9 --squash --admin' })).toBeDefined()
     await ui.press({ key: 'clip:1' })
-    expect(copied).toEqual(['! bun run e2e'])
-    expect(toasts.at(-1)).toBe('Copied ! bun run e2e')
+    expect(copied).toEqual(['bun run e2e'])
+    expect(toasts.at(-1)).toBe('Copied bun run e2e')
 
     const all = ui.press({ key: 'clip:all' })
     await clock.advance(1000)
     await all
-    expect(copied).toEqual(['! bun run e2e', '! gh pr merge 9 --squash --admin', '! bun run e2e'])
+    expect(copied).toEqual(['bun run e2e', 'gh pr merge 9 --squash --admin', 'bun run e2e'])
     expect(calls.filter(c => c.tool === 'clip_copied').map(c => c.args)).toEqual([
       { count: 1, index: 1 },
       { count: 2 },
@@ -218,7 +218,7 @@ describe('band', () => {
 
     await $.turn.start({ text: 'next', turnId: 't2' } as never)
     const after = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await after.find({ text: '! gh pr merge 9 --squash --admin' })).toBe(undefined)
+    expect(await after.find({ text: 'gh pr merge 9 --squash --admin' })).toBe(undefined)
     expect(await after.find({ text: 'engine' })).toBeDefined()
     await after.unmount()
   })
