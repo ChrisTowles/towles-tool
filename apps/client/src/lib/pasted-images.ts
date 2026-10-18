@@ -1,6 +1,6 @@
-import { Result } from "better-result";
+import { Result } from "effect";
 import { ImageTooLarge } from "@/lib/errors";
-import { invoke } from "@/lib/tauri";
+import { invoke, ipcOr } from "@/lib/tauri";
 
 const PASTEABLE_IMAGE_MIMES = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"];
 
@@ -21,14 +21,14 @@ export type PastedImage = {
 /** Pull every image off a paste/drop's `DataTransfer`, decoded to base64. */
 export async function imagesFromDataTransfer(
   data: DataTransfer | null,
-): Promise<Result<PastedImage[], ImageTooLarge>> {
+): Promise<Result.Result<PastedImage[], ImageTooLarge>> {
   const files = Array.from(data?.items ?? [])
     .filter((it) => it.kind === "file" && isPasteableImage(it.type))
     .map((it) => it.getAsFile())
     .filter((f): f is File => f != null);
   const tooBig = files.find((f) => f.size > MAX_PASTED_IMAGE_BYTES);
   if (tooBig) {
-    return Result.err(
+    return Result.fail(
       new ImageTooLarge({
         name: tooBig.name || "that image",
         bytes: tooBig.size,
@@ -36,7 +36,7 @@ export async function imagesFromDataTransfer(
       }),
     );
   }
-  return Result.ok(await Promise.all(files.map((file, i) => readImageFile(file, i))));
+  return Result.succeed(await Promise.all(files.map((file, i) => readImageFile(file, i))));
 }
 
 /** The extension Slack keys its inline preview on; a bare name uploads as a file chip. */
@@ -46,8 +46,10 @@ export function imageExtension(mime: string): string {
 }
 
 export async function clipboardImageFromHost(): Promise<PastedImage | null> {
-  const result = await invoke<{ mime: string; dataBase64: string } | null>("read_clipboard_image");
-  const image = result.unwrapOr(null);
+  const image = await ipcOr(
+    invoke<{ mime: string; dataBase64: string } | null>("read_clipboard_image"),
+    null,
+  );
   if (!image) return null;
   return {
     // Two different screenshots can share a length, and a shared id removes both.

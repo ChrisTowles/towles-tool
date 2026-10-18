@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowClockwiseIcon,
@@ -72,12 +73,12 @@ export function QueryTab() {
     void flush();
     setRunning(true);
     const r = await telemetryQuery(selected.sql);
-    r.match({
-      ok: (res) => {
+    Result.match(r, {
+      onSuccess: (res) => {
         setResult(res);
         setError(null);
       },
-      err: (e) => {
+      onFailure: (e) => {
         if (!NotInTauri.is(e)) setError(errorMessage(e));
       },
     });
@@ -98,8 +99,8 @@ export function QueryTab() {
     setReloading(true);
     const r = await telemetryQueryReload();
     setReloading(false);
-    if (r.isErr()) {
-      if (!NotInTauri.is(r.error)) setError(errorMessage(r.error));
+    if (Result.isFailure(r)) {
+      if (!NotInTauri.is(r.failure)) setError(errorMessage(r.failure));
       return;
     }
     await run();
@@ -126,12 +127,12 @@ export function QueryTab() {
 
   async function addExamples() {
     const defaults = await defaultSavedQueries();
-    if (defaults.isErr()) {
-      if (!NotInTauri.is(defaults.error)) toast.error(errorMessage(defaults.error));
+    if (Result.isFailure(defaults)) {
+      if (!NotInTauri.is(defaults.failure)) toast.error(errorMessage(defaults.failure));
       return;
     }
     const before = settings?.savedQueries.length ?? 0;
-    const merged = withMissingSavedQueries(settings?.savedQueries ?? [], defaults.value);
+    const merged = withMissingSavedQueries(settings?.savedQueries ?? [], defaults.success);
     uiAction("telemetry.query_saved", "telemetry", "examples");
     if (merged.length === before) {
       toast.success("Every built-in example is already here");
@@ -139,7 +140,7 @@ export function QueryTab() {
     }
     update((s) => ({
       ...s,
-      savedQueries: withMissingSavedQueries(s.savedQueries, defaults.value),
+      savedQueries: withMissingSavedQueries(s.savedQueries, defaults.success),
     }));
     toast.success(`Added ${merged.length - before} example queries`);
   }

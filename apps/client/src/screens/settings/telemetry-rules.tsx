@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { Button, Dialog, Input, Switch } from "@cloudflare/kumo";
@@ -247,12 +248,12 @@ function ResetRulesButton({
     setBusy(true);
     const defaults = await defaultTelemetryRules();
     setBusy(false);
-    if (defaults.isErr()) {
-      if (!NotInTauri.is(defaults.error)) toast.error(defaults.error.message);
+    if (Result.isFailure(defaults)) {
+      if (!NotInTauri.is(defaults.failure)) toast.error(defaults.failure.message);
       return;
     }
     setOpen(false);
-    onChange(withDefaultTelemetryRules(rules, defaults.value));
+    onChange(withDefaultTelemetryRules(rules, defaults.success));
     uiAction("telemetry_rule.reset", "settings");
     toast.success("Rules reset to defaults");
   };

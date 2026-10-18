@@ -1,27 +1,27 @@
 // Chrome pane IPC + input translation. Mirrors crates-tauri/tt-app/src/browser.rs.
-import { Result } from "better-result";
-import { z } from "zod";
+import { Result, Schema } from "effect";
 import { NotInTauri, type IpcError } from "@/lib/errors";
-import { invoke, isTauri, rawChannel } from "@/lib/tauri";
+import { subscribe } from "@/lib/run";
+import { invoke, isTauri, rawChannel, runIpc } from "@/lib/tauri";
 
-const BrowserStateSchema = z.object({
-  paneId: z.string(),
-  phase: z.enum(["launching", "live", "parked", "poppedOut", "crashed"]),
-  url: z.string(),
-  title: z.string(),
-  canGoBack: z.boolean(),
-  canGoForward: z.boolean(),
-  detail: z.string().nullish(),
+const BrowserStateSchema = Schema.Struct({
+  paneId: Schema.String,
+  phase: Schema.Literals(["launching", "live", "parked", "poppedOut", "crashed"]),
+  url: Schema.String,
+  title: Schema.String,
+  canGoBack: Schema.Boolean,
+  canGoForward: Schema.Boolean,
+  detail: Schema.optional(Schema.NullOr(Schema.String)),
 });
-export type BrowserState = z.infer<typeof BrowserStateSchema>;
+export type BrowserState = typeof BrowserStateSchema.Type;
 
-const BrowserStatusSchema = z.object({
-  chromeFound: z.boolean(),
-  chromePath: z.string().nullish(),
+const BrowserStatusSchema = Schema.Struct({
+  chromeFound: Schema.Boolean,
+  chromePath: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 export const browserStatus = () =>
-  invoke("browser_status", {}, { schema: BrowserStatusSchema, timeoutMs: 5_000 });
+  runIpc(invoke("browser_status", {}, { schema: BrowserStatusSchema, timeout: 5_000 }));
 
 /** Open and close are serialized per pane: an unmount's fire-and-forget
  * close racing a remount's open would otherwise close the fresh target. */
@@ -44,56 +44,39 @@ export async function browserOpen(
   paneId: string,
   url: string | undefined,
   onFrame: (f: Uint8Array) => void,
-): Promise<Result<unknown, IpcError>> {
-  if (!isTauri()) return Result.err(new NotInTauri({ command: "browser_open" }));
+): Promise<Result.Result<unknown, IpcError>> {
+  if (!isTauri()) return Result.fail(new NotInTauri({ command: "browser_open" }));
   const channel = await rawChannel(onFrame);
   return chained(paneId, () =>
-    invoke("browser_open", { paneId, url, onFrame: channel }, { timeoutMs: 30_000 }),
+    runIpc(invoke("browser_open", { paneId, url, onFrame: channel }, { timeout: 30_000 })),
   );
 }
 
 export const browserNavigate = (
   paneId: string,
   to: { url?: string; action?: "back" | "forward" | "reload" },
-) => invoke("browser_navigate", { paneId, url: to.url, action: to.action });
+) => runIpc(invoke("browser_navigate", { paneId, url: to.url, action: to.action }));
 
 export const browserInput = (paneId: string, events: BrowserInputEvent[]) =>
-  invoke("browser_input", { paneId, events });
+  runIpc(invoke("browser_input", { paneId, events }));
 
 export const browserSetViewport = (paneId: string, width: number, height: number, dpr: number) =>
-  chained(paneId, () => invoke("browser_set_viewport", { paneId, width, height, dpr }));
+  chained(paneId, () => runIpc(invoke("browser_set_viewport", { paneId, width, height, dpr })));
 
 export const browserSetVisible = (paneId: string, visible: boolean) =>
-  chained(paneId, () => invoke("browser_set_visible", { paneId, visible }));
+  chained(paneId, () => runIpc(invoke("browser_set_visible", { paneId, visible })));
 
 export const browserCapture = (paneId: string) =>
-  invoke<string>("browser_capture", { paneId }, { timeoutMs: 15_000 });
+  runIpc(invoke<string>("browser_capture", { paneId }, { timeout: 15_000 }));
 
 export const browserClose = (paneId: string) =>
-  chained(paneId, () => invoke("browser_close", { paneId }));
+  chained(paneId, () => runIpc(invoke("browser_close", { paneId })));
 
-export const browserPopout = (paneId: string) => invoke("browser_popout", { paneId });
+export const browserPopout = (paneId: string) => runIpc(invoke("browser_popout", { paneId }));
 
 /** Subscribe to `browser://state`; unexpected payloads are logged and dropped. */
-export function subscribeBrowserState(handler: (state: BrowserState) => void): () => void {
-  if (!isTauri()) return () => {};
-  let disposed = false;
-  let unlisten: (() => void) | undefined;
-  void (async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    const sub = await listen<unknown>("browser://state", (event) => {
-      const parsed = BrowserStateSchema.safeParse(event.payload);
-      if (parsed.success) handler(parsed.data);
-      else console.error("browser://state: unexpected payload", parsed.error.issues);
-    });
-    if (disposed) sub();
-    else unlisten = sub;
-  })();
-  return () => {
-    disposed = true;
-    unlisten?.();
-  };
-}
+export const subscribeBrowserState = (handler: (state: BrowserState) => void): (() => void) =>
+  subscribe("browser://state", handler, BrowserStateSchema);
 
 // Input translation — pure, unit-tested. Shapes mirror `translate_input` in
 // browser.rs, which allowlists them before dispatching to CDP.

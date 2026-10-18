@@ -1,4 +1,4 @@
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { shellQuote } from "@/lib/agentboard/pty";
 
 /** One dev-server config from a checkout's Claude Desktop
@@ -18,7 +18,7 @@ export type LaunchConfigStatus = {
  * worth showing (e.g. a malformed launch.json); a folder without the file
  * resolves `Ok([])`. */
 export const launchConfigs = (dir: string) =>
-  invoke<LaunchConfigStatus[]>("launch_configs", { dir });
+  runIpc(invoke<LaunchConfigStatus[]>("launch_configs", { dir }));
 
 export const launchRegister = (
   dir: string,
@@ -26,7 +26,7 @@ export const launchRegister = (
   sessionId: string,
   port: number | null,
   command: string,
-) => invoke<void>("launch_register", { dir, name, sessionId, port, command });
+) => runIpc(invoke<void>("launch_register", { dir, name, sessionId, port, command }));
 
 const SAFE_TOKEN = /^[\w@%+=:,./-]+$/;
 

@@ -40,7 +40,10 @@ import {
 } from "@/lib/shortcuts";
 import { notePaneKey } from "@/lib/agentboard/prompt-submit";
 import { openExternalUrl } from "@/lib/open-url";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke, ipcOr, runIpc } from "@/lib/tauri";
+
+import { subscribe } from "@/lib/run";
+import { Result } from "effect";
 import { uiAction } from "@/lib/ui-action";
 import { useTerminalSearch, type TermBridge } from "@/components/terminal-view/search";
 import { PastePrompt, TermContextMenu, TermSearchBar } from "@/components/terminal-view/overlays";
@@ -51,6 +54,7 @@ import {
   MATCH_FILL,
   charAt,
 } from "@/components/terminal-view/paint";
+const send = (cmd: string, args: Record<string, unknown>) => fire(invoke(cmd, args));
 
 /** Rust owns the PTY and the state, keyed by `termId`; this paints
  * `terminal://frame` diffs. Many mount at once, so each filters events by id. */
@@ -91,11 +95,11 @@ export function TerminalView({
   // `termId` goes along so a relative path resolves against where this shell
   // has since `cd`'d, not its spawn `cwd`.
   const openPathInEditor = (link: Extract<TermLink, { kind: "path" }>) =>
-    void invoke("term_open_path", { path: link.path, cwd, line: link.line, termId });
+    send("term_open_path", { path: link.path, cwd, line: link.line, termId });
   const openPathInEditorRef = useRef(openPathInEditor);
   openPathInEditorRef.current = openPathInEditor;
   const revealPathExternally = (link: Extract<TermLink, { kind: "path" }>) =>
-    void invoke("term_reveal_path", { path: link.path, cwd, termId });
+    send("term_reveal_path", { path: link.path, cwd, termId });
 
   const bridgeRef = useRef<TermBridge | null>(null);
   const {
@@ -117,7 +121,7 @@ export function TerminalView({
     const text = pendingPaste;
     setPendingPaste(null);
     if (!text) return;
-    void invoke("term_paste", { termId, text, force: true });
+    send("term_paste", { termId, text, force: true });
   };
   const copyOnSelectRef = useCopyOnSelect();
   const shortcutsWorkInTerminalRef = useShortcutsWorkInTerminal();
@@ -441,48 +445,47 @@ export function TerminalView({
         return;
       }
 
-      const { listen } = await import("@tauri-apps/api/event");
-
-      const write = (data: string) => void invoke("term_write", { termId, data });
-      const scroll = (delta: number | null) => void invoke("term_scroll", { termId, delta });
+      const write = (data: string) => send("term_write", { termId, data });
+      const scroll = (delta: number | null) => send("term_scroll", { termId, delta });
       // Written in Rust: navigator.clipboard is unreliable under WebKitGTK.
       const copySelection = (markdown = false) => {
         if (markdown) uiAction("terminal.copy_markdown", "agentboard");
-        void invoke("term_copy", { termId, markdown });
+        send("term_copy", { termId, markdown });
       };
 
-      const onFrame = await listen<{ termId: string; frame: Frame }>("terminal://frame", (e) => {
-        if (e.payload.termId === termId) applyFrame(e.payload.frame);
-      });
-      if (disposed) return onFrame();
-      unlisteners.push(onFrame);
+      unlisteners.push(
+        subscribe<{ termId: string; frame: Frame }>("terminal://frame", (payload) => {
+          if (payload.termId === termId) applyFrame(payload.frame);
+        }),
+        subscribe<TermExit>("terminal://exit", (payload) => {
+          if (payload.termId === termId) onExitRef.current(payload);
+        }),
+      );
 
-      const onExitEvent = await listen<TermExit>("terminal://exit", (e) => {
-        if (e.payload.termId === termId) onExitRef.current(e.payload);
-      });
-      if (disposed) return onExitEvent();
-      unlisteners.push(onExitEvent);
-
-      const spawn = await invoke("term_start", {
-        termId,
-        cols: grid.cols,
-        rows: grid.rows,
-        cwd,
-        theme: resolveTermTheme(host),
-      });
+      const spawn = await runIpc(
+        invoke("term_start", {
+          termId,
+          cols: grid.cols,
+          rows: grid.rows,
+          cwd,
+          theme: resolveTermTheme(host),
+        }),
+      );
       // Say so on the canvas — there is no other surface for this pane's failure.
-      if (spawn.isErr()) {
+      if (Result.isFailure(spawn)) {
         ctx.fillStyle = theme.fg;
         setFont(0);
-        ctx.fillText(`could not start shell: ${spawn.error.message}`, 8, baseline + 8);
+        ctx.fillText(`could not start shell: ${spawn.failure.message}`, 8, baseline + 8);
         return;
       }
       started = true;
-      if (disposed) return void invoke("term_kill", { termId });
+      if (disposed) return send("term_kill", { termId });
+      // A frame emitted before the listener registered is repainted from here.
+      send("term_request_full", { termId });
 
       // Re-push on a theme change; the engine answers with a full frame.
       const themeObserver = new MutationObserver(() => {
-        void invoke("term_theme", { termId, theme: resolveTermTheme(host) });
+        send("term_theme", { termId, theme: resolveTermTheme(host) });
       });
       themeObserver.observe(document.documentElement, {
         attributes: true,
@@ -497,21 +500,23 @@ export function TerminalView({
         }
       };
       // Encoded against live terminal state — the view never builds escapes.
-      const sendKey = (event: KeyEventWire) => void invoke("term_key", { termId, event });
+      const sendKey = (event: KeyEventWire) => send("term_key", { termId, event });
       // needsConfirm answers a multi-line paste on a shell without brackets.
       const paste = (text: string) => {
         backToLive();
-        void invoke<{ needsConfirm: boolean }>("term_paste", { termId, text }).then((reply) => {
-          if (reply.unwrapOr(null)?.needsConfirm) setPendingPaste(text);
-        });
+        void ipcOr(invoke<{ needsConfirm: boolean }>("term_paste", { termId, text }), null).then(
+          (reply) => {
+            if (reply?.needsConfirm) setPendingPaste(text);
+          },
+        );
       };
       // Read in Rust: readText() rejects with NotAllowedError under WebKitGTK.
       const pasteClipboard = () => {
         backToLive();
-        void invoke<{ needsConfirm: boolean; text: string }>("term_paste_clipboard", {
-          termId,
-        }).then((reply) => {
-          const r = reply.unwrapOr(null);
+        void ipcOr(
+          invoke<{ needsConfirm: boolean; text: string }>("term_paste_clipboard", { termId }),
+          null,
+        ).then((r) => {
           if (r?.needsConfirm) setPendingPaste(r.text);
         });
       };
@@ -677,14 +682,13 @@ export function TerminalView({
         const cell = cellOf(e);
         // Shift claims the gesture from the program — the same override the
         // click path applies, and the only way into a tracked scrollback.
-        void invoke("term_wheel", { termId, x: cell.x, y: cell.y, lines, shift: e.shiftKey });
+        send("term_wheel", { termId, x: cell.x, y: cell.y, lines, shift: e.shiftKey });
       };
       const focusInput = () => input.focus({ preventScroll: true });
 
       bridgeRef.current = {
-        search: (q) =>
-          invoke<SearchMatch[]>("term_search", { termId, query: q }).then((r) => r.unwrapOr([])),
-        scrollTo: (row) => void invoke("term_scroll_to", { termId, row }),
+        search: (q) => ipcOr(invoke<SearchMatch[]>("term_search", { termId, query: q }), []),
+        scrollTo: (row) => send("term_scroll_to", { termId, row }),
         repaint: paintAll,
         focusTerm: focusInput,
         copy: copySelection,
@@ -692,7 +696,7 @@ export function TerminalView({
         selectAll: () => void select("all"),
         // The engine's answer: a selection off-viewport is still copyable.
         hasSelection: () => grid.selection,
-        clearScrollback: () => void invoke(TERM_CLEAR_COMMAND, { termId }),
+        clearScrollback: () => send(TERM_CLEAR_COMMAND, { termId }),
         openPath: (link) => {
           const handler = onOpenPathRef.current;
           if (handler) handler(link.path, link.line);
@@ -716,7 +720,7 @@ export function TerminalView({
             grid.cols = cols;
             grid.rows = rows;
           }
-          void invoke("term_resize", {
+          send("term_resize", {
             termId,
             cols,
             rows,
@@ -731,20 +735,22 @@ export function TerminalView({
       // Awaited by copy-on-select: `term_copy` is otherwise unordered.
       let lastSelect: Promise<unknown> = Promise.resolve();
       const select = (kind: "all" | "clear") => {
-        lastSelect = invoke("term_select", { termId, kind });
+        lastSelect = runIpc(invoke("term_select", { termId, kind }));
         return lastSelect;
       };
       // A raw report; tt-vt's gesture engine decides what it means.
       const pointer = (action: "press" | "drag" | "release", e: MouseEvent) => {
         const rect = canvas.getBoundingClientRect();
-        lastSelect = invoke("term_pointer", {
-          termId,
-          action,
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-          timeMs: e.timeStamp,
-          rectangle: e.altKey,
-        });
+        lastSelect = runIpc(
+          invoke("term_pointer", {
+            termId,
+            action,
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+            timeMs: e.timeStamp,
+            rectangle: e.altKey,
+          }),
+        );
         return lastSelect;
       };
       // Off the canvas rect, not `offsetX/offsetY`, so this also serves the
@@ -776,7 +782,7 @@ export function TerminalView({
         action: "press" | "release" | "motion",
         cell: { x: number; y: number },
       ) =>
-        void invoke("term_mouse", {
+        send("term_mouse", {
           termId,
           event: {
             action,
@@ -864,7 +870,7 @@ export function TerminalView({
       };
       const onMouseLeave = () => setHoveredLink(null);
       // OSC 52 writes are gated to the focused terminal in the backend.
-      const setFocus = (focused: boolean) => void invoke("term_focus", { termId, focused });
+      const setFocus = (focused: boolean) => send("term_focus", { termId, focused });
       const onFocus = () => setFocus(true);
       // A chord that moved focus never delivers its release here, and the
       // stale entry would eat an unrelated one.
@@ -911,7 +917,7 @@ export function TerminalView({
         // Never resize a hidden pane's PTY to a degenerate 2×1 grid — it
         // reflows the shell offscreen and panes come back stale.
         wasHidden = true;
-        void invoke("term_visibility", { termId, visible: false });
+        send("term_visibility", { termId, visible: false });
         return;
       }
       const cols = Math.max(2, Math.floor(host.clientWidth / cellW));
@@ -921,7 +927,7 @@ export function TerminalView({
       if (cols !== grid.cols || rows !== grid.rows) {
         grid.cols = cols;
         grid.rows = rows;
-        void invoke("term_resize", {
+        send("term_resize", {
           termId,
           cols,
           rows,
@@ -932,8 +938,8 @@ export function TerminalView({
       if (wasHidden) {
         // Ask for one full frame — the engine never resends clean rows.
         wasHidden = false;
-        void invoke("term_visibility", { termId, visible: true });
-        void invoke("term_request_full", { termId });
+        send("term_visibility", { termId, visible: true });
+        send("term_request_full", { termId });
       }
     });
     observer.observe(host);
@@ -945,7 +951,7 @@ export function TerminalView({
       observer.disconnect();
       for (const dispose of disposers) dispose();
       for (const unlisten of unlisteners) unlisten();
-      if (started) void invoke("term_kill", { termId });
+      if (started) send("term_kill", { termId });
     };
     // termId/cwd identify the shell; changing them means a different terminal.
   }, [termId, cwd, copyOnSelectRef, shortcutsWorkInTerminalRef, searchRef, setSearchOpen]);

@@ -1,3 +1,4 @@
+import { Result } from "effect";
 // A checkout's row under its repo header: the primary checkout is always one of
 // these, never merged into the repo header, so branch, diff and cost live here.
 import { useState } from "react";
@@ -171,7 +172,7 @@ export function FolderHeader({
     const trimmed = renameValue.trim();
     if (!task || !trimmed || trimmed === task.text) return;
     const result = await storeUpdateTask(task.id, trimmed, task.notes);
-    if (result.isErr()) toast.error(`Couldn't rename — ${result.error.message}`);
+    if (Result.isFailure(result)) toast.error(`Couldn't rename — ${result.failure.message}`);
   }
 
   return (

@@ -9,7 +9,6 @@ import {
   type AlertStatus,
 } from "@/lib/agentboard/status";
 import type { SessionData } from "@/lib/agentboard/types";
-import { COLOR_FADE_CLASS } from "@/lib/motion-presets";
 import { cn } from "@/lib/utils";
 
 /** Open ring = pending on you, filled = something happened, so the states don't
@@ -37,7 +36,7 @@ function StatusDot({ session }: { session: SessionData }) {
   if (st === "waiting") {
     return (
       <Hint label="agent waiting — needs your input">
-        <span className="relative block size-2 shrink-0 motion-safe:animate-in motion-safe:fade-in-0 duration-200">
+        <span className="relative block size-2 shrink-0">
           <span className="absolute inset-0 -m-1 animate-ping rounded-full bg-waiting/40 motion-reduce:animate-none" />
           <span className="absolute inset-0 -m-0.5 rounded-full border-2 border-waiting bg-waiting/30 ring-2 ring-waiting/25" />
         </span>
@@ -47,7 +46,7 @@ function StatusDot({ session }: { session: SessionData }) {
   if (st === "busy") {
     return (
       <Hint label="agent busy">
-        <span className="relative block size-2 shrink-0 motion-safe:animate-in motion-safe:fade-in-0 duration-200">
+        <span className="relative block size-2 shrink-0">
           <span className="absolute inset-0 -m-0.5 animate-pulse rounded-full bg-busy ring-3 ring-busy/30 motion-reduce:animate-none" />
         </span>
       </Hint>
@@ -58,7 +57,6 @@ function StatusDot({ session }: { session: SessionData }) {
       <span
         className={cn(
           "size-2 shrink-0 rounded-full",
-          COLOR_FADE_CLASS,
           st ? statusColor(st) : "bg-muted-foreground/40",
         )}
       />
@@ -70,8 +68,8 @@ function StatusDot({ session }: { session: SessionData }) {
 function BackgroundAgentsBadge({ n }: { n: number }) {
   return (
     <Hint label={`${n} background agent${n > 1 ? "s" : ""} still running — not waiting on you`}>
-      <span className="flex shrink-0 items-center gap-0.5 font-mono text-micro leading-none tabular-nums text-kumo-subtle">
-        <span className={cn("size-1.5 rounded-full", COLOR_FADE_CLASS, alertColor("background"))} />
+      <span className="flex shrink-0 items-center gap-0.5 font-mono text-micro leading-none text-kumo-subtle">
+        <span className={cn("size-1.5 rounded-full", alertColor("background"))} />
         {n}
       </span>
     </Hint>
@@ -82,11 +80,10 @@ function BackgroundAgentsBadge({ n }: { n: number }) {
  * `n` is a bare dot, for a count something beside it already says. */
 function DotCount({ status, n }: { status: AlertStatus; n?: number }) {
   return (
-    <span className="flex items-center gap-1 tabular-nums text-kumo-subtle">
+    <span className="flex items-center gap-1 text-kumo-subtle">
       <span
         className={cn(
           "size-1.5 rounded-full",
-          COLOR_FADE_CLASS,
           status === "waiting"
             ? "border-[1.5px] border-waiting bg-transparent"
             : alertColor(status),
@@ -118,8 +115,8 @@ export function CollapsedLive({ sessions }: { sessions: SessionData[] }) {
   return (
     <Hint label={`${n} running session${n > 1 ? "s" : ""} hidden — expand to see`}>
       <span className="flex shrink-0 items-center gap-1">
-        <span className={cn("size-2 rounded-full", COLOR_FADE_CLASS, color)} />
-        <span className="font-mono text-micro tabular-nums text-kumo-subtle">{n}</span>
+        <span className={cn("size-2 rounded-full", color)} />
+        <span className="font-mono text-micro text-kumo-subtle">{n}</span>
       </span>
     </Hint>
   );

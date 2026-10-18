@@ -31,7 +31,7 @@ import {
 import { NOT_LISTENING_HINT, inboxSend, useInbox } from "@/lib/inbox";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
-import type { Result } from "better-result";
+import { Result } from "effect";
 
 const TOOLS: { tool: AnnotationTool; icon: typeof PenIcon; title: string }[] = [
   { tool: "pen", icon: PenIcon, title: "Draw freehand" },
@@ -45,7 +45,7 @@ function pointFrom(e: React.PointerEvent<HTMLCanvasElement>) {
   return { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
 }
 
-export type CaptureFn = (rect: DOMRect) => Promise<Result<string, IpcError>>;
+export type CaptureFn = (rect: DOMRect) => Promise<Result.Result<string, IpcError>>;
 
 export function AnnotateSurface({
   folder,
@@ -201,9 +201,9 @@ export function AnnotateSurface({
     commitTextDraft();
     uiAction(`${telemetryPrefix}.feedback.capture`, "agentboard");
     const res = await capture(surface.getBoundingClientRect());
-    const shot = res.match({
-      ok: (png) => png,
-      err: (e) => {
+    const shot: string | null = Result.match(res, {
+      onSuccess: (png) => png,
+      onFailure: (e) => {
         toast.error(`Capture failed: ${errorMessage(e)}`);
         return null;
       },
@@ -226,36 +226,37 @@ export function AnnotateSurface({
     const written = await previewWriteFeedback(folder.name, [
       { mime: "image/png", dataBase64: captured },
     ]);
-    if (written.isErr()) {
+    if (Result.isFailure(written)) {
       setSending(false);
       uiAction(`${telemetryPrefix}.feedback.send`, "agentboard", "err");
-      toast.error(`Send failed: ${errorMessage(written.error)}`);
+      toast.error(`Send failed: ${errorMessage(written.failure)}`);
       return;
     }
     const sent =
       target.mode === "note"
-        ? (
+        ? Result.map(
             await inboxSend(
               target.sessionId,
               feedbackNote(comment, sourceLabel),
-              written.value,
+              written.success,
               true,
-            )
-          ).map(() => undefined)
+            ),
+            () => undefined,
+          )
         : await termWriteRetry(
             target.sessionId,
-            feedbackLaunch(comment, sourceLabel, written.value),
+            feedbackLaunch(comment, sourceLabel, written.success),
           );
     setSending(false);
-    sent.match({
-      ok: () => {
+    Result.match(sent, {
+      onSuccess: () => {
         uiAction(`${telemetryPrefix}.feedback.send`, "agentboard", "ok");
         toast.success(`Sent to ${target.label}`);
         setCaptured(null);
         setAnnotations([]);
         setTool(null);
       },
-      err: (e) => {
+      onFailure: (e) => {
         uiAction(`${telemetryPrefix}.feedback.send`, "agentboard", "err");
         toast.error(`Send failed: ${errorMessage(e)}`);
       },

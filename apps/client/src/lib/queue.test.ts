@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   advanceTarget,
@@ -146,7 +147,7 @@ describe("reasonChip", () => {
 describe("schema + nextItem", () => {
   it("parses the Rust shape and finds the head", () => {
     const raw = { next: dir(2), items: [item(1), item(2), item(3, { taskId: null, rank: null })] };
-    const parsed = TaskQueueSchema.parse(raw);
+    const parsed = Schema.decodeUnknownSync(TaskQueueSchema)(raw);
     expect(nextItem(parsed)?.title).toBe("t2");
   });
 });

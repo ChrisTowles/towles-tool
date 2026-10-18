@@ -1,3 +1,4 @@
+import { Effect, Result } from "effect";
 import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@cloudflare/kumo";
@@ -24,7 +25,7 @@ import { branchRedundant } from "@/lib/agentboard/folder-name";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
 import type { FolderData, RepoData } from "@/lib/agentboard/types";
 import { fmtAge, type PrItem, type TaskItem } from "@/lib/data";
-import { errorMessage, NotInTauri } from "@/lib/errors";
+import { errorMessage, NotInTauri, type IpcError } from "@/lib/errors";
 import {
   ciLogUrl,
   landable,
@@ -43,7 +44,7 @@ import type { Lane, QueueItem, TaskQueue } from "@/lib/schemas/queue";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { mouseAction } from "@/lib/shortcut-coach";
 import type { QueueRowActions } from "@/screens/agentboard/queue-actions";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
@@ -93,15 +94,16 @@ const SNOOZES: Record<SnoozePreset, { short: string; label: string }> = {
   until_ci: { short: "Till CI's done", label: "until CI finishes" },
 };
 
-async function report(r: Awaited<ReturnType<typeof invoke>>) {
-  if (r.isErr() && !NotInTauri.is(r.error)) toast.error(errorMessage(r.error));
+async function report(effect: Effect.Effect<unknown, IpcError>) {
+  const r = await runIpc(effect);
+  if (Result.isFailure(r) && !NotInTauri.is(r.failure)) toast.error(errorMessage(r.failure));
 }
 
 async function snoozeQueueItem(item: QueueItem, preset: SnoozePreset): Promise<void> {
   if (!item.reason) return;
   uiAction("queue.snooze", "agentboard", preset);
   await report(
-    await invoke<void>("queue_snooze", {
+    invoke<void>("queue_snooze", {
       folderDir: item.folderDir,
       reason: item.reason,
       untilMs: snoozeUntil(preset, Date.now()),
@@ -118,12 +120,12 @@ export async function rerankQueueItem(
   const to = rankMove(items, items.indexOf(item), direction);
   if (!to || item.taskId == null) return;
   uiAction("queue.reorder", "agentboard", direction);
-  await report(await invoke<void>("queue_move", { id: item.taskId, to }));
+  await report(invoke<void>("queue_move", { id: item.taskId, to }));
 }
 
 async function unsnoozeItem(item: QueueItem) {
   uiAction("queue.unsnooze", "agentboard");
-  await report(await invoke<void>("queue_unsnooze", { folderDir: item.folderDir }));
+  await report(invoke<void>("queue_unsnooze", { folderDir: item.folderDir }));
 }
 
 /** `queue-next` from any screen, terminals included: Agent Board opens the head in place. */
@@ -249,7 +251,7 @@ export function QueueRail({
         </div>
       )}
       {!live ? (
-        <div aria-busy className="min-h-24" />
+        <p className="px-3 py-8 text-center text-sm text-kumo-subtle">Not connected yet.</p>
       ) : queue.items.length === 0 && repoFilter.size > 0 ? (
         <p className="px-3 py-8 text-center text-sm text-kumo-subtle">
           Nothing queued in the picked repos.

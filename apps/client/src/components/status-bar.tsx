@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FireIcon, KeyboardIcon, ShieldWarningIcon, StethoscopeIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@cloudflare/kumo";
+import { Result } from "effect";
+import { usePoll } from "@/lib/run";
 import { isTauri } from "@/lib/tauri";
 import { claudeUsageLimits, type UsageLimitBar, type UsageLimits } from "@/lib/claude-sessions";
 import {
@@ -22,16 +24,12 @@ import { useRulesFailing } from "@/lib/telemetry-rules";
 import { fmtAge, fmtCountdown, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
 import { taskExplorerSnapshot } from "@/lib/task-explorer";
-import { COLOR_FADE_CLASS } from "@/lib/motion-presets";
 import { cn } from "@/lib/utils";
 import { useAppVersion } from "@/lib/version";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
 type ResourceUsage = { cpuPercent: number; memoryBytes: number };
-
-/** Readouts that arrive after first paint fade in rather than pop. */
-const ARRIVE_CLASS = "motion-safe:animate-in motion-safe:fade-in-0 duration-200";
 
 const USAGE_POLL_MS = 5000;
 const CLAUDE_USAGE_POLL_MS = 5 * 60_000;
@@ -54,20 +52,13 @@ function shortLimitLabel(label: string): string {
  * see nothing fresher. */
 function useClaudeUsageLimits(): UsageLimits | null {
   const [limits, setLimits] = useState<UsageLimits | null>(null);
-  useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    const tick = async () => {
+  usePoll(
+    async () => {
       const t = await claudeUsageLimits();
-      if (!cancelled && t.isOk()) setLimits(t.value);
-    };
-    tick();
-    const id = window.setInterval(tick, CLAUDE_USAGE_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+      if (Result.isSuccess(t)) setLimits(t.success);
+    },
+    isTauri() ? CLAUDE_USAGE_POLL_MS : null,
+  );
   return limits;
 }
 
@@ -94,10 +85,7 @@ function LimitBar({ bar }: { bar: UsageLimitBar }) {
       <span>{shortLimitLabel(bar.label)}</span>
       <div className="h-1.5 w-6 overflow-hidden rounded-full bg-kumo-fill">
         <div
-          className={cn(
-            "h-full rounded-full transition-[width,background-color] duration-300 ease-out",
-            limitFillColor(bar.percent),
-          )}
+          className={cn("h-full rounded-full", limitFillColor(bar.percent))}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -110,23 +98,16 @@ function LimitBar({ bar }: { bar: UsageLimitBar }) {
  * screen's own total. */
 function useResourceUsage(): ResourceUsage | null {
   const [usage, setUsage] = useState<ResourceUsage | null>(null);
-  useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    const tick = async () => {
+  usePoll(
+    async () => {
       const r = await taskExplorerSnapshot();
-      if (cancelled || r.isErr()) return;
-      const cpuPercent = r.value.reduce((n, g) => n + g.totalCpuPercent, 0);
-      const memoryBytes = r.value.reduce((n, g) => n + g.totalMemoryBytes, 0);
+      if (Result.isFailure(r)) return;
+      const cpuPercent = r.success.reduce((n, g) => n + g.totalCpuPercent, 0);
+      const memoryBytes = r.success.reduce((n, g) => n + g.totalMemoryBytes, 0);
       setUsage({ cpuPercent, memoryBytes });
-    };
-    tick();
-    const id = window.setInterval(tick, USAGE_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+    },
+    isTauri() ? USAGE_POLL_MS : null,
+  );
   return usage;
 }
 
@@ -151,7 +132,7 @@ function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: num
       }
       render={
         <span
-          className={cn("size-1.5 rounded-full", COLOR_FADE_CLASS, COLLECTOR_STATE_DOT[state])}
+          className={cn("size-1.5 rounded-full", COLLECTOR_STATE_DOT[state])}
           aria-label={`${label}: ${COLLECTOR_STATE_LABEL[state]}`}
         />
       }
@@ -295,14 +276,10 @@ export function StatusBar() {
       </button>
       <div className="flex items-center gap-3">
         <CollectorHealthCluster />
-        {keyboard && (
-          <div className={ARRIVE_CLASS}>
-            <KeyboardHabit score={keyboard} />
-          </div>
-        )}
+        {keyboard && <KeyboardHabit score={keyboard} />}
         {rulesFailing !== null && <RulesFailing count={rulesFailing} />}
         {claudeLimits && claudeLimits.bars.length > 0 && (
-          <div className={cn("flex items-center gap-2.5 tabular-nums", ARRIVE_CLASS)}>
+          <div className="flex items-center gap-2.5 tabular-nums">
             {claudeLimits.bars.map((b) => (
               <LimitBar key={b.label} bar={b} />
             ))}
@@ -310,10 +287,7 @@ export function StatusBar() {
         )}
         {usage && (
           <button
-            className={cn(
-              "min-w-[17ch] text-right tabular-nums hover:text-kumo-default",
-              ARRIVE_CLASS,
-            )}
+            className="tabular-nums hover:text-kumo-default"
             title="Total CPU / memory — this app plus every open terminal"
             onClick={() => {
               uiAction("status_bar.open_task_explorer", activeTab);
@@ -326,11 +300,7 @@ export function StatusBar() {
         <span className={isTauri() ? undefined : "font-medium text-warn"}>
           {isTauri() ? "Tauri shell" : "browser"}
         </span>
-        {buildBehind && (
-          <span className={ARRIVE_CLASS}>
-            <BuildBehindChip behind={buildBehind} />
-          </span>
-        )}
+        {buildBehind && <BuildBehindChip behind={buildBehind} />}
         <span>{version}</span>
       </div>
     </footer>

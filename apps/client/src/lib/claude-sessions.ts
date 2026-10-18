@@ -1,4 +1,4 @@
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 
 /** Client-side bridge to the Claude Sessions screen (`tt-claude-sessions`). The
  * backend caches the scan, so search stays in-memory. Every `costUsd` is an
@@ -59,7 +59,7 @@ export type ClaudeSessionsSummary = {
 };
 
 export const claudeSessionsSummary = (days: number) =>
-  invoke<ClaudeSessionsSummary>("claude_sessions_summary", { days });
+  runIpc(invoke<ClaudeSessionsSummary>("claude_sessions_summary", { days }));
 
 export type UsageLimitBar = {
   /** `"Session"`, `"Week (all models)"`, `"Week (Fable)"`, etc. */
@@ -76,10 +76,10 @@ export type UsageLimits = {
 
 /** The CLI's own cached rate-limit percentages from `~/.claude.json` — no live
  * call, and `null` until the CLI populates the cache. */
-export const claudeUsageLimits = () => invoke<UsageLimits | null>("claude_usage_limits");
+export const claudeUsageLimits = () => runIpc(invoke<UsageLimits | null>("claude_usage_limits"));
 
 export const claudeSessionsSearch = (days: number, query: string) =>
-  invoke<ClaudeSession[]>("claude_sessions_search", { days, query });
+  runIpc(invoke<ClaudeSession[]>("claude_sessions_search", { days, query }));
 
 export type InsightKind = "tokenOutlier" | "rereadLoop" | "cacheChurn" | "marathon";
 
@@ -93,7 +93,7 @@ export type ClaudeSessionInsight = {
 };
 
 export const claudeSessionsInsights = (days: number) =>
-  invoke<ClaudeSessionInsight[]>("claude_sessions_insights", { days });
+  runIpc(invoke<ClaudeSessionInsight[]>("claude_sessions_insights", { days }));
 
 type ToolTotal = {
   name: string;
@@ -121,7 +121,7 @@ export type SessionBreakdown = {
 
 /** Parses that session on demand, rather than riding the cached scan. */
 export const claudeSessionsBreakdown = (sessionId: string) =>
-  invoke<SessionBreakdown>("claude_sessions_breakdown", { sessionId });
+  runIpc(invoke<SessionBreakdown>("claude_sessions_breakdown", { sessionId }));
 
 type DayBucket = {
   /** `YYYY-MM-DD`, local. */
@@ -145,4 +145,4 @@ export type CadenceSummary = {
 };
 
 export const claudeSessionsCadence = (days: number) =>
-  invoke<CadenceSummary>("claude_sessions_cadence", { days });
+  runIpc(invoke<CadenceSummary>("claude_sessions_cadence", { days }));

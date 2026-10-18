@@ -1,8 +1,7 @@
+import { Result } from "effect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListChecksIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { AnimatePresence, motion } from "motion/react";
 import { Button, Input, Switch } from "@cloudflare/kumo";
-import { cardMotion } from "@/lib/motion-presets";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
 import { landingSummaryForDir, type TaskBlocker } from "@/lib/agentboard/landing";
@@ -64,7 +63,6 @@ import {
 import { useFocusTarget } from "@/lib/focus-target";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { toast } from "@/lib/toast";
-import type { Result } from "better-result";
 import type { IpcError } from "@/lib/errors";
 import { useWorkspace } from "@/lib/workspace";
 import { Card } from "@/screens/board/card";
@@ -72,9 +70,12 @@ import { LaneGlyph } from "@/screens/board/card-bits";
 
 /** Every card action paints an optimistic overlay first, so a dropped write
  * would look like it worked until the next snapshot quietly reverted it. */
-async function commit(mutation: Promise<Result<unknown, IpcError>>, what: string): Promise<void> {
+async function commit(
+  mutation: Promise<Result.Result<unknown, IpcError>>,
+  what: string,
+): Promise<void> {
   const done = await mutation;
-  if (done.isErr()) toast.error(`Couldn't ${what} — ${done.error.message}`);
+  if (Result.isFailure(done)) toast.error(`Couldn't ${what} — ${done.failure.message}`);
 }
 
 /** The board's keys step aside for an open menu or dialog, which owns the keyboard. */
@@ -336,8 +337,8 @@ export function BoardScreen() {
         return next;
       });
     };
-    done.match({
-      ok: (result) => {
+    Result.match(done, {
+      onSuccess: (result) => {
         if (result.status === "blocked") {
           revert();
           // Refused, not failed: the reasons come with remedies, so they go to
@@ -347,7 +348,7 @@ export function BoardScreen() {
         }
         for (const message of result.messages) toast(message);
       },
-      err: (e) => {
+      onFailure: (e) => {
         revert();
         toast.error(`Couldn't ${purge ? "delete" : "close"} that task — ${e.message}`);
       },
@@ -626,7 +627,7 @@ export function BoardScreen() {
                     <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {TASK_STATUS_LABEL[status]}
                     </span>
-                    <span className="rounded-full bg-muted px-1.5 font-mono text-micro tabular-nums text-muted-foreground">
+                    <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
                       {counts[status]}
                     </span>
                   </div>
@@ -663,7 +664,7 @@ export function BoardScreen() {
                           >
                             {lane.label}
                           </span>
-                          <span className="rounded-full bg-muted px-1.5 font-mono text-micro tabular-nums text-muted-foreground">
+                          <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
                             {lane.tasks.length}
                           </span>
                         </div>
@@ -674,59 +675,56 @@ export function BoardScreen() {
                             key={status}
                             className="flex min-h-12 flex-col gap-2 rounded-lg border bg-muted/30 p-2"
                           >
-                            <AnimatePresence initial={false}>
-                              {lane.columns[status].map((task) => {
-                                const repoKey = taskRepoKey(task);
-                                const repoSlug = taskRepoSlug(task);
-                                const railKey = railRepoKeyForTask(agentState.repos, task);
-                                return (
-                                  <motion.div key={task.id} {...cardMotion}>
-                                    <Card
-                                      task={task}
-                                      repos={repos}
-                                      repoIdentity={repoByKey.get(repoKey)}
-                                      repoLabel={
-                                        groupByRepo || repoKey === NO_REPO_GROUP
-                                          ? undefined
-                                          : repoGroupLabel(repoSlug)
-                                      }
-                                      onOpenAgentboard={
-                                        railKey
-                                          ? () => {
-                                              mouseAction("board-open", "board");
-                                              openOnAgentboard(railKey);
-                                            }
-                                          : undefined
-                                      }
-                                      agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
-                                      cursor={cursorTask?.id === task.id}
-                                      onOpenSession={openSession}
-                                      openIssues={snapshot.issues}
-                                      issuesByKey={issuesByKey}
-                                      openPrs={openPrs}
-                                      onReopen={(t) => {
-                                        uiAction("board.reopen_task", "board");
-                                        reopen(t);
-                                      }}
-                                      onStart={(t) => {
-                                        mouseAction("board-start", "board");
-                                        reopen(t);
-                                      }}
-                                      onPromote={promote}
-                                      onAttachIssue={attachIssue}
-                                      onDetachIssue={detachIssue}
-                                      onAttachPr={attachPr}
-                                      onDetachPr={detachPr}
-                                      onRename={rename}
-                                      onSetNotes={setNotes}
-                                      onClose={(id, outcome) => void remove(id, { outcome })}
-                                      onRestore={restore}
-                                      onPurge={(id) => void remove(id, { purge: true })}
-                                    />
-                                  </motion.div>
-                                );
-                              })}
-                            </AnimatePresence>
+                            {lane.columns[status].map((task) => {
+                              const repoKey = taskRepoKey(task);
+                              const repoSlug = taskRepoSlug(task);
+                              const railKey = railRepoKeyForTask(agentState.repos, task);
+                              return (
+                                <Card
+                                  key={task.id}
+                                  task={task}
+                                  repos={repos}
+                                  repoIdentity={repoByKey.get(repoKey)}
+                                  repoLabel={
+                                    groupByRepo || repoKey === NO_REPO_GROUP
+                                      ? undefined
+                                      : repoGroupLabel(repoSlug)
+                                  }
+                                  onOpenAgentboard={
+                                    railKey
+                                      ? () => {
+                                          mouseAction("board-open", "board");
+                                          openOnAgentboard(railKey);
+                                        }
+                                      : undefined
+                                  }
+                                  agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
+                                  cursor={cursorTask?.id === task.id}
+                                  onOpenSession={openSession}
+                                  openIssues={snapshot.issues}
+                                  issuesByKey={issuesByKey}
+                                  openPrs={openPrs}
+                                  onReopen={(t) => {
+                                    uiAction("board.reopen_task", "board");
+                                    reopen(t);
+                                  }}
+                                  onStart={(t) => {
+                                    mouseAction("board-start", "board");
+                                    reopen(t);
+                                  }}
+                                  onPromote={promote}
+                                  onAttachIssue={attachIssue}
+                                  onDetachIssue={detachIssue}
+                                  onAttachPr={attachPr}
+                                  onDetachPr={detachPr}
+                                  onRename={rename}
+                                  onSetNotes={setNotes}
+                                  onClose={(id, outcome) => void remove(id, { outcome })}
+                                  onRestore={restore}
+                                  onPurge={(id) => void remove(id, { purge: true })}
+                                />
+                              );
+                            })}
                           </div>
                         ))}
                       </div>

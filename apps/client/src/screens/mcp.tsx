@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowClockwiseIcon,
@@ -13,7 +14,7 @@ import { StatTile } from "@/components/store-bits";
 import { fmtAge, useStoreSnapshot, type McpCall } from "@/lib/data";
 import { useNow } from "@/lib/now";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { invoke } from "@/lib/tauri";
+import { invoke, ipcOr, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import {
   McpStatusSchema,
@@ -50,12 +51,12 @@ const endpointFor = (port: number) => `http://127.0.0.1:${port}/mcp`;
 function useMcpStatus() {
   const [status, setStatus] = useState<McpStatus | null>(null);
   useEffect(() => {
-    void invoke<McpStatus>("mcp_status", {}, { schema: McpStatusSchema }).then((r) =>
-      r.match({
-        ok: setStatus,
+    void runIpc(invoke<McpStatus>("mcp_status", {}, { schema: McpStatusSchema })).then((r) =>
+      Result.match(r, {
+        onSuccess: setStatus,
         // Browser dev falls back silently; a real failure must be reported,
         // or the header says "Active" for a server that may serve nothing.
-        err: (e) => {
+        onFailure: (e) => {
           setStatus(null);
           if (!NotInTauri.is(e)) toast.error(`Could not read MCP status: ${errorMessage(e)}`);
         },
@@ -210,8 +211,8 @@ function useMcpToolDocs(): { tools: McpToolDoc[] | null; reload: () => void } {
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
-    void invoke<McpToolDoc[]>("mcp_tool_docs", {}, { schema: McpToolDocsSchema }).then((docs) =>
-      setTools(docs.unwrapOr(null)),
+    void ipcOr(invoke<McpToolDoc[]>("mcp_tool_docs", {}, { schema: McpToolDocsSchema }), null).then(
+      setTools,
     );
   }, [nonce]);
 

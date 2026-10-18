@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { Button, Input, Select } from "@cloudflare/kumo";
 import type { UserSettings } from "@/lib/settings";
@@ -89,7 +90,7 @@ export function generalSections(
 function useUpdateStatus(): UpdateStatus | null {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   useEffect(() => {
-    void updateStatus().then((r) => setStatus(r.unwrapOr(null)));
+    void updateStatus().then((r) => setStatus(Result.getOrElse(r, () => null)));
   }, []);
   return status;
 }
@@ -122,12 +123,12 @@ function UpdateChannelRow({
             await onChannel(next);
             if (fromSource) return;
             const found = await checkForUpdate();
-            if (found.isErr()) {
-              if (!NotInTauri.is(found.error)) {
-                toast.error(`Couldn't check for updates — ${errorMessage(found.error)}`);
+            if (Result.isFailure(found)) {
+              if (!NotInTauri.is(found.failure)) {
+                toast.error(`Couldn't check for updates — ${errorMessage(found.failure)}`);
               }
-            } else if (found.value) {
-              toast.info(`${updateLabel(found.value)} is ready to install`);
+            } else if (found.success) {
+              toast.info(`${updateLabel(found.success)} is ready to install`);
             } else {
               toast.success("You're on the newest build of this channel");
             }
@@ -155,7 +156,8 @@ function RollbackRow() {
     const result = await rollbackUpdate();
     setBusy(false);
     setArmed(false);
-    if (result.isErr()) toast.error(`Couldn't roll back — ${errorMessage(result.error)}`);
+    if (Result.isFailure(result))
+      toast.error(`Couldn't roll back — ${errorMessage(result.failure)}`);
   };
 
   return (

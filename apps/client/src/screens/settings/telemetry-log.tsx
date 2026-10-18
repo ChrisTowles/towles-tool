@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { Button } from "@cloudflare/kumo";
 import { toast } from "@/lib/toast";
@@ -18,7 +19,7 @@ export function TelemetryStorageRow({ flush }: { flush: Flush }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void telemetryStorage().then((r) => r.isOk() && setStorage(r.value));
+    void telemetryStorage().then((r) => Result.isSuccess(r) && setStorage(r.success));
   }, []);
 
   const prune = async () => {
@@ -27,12 +28,12 @@ export function TelemetryStorageRow({ flush }: { flush: Flush }) {
     await flush();
     const r = await telemetryPrune();
     setBusy(false);
-    if (r.isErr()) {
-      if (!NotInTauri.is(r.error)) toast.error(errorMessage(r.error));
+    if (Result.isFailure(r)) {
+      if (!NotInTauri.is(r.failure)) toast.error(errorMessage(r.failure));
       return;
     }
-    const removed = (storage?.files ?? r.value.files) - r.value.files;
-    setStorage(r.value);
+    const removed = (storage?.files ?? r.success.files) - r.success.files;
+    setStorage(r.success);
     toast.success(removed > 0 ? `Deleted ${removed} old log files` : "Nothing past retention");
   };
 

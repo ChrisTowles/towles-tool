@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { Result } from "effect";
+import { useState } from "react";
+import { usePoll } from "@/lib/run";
 import { isTauri } from "@/lib/tauri";
 import { telemetryRulesFailing, type RuleKind, type RuleScore } from "@/lib/telemetry";
 
@@ -69,20 +71,12 @@ const POLL_MS = 60_000;
 
 export function useRulesFailing(): number | null {
   const [count, setCount] = useState<number | null>(null);
-  useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    const tick = async () => {
+  usePoll(
+    async () => {
       const r = await telemetryRulesFailing();
-      if (cancelled || r.isErr()) return;
-      setCount(r.value);
-    };
-    tick();
-    const id = window.setInterval(tick, POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
+      if (Result.isSuccess(r)) setCount(r.success);
+    },
+    isTauri() ? POLL_MS : null,
+  );
   return count;
 }

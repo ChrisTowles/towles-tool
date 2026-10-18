@@ -1,47 +1,48 @@
-import { z } from "zod";
+import { Schema } from "effect";
+import { list } from "@/lib/schemas/shape";
 
 /** Runtime validators for the Slack DM panel (`lib/slack.ts`) — payloads that
  * originate from the external Slack Web API, one layer further from our own
  * control than an internal command result. */
 
-const DmFileSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  mimetype: z.string(),
-  urlPrivate: z.string(),
-  thumbUrl: z.string(),
-  permalink: z.string(),
-  isImage: z.boolean(),
+const DmFileSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  mimetype: Schema.String,
+  urlPrivate: Schema.String,
+  thumbUrl: Schema.String,
+  permalink: Schema.String,
+  isImage: Schema.Boolean,
 });
 
-const DmReactionSchema = z.object({
-  name: z.string(),
-  count: z.number(),
-  mine: z.boolean(),
+const DmReactionSchema = Schema.Struct({
+  name: Schema.String,
+  count: Schema.Number,
+  mine: Schema.Boolean,
 });
 
-const DmMessageSchema = z.object({
-  tsRaw: z.string(),
-  text: z.string(),
-  ts: z.number(),
-  fromMe: z.boolean(),
-  files: z.array(DmFileSchema),
-  reactions: z.array(DmReactionSchema),
-  threadTs: z.string(),
-  replyCount: z.number(),
-  latestReplyTs: z.number(),
+const DmMessageSchema = Schema.Struct({
+  tsRaw: Schema.String,
+  text: Schema.String,
+  ts: Schema.Number,
+  fromMe: Schema.Boolean,
+  files: list(DmFileSchema),
+  reactions: list(DmReactionSchema),
+  threadTs: Schema.String,
+  replyCount: Schema.Number,
+  latestReplyTs: Schema.Number,
 });
 
-export const SlackDmViewSchema = z.object({
-  configured: z.boolean(),
-  watchName: z.string(),
-  watchUserId: z.string(),
-  messages: z.array(DmMessageSchema),
+export const SlackDmViewSchema = Schema.Struct({
+  configured: Schema.Boolean,
+  watchName: Schema.String,
+  watchUserId: Schema.String,
+  messages: list(DmMessageSchema),
 });
 
-export const SlackThreadSchema = z.array(DmMessageSchema);
+export const SlackThreadSchema = list(DmMessageSchema);
 
-export const SlackFileDataSchema = z.object({
-  mimetype: z.string(),
-  dataBase64: z.string(),
+export const SlackFileDataSchema = Schema.Struct({
+  mimetype: Schema.String,
+  dataBase64: Schema.String,
 });

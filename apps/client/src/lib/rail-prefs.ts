@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { persistAgentboardSetting, useLiveSetting, type RailFilter } from "./settings";
-import { invoke } from "./tauri";
+import { fire, invoke } from "./tauri";
 
 /** Everything, so a fresh install never wonders where a checkout went.
  * Mirrors `tt_config::DEFAULT_RAIL_FILTER`. */
@@ -80,7 +80,7 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
   const persist = useCallback(
     (on: boolean) => {
       setShow(on);
-      void invoke("ab_set_show_unmanaged_worktrees", { show: on });
+      fire(invoke("ab_set_show_unmanaged_worktrees", { show: on }));
     },
     [setShow],
   );

@@ -1,5 +1,6 @@
+import { Result } from "effect";
 import { toast } from "@/lib/toast";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { NotInTauri } from "@/lib/errors";
 import { storeAddTask, storeAttachTaskIssue, storeItemDismiss } from "@/lib/data";
 import { uiAction } from "@/lib/ui-action";
@@ -22,12 +23,12 @@ export const closeOnFalse = (fn: () => void) => (isOpen: boolean) => {
  * The Rust side re-probes at call time, so a directory restored since the last
  * poll survives. */
 export async function cleanupMissing() {
-  const removed = await invoke<string[]>("ab_untrack_missing", {});
-  if (removed.isErr()) {
-    toast.error(`Couldn't clean up — ${removed.error.message}`);
+  const removed = await runIpc(invoke<string[]>("ab_untrack_missing", {}));
+  if (Result.isFailure(removed)) {
+    toast.error(`Couldn't clean up — ${removed.failure.message}`);
     return;
   }
-  const n = removed.value.length;
+  const n = removed.success.length;
   toast(n > 0 ? `Untracked ${n} missing repo${n === 1 ? "" : "s"}.` : "Nothing to clean up.");
 }
 
@@ -37,7 +38,8 @@ export async function cleanupMissing() {
 export async function dismissAttentionPr(repo: string, number: number, updatedTs: number) {
   uiAction("agentboard.attention_pr_dismiss", "agentboard");
   const result = await storeItemDismiss("pr", repo, number, updatedTs);
-  if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
+  if (Result.isFailure(result) && !NotInTauri.is(result.failure))
+    toast.error(result.failure.message);
 }
 
 /** A pane's grid rect as absolute-positioning percentages. */
@@ -56,16 +58,16 @@ export async function createTaskForSubmit(input: NewTaskSubmit): Promise<number 
   if (!title) return undefined;
   const status = input.worktree ? "doing" : "backlog";
   const created = await storeAddTask(title, { status, goal: input.goal || undefined });
-  if (created.isErr()) {
-    if (!NotInTauri.is(created.error)) {
-      toast(`couldn't add the board task: ${created.error.message}`);
+  if (Result.isFailure(created)) {
+    if (!NotInTauri.is(created.failure)) {
+      toast(`couldn't add the board task: ${created.failure.message}`);
     }
     return undefined;
   }
   for (const issue of input.issues) {
-    void storeAttachTaskIssue(created.value, issue.repo, issue.number, issue.url);
+    void storeAttachTaskIssue(created.success, issue.repo, issue.number, issue.url);
   }
-  return created.value;
+  return created.success;
 }
 
 /** A copy of `set` with `value` flipped in or out. */

@@ -8,7 +8,7 @@ import { RollupDots } from "@/components/agentboard-bits/status-dots";
 import { Popover, Tooltip } from "@cloudflare/kumo";
 import { Slider } from "@/components/ui/slider";
 import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { isHomeRepo } from "@/lib/agentboard/folder";
 import { agentRollup, collapsedLiveColor } from "@/lib/agentboard/status";
@@ -222,7 +222,7 @@ export function RollupChip({
               onValueChange={(v) => setDraft(v as number)}
               onValueCommitted={(v) => {
                 setDraft(null);
-                void invoke("ab_set_compact_percent", { percent: v });
+                fire(invoke("ab_set_compact_percent", { percent: v }));
               }}
             />
             <div className="text-mini text-kumo-subtle">

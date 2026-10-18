@@ -1,21 +1,21 @@
-import { z } from "zod";
+import { Schema } from "effect";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
 import type { RepoData } from "@/lib/agentboard/types";
-import { isTauri } from "@/lib/tauri";
+import { subscribe } from "@/lib/run";
 
 /** MCP `task_start` delivery: `task://start` becomes the `start-task` Agentboard
  * request. Subscribed from `App.tsx` — Agentboard mounts only on first visit. */
 
 /** Mirrors `TaskStartPayload` in `mcp_http.rs`; validated because it crosses IPC. */
-const TaskStartPayloadSchema = z.object({
-  taskId: z.number(),
-  repoRoot: z.string(),
-  branch: z.string(),
-  base: z.string().nullish(),
-  prompt: z.string(),
+const TaskStartPayloadSchema = Schema.Struct({
+  taskId: Schema.Number,
+  repoRoot: Schema.String,
+  branch: Schema.String,
+  base: Schema.optional(Schema.NullOr(Schema.String)),
+  prompt: Schema.String,
 });
 
-export type TaskStartPayload = z.infer<typeof TaskStartPayloadSchema>;
+export type TaskStartPayload = typeof TaskStartPayloadSchema.Type;
 
 /** Matched on the row's own dir *or* any of its folders: a repo tracked by one
  * of its worktrees binds `repoRoot` to a folder rather than to `dir`. */
@@ -51,32 +51,19 @@ export function subscribeTaskStart(
   onUntracked: (payload: TaskStartPayload) => void,
   onRouted: () => void,
 ): () => void {
-  if (!isTauri()) return () => {};
-  let unlisten: (() => void) | undefined;
-  let cancelled = false;
-  void (async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    const sub = await listen<unknown>("task://start", (event) => {
-      const parsed = TaskStartPayloadSchema.safeParse(event.payload);
-      if (!parsed.success) {
-        console.error("task://start: unexpected payload", parsed.error);
-        return;
-      }
-      const nav = startTaskNav(parsed.data, reposNow());
+  return subscribe(
+    "task://start",
+    (payload) => {
+      const nav = startTaskNav(payload, reposNow());
       if (!nav) {
-        onUntracked(parsed.data);
+        onUntracked(payload);
         return;
       }
       requestAgentboardNav(nav);
       // After the request, and never via a nav listener here: that would swallow
       // the one-shot mailbox before Agentboard's mount effect could consume it.
       onRouted();
-    });
-    if (cancelled) sub();
-    else unlisten = sub;
-  })();
-  return () => {
-    cancelled = true;
-    unlisten?.();
-  };
+    },
+    TaskStartPayloadSchema,
+  );
 }

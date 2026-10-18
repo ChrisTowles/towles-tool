@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useState } from "react";
 import { ImageSquareIcon, PaperPlaneTiltIcon, SmileyIcon, XIcon } from "@phosphor-icons/react";
 import { Button, InputArea } from "@cloudflare/kumo";
@@ -58,7 +59,7 @@ export function Composer({
         return;
       }
       void imagesFromDataTransfer(e.clipboardData).then((r) =>
-        r.match({ ok: addImages, err: (err) => toast.error(err.message) }),
+        Result.match(r, { onSuccess: addImages, onFailure: (err) => toast.error(err.message) }),
       );
       return;
     }

@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { Effect, Result, Stream } from "effect";
+import { useState } from "react";
 import { Button } from "@cloudflare/kumo";
 import { PauseIcon, PlayIcon } from "@phosphor-icons/react";
-import { invoke, isTauri } from "@/lib/tauri";
+import { tauriEvents } from "@/lib/events";
+import { useRun } from "@/lib/run";
+import { fire, invoke } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 
 type SimStatus = {
@@ -18,7 +21,7 @@ const SPEEDS = [1, 10, 60] as const;
 /** `seek` is a drag, so the slider records its gesture once, on release. */
 function control(action: "play" | "pause" | "seek" | "speed", value?: number) {
   if (action !== "seek") uiAction(`sim.${action}`, "agentboard", value?.toString());
-  void invoke<void>("sim_control", { action, value: value ?? null });
+  fire(invoke<void>("sim_control", { action, value: value ?? null }));
 }
 
 function clock(ms: number): string {
@@ -33,24 +36,18 @@ function clock(ms: number): string {
 export function SimBar() {
   const [sim, setSim] = useState<SimStatus | null>(null);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-    void (async () => {
-      const first = await invoke<SimStatus | null>("sim_status");
-      if (disposed || first.isErr() || first.value === null) return;
-      setSim(first.value);
-      const { listen } = await import("@tauri-apps/api/event");
-      const sub = await listen<SimStatus>("sim://clock", (e) => setSim(e.payload));
-      if (disposed) sub();
-      else unlisten = sub;
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  useRun(
+    () =>
+      Effect.gen(function* () {
+        const first = yield* Effect.result(invoke<SimStatus | null>("sim_status"));
+        if (Result.isFailure(first) || first.success === null) return;
+        setSim(first.success);
+        yield* tauriEvents("sim://clock").pipe(
+          Stream.runForEach((payload) => Effect.sync(() => setSim(payload as SimStatus))),
+        );
+      }),
+    [],
+  );
 
   if (sim === null) return null;
   const elapsedMin = Math.round((sim.nowMs - sim.startMs) / 60_000);

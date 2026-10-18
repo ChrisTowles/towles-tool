@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { invoke, isTauri } from "@/lib/tauri";
+import { Effect } from "effect";
+import { subscribeThen } from "@/lib/subscribe-then";
+import { invoke } from "@/lib/tauri";
 
 /** Mirrors `build_behind::BuildBehind` (crates-tauri/tt-app/src/build_behind.rs).
  * Absent unless this is a from-source build and `origin/main` is ahead of it. */
@@ -22,25 +24,17 @@ export function behindTooltip(behind: BuildBehind): string {
 export function useBuildBehind(): BuildBehind | null {
   const [behind, setBehind] = useState<BuildBehind | null>(null);
 
-  useEffect(() => {
-    if (!isTauri()) return;
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const stop = await listen<BuildBehind | null>("build-behind://changed", (event) => {
-        setBehind(event.payload);
-      });
-      if (cancelled) return stop();
-      unlisten = stop;
-      const current = await invoke<BuildBehind | null>("build_behind");
-      if (!cancelled) setBehind(current.unwrapOr(null));
-    })();
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, []);
+  useEffect(
+    () =>
+      subscribeThen(
+        { "build-behind://changed": (payload) => setBehind(payload as BuildBehind | null) },
+        invoke<BuildBehind | null>("build_behind").pipe(
+          Effect.tap((current) => Effect.sync(() => setBehind(current))),
+          Effect.ignore,
+        ),
+      ),
+    [],
+  );
 
   return behind;
 }

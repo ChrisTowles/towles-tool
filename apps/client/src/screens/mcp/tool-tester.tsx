@@ -1,10 +1,11 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { CopyIcon, PlayIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
 import { Button, Checkbox, Dialog, InputArea } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
 import { errorMessage } from "@/lib/errors";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { McpTestResultSchema, type McpTestResult, type McpToolDoc } from "@/lib/schemas/mcp";
 import { McpWire } from "@/screens/mcp/shared";
@@ -58,18 +59,20 @@ export function ToolTesterDialog({
     // exactly the runs where the security boundary was being exercised.
     uiAction("mcp.tool.test_run", "mcp", asBrowser ? `${tool.name} as-browser` : tool.name);
     const body = requestBody(tool.name, parsed, wire);
-    const res = await invoke<McpTestResult>(
-      "mcp_test_call",
-      { body, simulateBrowserOrigin: asBrowser },
-      { schema: McpTestResultSchema },
+    const res = await runIpc(
+      invoke<McpTestResult>(
+        "mcp_test_call",
+        { body, simulateBrowserOrigin: asBrowser },
+        { schema: McpTestResultSchema },
+      ),
     );
     // `tool` is the current prop by the time this resolves; if it changed, this
     // reply belongs to a pane nobody is looking at.
     if (issuedFor !== tool?.name) return;
     setRunning(false);
-    res.match({
-      ok: setResult,
-      err: (e) => toast.error(errorMessage(e)),
+    Result.match(res, {
+      onSuccess: setResult,
+      onFailure: (e) => toast.error(errorMessage(e)),
     });
   }
 

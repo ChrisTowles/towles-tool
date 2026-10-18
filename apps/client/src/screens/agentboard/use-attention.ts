@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useMemo, useState } from "react";
 import { toast } from "@/lib/toast";
 import { NotInTauri } from "@/lib/errors";
@@ -82,11 +83,11 @@ export function useAttention(args: {
     uiAction("agentboard.dismissals_clear", "agentboard");
     setClearingDismissals(true);
     const cleared = await storeDismissalsClear();
-    if (cleared.isOk()) {
-      const n = cleared.value;
+    if (Result.isSuccess(cleared)) {
+      const n = cleared.success;
       toast.success(n === 1 ? "1 item restored" : `${n} items restored`);
-    } else if (!NotInTauri.is(cleared.error)) {
-      toast.error(cleared.error.message);
+    } else if (!NotInTauri.is(cleared.failure)) {
+      toast.error(cleared.failure.message);
     }
     setClearingDismissals(false);
   }

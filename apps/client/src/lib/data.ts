@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { Result } from "better-result";
+import { Result } from "effect";
 import type { IpcError } from "./errors";
-import { invoke, isTauri } from "./tauri";
+import { invoke, ipcOr, isTauri, runIpc } from "./tauri";
 import { type TaskDeleteOutcome, TaskDeleteOutcomeSchema } from "./schemas/task";
 
 /** Client-side view of the store (Rust `tt-store`): the camelCase snapshot from
@@ -541,9 +541,8 @@ export function useAppTask(): AppTask | null {
     if (!isTauri()) return;
     let active = true;
     void (async () => {
-      const s = await invoke<AppTask>("app_task");
+      const t = await ipcOr(invoke<AppTask>("app_task"), null);
       if (!active) return;
-      const t = s.unwrapOr(null);
       setTask(t);
       // The native title `tt-app`'s setup sets (lib.rs). WebKitGTK never syncs
       // the two, and a page titled otherwise reads to WebDriver as another window.
@@ -558,14 +557,14 @@ export function useAppTask(): AppTask | null {
 
 /** Create a task; resolves to its id. `status` defaults to Backlog backend-side. */
 export const storeAddTask = (text: string, opts?: { status?: TaskStatus; goal?: string }) =>
-  invoke<number>("store_add_task", { text, status: opts?.status, goal: opts?.goal });
+  runIpc(invoke<number>("store_add_task", { text, status: opts?.status, goal: opts?.goal }));
 
 /** Move a task to another board column (appended at the end of it). */
 export const storeSetTaskStatus = (id: number, status: TaskStatus) =>
-  invoke<void>("store_set_task_status", { id, status });
+  runIpc(invoke<void>("store_set_task_status", { id, status }));
 
 export const storeUpdateTask = (id: number, text: string, notes?: string) =>
-  invoke<void>("store_update_task", { id, text, notes });
+  runIpc(invoke<void>("store_update_task", { id, text, notes }));
 
 /** Close a task and delete everything bound to it — panes and worktree; the row
  * survives, closed with `outcome` (omitted ⇒ merged linked PR ⇒ done, else
@@ -575,39 +574,42 @@ export const taskDelete = (
   target: { id: number } | { dir: string },
   opts?: { force?: boolean; outcome?: TaskOutcome; purge?: boolean },
 ) =>
-  invoke<TaskDeleteOutcome>(
-    "task_delete",
-    {
-      ...target,
-      force: opts?.force ?? false,
-      outcome: opts?.outcome,
-      purge: opts?.purge ?? false,
-    },
-    { schema: TaskDeleteOutcomeSchema },
+  runIpc(
+    invoke<TaskDeleteOutcome>(
+      "task_delete",
+      {
+        ...target,
+        force: opts?.force ?? false,
+        outcome: opts?.outcome,
+        purge: opts?.purge ?? false,
+      },
+      { schema: TaskDeleteOutcomeSchema },
+    ),
   );
 
 /** Archive every closed task — they leave the board but the rows survive. */
-export const storeArchiveDone = () => invoke<void>("store_archive_done");
+export const storeArchiveDone = () => runIpc(invoke<void>("store_archive_done"));
 
 /** Bring one archived task back onto the board. */
-export const storeUnarchiveTask = (id: number) => invoke<void>("store_unarchive_task", { id });
+export const storeUnarchiveTask = (id: number) =>
+  runIpc(invoke<void>("store_unarchive_task", { id }));
 
 /** Open a GitHub issue in `repo` for an existing task and attach the two. */
 export const storePromoteTaskToIssue = (id: number, repo: string) =>
-  invoke<void>("store_promote_task_to_issue", { id, repo });
+  runIpc(invoke<void>("store_promote_task_to_issue", { id, repo }));
 
 export const storeAttachTaskIssue = (id: number, repo: string, number: number, url: string) =>
-  invoke<void>("store_attach_task_issue", { id, repo, number, url });
+  runIpc(invoke<void>("store_attach_task_issue", { id, repo, number, url }));
 
 export const storeDetachTaskIssue = (id: number, repo: string, number: number) =>
-  invoke<void>("store_detach_task_issue", { id, repo, number });
+  runIpc(invoke<void>("store_detach_task_issue", { id, repo, number }));
 
 /** Attach a GitHub PR to a task (worktree-branch PRs auto-attach on collect). */
 export const storeAttachTaskPr = (id: number, repo: string, number: number, url: string) =>
-  invoke<void>("store_attach_task_pr", { id, repo, number, url });
+  runIpc(invoke<void>("store_attach_task_pr", { id, repo, number, url }));
 
 export const storeDetachTaskPr = (id: number, repo: string, number: number) =>
-  invoke<void>("store_detach_task_pr", { id, repo, number });
+  runIpc(invoke<void>("store_detach_task_pr", { id, repo, number }));
 
 /** Bind a task to its repo/worktree — at submit with the repo alone, then again
  * with `branch`/`dir` once `task_create` resolves. */
@@ -617,34 +619,38 @@ export const storeTaskSetWorktree = (
   branch: string | undefined,
   opts?: { repo?: string; dir?: string },
 ) =>
-  invoke<void>("store_task_set_worktree", {
-    id,
-    repoRoot,
-    branch,
-    repo: opts?.repo,
-    dir: opts?.dir,
-  });
+  runIpc(
+    invoke<void>("store_task_set_worktree", {
+      id,
+      repoRoot,
+      branch,
+      repo: opts?.repo,
+      dir: opts?.dir,
+    }),
+  );
 
 /** Promote a detected worktree's rail row to the user's own task — a kind
  * change on the existing row, so it keeps its id and rail position. */
-export const taskAdoptWorktree = (id: number) => invoke<void>("task_adopt_worktree", { id });
+export const taskAdoptWorktree = (id: number) =>
+  runIpc(invoke<void>("task_adopt_worktree", { id }));
 
 export type BranchResync = { previous: string | null; current: string; changed: boolean };
 
 /** Record the branch a task's worktree is on now; a refusal is the error, fix included. */
-export const taskSyncBranch = (id: number) => invoke<BranchResync>("task_sync_branch", { id });
+export const taskSyncBranch = (id: number) =>
+  runIpc(invoke<BranchResync>("task_sync_branch", { id }));
 
 /** Open issues in `dir`'s repo, for the new-task flow's issue picker. */
 export const storeGhIssuesList = (dir: string, assignedToMe: boolean) =>
-  invoke<IssueItem[]>("store_gh_issues_list", { dir, assignedToMe });
+  runIpc(invoke<IssueItem[]>("store_gh_issues_list", { dir, assignedToMe }));
 
 /** Search issues in `dir`'s repo, all states — a task can link any issue. */
 export const storeSearchIssues = (dir: string, query: string) =>
-  invoke<IssueItem[]>("store_search_issues", { dir, query });
+  runIpc(invoke<IssueItem[]>("store_search_issues", { dir, query }));
 
 /** Mark a watched Slack DM handled up to `ts`, clearing its banner. */
 export const storeDmDismiss = (channel: string, ts: number) =>
-  invoke<void>("store_dm_dismiss", { channel, ts });
+  runIpc(invoke<void>("store_dm_dismiss", { channel, ts }));
 
 /** Dismiss one GitHub issue/PR — hidden from the attention feed until the
  * collector observes a newer `updatedTs` than the one passed in. */
@@ -653,20 +659,20 @@ export const storeItemDismiss = (
   repo: string,
   number: number,
   updatedTs: number,
-) => invoke<void>("store_item_dismiss", { kind, repo, number, updatedTs });
+) => runIpc(invoke<void>("store_item_dismiss", { kind, repo, number, updatedTs }));
 
 /** Clear every dismissed issue/PR at once; resolves to how many were cleared. */
-export const storeDismissalsClear = () => invoke<number>("store_dismissals_clear", {});
+export const storeDismissalsClear = () => runIpc(invoke<number>("store_dismissals_clear", {}));
 
 /** Append a line to today's journal note. */
-export const journalLog = (text: string) => invoke<void>("journal_log", { text });
+export const journalLog = (text: string) => runIpc(invoke<void>("journal_log", { text }));
 /** Today's daily-note bullets, as written. */
-export const journalToday = () => invoke<string[]>("journal_today");
+export const journalToday = () => runIpc(invoke<string[]>("journal_today"));
 
 /** Force the issues/PRs/Slack collectors now — calendar excluded (it spends
  * claude tokens). The `boolean` is a domain answer, not success: `true` =
  * kicked off, `false` = one was already in flight. */
-export async function storeCollectNow(): Promise<Result<boolean, IpcError>> {
-  const result = await invoke<{ started: boolean }>("store_collect_now");
-  return result.map((r) => r.started);
+export async function storeCollectNow(): Promise<Result.Result<boolean, IpcError>> {
+  const result = await runIpc(invoke<{ started: boolean }>("store_collect_now"));
+  return Result.map(result, (r) => r.started);
 }

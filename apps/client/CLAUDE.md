@@ -28,23 +28,31 @@ switches); `closeTab` is the only unmount path, and refuses the last tab.
 
 ## IPC failures are values — the call site picks the UX
 
-`lib/tauri.ts` exports one `invoke` returning `Result<T, IpcError>`
-([better-result](https://better-result.dev)). It **never throws and never
-rejects**: no Tauri host, a rejected command, a Zod mismatch and a timeout all
-come back as typed `Err`s (`lib/errors.ts`). Each call site states its own intent
-— `.unwrapOr([])` to degrade, `.isErr()` to branch, `.match` to report. Avoid a
-wrapper that degrades to `null`/`false`: it hides a real backend error as "not
-wired in browser". **Browser dev is `NotInTauri`, not a failure** — test with
-`NotInTauri.is(e)`, never `e._tag === "…"` (oxlint rejects it), and don't toast
-it. **Fire-and-forget is safe by construction**: an ignored `Result` can't
-produce an unhandled rejection, so `void invoke(…)` needs no `.catch` — the hot
-PTY-write path relies on it, and a `.catch` on an `invoke` is dead code. For
-display use **`errorMessage(e)`, not `String(e)`**: Tauri rejects with a bare
-string, which `String()` renders as `"[object Object]"`.
+`lib/tauri.ts` exports one `invoke(cmd, args, {schema?, timeout?})` returning a
+**lazy** `Effect<A, IpcError>` ([Effect](https://effect.website)); `lib/errors.ts`
+holds the `Schema.TaggedError`s. It **never throws and never rejects**: no Tauri
+host, a rejected command, a `Schema` mismatch and a timeout all come back as
+typed failures. **Nothing runs until you run it**, so `void invoke(…)` is a
+silent no-op — run it at the React edge with `runIpc` (a `Promise<Result>`),
+`ipcOr(effect, fallback)` (degrade) or `fire(effect)` (fire-and-forget). Each
+call site states its own intent — `ipcOr` to degrade, `Result.isFailure` to
+branch, `Result.match` to report. Avoid a wrapper that degrades to
+`null`/`false`: it hides a real backend error as "not wired in browser".
+**Browser dev is `NotInTauri`, not a failure** — test with `NotInTauri.is(e)`,
+never `e._tag === "…"` (oxlint rejects it), and don't toast it. **`fire` is safe
+by construction** (it swallows failures and defects), so the hot PTY-write path
+needs no `.catch`, and a `.catch` on `runIpc`/`ipcOr` is dead code. For display
+use **`errorMessage(e)`, not `String(e)`**: Tauri rejects with a bare string.
 
-No module keeps a throwing contract today; a foreign interface that demands one
-translates `Err` → throw at that edge only, and
-`.claude/hooks/guard-better-result.sh` flags drift. There is no `mock-data.ts`
+Domain wrappers in `lib/*.ts` run their effect and return
+`Promise<Result<T, IpcError>>`. Wire payloads decode with Effect `Schema`
+(`lib/schemas/*`; `list()` for mutable arrays, `open()` to keep unknown keys).
+**Events** are `subscribe(event, handler, schema?)` / `useTauriEvent` — an
+`acquireRelease` under a stream, so unlisten always runs; `subscribeThen` when
+the current state must be read only *after* listening. **Pollers** are
+`usePoll`/`startPoll` (`Schedule.spaced`, ticks skipped while the tab is hidden);
+`lib/now.tsx`-style clock ticks stay `setInterval`.
+`.claude/hooks/guard-effect-ipc.sh` flags drift. There is no `mock-data.ts`
 either: each module owns its browser-dev fallback (`mockSnapshot` in
 `lib/data.ts`, `mockView` in `lib/slack.ts`), gated on `!isTauri()`.
 

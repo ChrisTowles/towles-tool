@@ -5,7 +5,7 @@ import "./index.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { IS_MAC, installPcEditKeys, setPcKeybindings } from "@/lib/keymap";
 import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 import { installConsoleCollector } from "@/lib/wdio-console";
 import { installCrashReporter } from "@/lib/crash-report";
 import { App } from "./App";
@@ -30,7 +30,7 @@ if (IS_MAC) {
     void loadUserSettings().then((s) => {
       const on = s?.agentboard?.pcKeybindings ?? false;
       setPcKeybindings(on);
-      void invoke("keymap_set_pc", { on });
+      fire(invoke("keymap_set_pc", { on }));
     });
   });
   installPcEditKeys();

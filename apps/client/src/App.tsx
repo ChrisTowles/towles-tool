@@ -32,8 +32,6 @@ import { useShortcutCoachSetting } from "@/lib/shortcut-coach";
 import { ShortcutHelpHost, useShortcuts, type ShortcutScope } from "@/lib/shortcuts";
 import { WorkspaceProvider, useWorkspace } from "@/lib/workspace";
 import { SCREEN_COMPONENTS } from "@/screens";
-import { SCREEN_FADE_CLASS } from "@/lib/motion-presets";
-import { cn } from "@/lib/utils";
 
 /** Global (always-active) bindings + the `?` help overlay. Screen-scoped
  * bindings live with their screens (e.g. Agentboard), gated on their tab. */
@@ -229,17 +227,13 @@ function Workspace() {
                   // Full-bleed screens (e.g. terminals) skip the centered, scrolling
                   // content wrapper and own the whole content area.
                   return SCREENS[id].fullBleed ? (
-                    <div key={id} hidden={hidden} className={cn("h-full", SCREEN_FADE_CLASS)}>
+                    <div key={id} hidden={hidden} className="h-full">
                       <ErrorBoundary label={SCREENS[id].title}>
                         <Screen />
                       </ErrorBoundary>
                     </div>
                   ) : (
-                    <ScrollArea
-                      key={id}
-                      hidden={hidden}
-                      className={cn("h-full", SCREEN_FADE_CLASS)}
-                    >
+                    <ScrollArea key={id} hidden={hidden} className="h-full">
                       <div className="mx-auto max-w-3xl p-6">
                         <ErrorBoundary label={SCREENS[id].title}>
                           <Screen />

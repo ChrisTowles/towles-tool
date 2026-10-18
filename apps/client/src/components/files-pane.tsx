@@ -5,7 +5,7 @@ import { IconBtn, PanePlaceholder } from "@/components/agentboard-bits/primitive
 import { PaneChrome, PaneLens } from "@/components/pane-chrome";
 import { CodeServerPane } from "@/components/code-server-pane";
 import { useIdeConnected } from "@/lib/ide";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import type { FolderData } from "@/lib/agentboard/types";
 
@@ -37,8 +37,8 @@ export function FolderFilesPane({
   const dir = folder?.dir;
   useEffect(() => {
     if (!dir) return;
-    void invoke("ab_set_folder_focus", { dir, focused: true });
-    return () => void invoke("ab_set_folder_focus", { dir, focused: false });
+    fire(invoke("ab_set_folder_focus", { dir, focused: true }));
+    return () => fire(invoke("ab_set_folder_focus", { dir, focused: false }));
   }, [dir]);
 
   if (!folder) return <PanePlaceholder label="folder gone" focused={focused} onRemove={onClose} />;

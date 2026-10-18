@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { CaretDownIcon, CaretRightIcon, XIcon } from "@phosphor-icons/react";
 import { Button, Dialog } from "@cloudflare/kumo";
@@ -132,9 +133,9 @@ export function LandedTodayDialog({
     void journalToday().then((result) => {
       if (cancelled) return;
       setJournal(
-        result.match<{ lines: string[]; error: string | null }>({
-          ok: (lines) => ({ lines, error: null }),
-          err: (e) => ({ lines: [], error: NotInTauri.is(e) ? null : e.message }),
+        Result.match(result, {
+          onSuccess: (lines) => ({ lines, error: null as string | null }),
+          onFailure: (e) => ({ lines: [] as string[], error: NotInTauri.is(e) ? null : e.message }),
         }),
       );
     });

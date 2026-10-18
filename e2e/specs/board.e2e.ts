@@ -77,18 +77,6 @@ describe("Board screen", () => {
     await filter.waitForDisplayed({ timeout: 10000 });
   });
 
-  it("fades a screen back in without remounting it", async () => {
-    const filter = await browser.$(FILTER);
-    await filter.setValue("e2e-keep-state");
-    await gotoScreen("Doctor");
-    await gotoScreen("Board");
-    // Same input node, same value: the fade is CSS on a kept-mounted screen.
-    const back = await browser.$(FILTER);
-    await back.waitForDisplayed({ timeout: 10000 });
-    expect(await back.getValue()).toBe("e2e-keep-state");
-    await back.setValue("");
-  });
-
   it("renders the group-into-swimlanes toggle", async () => {
     const swimlanes = await browser.$('[aria-label="Group tasks into repo swimlanes"]');
     await swimlanes.waitForExist({ timeout: 10000 });

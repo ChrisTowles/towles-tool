@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwiseIcon, LightningIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
@@ -118,9 +119,9 @@ export function TelemetryScreen() {
   async function loadEvents(d: string) {
     setLoading(true);
     const r = await telemetryEvents(d);
-    r.match({
-      ok: setEvents,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setEvents,
+      onFailure: (e) => {
         setEvents([]);
         if (!NotInTauri.is(e)) toast.error(`Could not read telemetry: ${errorMessage(e)}`);
       },
@@ -136,9 +137,9 @@ export function TelemetryScreen() {
     setPageLoading(true);
     const r = await telemetryRecords(logDays, effectiveFilters(kind, filters), query, RENDER_LIMIT);
     if (id !== logRequest.current) return;
-    r.match({
-      ok: setPage,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setPage,
+      onFailure: (e) => {
         setPage(null);
         if (!NotInTauri.is(e)) toast.error(`Could not read telemetry: ${errorMessage(e)}`);
       },
@@ -152,9 +153,9 @@ export function TelemetryScreen() {
   async function loadAttention(d: string) {
     setAttentionLoading(true);
     const r = await telemetryAttention(d);
-    r.match({
-      ok: setAttention,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setAttention,
+      onFailure: (e) => {
         setAttention(null);
         if (!NotInTauri.is(e)) toast.error(`Could not summarize telemetry: ${errorMessage(e)}`);
       },
@@ -167,9 +168,9 @@ export function TelemetryScreen() {
   async function loadKeyboard() {
     setKeyboardLoading(true);
     const r = await keyboardScore();
-    r.match({
-      ok: setKeyboard,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setKeyboard,
+      onFailure: (e) => {
         setKeyboard(null);
         if (!NotInTauri.is(e)) toast.error(`Could not score shortcuts: ${errorMessage(e)}`);
       },
@@ -181,9 +182,9 @@ export function TelemetryScreen() {
   async function loadAgents() {
     setAgentsLoading(true);
     const r = await telemetryAgents(agentsRange);
-    r.match({
-      ok: setAgents,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setAgents,
+      onFailure: (e) => {
         setAgents(null);
         if (!NotInTauri.is(e)) toast.error(`Could not summarize agents: ${errorMessage(e)}`);
       },
@@ -194,9 +195,9 @@ export function TelemetryScreen() {
   async function loadDashboard() {
     setDashboardLoading(true);
     const r = await telemetryDashboard(dashboardRange, dashboardGroup);
-    r.match({
-      ok: setDashboard,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setDashboard,
+      onFailure: (e) => {
         setDashboard(null);
         if (!NotInTauri.is(e)) toast.error(`Could not build the dashboard: ${errorMessage(e)}`);
       },
@@ -208,9 +209,9 @@ export function TelemetryScreen() {
   async function loadBuilds() {
     setBuildsLoading(true);
     const r = await telemetryBuilds(14);
-    r.match({
-      ok: setBuilds,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setBuilds,
+      onFailure: (e) => {
         setBuilds(null);
         if (!NotInTauri.is(e)) toast.error(`Could not list builds: ${errorMessage(e)}`);
       },
@@ -223,9 +224,9 @@ export function TelemetryScreen() {
   async function loadRules() {
     setRulesLoading(true);
     const r = await telemetryRules(rulesRange);
-    r.match({
-      ok: setRules,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setRules,
+      onFailure: (e) => {
         setRules(null);
         if (!NotInTauri.is(e)) toast.error(`Could not score rules: ${errorMessage(e)}`);
       },
@@ -236,12 +237,12 @@ export function TelemetryScreen() {
   /** Re-lists the available days and resolves the selected one if unset. */
   async function refreshDays() {
     const daysResult = await telemetryDays();
-    daysResult.match({
-      ok: (d) => {
+    Result.match(daysResult, {
+      onSuccess: (d) => {
         setDays(d);
         setDay((current) => current ?? d[0] ?? null);
       },
-      err: (e) => {
+      onFailure: (e) => {
         if (!NotInTauri.is(e)) toast.error(`Could not list telemetry days: ${errorMessage(e)}`);
       },
     });

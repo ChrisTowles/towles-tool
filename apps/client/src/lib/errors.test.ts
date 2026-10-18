@@ -50,16 +50,13 @@ describe("IpcError variants", () => {
     );
   });
 
-  it("summarizes every schema issue with its path", () => {
+  it("carries the schema's own issue text in the message", () => {
     const error = new SchemaMismatch({
       command: "settings_get",
-      issues: [
-        { code: "invalid_type", path: ["collectors", "prs"], message: "expected object" },
-        { code: "invalid_type", path: [], message: "expected object" },
-      ] as SchemaMismatch["issues"],
+      detail: "collectors: missing key",
     });
     expect(error.message).toBe(
-      "settings_get: response failed validation — collectors.prs: expected object; (root): expected object",
+      "settings_get: response failed validation — collectors: missing key",
     );
   });
 

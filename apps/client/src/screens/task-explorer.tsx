@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { DelayedLoading } from "@/components/delayed-loading";
+import { Result } from "effect";
+import { useState } from "react";
+import { usePoll } from "@/lib/run";
 import { ArrowClockwiseIcon, PulseIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
 import { Button } from "@cloudflare/kumo";
@@ -25,22 +26,16 @@ export function TaskExplorerScreen() {
   async function load() {
     setLoading(true);
     const r = await taskExplorerSnapshot();
-    r.match({
-      ok: setGroups,
-      err: (e) => {
+    Result.match(r, {
+      onSuccess: setGroups,
+      onFailure: (e) => {
         if (!NotInTauri.is(e)) toast.error(`Could not read process snapshot: ${errorMessage(e)}`);
       },
     });
     setLoading(false);
   }
 
-  useEffect(() => {
-    if (activeTab !== "task-explorer") return;
-    void load();
-    const id = window.setInterval(() => void load(), POLL_MS);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  usePoll(load, activeTab === "task-explorer" ? POLL_MS : null);
 
   function manualRefresh() {
     uiAction("task_explorer.refresh", "task-explorer");
@@ -79,11 +74,11 @@ export function TaskExplorerScreen() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {groups === null ? (
-          <DelayedLoading className="py-8 text-center">Loading…</DelayedLoading>
+          <Empty>Loading…</Empty>
         ) : groups.length === 0 ? (
           <Empty>No processes found.</Empty>
         ) : (
-          <div className="flex flex-col gap-4 motion-safe:animate-in motion-safe:fade-in-0 duration-200">
+          <div className="flex flex-col gap-4">
             {groups.map((g) => (
               <ProcessGroupCard key={g.termId ?? "app"} group={g} />
             ))}

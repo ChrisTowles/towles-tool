@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { Dialog } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
@@ -99,7 +100,7 @@ export function RecordDialog({
     if (!record || record.durationMs === null) return;
     let live = true;
     void telemetryTrace(record.ts, record.ts.slice(0, 10)).then((r) => {
-      if (live) setChildren(r.unwrapOr([]));
+      if (live) setChildren(Result.getOrElse(r, () => []));
     });
     return () => {
       live = false;

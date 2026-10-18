@@ -1,4 +1,4 @@
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 
 /**
  * Bridge to `crates-tauri/tt-app/src/task_explorer.rs`: CPU/RAM for the app
@@ -24,4 +24,4 @@ export type ProcessGroup = {
   totalMemoryBytes: number;
 };
 
-export const taskExplorerSnapshot = () => invoke<ProcessGroup[]>("task_explorer_snapshot");
+export const taskExplorerSnapshot = () => runIpc(invoke<ProcessGroup[]>("task_explorer_snapshot"));

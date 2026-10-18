@@ -1,6 +1,8 @@
+import { Effect, Result, Schema } from "effect";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { fmtStateAge } from "./agentboard/session";
-import { invoke, isTauri } from "./tauri";
+import { subscribeThen } from "./subscribe-then";
+import { invoke } from "./tauri";
 import {
   TaskQueueSchema,
   type Lane,
@@ -20,43 +22,31 @@ export function TaskQueueProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState({ queue: EMPTY, live: false });
 
   useEffect(() => {
-    if (!isTauri()) return;
-    let disposed = false;
     let accepted = false;
-    let unlisten: (() => void) | undefined;
+    const decode = Schema.decodeUnknownResult(TaskQueueSchema);
     const accept = (raw: unknown) => {
-      const parsed = TaskQueueSchema.safeParse(raw);
-      if (!parsed.success) {
-        console.error("queue://changed: unexpected payload", parsed.error);
+      const parsed = decode(raw);
+      if (Result.isFailure(parsed)) {
+        console.error("queue://changed: unexpected payload", parsed.failure);
         return;
       }
       accepted = true;
-      setState({ queue: parsed.data, live: true });
+      setState({ queue: parsed.success, live: true });
     };
-    void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
-      const sub = await listen<unknown>("queue://changed", (e) => accept(e.payload));
-      if (disposed) {
-        sub();
-        return;
-      }
-      unlisten = sub;
-      // `null` until the store has opened, and the app emits only on a change
-      // after that — so keep asking until something lands.
-      const settled = () => disposed || accepted;
+    // `null` until the store has opened, and the app emits only on a change
+    // after that — so keep asking until something lands.
+    const settled = () => accepted;
+    const catchUp = Effect.gen(function* () {
       for (let attempt = 0; attempt < 30 && !settled(); attempt++) {
-        const initial = await invoke<unknown>("queue_get");
-        if (initial.isOk() && initial.value != null && !disposed) {
-          accept(initial.value);
+        const initial = yield* Effect.result(invoke<unknown>("queue_get"));
+        if (Result.isSuccess(initial) && initial.success != null) {
+          accept(initial.success);
           return;
         }
-        await new Promise((r) => setTimeout(r, 1000));
+        yield* Effect.sleep(1000);
       }
-    })();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
+    });
+    return subscribeThen({ "queue://changed": accept }, catchUp);
   }, []);
 
   return <TaskQueueContext.Provider value={state}>{children}</TaskQueueContext.Provider>;

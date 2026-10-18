@@ -1,202 +1,171 @@
-import { z } from "zod";
+import { Effect, Option, Schema } from "effect";
+import { list, open } from "@/lib/schemas/shape";
 
 /**
- * `.passthrough()` everywhere matches the Rust side, so an unknown key in the
+ * `open(...)` everywhere matches the Rust side, so an unknown key in the
  * hand-edited settings file survives a read instead of being dropped on save.
  */
 
-const JournalSettingsSchema = z
-  .object({
-    baseFolder: z.string(),
-    dailyPathTemplate: z.string(),
-    meetingPathTemplate: z.string(),
-    notePathTemplate: z.string(),
-    templateDir: z.string(),
-  })
-  .passthrough();
+const JournalSettingsSchema = open({
+  baseFolder: Schema.String,
+  dailyPathTemplate: Schema.String,
+  meetingPathTemplate: Schema.String,
+  notePathTemplate: Schema.String,
+  templateDir: Schema.String,
+});
 
-const CalendarQuietHoursSchema = z
-  .object({
-    enabled: z.boolean(),
-    startHour: z.number(),
-    endHour: z.number(),
-    weekdays: z.array(z.number()),
-  })
-  .passthrough();
+const CalendarQuietHoursSchema = open({
+  enabled: Schema.Boolean,
+  startHour: Schema.Number,
+  endHour: Schema.Number,
+  weekdays: list(Schema.Number),
+});
 
-const CalendarSourceSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    enabled: z.boolean(),
-    prompt: z.string(),
-  })
-  .passthrough();
+const CalendarSourceSchema = open({
+  id: Schema.String,
+  label: Schema.String,
+  enabled: Schema.Boolean,
+  prompt: Schema.String,
+});
 
-const PromptImproverSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    enabled: z.boolean(),
-    preferred: z.boolean(),
-    prompt: z.string(),
-  })
-  .passthrough();
+const PromptImproverSchema = open({
+  id: Schema.String,
+  label: Schema.String,
+  enabled: Schema.Boolean,
+  preferred: Schema.Boolean,
+  prompt: Schema.String,
+});
 
-const TelemetryFilterSchema = z
-  .object({
-    field: z.string(),
-    op: z.enum(["eq", "neq", "contains", "gt", "lt"]),
-    value: z.string(),
-  })
-  .passthrough();
+const TelemetryFilterSchema = open({
+  field: Schema.String,
+  op: Schema.Literals(["eq", "neq", "contains", "gt", "lt"]),
+  value: Schema.String,
+});
 
-const SavedViewSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    filters: z.array(TelemetryFilterSchema),
-    days: z.number(),
-    query: z.string(),
-  })
-  .passthrough();
+const SavedViewSchema = open({
+  id: Schema.String,
+  label: Schema.String,
+  filters: list(TelemetryFilterSchema),
+  days: Schema.Number,
+  query: Schema.String,
+});
 
-const TelemetryRuleSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    enabled: z.boolean(),
-    kind: z.enum(["share", "count"]),
-    select: z.array(TelemetryFilterSchema),
-    pass: z.array(TelemetryFilterSchema),
-    threshold: z.number(),
-    days: z.number(),
-  })
-  .passthrough();
+const TelemetryRuleSchema = open({
+  id: Schema.String,
+  label: Schema.String,
+  enabled: Schema.Boolean,
+  kind: Schema.Literals(["share", "count"]),
+  select: list(TelemetryFilterSchema),
+  pass: list(TelemetryFilterSchema),
+  threshold: Schema.Number,
+  days: Schema.Number,
+});
 
 /** `settings_default_prompt_improvers` answers with a bare array. */
-export const PromptImproverListSchema = z.array(PromptImproverSchema);
+export const PromptImproverListSchema = list(PromptImproverSchema);
 
-const TaskTemplateSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    repo: z.string(),
-    goal: z.string(),
-    improver: z.string(),
-    setup: z.string(),
-  })
-  .passthrough();
+const TaskTemplateSchema = open({
+  id: Schema.String,
+  label: Schema.String,
+  repo: Schema.String,
+  goal: Schema.String,
+  improver: Schema.String,
+  setup: Schema.String,
+});
 
-export const TaskTemplateListSchema = z.array(TaskTemplateSchema);
+export const TaskTemplateListSchema = list(TaskTemplateSchema);
 
-const SavedQuerySchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    sql: z.string(),
-  })
-  .passthrough();
+const SavedQuerySchema = open({
+  id: Schema.String,
+  label: Schema.String,
+  sql: Schema.String,
+});
 /** `settings_default_saved_queries` returns this. */
-export const SavedQueryListSchema = z.array(SavedQuerySchema);
+export const SavedQueryListSchema = list(SavedQuerySchema);
 /** So does `settings_default_telemetry_rules`. */
-export const TelemetryRuleListSchema = z.array(TelemetryRuleSchema);
+export const TelemetryRuleListSchema = list(TelemetryRuleSchema);
 
-const CalendarCollectorSchema = z
-  .object({
-    enabled: z.boolean(),
-    refreshMinutes: z.number(),
-    quietHours: CalendarQuietHoursSchema,
-    sources: z.array(CalendarSourceSchema),
-  })
-  .passthrough();
+const CalendarCollectorSchema = open({
+  enabled: Schema.Boolean,
+  refreshMinutes: Schema.Number,
+  quietHours: CalendarQuietHoursSchema,
+  sources: list(CalendarSourceSchema),
+});
 
-const PrCollectorSchema = z
-  .object({
-    enabled: z.boolean(),
-    refreshSeconds: z.number(),
-    mergedRefreshMinutes: z.number(),
-  })
-  .passthrough();
+const PrCollectorSchema = open({
+  enabled: Schema.Boolean,
+  refreshSeconds: Schema.Number,
+  mergedRefreshMinutes: Schema.Number,
+});
 
-const IssueCollectorSchema = z
-  .object({
-    enabled: z.boolean(),
-    refreshMinutes: z.number(),
-    watchedLabels: z.array(z.string()),
-  })
-  .passthrough();
+const IssueCollectorSchema = open({
+  enabled: Schema.Boolean,
+  refreshMinutes: Schema.Number,
+  watchedLabels: list(Schema.String),
+});
 
-const SlackDmCollectorSchema = z
-  .object({
-    enabled: z.boolean(),
-    token: z.string(),
-    appToken: z.string(),
-    watchUserId: z.string(),
-    watchName: z.string(),
-    refreshSeconds: z.number(),
-  })
-  .passthrough();
+const SlackDmCollectorSchema = open({
+  enabled: Schema.Boolean,
+  token: Schema.String,
+  appToken: Schema.String,
+  watchUserId: Schema.String,
+  watchName: Schema.String,
+  refreshSeconds: Schema.Number,
+});
 
-const CollectorsSettingsSchema = z
-  .object({
-    calendar: CalendarCollectorSchema,
-    prs: PrCollectorSchema,
-    issues: IssueCollectorSchema,
-    slack: SlackDmCollectorSchema,
-  })
-  .passthrough();
+const CollectorsSettingsSchema = open({
+  calendar: CalendarCollectorSchema,
+  prs: PrCollectorSchema,
+  issues: IssueCollectorSchema,
+  slack: SlackDmCollectorSchema,
+});
 
 /** Urgency levels, least → most urgent — mirrors Rust's `tt_config::NotifyLevel`. */
-const NotifyLevelSchema = z.enum(["routine", "important", "urgent"]);
+const NotifyLevelSchema = Schema.Literals(["routine", "important", "urgent"]);
 
 /** Which checkouts reach the Agentboard rail — mirrors Rust's
  * `tt_config::RailFilter`. Not a scale: `active` asks about *now*, `recent`
  * asks about the last N hours. */
-const RailFilterSchema = z.enum(["all", "active", "recent"]);
+const RailFilterSchema = Schema.Literals(["all", "active", "recent"]);
+
+/** An optional key whose unrecognized value reads as unset, mirroring the Rust
+ * reader's tolerance: a newer build's level or a hand-edit must not fail the
+ * whole settings parse. */
+const lenient = <S extends Schema.Top>(schema: S) =>
+  Schema.optional(schema).pipe(Schema.catchDecoding(() => Effect.succeed(Option.some(undefined))));
 
 /** `UserSettings["agentboard"]` is a TS-owned, partly-typed block that already
- * carries a `Record<string, unknown>` passthrough in its TS type — `.catchall`
- * keeps every key not listed here rather than requiring an exhaustive list. */
-const AgentboardBlockSchema = z
-  .object({
-    notify: z.boolean().optional(),
-    // `.catch` mirrors the Rust reader's tolerance: an unrecognized level (a
-    // newer build's, a hand-edit) reads as unset — the default — instead of
-    // failing the whole settings parse.
-    notifyThreshold: NotifyLevelSchema.optional().catch(undefined),
-    compactRecommendPercent: z.number().optional(),
-    copyOnSelect: z.boolean().optional(),
-    terminalFontSize: z.number().optional(),
-    shortcutsWorkInTerminal: z.boolean().optional(),
-    autoResume: z.boolean().optional(),
-    advanceAfterSubmit: z.boolean().optional(),
-    shortcutCoach: z.boolean().optional(),
-    boardGroupByRepo: z.boolean().optional(),
-    autoCloseLanded: z.boolean().optional(),
-    // `.catch` for the same reason as `notifyThreshold`: an unrecognized mode
-    // (a newer build's, a hand-edit) reads as
-    // unset rather than failing the whole settings parse.
-    railFilter: RailFilterSchema.optional().catch(undefined),
-    railRecentHours: z.number().optional(),
-    showQuiet: z.boolean().optional(),
-    showUnmanagedWorktrees: z.boolean().optional(),
-    jarvisPane: z.boolean().optional(),
-    browserPane: z.boolean().optional(),
-    pcKeybindings: z.boolean().optional(),
-  })
-  .catchall(z.unknown());
+ * carries a `Record<string, unknown>` passthrough in its TS type — `open` keeps
+ * every key not listed here rather than requiring an exhaustive list. */
+const AgentboardBlockSchema = open({
+  notify: Schema.optional(Schema.Boolean),
+  notifyThreshold: lenient(NotifyLevelSchema),
+  compactRecommendPercent: Schema.optional(Schema.Number),
+  copyOnSelect: Schema.optional(Schema.Boolean),
+  terminalFontSize: Schema.optional(Schema.Number),
+  shortcutsWorkInTerminal: Schema.optional(Schema.Boolean),
+  autoResume: Schema.optional(Schema.Boolean),
+  advanceAfterSubmit: Schema.optional(Schema.Boolean),
+  shortcutCoach: Schema.optional(Schema.Boolean),
+  boardGroupByRepo: Schema.optional(Schema.Boolean),
+  autoCloseLanded: Schema.optional(Schema.Boolean),
+  railFilter: lenient(RailFilterSchema),
+  railRecentHours: Schema.optional(Schema.Number),
+  showQuiet: Schema.optional(Schema.Boolean),
+  showUnmanagedWorktrees: Schema.optional(Schema.Boolean),
+  jarvisPane: Schema.optional(Schema.Boolean),
+  browserPane: Schema.optional(Schema.Boolean),
+  pcKeybindings: Schema.optional(Schema.Boolean),
+});
 
-export const UserSettingsSchema = z
-  .object({
-    preferredEditor: z.string(),
-    journalSettings: JournalSettingsSchema,
-    promptImprovers: z.array(PromptImproverSchema),
-    taskTemplates: TaskTemplateListSchema.default([]),
-    savedViews: z.array(SavedViewSchema),
-    savedQueries: z.array(SavedQuerySchema),
-    telemetryRules: z.array(TelemetryRuleSchema),
-    collectors: CollectorsSettingsSchema,
-    agentboard: AgentboardBlockSchema.optional(),
-  })
-  .passthrough();
+export const UserSettingsSchema = open({
+  preferredEditor: Schema.String,
+  journalSettings: JournalSettingsSchema,
+  promptImprovers: list(PromptImproverSchema),
+  taskTemplates: TaskTemplateListSchema.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  savedViews: list(SavedViewSchema),
+  savedQueries: list(SavedQuerySchema),
+  telemetryRules: list(TelemetryRuleSchema),
+  collectors: CollectorsSettingsSchema,
+  agentboard: Schema.optional(AgentboardBlockSchema),
+});

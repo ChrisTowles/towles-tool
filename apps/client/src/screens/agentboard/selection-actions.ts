@@ -4,7 +4,7 @@ import type { FocusLevel } from "@/lib/agentboard/windows";
 import type { JumpRecall } from "@/lib/jump-recall";
 import type { filterQueue } from "@/lib/queue";
 import type { RailNode } from "@/lib/rail-nodes";
-import { invoke } from "@/lib/tauri";
+import { fire, invoke } from "@/lib/tauri";
 
 /** What handlers that outlive a render (mount-only subscriptions, async
  * continuations) read the rail through; kept current by the screen every render. */
@@ -44,7 +44,7 @@ export function selectionActions(
   function ackFolder(folderDir: string) {
     // Through the ref: its mount-only caller sees only the first-render map.
     const name = railRef.current.folderNameByDir.get(folderDir);
-    if (name) void invoke("ab_mark_seen", { name });
+    if (name) fire(invoke("ab_mark_seen", { name }));
   }
 
   // Reaching a checkout any way at all hands Agent Board's cursor to it, its

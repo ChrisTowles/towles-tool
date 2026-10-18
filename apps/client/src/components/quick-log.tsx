@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { toast } from "@/lib/toast";
 import { Dialog, Input } from "@cloudflare/kumo";
@@ -37,11 +38,11 @@ export function QuickLog() {
     if (routesToTodo) {
       // Same add-task path the Board uses — a plain todo in the backlog column.
       void storeAddTask(parsed.body).then((added) =>
-        added.match({
-          ok: () => {
+        Result.match(added, {
+          onSuccess: () => {
             toast.success("Added to Board");
           },
-          err: reportCaptureError,
+          onFailure: reportCaptureError,
         }),
       );
     } else {
@@ -50,11 +51,11 @@ export function QuickLog() {
       // so app and CLI entries interleave in the same daily note.
       const line = formatLogLine(parsed.body, { now: new Date(), context: activeTab });
       void journalLog(line).then((logged) =>
-        logged.match({
-          ok: () => {
+        Result.match(logged, {
+          onSuccess: () => {
             toast.success("Logged");
           },
-          err: reportCaptureError,
+          onFailure: reportCaptureError,
         }),
       );
     }

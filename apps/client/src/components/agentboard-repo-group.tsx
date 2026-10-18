@@ -1,3 +1,4 @@
+import { Result } from "effect";
 /** What a repo's rail subtree *contains*. How each row *looks* belongs to
  * `FolderHeader`, `SessionRow` and `ViewPaneRow`. */
 import { type ReactElement } from "react";
@@ -60,7 +61,8 @@ function adoptWorktree(folder: FolderData) {
   return () => {
     uiAction("agentboard.adopt_worktree", "agentboard");
     void taskAdoptWorktree(task.id).then((result) => {
-      if (result.isErr() && !NotInTauri.is(result.error)) toast.error(result.error.message);
+      if (Result.isFailure(result) && !NotInTauri.is(result.failure))
+        toast.error(result.failure.message);
     });
   };
 }
@@ -72,11 +74,11 @@ function syncBranch(folder: FolderData) {
   return () => {
     uiAction("agentboard.sync_branch", "agentboard");
     void taskSyncBranch(task.id).then((result) => {
-      if (result.isOk()) {
-        const { previous, current } = result.value;
+      if (Result.isSuccess(result)) {
+        const { previous, current } = result.success;
         toast.success(`Recorded ${current} on the task${previous ? ` (was ${previous})` : ""}`);
-      } else if (!NotInTauri.is(result.error)) {
-        toast.error(result.error.message);
+      } else if (!NotInTauri.is(result.failure)) {
+        toast.error(result.failure.message);
       }
     });
   };

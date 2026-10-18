@@ -1,4 +1,4 @@
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { claudeCommand, promptWithImages } from "@/lib/agentboard/claude-command";
 import { isAgent } from "@/lib/agentboard/session";
 import type { FolderData } from "@/lib/agentboard/types";
@@ -43,7 +43,7 @@ export type CaptureRect = {
 /** Base64 PNG. Capture lives in the backend because the DOM can't screenshot
  * a cross-origin iframe — see the module docs in `preview.rs`. */
 export const previewCapture = (rect: CaptureRect) =>
-  invoke<string>("preview_capture", { rect }, { timeoutMs: 15_000 });
+  runIpc(invoke<string>("preview_capture", { rect }, { timeout: 15_000 }));
 
 /** The persisted subset of agentboard's `PastedImage`, minus UI-only fields. */
 export type FeedbackImage = { mime: string; dataBase64: string };
@@ -51,7 +51,7 @@ export type FeedbackImage = { mime: string; dataBase64: string };
 /** Stage the annotated capture as files under the pasted-images dir (outside
  * any repo), returning absolute paths for the note or the launch. */
 export const previewWriteFeedback = (repo: string, images: FeedbackImage[]) =>
-  invoke<string[]>("preview_write_feedback", { repo, images });
+  runIpc(invoke<string[]>("preview_write_feedback", { repo, images }));
 
 // Annotation model
 

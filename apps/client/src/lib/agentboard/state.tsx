@@ -7,6 +7,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Effect } from "effect";
+import { subscribeThen } from "@/lib/subscribe-then";
 import { invoke } from "@/lib/tauri";
 import { useStoreSelector } from "@/lib/external-store";
 import { OVERLAY_BACKSTOP_MS, type Overlay } from "@/lib/agentboard/overlays";
@@ -47,39 +49,17 @@ export function AgentboardStateProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // The initial fetch resolves *after* the subscription is live, so a newer
+  // event can land first — the store's `ts` guard keeps it from being rolled back.
   useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    void (async () => {
-      // Outside Tauri (bare-browser dev), `listen` throws on the missing IPC
-      // internals — stay empty rather than leak an unhandled rejection.
-      if (!("__TAURI_INTERNALS__" in window)) return;
-
-      const { listen } = await import("@tauri-apps/api/event");
-
-      // The initial fetch resolves *after* the subscription is live, so a
-      // newer event can land first — the store's `ts` guard keeps it from
-      // being rolled back.
-      const accept = (payload: StatePayload) => store.accept(payload, Date.now());
-
-      const sub = await listen<StatePayload>("agentboard://state", (e) => {
-        accept(e.payload);
-      });
-      if (disposed) {
-        sub();
-        return;
-      }
-      unlisten = sub;
-
-      const initial = await invoke<StatePayload>("ab_get_state");
-      if (initial.isOk() && !disposed) accept(initial.value);
-    })();
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
+    const accept = (payload: StatePayload) => store.accept(payload, Date.now());
+    return subscribeThen(
+      { "agentboard://state": (payload) => accept(payload as StatePayload) },
+      invoke<StatePayload>("ab_get_state").pipe(
+        Effect.tap((initial) => Effect.sync(() => accept(initial))),
+        Effect.ignore,
+      ),
+    );
   }, [store]);
 
   return (

@@ -1,25 +1,25 @@
-import { z } from "zod";
+import { Schema } from "effect";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
 import type { RepoData } from "@/lib/agentboard/types";
 import { nextOpenFileNonce } from "@/lib/agentboard/windows";
 import { folderForPath, folderForSession } from "@/lib/preview-artifact";
-import { isTauri } from "@/lib/tauri";
+import { subscribe } from "@/lib/run";
 
 /** Delivery for the MCP `file_open` tool and `tt open`. Structured like
  * `preview-artifact.ts`, except the path fallback is a *good* guess here: a
  * file names its checkout, which is how `tt open` resolves with no session. */
 
 /** Mirrors `FileOpenPayload` in `mcp_http.rs`. Validated, not trusted. */
-const FileOpenPayloadSchema = z.object({
-  path: z.string(),
+const FileOpenPayloadSchema = Schema.Struct({
+  path: Schema.String,
   /** Decided in Rust because the webview has no `stat`: a directory opens the
    * pane on the folder, a file also selects it. */
-  isDir: z.boolean(),
-  line: z.number().int().positive().nullish(),
-  session: z.string().nullish(),
+  isDir: Schema.Boolean,
+  line: Schema.optional(Schema.NullOr(Schema.Int.check(Schema.isGreaterThan(0)))),
+  session: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
-export type FileOpenPayload = z.infer<typeof FileOpenPayloadSchema>;
+export type FileOpenPayload = typeof FileOpenPayloadSchema.Type;
 
 /** `path` stays absolute: only the screen knows which folder the request landed
  * in once `folderDir` is null, so it makes the path relative. Pure, so the
@@ -44,27 +44,12 @@ export function subscribeEditorOpenFile(
   reposNow: () => RepoData[],
   onRouted: () => void,
 ): () => void {
-  if (!isTauri()) return () => {};
-  let unlisten: (() => void) | undefined;
-  let cancelled = false;
-  void (async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    const sub = await listen<unknown>("editor://open-file", (event) => {
-      const parsed = FileOpenPayloadSchema.safeParse(event.payload);
-      // Malformed means the Rust struct and this schema drifted — drop it
-      // loudly rather than opening a pane on nothing.
-      if (!parsed.success) {
-        console.error("editor://open-file: unexpected payload", parsed.error);
-        return;
-      }
-      requestAgentboardNav(openFileNav(parsed.data, reposNow()));
+  return subscribe(
+    "editor://open-file",
+    (payload) => {
+      requestAgentboardNav(openFileNav(payload, reposNow()));
       onRouted();
-    });
-    if (cancelled) sub();
-    else unlisten = sub;
-  })();
-  return () => {
-    cancelled = true;
-    unlisten?.();
-  };
+    },
+    FileOpenPayloadSchema,
+  );
 }

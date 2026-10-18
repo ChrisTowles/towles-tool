@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import type { RepoData } from "@/lib/agentboard/types";
@@ -5,7 +6,7 @@ import { NotInTauri } from "@/lib/errors";
 import { repoChipStyle, repoIcon } from "@/lib/repo-identity";
 import { applyRepoOrder, orderSettled, reorderDirs, sameOrder } from "@/lib/repo-manager";
 import type { QueueItem } from "@/lib/schemas/queue";
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
@@ -60,9 +61,9 @@ export function QueueRepoBar({
     if (sameOrder(current, next)) return;
     setOrder(next);
     uiAction("repo.reordered", "agentboard", "queue");
-    void invoke("ab_set_repo_order", { dirs: next }).then((res) => {
-      if (res.isErr() && !NotInTauri.is(res.error)) {
-        toast.error(`Couldn't save the repo order — ${res.error.message}`);
+    void runIpc(invoke("ab_set_repo_order", { dirs: next })).then((res) => {
+      if (Result.isFailure(res) && !NotInTauri.is(res.failure)) {
+        toast.error(`Couldn't save the repo order — ${res.failure.message}`);
         setOrder(null);
       }
     });

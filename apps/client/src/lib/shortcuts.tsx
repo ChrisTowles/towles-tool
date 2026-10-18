@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { Dialog } from "@cloudflare/kumo";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
@@ -647,7 +648,7 @@ function useShortcutUsage(open: boolean): Map<string, number> {
     if (!open) return;
     let alive = true;
     void keyboardScore().then((r) => {
-      if (alive && r.isOk()) setScore(r.value);
+      if (alive && Result.isSuccess(r)) setScore(r.success);
     });
     return () => {
       alive = false;

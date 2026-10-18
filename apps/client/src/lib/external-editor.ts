@@ -1,6 +1,7 @@
 import { toast } from "@/lib/toast";
 import { NotInTauri } from "@/lib/errors";
-import { invoke } from "@/lib/tauri";
+import { Result } from "effect";
+import { invoke, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 
 /** Open a file in `preferredEditor` (Settings → General) via `term_open_path`,
@@ -12,13 +13,15 @@ export async function openInExternalEditor(
   opts: { cwd?: string; line?: number | null; where: string },
 ): Promise<void> {
   uiAction("editor.open_external", "agentboard", opts.where);
-  const opened = await invoke<void>("term_open_path", {
-    path,
-    cwd: opts.cwd ?? null,
-    line: opts.line ?? null,
-  });
-  if (opened.isErr() && !NotInTauri.is(opened.error)) {
-    toast.error(`Couldn't open in your editor — ${opened.error.message}`, {
+  const opened = await runIpc(
+    invoke<void>("term_open_path", {
+      path,
+      cwd: opts.cwd ?? null,
+      line: opts.line ?? null,
+    }),
+  );
+  if (Result.isFailure(opened) && !NotInTauri.is(opened.failure)) {
+    toast.error(`Couldn't open in your editor — ${opened.failure.message}`, {
       description: "Set the editor command in Settings → General (e.g. code, code-insiders).",
     });
   }

@@ -1,50 +1,85 @@
-import type { ZodType } from "zod";
-import { Result } from "better-result";
+// IPC edge for the Tauri host: effects in, promises out only at the React boundary.
+// Contract: apps/client/CLAUDE.md "IPC failures are values".
+import { Duration, Effect, Result, Schema } from "effect";
 import { IpcFailed, IpcTimeout, NotInTauri, SchemaMismatch } from "@/lib/errors";
 import type { IpcError } from "@/lib/errors";
 
 export const isTauri = () => "__TAURI_INTERNALS__" in window;
 
-export type InvokeOptions<T> = {
-  /** Contract drift is an expected failure: a mismatch is {@link SchemaMismatch}, not a throw. */
-  schema?: ZodType<T>;
+export type InvokeOptions = {
   /** Abandons *this* promise only — the backend command runs to completion
-   * regardless, since Tauri commands aren't cancelable. */
-  timeoutMs?: number;
+   * regardless, since Tauri commands aren't cancelable. A number is millis. */
+  timeout?: Duration.Input;
 };
 
-/** Never throws or rejects; every failure is a typed `Err`. See apps/client/CLAUDE.md. */
-export async function invoke<T>(
+/** Contract drift is an expected failure: a mismatch is {@link SchemaMismatch}, not a defect.
+ * Without a schema the payload is trusted as `A`, as before. */
+export function invoke<A>(
+  cmd: string,
+  args: Record<string, unknown>,
+  options: InvokeOptions & { schema: Schema.Decoder<A> },
+): Effect.Effect<A, IpcError>;
+export function invoke<A = unknown>(
+  cmd: string,
+  args?: Record<string, unknown>,
+  options?: InvokeOptions,
+): Effect.Effect<A, IpcError>;
+export function invoke<A>(
   cmd: string,
   args: Record<string, unknown> = {},
-  options: InvokeOptions<T> = {},
-): Promise<Result<T, IpcError>> {
-  if (!isTauri()) return Result.err(new NotInTauri({ command: cmd }));
-
-  const { schema, timeoutMs } = options;
-  const core = await import("@tauri-apps/api/core");
-
-  // Invoked inside the thunk so each attempt is a fresh call; re-awaiting a
-  // settled promise would make any future `retry` config a silent no-op.
-  const settled = await Result.tryPromise({
-    try: () => {
-      const call = core.invoke<T>(cmd, args);
-      return timeoutMs === undefined ? call : withTimeout(call, timeoutMs, cmd);
-    },
-    catch: (cause): IpcError =>
-      IpcTimeout.is(cause) ? cause : new IpcFailed({ command: cmd, cause }),
+  options: InvokeOptions & { schema?: Schema.Decoder<A> } = {},
+): Effect.Effect<A, IpcError> {
+  const { schema, timeout } = options;
+  const call = Effect.tryPromise({
+    // Inside the thunk so each run is a fresh call; a re-run effect must not replay a settled promise.
+    try: async () => (await import("@tauri-apps/api/core")).invoke<A>(cmd, args),
+    catch: (cause): IpcError => new IpcFailed({ command: cmd, cause }),
   });
-
-  return settled.andThen((value) => {
-    if (!schema) return Result.ok<T, IpcError>(value);
-    const parsed = schema.safeParse(value);
-    return parsed.success
-      ? Result.ok<T, IpcError>(parsed.data)
-      : Result.err<T, IpcError>(new SchemaMismatch({ command: cmd, issues: parsed.error.issues }));
-  });
+  const timed =
+    timeout === undefined
+      ? call
+      : call.pipe(
+          Effect.timeoutOrElse({
+            duration: timeout,
+            orElse: () =>
+              Effect.fail(new IpcTimeout({ command: cmd, timeoutMs: Duration.toMillis(timeout) })),
+          }),
+        );
+  const decode = schema ? Schema.decodeUnknownEffect(schema) : undefined;
+  const decoded = decode
+    ? timed.pipe(
+        Effect.flatMap((value) =>
+          decode(value).pipe(
+            Effect.mapError(
+              (e): IpcError => new SchemaMismatch({ command: cmd, detail: e.message }),
+            ),
+          ),
+        ),
+      )
+    : timed;
+  // Checked at run time, not construction: the host can appear after a module builds an effect.
+  return Effect.suspend(() =>
+    isTauri()
+      ? (decoded as Effect.Effect<A, IpcError>)
+      : Effect.fail(new NotInTauri({ command: cmd })),
+  );
 }
 
-/** Callers must already hold an `isTauri()` gate — hence a raw channel, not a `Result`. */
+/** Runs to a settled `Result`; the promise never rejects for an IPC failure. */
+export const runIpc = <A, E>(effect: Effect.Effect<A, E>): Promise<Result.Result<A, E>> =>
+  Effect.runPromise(Effect.result(effect));
+
+/** Degrade: the success value, else `fallback` — the failure is the call site's to ignore. */
+export const ipcOr = <A, B>(effect: Effect.Effect<A, unknown>, fallback: B): Promise<A | B> =>
+  runIpc(effect).then((r) => (Result.isSuccess(r) ? r.success : fallback));
+
+/** Fire-and-forget. Ignores every failure and defect, so an unobserved run can't
+ * become an unhandled rejection — the hot PTY-write path relies on it. */
+export const fire = (effect: Effect.Effect<unknown, unknown>): void => {
+  Effect.runFork(Effect.ignoreCause(effect));
+};
+
+/** Callers must already hold an `isTauri()` gate — hence a raw channel, not an `Effect`. */
 export async function rawChannel(onData: (bytes: Uint8Array) => void): Promise<unknown> {
   const core = await import("@tauri-apps/api/core");
   const channel = new core.Channel<ArrayBuffer | number[]>();
@@ -52,21 +87,4 @@ export async function rawChannel(onData: (bytes: Uint8Array) => void): Promise<u
   channel.onmessage = (data) =>
     onData(data instanceof ArrayBuffer ? new Uint8Array(data) : Uint8Array.from(data));
   return channel;
-}
-
-/** Rejects rather than resolving an `Err`, to stay composable with `Result.tryPromise`. */
-function withTimeout<T>(promise: Promise<T>, ms: number, command: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new IpcTimeout({ command, timeoutMs: ms })), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 }

@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowSquareOutIcon, ChatCircleDotsIcon, CheckIcon } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "motion/react";
@@ -108,14 +109,14 @@ function DrawerBody({
       setSending(true);
       const sent = await slackDmSend(text, undefined, images);
       setSending(false);
-      return sent.match({
-        ok: () => {
+      return Result.match(sent, {
+        onSuccess: () => {
           onAnswered(dm.ts);
           void storeDmDismiss(dm.channel, dm.ts);
           refresh();
           return true;
         },
-        err: (e) => {
+        onFailure: (e) => {
           toast.error(slackWriteError(e.message, "send"));
           return false;
         },
@@ -128,9 +129,9 @@ function DrawerBody({
     (ts: string, name: string, add: boolean) => {
       uiAction(add ? "dm_drawer.react" : "dm_drawer.unreact", "slack");
       void slackDmReact(ts, name, add).then((done) =>
-        done.match({
-          ok: refresh,
-          err: (e) => toast.error(slackWriteError(e.message, "react")),
+        Result.match(done, {
+          onSuccess: refresh,
+          onFailure: (e) => toast.error(slackWriteError(e.message, "react")),
         }),
       );
     },

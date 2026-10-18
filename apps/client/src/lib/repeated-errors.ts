@@ -1,4 +1,6 @@
-import { invoke } from "@/lib/tauri";
+import { Effect } from "effect";
+import { poll, start } from "@/lib/run";
+import { invoke, ipcOr } from "@/lib/tauri";
 import { RepeatedErrorListSchema, type RepeatedError } from "@/lib/schemas/doctor";
 
 /** How often the app re-reads the last day's log for failures that keep recurring. */
@@ -25,18 +27,12 @@ export function repeatDetail(e: RepeatedError, max = 160): string | undefined {
 /** Poll `doctor_repeated_errors` and hand each new group to `onNew`. Returns the stop. */
 export function watchRepeatedErrors(onNew: (e: RepeatedError) => void): () => void {
   const seen = new Set<string>();
-  const poll = async () => {
-    const result = await invoke<RepeatedError[]>(
-      "doctor_repeated_errors",
-      {},
-      { schema: RepeatedErrorListSchema },
+  const check = async () => {
+    const errors = await ipcOr(
+      invoke<RepeatedError[]>("doctor_repeated_errors", {}, { schema: RepeatedErrorListSchema }),
+      [],
     );
-    takeNew(result.unwrapOr([]), seen).forEach(onNew);
+    takeNew(errors, seen).forEach(onNew);
   };
-  const first = setTimeout(() => void poll(), 60_000);
-  const every = setInterval(() => void poll(), POLL_MS);
-  return () => {
-    clearTimeout(first);
-    clearInterval(every);
-  };
+  return start(Effect.sleep("60 seconds").pipe(Effect.andThen(poll(check, POLL_MS))));
 }

@@ -1,4 +1,4 @@
-import { invoke } from "@/lib/tauri";
+import { invoke, runIpc } from "@/lib/tauri";
 
 /** Reads the on-disk event log fresh on every call — no server-side cache. */
 
@@ -18,10 +18,10 @@ export type TelemetryRecord = {
 };
 
 /** Newest first. */
-export const telemetryDays = () => invoke<string[]>("telemetry_days");
+export const telemetryDays = () => runIpc(invoke<string[]>("telemetry_days"));
 
 export const telemetryEvents = (date: string) =>
-  invoke<TelemetryRecord[]>("telemetry_events", { date });
+  runIpc(invoke<TelemetryRecord[]>("telemetry_events", { date }));
 
 /** A separate command, not a `useMemo` over `telemetryEvents`: a busy day runs
  * to 75,000+ records, and aggregating in Rust makes that a few hundred bytes. */
@@ -69,7 +69,7 @@ export type FocusSession = {
 type Count = { key: string; count: number };
 
 export const telemetryAttention = (date: string) =>
-  invoke<AttentionSummary>("telemetry_attention", { date });
+  runIpc(invoke<AttentionSummary>("telemetry_attention", { date }));
 
 /** Null when the day is too empty for the ratio to mean anything. */
 export function focusShare(summary: AttentionSummary): number | null {
@@ -126,11 +126,11 @@ export type RecordPage = { records: TelemetryRecord[]; total: number };
 
 /** The newest `limit` matches of the last `days` log files, filtered in Rust. */
 export const telemetryRecords = (days: number, filters: Filter[], query: string, limit: number) =>
-  invoke<RecordPage>("telemetry_records", { days, filters, query, limit });
+  runIpc(invoke<RecordPage>("telemetry_records", { days, filters, query, limit }));
 
 /** The records written during the span that closed at `ts`, oldest first. */
 export const telemetryTrace = (ts: string, day: string) =>
-  invoke<TelemetryRecord[]>("telemetry_trace", { ts, day });
+  runIpc(invoke<TelemetryRecord[]>("telemetry_trace", { ts, day }));
 
 /** What a sibling tab hands the Log tab to pre-fill it. */
 export type LogPreset = { days: number; filters: Filter[]; query?: string };
@@ -244,7 +244,7 @@ export type DashboardSummary = {
 };
 
 export const telemetryDashboard = (days: DashboardRange, groupBy: DashboardGroupBy) =>
-  invoke<DashboardSummary>("telemetry_dashboard", { days, groupBy });
+  runIpc(invoke<DashboardSummary>("telemetry_dashboard", { days, groupBy }));
 
 /** The Builds tab: one snapshot per build × day, compared in Rust
  * (`crates/tt-telemetry/src/builds.rs`). A `perHour` of `null` means the measure
@@ -289,10 +289,10 @@ export type BuildDelta = {
 };
 
 export const telemetryBuilds = (days: number) =>
-  invoke<BuildSnapshot[]>("telemetry_builds", { days });
+  runIpc(invoke<BuildSnapshot[]>("telemetry_builds", { days }));
 
 export const telemetryBuildCompare = (base: BuildKey, other: BuildKey) =>
-  invoke<BuildDelta[]>("telemetry_build_compare", { base, other });
+  runIpc(invoke<BuildDelta[]>("telemetry_build_compare", { base, other }));
 
 /** The filters the backend runs: the kind chip is one more `eq` predicate. */
 export function effectiveFilters(kind: KindFilter, filters: Filter[]): Filter[] {
@@ -318,10 +318,11 @@ export type QueryResult = {
 };
 
 /** One read-only SELECT over the last fortnight; rejects anything else. */
-export const telemetryQuery = (sql: string) => invoke<QueryResult>("telemetry_query", { sql });
+export const telemetryQuery = (sql: string) =>
+  runIpc(invoke<QueryResult>("telemetry_query", { sql }));
 
 /** Rebuilds the query database from disk, picking up today's newest lines. */
-export const telemetryQueryReload = () => invoke<void>("telemetry_query_reload");
+export const telemetryQueryReload = () => runIpc(invoke<void>("telemetry_query_reload"));
 
 /** A column is numeric when it has a number and nothing but numbers and nulls
  * — those right-align in tabular figures; an all-null column stays text. */
@@ -371,10 +372,11 @@ export type RuleScore = {
   failingSince: string | null;
 };
 
-export const telemetryRules = (days: number) => invoke<RuleScore[]>("telemetry_rules", { days });
+export const telemetryRules = (days: number) =>
+  runIpc(invoke<RuleScore[]>("telemetry_rules", { days }));
 
 /** Enabled rules failing right now; the status bar polls this. */
-export const telemetryRulesFailing = () => invoke<number>("telemetry_rules_failing");
+export const telemetryRulesFailing = () => runIpc(invoke<number>("telemetry_rules_failing"));
 
 /** The Agents tab, summarized in Rust (`crates/tt-telemetry/src/agents.rs`): the
  * app's own model spend (any event carrying `cost_usd`) and each checkout's agent
@@ -389,7 +391,7 @@ export type AgentsSummary = {
 };
 
 export const telemetryAgents = (days: number) =>
-  invoke<AgentsSummary>("telemetry_agents", { days });
+  runIpc(invoke<AgentsSummary>("telemetry_agents", { days }));
 
 /** The event log's footprint and the retention the settings ask for. */
 export type TelemetryStorage = {
@@ -400,7 +402,7 @@ export type TelemetryStorage = {
   retainDays: number;
 };
 
-export const telemetryStorage = () => invoke<TelemetryStorage>("telemetry_storage");
+export const telemetryStorage = () => runIpc(invoke<TelemetryStorage>("telemetry_storage"));
 
 /** Delete the files past the saved retention now, not at the next rollover. */
-export const telemetryPrune = () => invoke<TelemetryStorage>("telemetry_prune");
+export const telemetryPrune = () => runIpc(invoke<TelemetryStorage>("telemetry_prune"));

@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createStore, useStoreSelector, type Store } from "./external-store";
 import { replaceEqualDeep } from "./replace-equal-deep";
+import { Effect } from "effect";
+import { subscribeThen } from "./subscribe-then";
 import { invoke, isTauri } from "./tauri";
 import {
   EMPTY_SNAPSHOT,
@@ -31,8 +33,6 @@ export function StoreSnapshotProvider({ children }: { children: ReactNode }) {
     const setSnapshot = (next: StoreSnapshot) =>
       store.snapshot.set(replaceEqualDeep(store.snapshot.get(), next));
     const setLive = store.live.set;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
 
     if (!isTauri()) {
       // Browser dev: render mock rows so screens are visually workable.
@@ -42,37 +42,22 @@ export function StoreSnapshotProvider({ children }: { children: ReactNode }) {
     // A `store://snapshot` event can beat the initial `store_snapshot` invoke;
     // once one has, its data is fresher, so don't let the invoke roll it back.
     let eventArrived = false;
-
-    void (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-
-        const sub = await listen<WireStoreSnapshot>("store://snapshot", (e) => {
-          eventArrived = true;
-          setSnapshot(toStoreSnapshot(e.payload));
-          setLive(true);
-        });
-        if (disposed) {
-          sub();
-          return;
-        }
-        unlisten = sub;
-      } catch {
-        // Event bridge not ready — stay on the empty snapshot.
-        return;
-      }
-
-      const initial = await invoke<WireStoreSnapshot>("store_snapshot");
-      if (initial.isOk() && !disposed && !eventArrived) {
-        setSnapshot(toStoreSnapshot(initial.value));
-        setLive(true);
-      }
-    })();
-
-    return () => {
-      disposed = true;
-      unlisten?.();
+    const apply = (wire: WireStoreSnapshot) => {
+      setSnapshot(toStoreSnapshot(wire));
+      setLive(true);
     };
+    return subscribeThen(
+      {
+        "store://snapshot": (payload) => {
+          eventArrived = true;
+          apply(payload as WireStoreSnapshot);
+        },
+      },
+      invoke<WireStoreSnapshot>("store_snapshot").pipe(
+        Effect.tap((initial) => Effect.sync(() => eventArrived || apply(initial))),
+        Effect.ignore,
+      ),
+    );
   }, [store]);
 
   return <StoreSnapshotContext.Provider value={store}>{children}</StoreSnapshotContext.Provider>;

@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useEffect, useRef, useState } from "react";
 import {
   ChatsCircleIcon,
@@ -49,9 +50,9 @@ export function InsightsTab({
     fetchedKey.current = key;
     setLoading(true);
     void claudeSessionsInsights(Number(days)).then((r) => {
-      r.match({
-        ok: setInsights,
-        err: (e) => {
+      Result.match(r, {
+        onSuccess: setInsights,
+        onFailure: (e) => {
           setInsights(null);
           reportSessionsError(e);
         },

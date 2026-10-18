@@ -1,3 +1,4 @@
+import { Result } from "effect";
 import { useCallback, useEffect, useState } from "react";
 import { ChatsCircleIcon, XIcon } from "@phosphor-icons/react";
 import { Button } from "@cloudflare/kumo";
@@ -37,12 +38,12 @@ export function ThreadPanel({
 
   const load = useCallback(async () => {
     const loaded = await slackDmThread(threadTs);
-    loaded.match({
-      ok: (next) => {
+    Result.match(loaded, {
+      onSuccess: (next) => {
         setMessages(next);
         setError(null);
       },
-      err: (e) => setError(errorMessage(e)),
+      onFailure: (e) => setError(errorMessage(e)),
     });
     setLoading(false);
   }, [threadTs]);
