@@ -151,9 +151,10 @@ export function SettingsScreen() {
       />
 
       <div
+        key={tab}
         role="tabpanel"
         aria-label={TABS.find((t) => t.id === tab)?.label}
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto motion-safe:animate-in motion-safe:fade-in-0 duration-150"
       >
         {tab === "general" && (
           <div className="flex flex-col gap-5 p-4">

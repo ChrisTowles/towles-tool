@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListChecksIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Button, Input, Switch } from "@cloudflare/kumo";
+import { cardMotion } from "@/lib/motion-presets";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
 import { landingSummaryForDir, type TaskBlocker } from "@/lib/agentboard/landing";
@@ -624,7 +626,7 @@ export function BoardScreen() {
                     <span className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {TASK_STATUS_LABEL[status]}
                     </span>
-                    <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
+                    <span className="rounded-full bg-muted px-1.5 font-mono text-micro tabular-nums text-muted-foreground">
                       {counts[status]}
                     </span>
                   </div>
@@ -661,7 +663,7 @@ export function BoardScreen() {
                           >
                             {lane.label}
                           </span>
-                          <span className="rounded-full bg-muted px-1.5 font-mono text-micro text-muted-foreground">
+                          <span className="rounded-full bg-muted px-1.5 font-mono text-micro tabular-nums text-muted-foreground">
                             {lane.tasks.length}
                           </span>
                         </div>
@@ -672,56 +674,59 @@ export function BoardScreen() {
                             key={status}
                             className="flex min-h-12 flex-col gap-2 rounded-lg border bg-muted/30 p-2"
                           >
-                            {lane.columns[status].map((task) => {
-                              const repoKey = taskRepoKey(task);
-                              const repoSlug = taskRepoSlug(task);
-                              const railKey = railRepoKeyForTask(agentState.repos, task);
-                              return (
-                                <Card
-                                  key={task.id}
-                                  task={task}
-                                  repos={repos}
-                                  repoIdentity={repoByKey.get(repoKey)}
-                                  repoLabel={
-                                    groupByRepo || repoKey === NO_REPO_GROUP
-                                      ? undefined
-                                      : repoGroupLabel(repoSlug)
-                                  }
-                                  onOpenAgentboard={
-                                    railKey
-                                      ? () => {
-                                          mouseAction("board-open", "board");
-                                          openOnAgentboard(railKey);
-                                        }
-                                      : undefined
-                                  }
-                                  agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
-                                  cursor={cursorTask?.id === task.id}
-                                  onOpenSession={openSession}
-                                  openIssues={snapshot.issues}
-                                  issuesByKey={issuesByKey}
-                                  openPrs={openPrs}
-                                  onReopen={(t) => {
-                                    uiAction("board.reopen_task", "board");
-                                    reopen(t);
-                                  }}
-                                  onStart={(t) => {
-                                    mouseAction("board-start", "board");
-                                    reopen(t);
-                                  }}
-                                  onPromote={promote}
-                                  onAttachIssue={attachIssue}
-                                  onDetachIssue={detachIssue}
-                                  onAttachPr={attachPr}
-                                  onDetachPr={detachPr}
-                                  onRename={rename}
-                                  onSetNotes={setNotes}
-                                  onClose={(id, outcome) => void remove(id, { outcome })}
-                                  onRestore={restore}
-                                  onPurge={(id) => void remove(id, { purge: true })}
-                                />
-                              );
-                            })}
+                            <AnimatePresence initial={false}>
+                              {lane.columns[status].map((task) => {
+                                const repoKey = taskRepoKey(task);
+                                const repoSlug = taskRepoSlug(task);
+                                const railKey = railRepoKeyForTask(agentState.repos, task);
+                                return (
+                                  <motion.div key={task.id} {...cardMotion}>
+                                    <Card
+                                      task={task}
+                                      repos={repos}
+                                      repoIdentity={repoByKey.get(repoKey)}
+                                      repoLabel={
+                                        groupByRepo || repoKey === NO_REPO_GROUP
+                                          ? undefined
+                                          : repoGroupLabel(repoSlug)
+                                      }
+                                      onOpenAgentboard={
+                                        railKey
+                                          ? () => {
+                                              mouseAction("board-open", "board");
+                                              openOnAgentboard(railKey);
+                                            }
+                                          : undefined
+                                      }
+                                      agent={boardAgentStatus(agentState.repos, task.worktree?.dir)}
+                                      cursor={cursorTask?.id === task.id}
+                                      onOpenSession={openSession}
+                                      openIssues={snapshot.issues}
+                                      issuesByKey={issuesByKey}
+                                      openPrs={openPrs}
+                                      onReopen={(t) => {
+                                        uiAction("board.reopen_task", "board");
+                                        reopen(t);
+                                      }}
+                                      onStart={(t) => {
+                                        mouseAction("board-start", "board");
+                                        reopen(t);
+                                      }}
+                                      onPromote={promote}
+                                      onAttachIssue={attachIssue}
+                                      onDetachIssue={detachIssue}
+                                      onAttachPr={attachPr}
+                                      onDetachPr={detachPr}
+                                      onRename={rename}
+                                      onSetNotes={setNotes}
+                                      onClose={(id, outcome) => void remove(id, { outcome })}
+                                      onRestore={restore}
+                                      onPurge={(id) => void remove(id, { purge: true })}
+                                    />
+                                  </motion.div>
+                                );
+                              })}
+                            </AnimatePresence>
                           </div>
                         ))}
                       </div>

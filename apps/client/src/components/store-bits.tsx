@@ -96,7 +96,9 @@ export function StatTile({
       <div className="text-mini font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </div>
-      <div className="mt-0.5 font-mono text-xl font-semibold text-foreground">{value}</div>
+      <div className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-foreground">
+        {value}
+      </div>
       {detail && <div className="text-mini text-muted-foreground">{detail}</div>}
     </div>
   );

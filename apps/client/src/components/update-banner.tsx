@@ -1,21 +1,39 @@
 import { useState } from "react";
 import { SparkleIcon, XIcon } from "@phosphor-icons/react";
+import { AnimatePresence, motion } from "motion/react";
 import { Button } from "@cloudflare/kumo";
+import { stripMotion } from "@/lib/motion-presets";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { useWorkspace } from "@/lib/workspace";
-import { installUpdate, updateLabel, useUpdateAvailable, useUpdateProgress } from "@/lib/update";
+import {
+  installUpdate,
+  updateLabel,
+  useUpdateAvailable,
+  useUpdateProgress,
+  type UpdateInfo,
+} from "@/lib/update";
 
 /** Full-width strip offering a newer release. Dismiss is session-only — no
  * persisted "skip this version", so it returns on relaunch until installed. */
 export function UpdateBanner() {
   const update = useUpdateAvailable();
+  const [dismissed, setDismissed] = useState(false);
+  return (
+    <AnimatePresence initial={false}>
+      {update && !dismissed && (
+        <motion.div key="update" {...stripMotion} className="shrink-0">
+          <BannerStrip update={update} onDismiss={() => setDismissed(true)} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function BannerStrip({ update, onDismiss }: { update: UpdateInfo; onDismiss: () => void }) {
   const progress = useUpdateProgress();
   const { activeTab } = useWorkspace();
-  const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
-
-  if (!update || dismissed) return null;
 
   const install = async () => {
     setInstalling(true);
@@ -59,7 +77,7 @@ export function UpdateBanner() {
             aria-label="Dismiss"
             onClick={() => {
               uiAction("update_banner.dismiss", activeTab);
-              setDismissed(true);
+              onDismiss();
             }}
             icon={<XIcon className="size-3.5" />}
           />

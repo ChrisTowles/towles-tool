@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { DelayedLoading } from "@/components/delayed-loading";
 import { ArrowClockwiseIcon, PulseIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
 import { Button } from "@cloudflare/kumo";
@@ -78,11 +79,11 @@ export function TaskExplorerScreen() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {groups === null ? (
-          <Empty>Loading…</Empty>
+          <DelayedLoading className="py-8 text-center">Loading…</DelayedLoading>
         ) : groups.length === 0 ? (
           <Empty>No processes found.</Empty>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 motion-safe:animate-in motion-safe:fade-in-0 duration-200">
             {groups.map((g) => (
               <ProcessGroupCard key={g.termId ?? "app"} group={g} />
             ))}

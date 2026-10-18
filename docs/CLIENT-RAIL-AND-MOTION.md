@@ -70,6 +70,16 @@ queue rail is the one exception, with slower fades of its own in
 agents' schedule rather than yours, so motion there has to stay below the
 threshold of pulling your eye.
 
+Everything beyond the rail rows shares `lib/motion-presets.ts`: `stripMotion`
+(a banner growing above content), `cardMotion` (kanban cards, `layout="position"`
+so text never stretches), `SCREEN_FADE_CLASS` (a kept-mounted screen fades when
+`hidden` lifts — a CSS animation restarts on `display:none` → shown, so nothing
+remounts), `COLOR_FADE_CLASS` (status dots crossfade), and the skeleton timing
+(`useSkeleton`: nothing under 120ms, then held 250ms). Loading copy goes through
+`DelayedLoading`, which reserves its line. Changing numbers take `tabular-nums`;
+late-arriving readouts fade in rather than pop. Never animate inside a terminal
+or the code-server iframe, and never per PTY frame.
+
 Deliberately **not** yaak's `<LazyMotion strict>` + `m.*`, which splits motion
 into its own chunk only when every `AnimatePresence` consumer is lazily imported
 — screens here are static imports (`screens/index.tsx`), so a build puts motion

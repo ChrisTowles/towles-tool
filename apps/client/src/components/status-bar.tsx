@@ -22,12 +22,16 @@ import { useRulesFailing } from "@/lib/telemetry-rules";
 import { fmtAge, fmtCountdown, useStoreSnapshot } from "@/lib/data";
 import { useNow } from "@/lib/now";
 import { taskExplorerSnapshot } from "@/lib/task-explorer";
+import { COLOR_FADE_CLASS } from "@/lib/motion-presets";
 import { cn } from "@/lib/utils";
 import { useAppVersion } from "@/lib/version";
 import { useWorkspace } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
 type ResourceUsage = { cpuPercent: number; memoryBytes: number };
+
+/** Readouts that arrive after first paint fade in rather than pop. */
+const ARRIVE_CLASS = "motion-safe:animate-in motion-safe:fade-in-0 duration-200";
 
 const USAGE_POLL_MS = 5000;
 const CLAUDE_USAGE_POLL_MS = 5 * 60_000;
@@ -90,7 +94,10 @@ function LimitBar({ bar }: { bar: UsageLimitBar }) {
       <span>{shortLimitLabel(bar.label)}</span>
       <div className="h-1.5 w-6 overflow-hidden rounded-full bg-kumo-fill">
         <div
-          className={cn("h-full rounded-full", limitFillColor(bar.percent))}
+          className={cn(
+            "h-full rounded-full transition-[width,background-color] duration-300 ease-out",
+            limitFillColor(bar.percent),
+          )}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -144,7 +151,7 @@ function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: num
       }
       render={
         <span
-          className={cn("size-1.5 rounded-full", COLLECTOR_STATE_DOT[state])}
+          className={cn("size-1.5 rounded-full", COLOR_FADE_CLASS, COLLECTOR_STATE_DOT[state])}
           aria-label={`${label}: ${COLLECTOR_STATE_LABEL[state]}`}
         />
       }
@@ -288,10 +295,14 @@ export function StatusBar() {
       </button>
       <div className="flex items-center gap-3">
         <CollectorHealthCluster />
-        {keyboard && <KeyboardHabit score={keyboard} />}
+        {keyboard && (
+          <div className={ARRIVE_CLASS}>
+            <KeyboardHabit score={keyboard} />
+          </div>
+        )}
         {rulesFailing !== null && <RulesFailing count={rulesFailing} />}
         {claudeLimits && claudeLimits.bars.length > 0 && (
-          <div className="flex items-center gap-2.5 tabular-nums">
+          <div className={cn("flex items-center gap-2.5 tabular-nums", ARRIVE_CLASS)}>
             {claudeLimits.bars.map((b) => (
               <LimitBar key={b.label} bar={b} />
             ))}
@@ -299,7 +310,10 @@ export function StatusBar() {
         )}
         {usage && (
           <button
-            className="tabular-nums hover:text-kumo-default"
+            className={cn(
+              "min-w-[17ch] text-right tabular-nums hover:text-kumo-default",
+              ARRIVE_CLASS,
+            )}
             title="Total CPU / memory — this app plus every open terminal"
             onClick={() => {
               uiAction("status_bar.open_task_explorer", activeTab);
@@ -312,7 +326,11 @@ export function StatusBar() {
         <span className={isTauri() ? undefined : "font-medium text-warn"}>
           {isTauri() ? "Tauri shell" : "browser"}
         </span>
-        {buildBehind && <BuildBehindChip behind={buildBehind} />}
+        {buildBehind && (
+          <span className={ARRIVE_CLASS}>
+            <BuildBehindChip behind={buildBehind} />
+          </span>
+        )}
         <span>{version}</span>
       </div>
     </footer>
