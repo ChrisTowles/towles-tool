@@ -17,6 +17,7 @@ pub mod claude_cli;
 pub mod cleanup;
 pub mod coalesce;
 pub mod collapse;
+pub mod emit_gate;
 pub mod engine;
 pub mod env_drift;
 pub mod folder_meta;
@@ -64,6 +65,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 // collector/MCP/doctor crates). Everything else stays reachable through its module path.
 pub use bridge::StatePayload;
 pub use coalesce::Coalescer;
+pub use emit_gate::EmitGate;
 pub use engine::{GitInvalidation, RailRow, UnrecordedWorktree};
 pub use env_drift::PortDrift;
 pub use git_info::{

@@ -268,8 +268,8 @@ pub fn run() {
                 let engine = engine.clone();
                 let scan = scan.clone();
                 tauri::async_runtime::spawn(async move {
-                    // Compared with `ts` zeroed: the stamp changes every rebuild.
-                    let mut last: Option<tt_agentboard::StatePayload> = None;
+                    // Skips payloads that differ only by clock stamps.
+                    let mut gate = tt_agentboard::EmitGate::new();
                     // Fires once per flip into needs-you, never on the level.
                     let mut needs_watch = tt_agentboard::NeedsYouWatch::new();
                     // …and once per folder whose last agent stopped working.
@@ -281,7 +281,7 @@ pub fn run() {
                             continue;
                         }
                         let rebuild_handle = handle.clone();
-                        let Ok(mut payload) = tauri::async_runtime::spawn_blocking(move || {
+                        let Ok(payload) = tauri::async_runtime::spawn_blocking(move || {
                             agentboard::stamped_payload(&rebuild_handle)
                         })
                         .await
@@ -297,8 +297,7 @@ pub fn run() {
                         }
                         queue::observe(&handle, &payload);
 
-                        let ts = std::mem::take(&mut payload.ts);
-                        if last.as_ref() != Some(&payload) {
+                        if gate.should_emit(&payload, store::now_ms()) {
                             // An agent's turn ending is the only notice that a
                             // checkout's *working tree* moved — an edit it never
                             // staged touched no watched `.git` file, so without
@@ -318,10 +317,7 @@ pub fn run() {
                             }
                             let edges = needs_watch.observe(&payload);
                             agentboard::notify_needs_you(&handle, &edges);
-                            payload.ts = ts;
                             let _ = handle.emit(STATE_EVENT, &payload);
-                            payload.ts = 0;
-                            last = Some(payload);
                         }
                     }
                 });
