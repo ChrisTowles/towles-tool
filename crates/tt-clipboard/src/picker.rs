@@ -71,7 +71,7 @@ pub fn run(store: Store) -> Result<Option<Picked>> {
     let picked = Rc::new(Cell::new(None));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Clipboard")
+            .with_title("tt clipboard manager")
             .with_app_id(APP_ID)
             .with_inner_size([980.0, 620.0]),
         ..Default::default()
