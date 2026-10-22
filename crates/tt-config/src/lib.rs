@@ -410,6 +410,25 @@ impl Default for ClipSuggestSettings {
     }
 }
 
+/// `tt-clip`'s picker: the chord it types to paste a choice, per kind, as
+/// `+`-joined wtype modifiers ending in a key name.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClipboardSettings {
+    /// Shift+Insert pastes in terminals and GUI apps alike, since the picker
+    /// sets the primary selection too.
+    pub paste_text_keys: String,
+    /// Ctrl+V: a GUI paste, and the byte a TUI takes as "read the clipboard image".
+    pub paste_image_keys: String,
+}
+
+impl Default for ClipboardSettings {
+    fn default() -> Self {
+        Self { paste_text_keys: "shift+Insert".into(), paste_image_keys: "ctrl+v".into() }
+    }
+}
+
 /// Which builds an installed app updates itself to.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -489,6 +508,17 @@ pub struct UserSettings {
     /// Lenient for the same reason as `mcp`.
     #[serde(default, deserialize_with = "lenient_updates")]
     pub updates: UpdatesSettings,
+
+    /// Lenient for the same reason as `mcp`.
+    #[serde(default, deserialize_with = "lenient_clipboard")]
+    pub clipboard: ClipboardSettings,
+}
+
+fn lenient_clipboard<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<ClipboardSettings, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 fn lenient_updates<'de, D: serde::Deserializer<'de>>(
@@ -548,6 +578,7 @@ impl Default for UserSettings {
             telemetry: TelemetrySettings::default(),
             clip_suggest: ClipSuggestSettings::default(),
             updates: UpdatesSettings::default(),
+            clipboard: ClipboardSettings::default(),
         }
     }
 }

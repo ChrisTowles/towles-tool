@@ -19,7 +19,7 @@ use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -384,29 +384,19 @@ impl CodeServerChild {
 
         let args = build_args(cfg);
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let bin = cfg.binary.to_string_lossy();
-        tt_exec::record_detached_spawn(&bin, &arg_refs, "code-server");
-
-        let mut cmd = Command::new(&cfg.binary);
-        cmd.args(&args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        for (key, _) in std::env::vars_os() {
-            if tt_exec::is_app_instance_env(&key.to_string_lossy()) {
-                cmd.env_remove(&key);
-            }
-        }
+        let mut cmd = tt_exec::detached_command(&cfg.binary, &arg_refs, "code-server");
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         // After the scrub, not before: `TT_` is one of the prefixes it strips.
         cmd.env("TT_BRIDGE_DIR", &cfg.bridge_dir);
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         {
             use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
             // Drop can't run when the app is SIGKILLed, and a stray workbench
             // is ~1 GB of node. PDEATHSIG reaps the root; its extension host
             // follows once that connection drops. Linux-only — macOS has no
             // equivalent, so a killed app there still leaks one tree.
             // SAFETY: pre_exec runs in the forked child before exec; prctl is
             // async-signal-safe and touches only this process.
-            #[cfg(target_os = "linux")]
             unsafe {
                 cmd.pre_exec(|| {
                     libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);

@@ -183,6 +183,12 @@ pub fn nudge_dir_path() -> Result<PathBuf> {
     Ok(nest(base, &detect_forced_scope(), true).join("nudge"))
 }
 
+/// Clipboard history: one per machine, since the clipboard is.
+pub fn clipboard_dir() -> Result<PathBuf> {
+    let base = dirs::data_dir().ok_or(Error::NoDataDir)?.join(TOOL_NAME);
+    Ok(shared_under(base).join("clipboard"))
+}
+
 /// Instance-scoped, so the path alone says which task spawned the commands.
 pub fn telemetry_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("telemetry"))
