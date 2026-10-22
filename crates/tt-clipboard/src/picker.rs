@@ -3,6 +3,9 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui::{
     self, Color32, ColorImage, Key, Modifiers, RichText, TextureHandle, TextureOptions,
@@ -20,12 +23,16 @@ const PREVIEW_TEXT_CHARS: usize = 20_000;
 /// Long edge an image is decoded to for the preview pane.
 const PREVIEW_IMAGE_EDGE: u32 = 1600;
 
-/// What the person chose. Paste also sends the paste keystroke once copied.
+/// What the person chose; `paste` also sends the paste keystroke once copied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Picked {
-    Copy(i64),
-    Paste(i64),
+pub struct Picked {
+    pub id: i64,
+    pub kind: Kind,
+    pub paste: bool,
 }
+
+/// A full-size preview decoded off the UI thread: id, width, height, RGBA.
+type Decoded = (i64, u32, u32, Vec<u8>);
 
 enum Preview {
     Text(String),
@@ -42,6 +49,9 @@ struct Picker {
     scroll_to_selected: bool,
     thumbs: HashMap<i64, Option<TextureHandle>>,
     preview: Option<(i64, Preview)>,
+    /// The image the decode worker should finish; older requests give up.
+    wanted: Arc<AtomicI64>,
+    decoded: (Sender<Decoded>, Receiver<Decoded>),
     had_focus: bool,
     now_ms: i64,
     picked: Rc<Cell<Option<Picked>>>,
@@ -71,6 +81,8 @@ pub fn run(store: Store) -> Result<Option<Picked>> {
                 scroll_to_selected: false,
                 thumbs: HashMap::new(),
                 preview: None,
+                wanted: Arc::new(AtomicI64::new(0)),
+                decoded: channel(),
                 had_focus: false,
                 now_ms: tt_config::now_ms(),
                 picked: out,
@@ -102,8 +114,8 @@ impl Picker {
     }
 
     fn choose(&mut self, ctx: &egui::Context, paste: bool) {
-        if let Some(id) = self.current().map(|s| s.id) {
-            self.picked.set(Some(if paste { Picked::Paste(id) } else { Picked::Copy(id) }));
+        if let Some(row) = self.current() {
+            self.picked.set(Some(Picked { id: row.id, kind: row.kind, paste }));
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -164,23 +176,51 @@ impl Picker {
     }
 
     fn load_preview(&mut self, ctx: &egui::Context) {
-        let Some(id) = self.current().map(|s| s.id) else {
+        while let Ok((id, w, h, rgba)) = self.decoded.1.try_recv() {
+            if let Some((current, preview)) = &mut self.preview
+                && *current == id
+            {
+                let img = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
+                let tex = ctx.load_texture(format!("full-{id}"), img, TextureOptions::LINEAR);
+                *preview = Preview::Image(tex);
+            }
+        }
+        let Some((id, kind)) = self.current().map(|s| (s.id, s.kind)) else {
             self.preview = None;
             return;
         };
         if self.preview.as_ref().is_some_and(|(p, _)| *p == id) {
             return;
         }
-        let preview = match self.store.get(id) {
-            Ok(e) if e.kind == Kind::Text => {
-                let text = String::from_utf8_lossy(&e.data);
-                Preview::Text(text.chars().take(PREVIEW_TEXT_CHARS).collect())
+        let preview = match kind {
+            Kind::Text => self
+                .store
+                .text_prefix(id, PREVIEW_TEXT_CHARS)
+                .map_or(Preview::Missing, Preview::Text),
+            // Show the thumbnail now; the full decode swaps in when it lands.
+            Kind::Image => {
+                self.decode_in_background(ctx, id);
+                self.thumb(ctx, id).map_or(Preview::Missing, Preview::Image)
             }
-            Ok(e) => texture(ctx, &format!("full-{id}"), &e.data, PREVIEW_IMAGE_EDGE)
-                .map_or(Preview::Missing, Preview::Image),
-            Err(_) => Preview::Missing,
         };
         self.preview = Some((id, preview));
+    }
+
+    fn decode_in_background(&self, ctx: &egui::Context, id: i64) {
+        let Ok(entry) = self.store.get(id) else {
+            return;
+        };
+        self.wanted.store(id, Ordering::Relaxed);
+        let (wanted, tx, ctx) = (self.wanted.clone(), self.decoded.0.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            if wanted.load(Ordering::Relaxed) != id {
+                return;
+            }
+            if let Some((w, h, rgba)) = thumb::decode_rgba(&entry.data, PREVIEW_IMAGE_EDGE) {
+                let _ = tx.send((id, w, h, rgba));
+                ctx.request_repaint();
+            }
+        });
     }
 
     fn list(&mut self, ui: &mut egui::Ui) {
@@ -188,10 +228,10 @@ impl Picker {
         let n = self.results.len();
         egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, ROW_HEIGHT, n, |ui, rows| {
             for i in rows {
-                let row = self.results[i].clone();
+                let (id, kind) = (self.results[i].id, self.results[i].kind);
+                let thumb = if kind == Kind::Image { self.thumb(&ctx, id) } else { None };
                 let selected = i == self.selected;
-                let thumb = if row.kind == Kind::Image { self.thumb(&ctx, row.id) } else { None };
-                let resp = row_ui(ui, &row, selected, thumb.as_ref(), self.now_ms);
+                let resp = row_ui(ui, &self.results[i], selected, thumb.as_ref(), self.now_ms);
                 if selected && self.scroll_to_selected {
                     resp.scroll_to_me(None);
                     self.scroll_to_selected = false;
@@ -302,7 +342,7 @@ fn row_ui(
     let font = egui::TextStyle::Body.resolve(ui.style());
     // The right edge carries when it was copied and, for text, how much is hidden.
     let mut right = age(now_ms - row.used_at);
-    let (first, more) = first_line(&row.preview);
+    let (first, more) = row.first_line();
     if row.kind == Kind::Text && more > 0 {
         right = format!("+{more} lines   {right}");
     }
@@ -332,13 +372,6 @@ fn row_ui(
     resp
 }
 
-/// The first non-blank line, trimmed, and how many lines follow it in the preview.
-fn first_line(text: &str) -> (String, usize) {
-    let mut lines = text.lines().skip_while(|l| l.trim().is_empty());
-    let first = lines.next().unwrap_or("").trim().to_string();
-    (first, lines.count())
-}
-
 fn age(ms: i64) -> String {
     let s = ms.max(0) / 1000;
     match s {
@@ -358,12 +391,6 @@ fn texture(ctx: &egui::Context, name: &str, bytes: &[u8], edge: u32) -> Option<T
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn first_line_skips_leading_blanks() {
-        assert_eq!(first_line("\n  \n  hello \nworld\n!"), ("hello".into(), 2));
-        assert_eq!(first_line(""), (String::new(), 0));
-    }
 
     #[test]
     fn age_buckets() {

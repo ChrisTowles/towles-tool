@@ -30,6 +30,8 @@ pub enum Error {
     Wayland(String),
     #[error("the compositor has no ext_data_control_manager_v1 (clipboard access)")]
     NoDataControl,
+    #[error("another `tt-clip watch` is already running")]
+    AlreadyRunning,
     #[error("no entry {0}")]
     NotFound(i64),
     #[error("picker: {0}")]

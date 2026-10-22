@@ -149,16 +149,7 @@ pub fn record_detached_spawn(cmd: &str, args: &[&str], kind: &str) {
 
 /// Run a command, capturing output. Does not fail on a non-zero exit code.
 pub fn run(cmd: &str, args: &[&str]) -> Result<Output> {
-    let span = spawn_span(cmd, args, None, None);
-    let _entered = span.enter();
-
-    let output = Command::new(cmd)
-        .args(args)
-        .output()
-        .map_err(|source| spawn_error(&span, "spawn_failed", cmd, source))?;
-
-    let exit_code = output.status.code().unwrap_or(-1);
-    record_exit(&span, exit_code);
+    let (output, exit_code) = run_raw(cmd, args)?;
     Ok(Output {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
@@ -168,18 +159,21 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output> {
 
 /// [`run`] for a child whose stdout is binary (an image off the clipboard), kept as bytes.
 pub fn run_bytes(cmd: &str, args: &[&str]) -> Result<(Vec<u8>, i32)> {
+    run_raw(cmd, args).map(|(output, exit_code)| (output.stdout, exit_code))
+}
+
+fn run_raw(cmd: &str, args: &[&str]) -> Result<(std::process::Output, i32)> {
     let span = spawn_span(cmd, args, None, None);
     let _entered = span.enter();
 
     let output = Command::new(cmd)
         .args(args)
-        .stderr(std::process::Stdio::null())
         .output()
         .map_err(|source| spawn_error(&span, "spawn_failed", cmd, source))?;
 
     let exit_code = output.status.code().unwrap_or(-1);
     record_exit(&span, exit_code);
-    Ok((output.stdout, exit_code))
+    Ok((output, exit_code))
 }
 
 /// On expiry the child is killed (and reaped) so a hung subprocess can't block

@@ -1,9 +1,10 @@
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::process::CommandExt;
 use std::process::{ExitCode, Stdio};
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use tt_clipboard::picker::{self, Picked};
+use tt_clipboard::picker;
 use tt_clipboard::query::Query;
 use tt_clipboard::wayland::{self, Capture};
 use tt_clipboard::{Error, Kind, Result, Store, cliphist};
@@ -54,12 +55,7 @@ enum Command {
 }
 
 pub fn main() -> ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .with_writer(std::io::stderr)
-        .init();
+    let _ = tt_telemetry::init("tt-clip", "info");
     match run(Cli::parse().command) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -76,13 +72,9 @@ fn run(command: Command) -> Result<()> {
             let Some(picked) = picker::run(Store::open_default()?)? else {
                 return Ok(());
             };
-            let (id, paste) = match picked {
-                Picked::Copy(id) => (id, false),
-                Picked::Paste(id) => (id, !no_paste),
-            };
-            let kind = copy(id)?;
-            if paste {
-                send_paste(kind)?;
+            copy(picked.id)?;
+            if picked.paste && !no_paste {
+                send_paste(picked.kind)?;
             }
             Ok(())
         }
@@ -91,9 +83,7 @@ fn run(command: Command) -> Result<()> {
             let now = tt_config::now_ms();
             for e in store.search(&Query::parse(&query.join(" ")), limit)? {
                 let what = match e.kind {
-                    Kind::Text => {
-                        e.preview.lines().next().unwrap_or("").chars().take(100).collect()
-                    }
+                    Kind::Text => e.first_line().0.chars().take(100).collect(),
                     Kind::Image => format!("[{} {}×{}]", e.mime, e.width, e.height),
                 };
                 println!("{}\t{}s\t{what}", e.id, (now - e.used_at) / 1000);
@@ -105,7 +95,7 @@ fn run(command: Command) -> Result<()> {
             std::io::stdout().write_all(&entry.data)?;
             Ok(())
         }
-        Command::Copy { id } => copy(id).map(|_| ()),
+        Command::Copy { id } => copy(id),
         Command::Delete { id } => match Store::open_default()?.delete(id)? {
             true => Ok(()),
             false => Err(Error::NotFound(id)),
@@ -120,7 +110,7 @@ fn run(command: Command) -> Result<()> {
             wayland::serve(entry.kind, &entry.mime, entry.data, || {
                 // The parent waits for this line; closing stdout after lets it exit.
                 let mut out = std::io::stdout();
-                let _ = writeln!(out, "ready");
+                let _ = writeln!(out, "{READY}");
                 let _ = out.flush();
             })
         }
@@ -134,13 +124,13 @@ fn watch() -> Result<()> {
     std::fs::create_dir_all(&dir)?;
     let lock = std::fs::File::create(dir.join("watch.lock"))?;
     if lock.try_lock().is_err() {
-        return Err(Error::Wayland("another `tt-clip watch` is already running".into()));
+        return Err(Error::AlreadyRunning);
     }
     let store = Store::open_default()?;
     let (tx, rx) = std::sync::mpsc::channel::<Capture>();
     let watcher = std::thread::spawn(move || wayland::watch(tx));
     for capture in rx {
-        match store.insert(&capture.mime, &capture.data, tt_config::now_ms()) {
+        match store.insert(capture.kind, &capture.mime, &capture.data, capture.at_ms) {
             Ok(Some(id)) => tracing::debug!(id, mime = capture.mime, "recorded"),
             Ok(None) => {}
             Err(e) => tracing::warn!("recording a selection: {e}"),
@@ -149,25 +139,30 @@ fn watch() -> Result<()> {
     watcher.join().map_err(|_| Error::Wayland("watcher panicked".into()))?
 }
 
+/// What `serve` prints once it owns the selection.
+const READY: &str = "ready";
+
 /// Hand the entry to a detached `serve`, returning once it owns the selection.
-fn copy(id: i64) -> Result<Kind> {
-    let kind = Store::open_default()?.get(id)?.kind;
+fn copy(id: i64) -> Result<()> {
     let exe = std::env::current_exe()?;
     let id_arg = id.to_string();
     tt_exec::record_detached_spawn("tt-clip", &["serve", &id_arg], "clipboard_owner");
+    // Its own process group, so closing the launching terminal doesn't end the copy.
     let mut child = std::process::Command::new(exe)
         .args(["serve", &id_arg])
+        .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .spawn()?;
     let mut line = String::new();
     BufReader::new(child.stdout.take().expect("piped")).read_line(&mut line)?;
-    if line.trim() != "ready" {
+    if line.trim() != READY {
         return Err(Error::Wayland(
             "the clipboard owner exited before taking the selection".into(),
         ));
     }
-    Ok(kind)
+    Ok(())
 }
 
 /// Paste into whatever regained focus: Ctrl+Shift+V for text (a terminal's paste,
@@ -176,8 +171,10 @@ fn send_paste(kind: Kind) -> Result<()> {
     // Let focus return to the window the picker covered.
     std::thread::sleep(Duration::from_millis(120));
     let args: &[&str] = match kind {
-        Kind::Text => &["-M", "ctrl", "-M", "shift", "-k", "v"],
-        Kind::Image => &["-M", "ctrl", "-k", "v"],
+        Kind::Text => &[
+            "-M", "ctrl", "-M", "shift", "-k", "v", "-m", "shift", "-m", "ctrl",
+        ],
+        Kind::Image => &["-M", "ctrl", "-k", "v", "-m", "ctrl"],
     };
     let out = tt_exec::run("wtype", args)?;
     if !out.ok() {

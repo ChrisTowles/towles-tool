@@ -15,9 +15,9 @@ rusqlite = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 tt-config = { workspace = true }
 tt-exec = { workspace = true }
+tt-telemetry = { workspace = true }
 
 # The watcher and picker speak Wayland; the store and search build anywhere.
 [target.'cfg(target_os = "linux")'.dependencies]

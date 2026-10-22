@@ -1,6 +1,6 @@
 //! One-shot import of a [cliphist](https://github.com/sentriz/cliphist) history.
 
-use crate::{Result, Store};
+use crate::{Kind, Result, Store};
 
 /// Entries `cliphist list` prints, newest first: `<id>\t<preview>`.
 fn ids(listing: &str) -> Vec<&str> {
@@ -8,26 +8,26 @@ fn ids(listing: &str) -> Vec<&str> {
 }
 
 /// Copy every cliphist entry into `store`, oldest at the back. cliphist keeps no
-/// times, so entries are spaced a second apart ending just before `now_ms`.
-/// Returns how many were recorded.
+/// times or mimes, so entries are spaced a second apart ending just before
+/// `now_ms`, and each one's kind is sniffed. Returns how many were recorded.
 pub fn import(store: &Store, now_ms: i64) -> Result<usize> {
     let listing = tt_exec::run("cliphist", &["list"])?;
-    let mut imported = 0;
-    for (i, id) in ids(&listing.stdout).into_iter().enumerate() {
-        let (bytes, code) = tt_exec::run_bytes("cliphist", &["decode", id])?;
-        if code != 0 {
-            continue;
+    store.batch(|store| {
+        let mut imported = 0;
+        for (i, id) in ids(&listing.stdout).into_iter().enumerate() {
+            let (bytes, code) = tt_exec::run_bytes("cliphist", &["decode", id])?;
+            if code != 0 {
+                continue;
+            }
+            let kind = Kind::sniff(&bytes);
+            let mime = if kind == Kind::Text { "text/plain;charset=utf-8" } else { "image/png" };
+            let at = now_ms - (i as i64 + 1) * 1000;
+            if store.insert(kind, mime, &bytes, at)?.is_some() {
+                imported += 1;
+            }
         }
-        // `insert` sniffs the real image format, so any image mime picks that branch;
-        // text that merely starts like an image (`BM…`) falls through to text.
-        let at = now_ms - (i as i64 + 1) * 1000;
-        let as_image =
-            image::guess_format(&bytes).is_ok() && store.insert("image/png", &bytes, at)?.is_some();
-        if as_image || store.insert("text/plain", &bytes, at)?.is_some() {
-            imported += 1;
-        }
-    }
-    Ok(imported)
+        Ok(imported)
+    })
 }
 
 #[cfg(test)]
