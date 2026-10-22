@@ -166,6 +166,22 @@ pub fn run(cmd: &str, args: &[&str]) -> Result<Output> {
     })
 }
 
+/// [`run`] for a child whose stdout is binary (an image off the clipboard), kept as bytes.
+pub fn run_bytes(cmd: &str, args: &[&str]) -> Result<(Vec<u8>, i32)> {
+    let span = spawn_span(cmd, args, None, None);
+    let _entered = span.enter();
+
+    let output = Command::new(cmd)
+        .args(args)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|source| spawn_error(&span, "spawn_failed", cmd, source))?;
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    record_exit(&span, exit_code);
+    Ok((output.stdout, exit_code))
+}
+
 /// On expiry the child is killed (and reaped) so a hung subprocess can't block
 /// the caller forever. Does not fail on a non-zero exit. stdout/stderr drain on
 /// dedicated threads, so a chatty child can't deadlock on a full pipe.

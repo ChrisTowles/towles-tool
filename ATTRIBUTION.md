@@ -26,6 +26,18 @@ rules from [praeclarum/ui.md](https://github.com/praeclarum/ui.md).
 - **Commit:** `252edb6df1583552deee671d2f7f0ce6bd42600a`
 - **License:** MIT
 
+---
+
+`crates/tt-clipboard` reimplements, without copying code, the clipboard-watcher
+semantics of [Ringboard](https://github.com/SUPERCILEX/clipboard-history)'s
+Apache-2.0 Wayland client: which offered mime type to record, skipping
+password-manager selections, and moving a re-copied entry to the front. Nothing
+is taken from its AGPL-3.0 server.
+
+- **Source:** https://github.com/SUPERCILEX/clipboard-history (`wayland/`, `client-sdk/src/watcher_utils/`)
+- **Commit:** `e1f235d9d2c51788909ba6dbfb6652710ad04f2f`
+- **License:** Apache-2.0
+
 ## Yaak License
 
 ```

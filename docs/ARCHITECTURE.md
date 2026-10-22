@@ -113,6 +113,13 @@ the CLI and the app can consume it.
   title and the user's global `rank`; unranked checkouts follow ranked ones in a
   tier. A PR, CI run or backlog task with no checkout is not a row.
 - `tt-claude-code` — transcript/session parsing models.
+- `tt-clipboard` — clipboard history with images, and its own binary, `tt-clip`,
+  outside the app: `tt-clip watch` records every selection over Wayland's
+  `ext-data-control-v1` into `clipboard/history.db` (machine-wide, via
+  `tt_config::clipboard_dir`), and `tt-clip pick` is an egui window to search it
+  and paste. A copy back is served by a detached `tt-clip serve` until something
+  else takes the selection, so the picker exits at once. Linux-only past the
+  store; the watcher and picker are `cfg(target_os = "linux")`.
 - `tt-doctor` — doctor checks logic (the app screen consumes it). Its `disk`
   module is the read-only "State on disk" report: it sizes the state root's
   top-level entries (symlinks unfollowed, a time budget past which sizes are

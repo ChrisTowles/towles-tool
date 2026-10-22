@@ -1,0 +1,32 @@
+[package]
+name = "tt-clipboard"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "tt-clip"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+rusqlite = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tt-config = { workspace = true }
+tt-exec = { workspace = true }
+
+# The watcher and picker speak Wayland; the store and search build anywhere.
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "system_fonts", "wayland"] }
+wayland-client = "0.31.14"
+wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
+
+[dev-dependencies]
+tempfile = "3.14.0"
+
+[lints]
+workspace = true
