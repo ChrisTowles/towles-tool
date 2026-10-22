@@ -29,12 +29,21 @@ const PREVIEW_TEXT_CHARS: usize = 20_000;
 /// Long edge an image is decoded to for the preview pane.
 const PREVIEW_IMAGE_EDGE: u32 = 1600;
 
-/// What the person chose; `paste` also sends the paste keystroke once copied.
+/// What the person chose, and what to do with it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Picked {
     pub id: i64,
     pub kind: Kind,
-    pub paste: bool,
+    pub action: Action,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// Copy, then send the paste keystroke.
+    Paste,
+    Copy,
+    /// Open an image in the screenshot editor.
+    Edit,
 }
 
 /// A full-size preview decoded off the UI thread: id, width, height, RGBA.
@@ -122,9 +131,12 @@ impl Picker {
         self.results.get(self.selected)
     }
 
-    fn choose(&mut self, ctx: &egui::Context, paste: bool) {
+    fn choose(&mut self, ctx: &egui::Context, action: Action) {
         if let Some(row) = self.current() {
-            self.picked.set(Some(Picked { id: row.id, kind: row.kind, paste }));
+            if action == Action::Edit && row.kind != Kind::Image {
+                return;
+            }
+            self.picked.set(Some(Picked { id: row.id, kind: row.kind, action }));
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
@@ -162,9 +174,12 @@ impl Picker {
             self.scroll_to_selected = true;
         }
         if pressed(Modifiers::SHIFT, Key::Enter) {
-            self.choose(ctx, false);
+            self.choose(ctx, Action::Copy);
         } else if pressed(Modifiers::NONE, Key::Enter) {
-            self.choose(ctx, true);
+            self.choose(ctx, Action::Paste);
+        }
+        if pressed(Modifiers::CTRL, Key::E) {
+            self.choose(ctx, Action::Edit);
         }
         if pressed(Modifiers::SHIFT, Key::Delete) {
             self.delete_current();
@@ -247,7 +262,7 @@ impl Picker {
                 }
                 if resp.double_clicked() {
                     self.selected = i;
-                    self.choose(&ctx, true);
+                    self.choose(&ctx, Action::Paste);
                 } else if resp.clicked() {
                     self.selected = i;
                 }
@@ -316,7 +331,7 @@ impl eframe::App for Picker {
         });
         egui::Panel::bottom("hints").show(ui, |ui| {
             ui.horizontal(|ui| {
-                let hint = "Enter paste   Shift+Enter copy   Shift+Del delete   Esc close";
+                let hint = "Enter paste   Shift+Enter copy   Ctrl+E edit image   Shift+Del delete   Esc close";
                 ui.weak(hint);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     match &self.error {

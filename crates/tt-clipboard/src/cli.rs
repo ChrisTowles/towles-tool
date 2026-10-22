@@ -3,10 +3,11 @@ use std::process::{ExitCode, Stdio};
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use tt_clipboard::picker;
+use tt_clipboard::editor::{self, Outcome};
+use tt_clipboard::picker::{self, Action};
 use tt_clipboard::query::Query;
 use tt_clipboard::wayland::{self, Capture};
-use tt_clipboard::{Error, Kind, Result, Store, cliphist};
+use tt_clipboard::{Error, Kind, Result, Store, cliphist, portal};
 
 /// Clipboard history with search and images, for Wayland.
 #[derive(Parser)]
@@ -25,6 +26,12 @@ enum Command {
         /// Only copy the choice; never send the paste keystroke.
         #[arg(long)]
         no_paste: bool,
+    },
+    /// Capture a region, window or screen, mark it up, and copy the result.
+    Shot,
+    /// Mark up an image from the history, and copy the result.
+    Edit {
+        id: i64,
     },
     /// Print the newest entries matching a query.
     List {
@@ -74,12 +81,23 @@ fn run(command: Command) -> Result<()> {
             let Some(picked) = picker::run(Store::open_default()?)? else {
                 return Ok(());
             };
-            copy(picked.id)?;
-            if picked.paste && !no_paste {
-                send_paste(picked.kind)?;
+            match picked.action {
+                Action::Edit => edit(&Store::open_default()?.get(picked.id)?.data),
+                Action::Copy => copy(picked.id),
+                Action::Paste => {
+                    copy(picked.id)?;
+                    if !no_paste {
+                        send_paste(picked.kind)?;
+                    }
+                    Ok(())
+                }
             }
-            Ok(())
         }
+        Command::Shot => match portal::screenshot()? {
+            Some(png) => edit(&png),
+            None => Ok(()),
+        },
+        Command::Edit { id } => edit(&Store::open_default()?.get(id)?.data),
         Command::List { limit, query } => {
             let store = Store::open_default()?;
             let now = tt_config::now_ms();
@@ -161,6 +179,30 @@ fn copy(id: i64) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Open the editor; whatever it hands back goes into the history and onto the
+/// clipboard, and a save also lands in the screenshots folder.
+fn edit(image: &[u8]) -> Result<()> {
+    let Some(outcome) = editor::run(image)? else {
+        return Ok(());
+    };
+    let (png, save) = match outcome {
+        Outcome::Copy(png) => (png, false),
+        Outcome::Save(png) => (png, true),
+    };
+    if save {
+        let dir = tt_config::screenshots_dir()?;
+        std::fs::create_dir_all(&dir)?;
+        let name = chrono::Local::now().format("tt-%Y-%m-%d_%H-%M-%S.png");
+        let path = dir.join(name.to_string());
+        std::fs::write(&path, &png)?;
+        println!("{}", path.display());
+    }
+    let id = Store::open_default()?
+        .insert(Kind::Image, "image/png", &png, tt_config::now_ms())?
+        .ok_or_else(|| Error::Picker("the image is too large for the history".into()))?;
+    copy(id)
 }
 
 /// Paste into whatever regained focus, with the chord settings give the kind.

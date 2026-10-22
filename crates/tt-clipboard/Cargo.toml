@@ -9,21 +9,27 @@ name = "tt-clip"
 path = "src/main.rs"
 
 [dependencies]
+ab_glyph = "0.2.32"
+chrono = { workspace = true }
 clap = { workspace = true }
+epaint_default_fonts = "0.37.0"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 rusqlite = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd"] }
 tracing = { workspace = true }
 tt-config = { workspace = true }
 tt-exec = { workspace = true }
 tt-telemetry = { workspace = true }
 
-# The watcher and picker speak Wayland; the store and search build anywhere.
+# The watcher and windows speak Wayland, capture asks the desktop portal; the store,
+# search and annotation rendering build anywhere.
 [target.'cfg(target_os = "linux")'.dependencies]
 eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "system_fonts", "wayland"] }
 wayland-client = "0.31.14"
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
+zbus = { version = "5.16.0", default-features = false, features = ["async-io", "blocking-api"] }
 
 [dev-dependencies]
 tempfile = "3.14.0"

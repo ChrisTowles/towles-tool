@@ -189,6 +189,13 @@ pub fn clipboard_dir() -> Result<PathBuf> {
     Ok(shared_under(base).join("clipboard"))
 }
 
+/// Where a saved screenshot goes: the desktop's Pictures folder, like other tools.
+pub fn screenshots_dir() -> Result<PathBuf> {
+    let pictures =
+        dirs::picture_dir().map_or_else(|| home_dir().map(|h| h.join("Pictures")), Ok)?;
+    Ok(pictures.join("Screenshots"))
+}
+
 /// Instance-scoped, so the path alone says which task spawned the commands.
 pub fn telemetry_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("telemetry"))

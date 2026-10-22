@@ -9924,19 +9924,24 @@ dependencies = [
 name = "tt-clipboard"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
+ "chrono",
  "clap",
  "eframe",
+ "epaint_default_fonts",
  "image",
  "rusqlite",
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
+ "tiny-skia",
  "tracing",
  "tt-config",
  "tt-exec",
  "tt-telemetry",
  "wayland-client",
  "wayland-protocols",
+ "zbus",
 ]
 
 [[package]]
