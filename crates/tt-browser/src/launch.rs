@@ -9,7 +9,7 @@
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -103,24 +103,8 @@ impl ChromeChild {
 
         let args = build_args(cfg);
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let bin = cfg.binary.to_string_lossy();
-        tt_exec::record_detached_spawn(&bin, &arg_refs, "browser");
-
-        let mut cmd = Command::new(&cfg.binary);
-        cmd.args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
-        for (key, _) in std::env::vars_os() {
-            let name = key.to_string_lossy().into_owned();
-            if tt_exec::is_app_instance_env(&name)
-                || tt_exec::CLAUDE_SESSION_ENV_VARS.contains(&name.as_str())
-            {
-                cmd.env_remove(&key);
-            }
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
-        }
+        let mut cmd = tt_exec::detached_command(&cfg.binary, &arg_refs, "browser");
+        cmd.stdout(Stdio::null()).stderr(Stdio::piped());
 
         let mut child = cmd.spawn()?;
         let stderr_tail = Arc::new(Mutex::new(VecDeque::new()));

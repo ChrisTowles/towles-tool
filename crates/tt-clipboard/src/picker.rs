@@ -6,6 +6,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::time::{Duration, Instant};
 
 use eframe::egui::{
     self, Color32, ColorImage, Key, Modifiers, RichText, TextureHandle, TextureOptions,
@@ -14,6 +15,11 @@ use eframe::egui::{
 use crate::query::Query;
 use crate::{Error, Kind, Result, Store, Summary, thumb};
 
+/// The picker window's Wayland app id.
+pub const APP_ID: &str = "tt-clip";
+
+/// How long typing must pause before the query runs.
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(60);
 /// Rows a list shows; the search narrows from the whole store, not from these.
 const LIMIT: usize = 500;
 const ROW_HEIGHT: f32 = 56.0;
@@ -56,6 +62,8 @@ struct Picker {
     now_ms: i64,
     picked: Rc<Cell<Option<Picked>>>,
     error: Option<String>,
+    /// When the query last changed plus [`SEARCH_DEBOUNCE`]: a burst of typing searches once.
+    search_due: Option<Instant>,
 }
 
 /// Show the picker until something is chosen or it is dismissed.
@@ -64,7 +72,7 @@ pub fn run(store: Store) -> Result<Option<Picked>> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Clipboard")
-            .with_app_id("tt-clip")
+            .with_app_id(APP_ID)
             .with_inner_size([980.0, 620.0]),
         ..Default::default()
     };
@@ -87,6 +95,7 @@ pub fn run(store: Store) -> Result<Option<Picked>> {
                 now_ms: tt_config::now_ms(),
                 picked: out,
                 error: None,
+                search_due: None,
             };
             p.refresh();
             Ok(Box::new(p))
@@ -296,6 +305,11 @@ impl eframe::App for Picker {
             let resp = ui.add(edit);
             resp.request_focus();
             if resp.changed() {
+                self.search_due = Some(Instant::now() + SEARCH_DEBOUNCE);
+                ctx.request_repaint_after(SEARCH_DEBOUNCE);
+            }
+            if self.search_due.is_some_and(|due| Instant::now() >= due) {
+                self.search_due = None;
                 self.refresh();
             }
             ui.add_space(4.0);

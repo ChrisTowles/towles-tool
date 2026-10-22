@@ -27,7 +27,10 @@ the CLI and the app can consume it.
   everywhere. An explicitly set `TT_STATE_SCOPE` isolates *everything*, shared
   stores included (tests must never write real settings); empty = force
   unscoped. Never build these paths ad-hoc — call the resolver.
-- `tt-exec` — process/command wrappers. Every subprocess is logged; see
+- `tt-exec` — process/command wrappers. A child that outlives its caller (a
+  browser, code-server, `tt-clip serve`) starts from `detached_command`, which
+  logs it, scrubs the app-instance env and gives it its own process group.
+  Every subprocess is logged; see
   [TELEMETRY.md](TELEMETRY.md).
 - `tt-journal` — journal/note filesystem logic and date-token path templating.
 - `tt-git` — **the one way this workspace reads a git repository**, plus the
@@ -118,8 +121,10 @@ the CLI and the app can consume it.
   `ext-data-control-v1` into `clipboard/history.db` (machine-wide, via
   `tt_config::clipboard_dir`), and `tt-clip pick` is an egui window to search it
   and paste. A copy back is served by a detached `tt-clip serve` until something
-  else takes the selection, so the picker exits at once. Linux-only past the
-  store; the watcher and picker are `cfg(target_os = "linux")`.
+  else takes the selection, so the picker exits at once. Text goes to the primary
+  selection too, so the default paste chord, Shift+Insert, works in terminals
+  and GUI apps alike; chords live in settings under `clipboard`. Linux-only past
+  the store; the watcher and picker are `cfg(target_os = "linux")`.
 - `tt-doctor` — doctor checks logic (the app screen consumes it). Its `disk`
   module is the read-only "State on disk" report: it sizes the state root's
   top-level entries (symlinks unfollowed, a time budget past which sizes are

@@ -1,5 +1,4 @@
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::process::CommandExt;
 use std::process::{ExitCode, Stdio};
 use std::time::Duration;
 
@@ -50,6 +49,9 @@ enum Command {
     /// Own the selection for an entry until replaced (what `copy` runs detached).
     #[command(hide = true)]
     Serve {
+        /// The history to read, passed explicitly: a detached child's env is scrubbed.
+        #[arg(long)]
+        store: std::path::PathBuf,
         id: i64,
     },
 }
@@ -105,8 +107,8 @@ fn run(command: Command) -> Result<()> {
             println!("imported {n} entries");
             Ok(())
         }
-        Command::Serve { id } => {
-            let entry = Store::open_default()?.get(id)?;
+        Command::Serve { store, id } => {
+            let entry = Store::open(&store)?.get(id)?;
             wayland::serve(entry.kind, &entry.mime, entry.data, || {
                 // The parent waits for this line; closing stdout after lets it exit.
                 let mut out = std::io::stdout();
@@ -144,17 +146,13 @@ const READY: &str = "ready";
 
 /// Hand the entry to a detached `serve`, returning once it owns the selection.
 fn copy(id: i64) -> Result<()> {
-    let exe = std::env::current_exe()?;
     let id_arg = id.to_string();
-    tt_exec::record_detached_spawn("tt-clip", &["serve", &id_arg], "clipboard_owner");
-    // Its own process group, so closing the launching terminal doesn't end the copy.
-    let mut child = std::process::Command::new(exe)
-        .args(["serve", &id_arg])
-        .process_group(0)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
+    let store = Store::default_path()?;
+    let store = store.to_string_lossy();
+    let exe = std::env::current_exe()?;
+    let args = ["serve", "--store", &store, &id_arg];
+    let mut cmd = tt_exec::detached_command(exe, &args, "clipboard_owner");
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let mut line = String::new();
     BufReader::new(child.stdout.take().expect("piped")).read_line(&mut line)?;
     if line.trim() != READY {
@@ -165,20 +163,48 @@ fn copy(id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Paste into whatever regained focus: Ctrl+Shift+V for text (a terminal's paste,
-/// plain-text paste elsewhere), Ctrl+V for an image.
+/// Paste into whatever regained focus, with the chord settings give the kind.
 fn send_paste(kind: Kind) -> Result<()> {
-    // Let focus return to the window the picker covered.
-    std::thread::sleep(Duration::from_millis(120));
-    let args: &[&str] = match kind {
-        Kind::Text => &[
-            "-M", "ctrl", "-M", "shift", "-k", "v", "-m", "shift", "-m", "ctrl",
-        ],
-        Kind::Image => &["-M", "ctrl", "-k", "v", "-m", "ctrl"],
+    let settings = tt_config::load().unwrap_or_default().clipboard;
+    let chord = match kind {
+        Kind::Text => settings.paste_text_keys,
+        Kind::Image => settings.paste_image_keys,
     };
-    let out = tt_exec::run("wtype", args)?;
+    wayland::wait_until_closed(picker::APP_ID, Duration::from_secs(1))?;
+    let args = wtype_args(&chord);
+    let out = tt_exec::run("wtype", &args.iter().map(String::as_str).collect::<Vec<_>>())?;
     if !out.ok() {
         tracing::warn!("wtype failed: {}", out.stderr.trim());
     }
     Ok(())
+}
+
+/// `ctrl+shift+v` → press ctrl, shift; tap v; release shift, ctrl.
+fn wtype_args(chord: &str) -> Vec<String> {
+    let mut parts: Vec<&str> = chord.split('+').map(str::trim).filter(|p| !p.is_empty()).collect();
+    let Some(key) = parts.pop() else {
+        return Vec::new();
+    };
+    let mods: Vec<String> = parts.iter().map(|m| m.to_ascii_lowercase()).collect();
+    let press = mods.iter().flat_map(|m| ["-M".to_string(), m.clone()]);
+    let release = mods.iter().rev().flat_map(|m| ["-m".to_string(), m.clone()]);
+    press.chain(["-k".to_string(), key.to_string()]).chain(release).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn wtype_args_press_tap_release() {
+        assert_eq!(
+            super::wtype_args("Ctrl+Shift+v"),
+            [
+                "-M", "ctrl", "-M", "shift", "-k", "v", "-m", "shift", "-m", "ctrl"
+            ]
+        );
+        assert_eq!(
+            super::wtype_args("shift+Insert"),
+            ["-M", "shift", "-k", "Insert", "-m", "shift"]
+        );
+        assert!(super::wtype_args("").is_empty());
+    }
 }

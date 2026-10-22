@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS entries (
     kind      TEXT NOT NULL,
     mime      TEXT NOT NULL,
     text      TEXT,
+    -- `text` lowercased, so search is case-insensitive past ASCII.
+    folded    TEXT,
     data      BLOB,
     thumb     BLOB,
     width     INTEGER NOT NULL DEFAULT 0,
@@ -89,6 +91,9 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 CREATE INDEX IF NOT EXISTS entries_recent ON entries (used_at DESC, id DESC);
 ";
+
+/// Bumped whenever [`dedup_key`] changes; [`Store::open`] rekeys older histories.
+const DEDUP_VERSION: i64 = 1;
 
 /// What makes two copies one entry: for text, copies differing only in
 /// surrounding whitespace are the same.
@@ -106,9 +111,13 @@ fn dedup_key(kind: Kind, data: &[u8]) -> Vec<u8> {
 impl Store {
     /// The machine's history, under [`tt_config::clipboard_dir`].
     pub fn open_default() -> Result<Store> {
+        Store::open(&Store::default_path()?)
+    }
+
+    pub fn default_path() -> Result<std::path::PathBuf> {
         let dir = tt_config::clipboard_dir()?;
         std::fs::create_dir_all(&dir)?;
-        Store::open(&dir.join("history.db"))
+        Ok(dir.join("history.db"))
     }
 
     pub fn open(path: &Path) -> Result<Store> {
@@ -117,7 +126,43 @@ impl Store {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
-        Ok(Store { conn })
+        let store = Store { conn };
+        let version: i64 = store.conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version != DEDUP_VERSION {
+            store.batch(Store::rekey)?;
+            store.conn.pragma_update(None, "user_version", DEDUP_VERSION)?;
+        }
+        Ok(store)
+    }
+
+    /// Recompute every row's [`dedup_key`], keeping the most recently copied of
+    /// rows the current rule calls the same.
+    fn rekey(&self) -> Result<()> {
+        // Park every hash on a unique placeholder first, so no reassignment can
+        // collide with a row not yet visited.
+        self.conn.execute("UPDATE entries SET hash = x'00' || CAST(id AS BLOB)", [])?;
+        let mut rows = Vec::new();
+        {
+            let mut stmt = self.conn.prepare(
+                "SELECT id, kind, coalesce(CAST(text AS BLOB), data) FROM entries
+                 ORDER BY used_at DESC, id DESC",
+            )?;
+            let mut q = stmt.query([])?;
+            while let Some(r) = q.next()? {
+                let kind = Kind::parse(&r.get::<_, String>(1)?);
+                rows.push((r.get::<_, i64>(0)?, dedup_key(kind, &r.get::<_, Vec<u8>>(2)?)));
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        for (id, key) in rows {
+            if seen.insert(key.clone()) {
+                self.conn
+                    .execute("UPDATE entries SET hash = ?2 WHERE id = ?1", params![id, key])?;
+            } else {
+                self.conn.execute("DELETE FROM entries WHERE id = ?1", [id])?;
+            }
+        }
+        Ok(())
     }
 
     /// Record a selection; returns its row, or `None` when it is not worth keeping
@@ -134,12 +179,14 @@ impl Store {
             Kind::Image => None,
         };
         let hash = dedup_key(kind, data);
+        let folded = text.map(str::to_lowercase);
         // A re-copy only moves to the front: no image decode, and nothing to prune.
         let bumped = self
             .conn
             .query_row(
-                "UPDATE entries SET used_at = ?2, mime = ?3, text = ?4 WHERE hash = ?1 RETURNING id",
-                params![hash, now_ms, mime, text],
+                "UPDATE entries SET used_at = ?2, mime = ?3, text = ?4, folded = ?5
+                 WHERE hash = ?1 RETURNING id",
+                params![hash, now_ms, mime, text, folded],
                 |r| r.get(0),
             )
             .optional()?;
@@ -156,15 +203,16 @@ impl Store {
             }
         };
         let id = self.conn.query_row(
-            "INSERT INTO entries (hash, kind, mime, text, data, thumb, width, height, copied_at,
-                                  used_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+            "INSERT INTO entries (hash, kind, mime, text, folded, data, thumb, width, height,
+                                  copied_at, used_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
              RETURNING id",
             params![
                 hash,
                 kind.as_str(),
                 mime,
                 text,
+                folded,
                 data,
                 thumb,
                 width,
@@ -207,8 +255,8 @@ impl Store {
             sql.push_str(" AND kind = ?");
         }
         for term in &query.terms {
-            args.push(like_pattern(term));
-            sql.push_str(" AND text LIKE ? ESCAPE '\\'");
+            args.push(like_pattern(&term.to_lowercase()));
+            sql.push_str(" AND folded LIKE ? ESCAPE '\\'");
         }
         sql.push_str(&format!(" ORDER BY used_at DESC, id DESC LIMIT {limit}"));
         let mut stmt = self.conn.prepare_cached(&sql)?;
@@ -326,6 +374,38 @@ mod tests {
     fn sniff_tells_images_from_text() {
         assert_eq!(Kind::sniff(&thumb::test_png(2, 2)), Kind::Image);
         assert_eq!(Kind::sniff(b"BM looks like a bitmap header"), Kind::Text);
+    }
+
+    #[test]
+    fn search_folds_case_past_ascii() {
+        let (_d, s) = store();
+        let a =
+            s.insert(Kind::Text, "text/plain", "Über die École".as_bytes(), 1).unwrap().unwrap();
+        assert_eq!(ids(&s, "über"), [a]);
+        assert_eq!(ids(&s, "ÉCOLE"), [a]);
+    }
+
+    #[test]
+    fn reopening_with_a_new_dedup_rule_merges_rows_it_now_calls_the_same() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("h.db");
+        let s = Store::open(&path).unwrap();
+        let old = s.insert(Kind::Text, "text/plain", b"same", 1).unwrap().unwrap();
+        let new = s.insert(Kind::Text, "text/plain", b"same", 2).unwrap().unwrap();
+        assert_eq!(old, new);
+        // Simulate rows written under an older rule that told these apart.
+        s.conn
+            .execute(
+                "INSERT INTO entries (hash, kind, mime, text, folded, copied_at, used_at)
+                        VALUES (x'01', 'text', 'text/plain', 'same  ', 'same  ', 0, 0)",
+                [],
+            )
+            .unwrap();
+        s.conn.pragma_update(None, "user_version", 0).unwrap();
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert_eq!(ids(&s, ""), [old]);
+        assert_eq!(s.insert(Kind::Text, "text/plain", b" same ", 3).unwrap(), Some(old));
     }
 
     #[test]

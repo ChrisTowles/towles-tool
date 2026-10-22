@@ -293,6 +293,8 @@ export type UserSettings = {
   clipSuggest?: { enabled?: boolean };
   /** Rust reads it (`tt_config::UpdatesSettings`); unset means the stable channel. */
   updates?: { channel?: UpdateChannel };
+  /** `tt-clip`'s paste chords (`tt_config::ClipboardSettings`), e.g. "shift+Insert". */
+  clipboard?: { pasteTextKeys?: string; pasteImageKeys?: string };
   /** TS-owned; every key is unset-means-default. `showUnmanagedWorktrees` is
    * the one Rust reads back, so it is written through
    * `ab_set_show_unmanaged_worktrees`, not by saving here. */

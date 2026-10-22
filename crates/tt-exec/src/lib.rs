@@ -147,6 +147,32 @@ pub fn record_detached_spawn(cmd: &str, args: &[&str], kind: &str) {
     );
 }
 
+/// A [`Command`] for a child that outlives this call: logged via
+/// [`record_detached_spawn`], stdin closed, the app-instance env scrubbed, and on
+/// Unix its own process group, so closing the launching terminal or a signal to
+/// ours doesn't reach it. The caller sets stdout/stderr and spawns.
+pub fn detached_command(
+    program: impl AsRef<std::ffi::OsStr>,
+    args: &[&str],
+    kind: &str,
+) -> Command {
+    let program = program.as_ref();
+    record_detached_spawn(&program.to_string_lossy(), args, kind);
+    let mut cmd = Command::new(program);
+    cmd.args(args).stdin(std::process::Stdio::null());
+    for (key, _) in std::env::vars_os() {
+        if is_app_instance_env(&key.to_string_lossy()) {
+            cmd.env_remove(&key);
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    cmd
+}
+
 /// Run a command, capturing output. Does not fail on a non-zero exit code.
 pub fn run(cmd: &str, args: &[&str]) -> Result<Output> {
     let (output, exit_code) = run_raw(cmd, args)?;

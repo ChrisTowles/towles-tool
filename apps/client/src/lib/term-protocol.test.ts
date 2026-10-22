@@ -105,6 +105,13 @@ describe("isCopyChord / isPasteChord", () => {
     expect(isPasteChord(key("v", { shiftKey: true }))).toBe(false);
   });
 
+  it("takes Shift+Insert as paste, but not with another modifier", () => {
+    expect(isPasteChord(key("Insert", { shiftKey: true }))).toBe(true);
+    expect(isPasteChord(key("Insert", {}))).toBe(false);
+    expect(isPasteChord(key("Insert", { shiftKey: true, ctrlKey: true }))).toBe(false);
+    expect(keyEventWire(wireKey("Insert", "Insert", { shiftKey: true }))).toBeNull();
+  });
+
   it("doesn't cross-match copy and paste", () => {
     expect(isCopyChord(key("v", { ctrlKey: true, shiftKey: true }))).toBe(false);
     expect(isPasteChord(key("c", { ctrlKey: true, shiftKey: true }))).toBe(false);

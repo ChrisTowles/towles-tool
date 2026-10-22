@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::os::fd::AsFd;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use wayland_client::globals::{GlobalList, GlobalListContents, registry_queue_init};
 use wayland_client::protocol::{wl_registry, wl_seat::WlSeat};
@@ -14,6 +15,10 @@ use wayland_protocols::ext::data_control::v1::client::{
     ext_data_control_manager_v1::ExtDataControlManagerV1,
     ext_data_control_offer_v1::{self, ExtDataControlOfferV1},
     ext_data_control_source_v1::{self, ExtDataControlSourceV1},
+};
+use wayland_protocols::ext::foreign_toplevel_list::v1::client::{
+    ext_foreign_toplevel_handle_v1::{self, ExtForeignToplevelHandleV1},
+    ext_foreign_toplevel_list_v1::{self, ExtForeignToplevelListV1},
 };
 
 use crate::{Error, Kind, Result, mime, store::MAX_BYTES};
@@ -86,11 +91,19 @@ pub fn serve(kind: Kind, mime: &str, data: Vec<u8>, ready: impl FnOnce()) -> Res
         let aliases = mime::PLAIN_TEXT.iter().filter(|a| !a.eq_ignore_ascii_case(mime));
         mimes.extend(aliases.map(|a| a.to_string()));
     }
-    let source = manager.create_data_source(&qh, ());
-    for m in &mimes {
-        source.offer(m.clone());
+    let offer = |primary: bool| {
+        let source = manager.create_data_source(&qh, primary);
+        for m in &mimes {
+            source.offer(m.clone());
+        }
+        source
+    };
+    device.set_selection(Some(&offer(false)));
+    // Text goes to the primary selection too, so a terminal's Shift+Insert
+    // (which reads primary) pastes it like every other app's.
+    if kind == Kind::Text {
+        device.set_primary_selection(Some(&offer(true)));
     }
-    device.set_selection(Some(&source));
     let mut state = State { payload: Some((mimes, Arc::new(data))), ..State::default() };
     queue.roundtrip(&mut state).map_err(wl)?;
     ready();
@@ -216,12 +229,14 @@ impl Dispatch<ExtDataControlOfferV1, Mutex<Vec<String>>> for State {
     }
 }
 
-impl Dispatch<ExtDataControlSourceV1, ()> for State {
+/// User data: whether the source backs the primary selection, whose
+/// replacement does not end the serve.
+impl Dispatch<ExtDataControlSourceV1, bool> for State {
     fn event(
         state: &mut Self,
         source: &ExtDataControlSourceV1,
         event: ext_data_control_source_v1::Event,
-        _: &(),
+        primary: &bool,
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
@@ -243,8 +258,97 @@ impl Dispatch<ExtDataControlSourceV1, ()> for State {
             }
             Event::Cancelled => {
                 source.destroy();
-                state.done = true;
+                state.done |= !primary;
             }
+            _ => {}
+        }
+    }
+}
+
+/// Block until no toplevel with `app_id` is open, or `timeout` passes. Once the
+/// picker's window is gone, focus is back on the window it covered, so a paste
+/// keystroke lands there. A compositor without `ext-foreign-toplevel-list` has
+/// nothing to wait on.
+pub fn wait_until_closed(app_id: &str, timeout: Duration) -> Result<()> {
+    let conn = Connection::connect_to_env().map_err(wl)?;
+    let (globals, mut queue) = registry_queue_init::<Toplevels>(&conn).map_err(wl)?;
+    let bound: std::result::Result<ExtForeignToplevelListV1, _> =
+        globals.bind(&queue.handle(), 1..=1, ());
+    if bound.is_err() {
+        return Ok(());
+    }
+    let deadline = Instant::now() + timeout;
+    let mut state = Toplevels::default();
+    loop {
+        queue.roundtrip(&mut state).map_err(wl)?;
+        let open = state.handles.iter().any(|h| {
+            h.data::<Mutex<Toplevel>>().is_some_and(|t| {
+                let t = t.lock().unwrap();
+                !t.closed && t.app_id == app_id
+            })
+        });
+        if !open || Instant::now() >= deadline {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[derive(Default)]
+struct Toplevels {
+    handles: Vec<ExtForeignToplevelHandleV1>,
+}
+
+#[derive(Default)]
+struct Toplevel {
+    app_id: String,
+    closed: bool,
+}
+
+impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Toplevels {
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<ExtForeignToplevelListV1, ()> for Toplevels {
+    fn event(
+        state: &mut Self,
+        _: &ExtForeignToplevelListV1,
+        event: ext_foreign_toplevel_list_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let ext_foreign_toplevel_list_v1::Event::Toplevel { toplevel } = event {
+            state.handles.push(toplevel);
+        }
+    }
+
+    event_created_child!(Toplevels, ExtForeignToplevelListV1, [
+        ext_foreign_toplevel_list_v1::EVT_TOPLEVEL_OPCODE => (ExtForeignToplevelHandleV1, Mutex::new(Toplevel::default())),
+    ]);
+}
+
+impl Dispatch<ExtForeignToplevelHandleV1, Mutex<Toplevel>> for Toplevels {
+    fn event(
+        _: &mut Self,
+        _: &ExtForeignToplevelHandleV1,
+        event: ext_foreign_toplevel_handle_v1::Event,
+        toplevel: &Mutex<Toplevel>,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let mut t = toplevel.lock().unwrap();
+        match event {
+            ext_foreign_toplevel_handle_v1::Event::AppId { app_id } => t.app_id = app_id,
+            ext_foreign_toplevel_handle_v1::Event::Closed => t.closed = true,
             _ => {}
         }
     }

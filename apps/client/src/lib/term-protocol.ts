@@ -191,7 +191,10 @@ export function isCopyChord(e: KeyEventLike): boolean {
   return chordMod(e) && e.shiftKey && (e.key === "C" || e.key === "c");
 }
 
+/** Shift+Insert too: the terminal-wide paste, and the one chord tt-clip's picker
+ * can send that pastes in terminals and GUI apps alike. */
 export function isPasteChord(e: KeyEventLike): boolean {
+  if (e.shiftKey && e.key === "Insert" && !e.ctrlKey && !e.altKey && !e.metaKey) return true;
   return chordMod(e) && e.shiftKey && (e.key === "V" || e.key === "v");
 }
 
@@ -200,7 +203,7 @@ function chordMod(e: KeyEventLike): boolean {
 }
 
 /** null when the keystroke isn't the shell's to consume — Meta stays with the OS,
- * Ctrl/⌘+Shift+C/V are the app's. Everything else the engine decides. */
+ * Ctrl/⌘+Shift+C/V and Shift+Insert are the app's. Everything else the engine decides. */
 export function keyEventWire(
   e: KeyWireEventLike,
   action: "press" | "release" = "press",
