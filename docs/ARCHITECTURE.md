@@ -123,8 +123,14 @@ the CLI and the app can consume it.
   and paste. A copy back is served by a detached `tt-clip serve` until something
   else takes the selection, so the picker exits at once. Text goes to the primary
   selection too, so the default paste chord, Shift+Insert, works in terminals
-  and GUI apps alike; chords live in settings under `clipboard`. Linux-only past
-  the store; the watcher and picker are `cfg(target_os = "linux")`.
+  and GUI apps alike; chords live in settings under `clipboard`. `tt-clip shot`
+  captures through the desktop portal's own region/window picker (COSMIC and
+  GNOME offer no wlr-screencopy) and opens an egui editor — crop, arrow, box,
+  pen, text label — whose result is rendered by `annotate` (tiny-skia +
+  ab_glyph, same geometry as the preview) into the history and onto the
+  clipboard; `tt-clip edit <id>` or Ctrl+E in the picker marks up an existing
+  image. Linux-only past the store and `annotate`; the watcher, windows and
+  portal are `cfg(target_os = "linux")`.
 - `tt-doctor` — doctor checks logic (the app screen consumes it). Its `disk`
   module is the read-only "State on disk" report: it sizes the state root's
   top-level entries (symlinks unfollowed, a time budget past which sizes are

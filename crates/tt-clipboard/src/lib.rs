@@ -1,13 +1,19 @@
 //! Clipboard history for Wayland: a watcher that records every selection into a
-//! SQLite store, search over it, and a picker that copies an entry back.
+//! SQLite store, search over it, a picker that copies an entry back, and a
+//! screenshot editor whose marked-up result lands in that history.
 //!
 //! Selection semantics (which mime to keep, password hints, dedup-to-front) follow
 //! [Ringboard](https://github.com/SUPERCILEX/clipboard-history); see ATTRIBUTION.md.
 
+pub mod annotate;
 pub mod cliphist;
+#[cfg(target_os = "linux")]
+pub mod editor;
 pub mod mime;
 #[cfg(target_os = "linux")]
 pub mod picker;
+#[cfg(target_os = "linux")]
+pub mod portal;
 pub mod query;
 pub mod store;
 pub mod thumb;
@@ -34,6 +40,8 @@ pub enum Error {
     AlreadyRunning,
     #[error("no entry {0}")]
     NotFound(i64),
+    #[error("screenshot portal: {0}")]
+    Portal(String),
     #[error("picker: {0}")]
     Picker(String),
 }
