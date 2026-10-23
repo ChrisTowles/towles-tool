@@ -72,9 +72,14 @@ export function readyForDone(task: BandTask | null): boolean {
   return task?.pr?.state === 'open' && task.pr.checks === 'passing'
 }
 
+/** A PR or a meeting to report: the task alone, and its board status, are known already. */
+export function worthShowing(snap: Snapshot | null): snap is Snapshot {
+  return !!snap && (!!snap.task?.pr || !!snap.meeting)
+}
+
 /** The band's facts on one short line, for the status line. */
 export function statusLine(snap: Snapshot | null): string | undefined {
-  if (!snap) return undefined
+  if (!worthShowing(snap)) return undefined
   const { task, meeting } = snap
   const parts = [
     task && `#${task.id}`,
@@ -82,5 +87,5 @@ export function statusLine(snap: Snapshot | null): string | undefined {
     readyForDone(task) && 'ready for /done',
     meeting && untilLabel(meeting),
   ].filter(Boolean)
-  return parts.length ? `tt ${parts.join(' · ')}` : undefined
+  return `tt ${parts.join(' · ')}`
 }

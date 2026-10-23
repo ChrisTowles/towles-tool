@@ -231,29 +231,6 @@ pub fn tool_definitions() -> Value {
                 "required": ["edited"],
             },
         },
-        {
-            "name": "clip_suggest",
-            "description": "For the towles-tool Claude mod only; agents never call it. Offers the `! <command>` lines of the agent's last message for the user to copy; makes no model call.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "answer": { "type": "string", "description": "The agent's last message." },
-                },
-                "required": ["answer"],
-            },
-        },
-        {
-            "name": "clip_copied",
-            "description": "For the towles-tool Claude mod only; agents never call it. Records that the user copied an offered string.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "index": { "type": "integer", "description": "Which offer, from 0; absent when all were copied." },
-                    "count": { "type": "integer", "description": "How many strings went to the clipboard." },
-                },
-                "required": ["count"],
-            },
-        },
     ]);
 
     if let Some(entries) = tools.as_array_mut() {

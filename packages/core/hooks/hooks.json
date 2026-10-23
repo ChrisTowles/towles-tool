@@ -1,0 +1,6 @@
+{
+  "description": "Offers the `! <command>`s Claude hands you, one copy row each, in the band above the prompt.",
+  "modules": [
+    "./register.tsx"
+  ]
+}
