@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, McpToolResult, Register } from 'claude-code'
 
-import type { ClipOffer, InboxNote, Snapshot } from '../types'
+import type { InboxNote, Snapshot } from '../types'
 import {
   SERVER,
   checksToast,
@@ -12,8 +12,8 @@ import {
   statusLine,
   taskFor,
   untilLabel,
+  worthShowing,
 } from './band'
-import { COPY_ALL_GAP_MS, clipAnswer, clipLine, clipShown, offersFrom } from './clip'
 import { type Appended, midTurnText, promptText, remember, stranded, unseen } from './inbox'
 import { parkArgs } from './park'
 import { emptyLog, logTool, taken, withAnswer } from './suggest'
@@ -25,7 +25,6 @@ const seenNotes = atom({ plugin: 'towles-tool-app', key: 'seenNotes' } as const,
 const lastTurn = atom({ plugin: 'towles-tool-app', key: 'lastTurn' } as const, null)
 const suggestion = atom({ plugin: 'towles-tool-app', key: 'suggestion' } as const, null)
 const asking = atom({ plugin: 'towles-tool-app', key: 'asking' } as const, false)
-const clips = atom({ plugin: 'towles-tool-app', key: 'clips' } as const, [] as ClipOffer[])
 
 const REFRESH_MS = 60_000
 const INBOX_MS = 3_000
@@ -33,7 +32,7 @@ const INBOX_MS = 3_000
 const STARTUP_RETRIES = 10
 const SUGGEST_DELAY_MS = 250
 /** The tools only this mod calls: the model is kept off them. */
-const MOD_ONLY = /^mcp__plugin_towles-tool-app_towles-tool__(inbox_|next_prompt|clip_)/
+const MOD_ONLY = /^mcp__plugin_towles-tool-app_towles-tool__(inbox_|next_prompt)/
 
 /** A tool's result as JSON: the structured result when the server declares one, else its text. */
 function payload(result: McpToolResult): unknown {
@@ -161,40 +160,6 @@ async function askNext($: EngineInterface): Promise<string> {
   }
 }
 
-/** A turn's question, so a late answer to an older turn never replaces a newer one's. */
-let clipTurn = 0
-
-/** The app offers the `! <command>` lines of a finished turn's message, and nothing for any
- * other message or a session ignoring its offers. No model is involved. */
-async function askClip($: EngineInterface, answer: string) {
-  const turn = ++clipTurn
-  try {
-    const raw = await call<unknown>($, 'clip_suggest', { answer: clipAnswer(answer) })
-    if (turn !== clipTurn) return
-    await update($, clips, () => offersFrom(raw))
-  } catch {
-    // App closed or the call failed: nothing is offered.
-  }
-}
-
-type Surface = Parameters<EngineInterface['ui']['copy']>[0]['surface']
-
-/** Several go one at a time, apart, so the clipboard manager keeps each in order. */
-async function copyOffers($: EngineInterface, offers: ClipOffer[], surface: Surface, index?: number) {
-  let copied = 0
-  for (const [i, offer] of offers.entries()) {
-    if (i > 0) await new Promise<void>(done => $.clock.after(COPY_ALL_GAP_MS, done))
-    if ((await $.ui.copy({ text: offer.text, surface })).isCopied) copied++
-  }
-  if (!copied) {
-    $.ui.toast('Nothing reached the clipboard.')
-    return
-  }
-  $.ui.toast(offers.length === 1 ? `Copied ${clipShown(offers[0]!)}` : `Copied ${copied}, in order`)
-  const args = { count: copied, ...(index === undefined ? {} : { index }) }
-  void call($, 'clip_copied', args).catch(() => {})
-}
-
 async function park($: EngineInterface, args: string): Promise<string> {
   const idea = args.trim() || (await $.ui.selection())?.text || ''
   const task = (await read($, snapshot))?.task ?? null
@@ -264,8 +229,6 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
-      clipTurn++
-      await update($, clips, () => [])
       busy = true
       step = -1
       appended = []
@@ -294,31 +257,30 @@ export const register: Register = on => {
     appended = []
     await update($, lastTurn, () => withAnswer(log, e.answer))
     for (const a of missed) await submitNotes($, a.notes)
-    if (e.reason === 'answer') void askClip($, e.answer)
     await refresh($)
     void takeInbox($)
     return ran
   })
 
-  // A column at the bottom: the facts and the keys on one row, then one row per copy offer.
+  // One row of facts, above whatever else draws the band; a task alone is no news.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    const below = await next(e)
+    if (e.props.hasSurvey) return below
     const snap = await read($, snapshot)
-    const offers = e.props.isWorking ? [] : (await read($, clips)).slice(0, e.props.maxRows - 1)
-    const canSuggest = !e.props.isWorking && !!(await read($, lastTurn))
-    if ((!snap || (!snap.task && !snap.meeting)) && !offers.length) return next(e)
+    if (!worthShowing(snap)) return below
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const task = snap?.task ?? null
     const meeting = snap?.meeting ?? null
     const soon = !!meeting && (meeting.live || meeting.minutesUntil <= 15)
+    const canSuggest = !e.props.isWorking && !!(await read($, lastTurn))
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" gap={1}>
           <Text color="magenta">✦ tt</Text>
           {task && (
             <Text wrap="truncate-end">
-              #{task.id} {task.text} <Text dimColor>({task.status})</Text>
+              #{task.id} {task.text}
             </Text>
           )}
           {task?.pr && <Text dimColor>{prLabel(task.pr)}</Text>}
@@ -333,31 +295,8 @@ export const register: Register = on => {
               next prompt
             </Button>
           )}
-          {offers.length > 1 && (
-            <Button
-              key="clip:all"
-              hotkey="a"
-              plain
-              dimColor
-              onPress={press => void copyOffers($, offers, press.surface)}
-            >
-              copy all
-            </Button>
-          )}
         </Box>
-        {offers.map((offer, i) => (
-          <Button
-            key={`clip:${i}`}
-            hotkey={String(i + 1)}
-            plain
-            onPress={press => void copyOffers($, [offer], press.surface, i)}
-          >
-            <Text backgroundColor="magenta" color="black">
-              {' copy '}
-            </Text>
-            <Text wrap="truncate-end"> {clipLine(offer)}</Text>
-          </Button>
-        ))}
+        {below}
       </Box>
     )
   })

@@ -55,6 +55,34 @@ belong.
 `/towles-tool-app:done` (the app plugin) is the third rung: `/tt:prm`, then
 delete the task from towles-tool.
 
+## Mod: copy what Claude hands you
+
+`hooks/register.tsx` is a Claude Code mod. When a turn ends with an answer, it
+offers each `! <command>` Claude handed you to run in the prompt: a line,
+indented or inside a fence, that opens with `! `, or an inline code span that
+does. Each keeps its `! `, so a paste runs it in bash mode. SHAs, paths, links
+and identifiers are never offered, nor is a message with no such command;
+offers are deduplicated, at most three, with no model call.
+
+```
+1:  copy  ! gh pr merge 9 --squash --admin   a: copy all
+2:  copy  ! gcloud auth login
+```
+
+The rows sit at the bottom of the band above the prompt, under anything another
+mod draws there (the `towles-tool-app` band). A digit in the empty prompt (or a
+click) copies that one; `a`, with the band focused, copies all of them in order,
+apart enough that a clipboard manager keeps each entry. The offer clears when
+the next turn starts. A session whose last three offers went uncopied is left
+alone until you copy one, with a single probe every 30 minutes.
+
+`hooks/clip.ts` is the pure logic `tests/` covers:
+
+```sh
+claude plugin validate packages/core
+claude plugin test packages/core
+```
+
 ## Installation
 
 In Claude Code 2.1.275 or later, one step:

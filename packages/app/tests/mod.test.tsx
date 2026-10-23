@@ -3,7 +3,6 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 
 import { midTurnText, promptText, remember, stranded, unseen } from '../hooks/inbox'
 import { parkArgs } from '../hooks/park'
-import { clipAnswer, clipShown, offersFrom } from '../hooks/clip'
 import { emptyLog, logTool, taken, withAnswer } from '../hooks/suggest'
 
 const NOTE = { id: 4, body: 'also cover the empty state', images: ['/tmp/a.png'] }
@@ -60,30 +59,6 @@ describe('suggest', () => {
     )
     expect(taken('ship it', 'run the tests')).toBe(null)
     expect(taken('anything', null)).toBe(null)
-  })
-})
-
-describe('clip', () => {
-  test('offers keep only well-formed, non-empty strings, at most three', async () => {
-    const raw = {
-      items: [
-        { label: 'tests', text: 'cargo test' },
-        { label: 'blank', text: '  ' },
-        { label: 3, text: 'x' },
-        { label: 'a', text: 'a' },
-        { label: 'b', text: 'b' },
-        { label: 'c', text: 'c' },
-      ],
-    }
-    expect(offersFrom(raw).map(o => o.text)).toEqual(['cargo test', 'a', 'b'])
-    expect(offersFrom(null)).toEqual([])
-    expect(offersFrom({ items: 'no' })).toEqual([])
-  })
-
-  test('the shown text is one short line', async () => {
-    expect(clipShown({ label: 'x', text: ' gh pr\n view 9 ' })).toBe('gh pr view 9')
-    expect(clipShown({ label: 'x', text: 'x'.repeat(60) }).length).toBe(40)
-    expect(clipAnswer('y'.repeat(5000)).length).toBe(4000)
   })
 })
 
@@ -165,7 +140,5 @@ describe('mod', () => {
     await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
     const res = await $.tool.call({ tool: 'mcp__plugin_towles-tool-app_towles-tool__inbox_take' })
     expect(JSON.stringify(res)).toContain('agents never call it')
-    const clip = await $.tool.call({ tool: 'mcp__plugin_towles-tool-app_towles-tool__clip_suggest' })
-    expect(JSON.stringify(clip)).toContain('agents never call it')
   })
 })

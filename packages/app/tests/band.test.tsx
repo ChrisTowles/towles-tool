@@ -9,6 +9,7 @@ import {
   statusLine,
   taskFor,
   untilLabel,
+  worthShowing,
 } from '../hooks/band'
 
 const TASKS = [
@@ -93,6 +94,14 @@ describe('band', () => {
     ).toBe('tt #7 · PR #42 passing · ready for /done · 4m to Standup')
   })
 
+  test('a task with no PR and no meeting is not worth a band or a status line', async () => {
+    const task = { id: 7, text: 't', status: 'doing', pr: null }
+    expect(worthShowing({ task, meeting: null })).toBe(false)
+    expect(statusLine({ task, meeting: null })).toBe(undefined)
+    expect(worthShowing({ task: { ...task, pr: { number: 1, state: 'open', checks: '' } }, meeting: null })).toBe(true)
+    expect(worthShowing({ task: null, meeting: { id: 3, title: 'Standup', minutesUntil: 90, live: false } })).toBe(true)
+  })
+
   test('the band shows the task, its PR and the next meeting', async ($, on) => {
     mock.clock(on)
     const toasts: string[] = []
@@ -116,9 +125,13 @@ describe('band', () => {
             : { event: { id: 3, title: 'Standup' }, minutesUntil: 4, live: false }
       return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
     })
+    on('ui.render', ($, e) => {
+      const { Text } = $.ui.resolve(e)
+      return <Text>engine</Text>
+    })
     await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await ui.find({ type: 'Text', text: '#7 Claude mods (doing)' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '#7 Claude mods' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'PR #42 open · checks passing' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '4m to Standup' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'ready for /done' })).toBeDefined()
@@ -152,125 +165,24 @@ describe('band', () => {
     await ui.unmount()
   })
 
-  test('a finished turn offers its copyable strings; a digit copies, the next turn clears', async ($, on) => {
-    const clock = mock.clock(on)
-    const calls: { tool: string; args: unknown }[] = []
-    const copied: string[] = []
-    const toasts: string[] = []
-    on('ui.toast', ($, e) => {
-      toasts.push(e.text)
-      return { value: undefined }
-    })
-    on('ui.status', () => ({ value: undefined }))
-    on('ui.copy', ($, e) => {
-      copied.push(e.text)
-      return { value: { isCopied: true as const } }
-    })
-    on('session.start', () => ({ cwd: '/r' }))
-    on('session.cwd', () => ({ value: '/elsewhere' }))
-    on('command.register', ($, e) => ({ value: { command: e.name } }))
-    on('turn.start', () => ({ turnId: 't2' }))
-    on('turn.complete', ($, e) => ({ text: e.answer }))
-    on('ui.render', ($, e) => {
-      const { Text } = $.ui.resolve(e)
-      return <Text>engine</Text>
-    })
-    on('mcp.call', ($, e) => {
-      calls.push({ tool: e.tool, args: e.args })
-      const body =
-        e.tool === 'task_list'
-          ? { tasks: [] }
-          : e.tool === 'inbox_take'
-            ? { notes: [], pollMs: 3000 }
-            : e.tool === 'clip_suggest'
-              ? {
-                  items: [
-                    { label: 'gh pr', text: 'gh pr merge 9 --squash --admin' },
-                    { label: 'bun run', text: 'bun run e2e' },
-                  ],
-                  skipped: null,
-                }
-              : e.tool === 'clip_copied'
-                ? { recorded: true }
-                : { event: null }
-      return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
-    })
-    await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
-    const answer = 'Run `! gh pr merge 9 --squash --admin`, then `! bun run e2e`.'
-    await $.turn.complete({ answer, reason: 'answer', turnId: 't1' } as never)
-    expect(calls.find(c => c.tool === 'clip_suggest')?.args).toEqual({ answer })
-
-    const ui = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await ui.find({ text: 'gh pr merge 9 --squash --admin' })).toBeDefined()
-    await ui.press({ key: 'clip:1' })
-    expect(copied).toEqual(['bun run e2e'])
-    expect(toasts.at(-1)).toBe('Copied bun run e2e')
-
-    const all = ui.press({ key: 'clip:all' })
-    await clock.advance(1000)
-    await all
-    expect(copied).toEqual(['bun run e2e', 'gh pr merge 9 --squash --admin', 'bun run e2e'])
-    expect(calls.filter(c => c.tool === 'clip_copied').map(c => c.args)).toEqual([
-      { count: 1, index: 1 },
-      { count: 2 },
-    ])
-    await ui.unmount()
-
-    await $.turn.start({ text: 'next', turnId: 't2' } as never)
-    const after = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await after.find({ text: 'gh pr merge 9 --squash --admin' })).toBe(undefined)
-    expect(await after.find({ text: 'engine' })).toBeDefined()
-    await after.unmount()
-  })
-
-  test('each copy offer gets its own row under the facts, as many as the band has room for', async ($, on) => {
+  test('a task alone passes the band to whatever draws beneath', async ($, on) => {
     mock.clock(on)
     on('ui.status', () => ({ value: undefined }))
-    on('ui.toast', () => ({ value: undefined }))
     on('session.start', () => ({ cwd: '/r' }))
-    on('session.cwd', () => ({ value: '/r/.claude/worktrees/mods' }))
-    on('command.register', ($, e) => ({ value: { command: e.name } }))
-    on('turn.complete', ($, e) => ({ text: e.answer }))
+    on('session.cwd', () => ({ value: '/r/src' }))
+    on('mcp.call', ($, e) => {
+      const body =
+        e.tool === 'task_list' ? { tasks: TASKS } : e.tool === 'inbox_take' ? { notes: [], pollMs: 3000 } : { event: null }
+      return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
+    })
     on('ui.render', ($, e) => {
       const { Text } = $.ui.resolve(e)
       return <Text>engine</Text>
     })
-    on('mcp.call', ($, e) => {
-      const body =
-        e.tool === 'task_list'
-          ? { tasks: TASKS }
-          : e.tool === 'inbox_take'
-            ? { notes: [], pollMs: 3000 }
-            : e.tool === 'clip_suggest'
-              ? {
-                  items: [
-                    { label: 'tests', text: 'cargo test -p tt-tasks' },
-                    { label: 'file', text: 'crates/tt-tasks/src/landed.rs' },
-                    { label: 'e2e', text: 'bun run e2e' },
-                  ],
-                  costUsd: 0,
-                  skipped: null,
-                }
-              : { event: null }
-      return { value: { content: [{ type: 'text' as const, text: JSON.stringify(body) }], isError: false } }
-    })
     await $.session.start({ cwd: '/r', surface: 'terminal', isInteractive: true })
-    await $.turn.complete({ answer: 'run `cargo test -p tt-tasks`', reason: 'answer', turnId: 't1' } as never)
-
-    const band = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
-    expect(await band.find({ type: 'Text', text: '#7 Claude mods (doing)' })).toBeDefined()
-    expect(await band.find({ text: ' cargo test -p tt-tasks' })).toBeDefined()
-    expect(await band.find({ text: ' bun run e2e' })).toBeDefined()
-    await band.unmount()
-
-    const short = await $.ui.mount({
-      plugin: 'towles-tool-app',
-      surface: 'terminal',
-      ...BAND,
-      props: { ...BAND.props, maxRows: 3 },
-    })
-    expect(await short.find({ text: ' crates/tt-tasks/src/landed.rs' })).toBeDefined()
-    expect(await short.find({ text: ' bun run e2e' })).toBe(undefined)
-    await short.unmount()
+    const ui = await $.ui.mount({ plugin: 'towles-tool-app', surface: 'terminal', ...BAND })
+    expect(await ui.find({ text: '✦ tt' })).toBe(undefined)
+    expect(await ui.find({ text: 'engine' })).toBeDefined()
+    await ui.unmount()
   })
 })

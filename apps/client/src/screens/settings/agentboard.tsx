@@ -129,17 +129,6 @@ export function agentboardSections(
         ),
       },
       {
-        label: "Copy suggestions",
-        keywords: ["clipboard", "copy", "clip", "haiku", "budget", "mod", "claude", "turn"],
-        node: (
-          <ClipSuggestEditor
-            value={settings.clipSuggest ?? {}}
-            onChange={(clipSuggest) => update((s) => ({ ...s, clipSuggest }))}
-            onCommit={() => void flush()}
-          />
-        ),
-      },
-      {
         label: "Desktop notifications",
         keywords: [
           "notification",
@@ -971,30 +960,5 @@ function NextPromptEditor({
         onBlur={onCommit}
       />
     </div>
-  );
-}
-
-type ClipSuggest = NonNullable<UserSettings["clipSuggest"]>;
-
-function ClipSuggestEditor({
-  value,
-  onChange,
-  onCommit,
-}: {
-  value: ClipSuggest;
-  onChange: (next: ClipSuggest) => void;
-  onCommit: () => void;
-}) {
-  return (
-    <ToggleRow
-      id="clip-suggest"
-      label="Copy suggestions"
-      description="When Claude hands you a command to run with the ! prefix, the tt Claude mod's band offers the command to paste into the prompt. 1–3 copies one, a copies all in order."
-      checked={value.enabled ?? true}
-      onCheckedChange={(enabled) => {
-        onChange({ ...value, enabled });
-        onCommit();
-      }}
-    />
   );
 }

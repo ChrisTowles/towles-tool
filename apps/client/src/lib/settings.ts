@@ -288,9 +288,6 @@ export type UserSettings = {
   nextPrompt?: { question?: string; model?: string; dailyBudgetUsd?: number };
   /** Rust reads it (`tt_config::TelemetrySettings`) when the app starts. */
   telemetry?: { retainDays?: number };
-  /** The tt Claude mod's end-of-turn copy offer, capped per day. Rust reads it
-   * (`tt_config::ClipSuggestSettings`); unset keys take its defaults. */
-  clipSuggest?: { enabled?: boolean };
   /** Rust reads it (`tt_config::UpdatesSettings`); unset means the stable channel. */
   updates?: { channel?: UpdateChannel };
   /** `tt-clip`'s paste chords (`tt_config::ClipboardSettings`), e.g. "shift+Insert". */

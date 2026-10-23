@@ -1,13 +1,12 @@
-//! The Claude mod's next-prompt suggestion (one model call per keystroke of the user's,
-//! held to a daily budget here so no caller can spend past it) and the end-of-turn
-//! clipboard offer, which makes no model call.
+//! The Claude mod's next-prompt suggestion: one model call per keystroke of the user's,
+//! held to a daily budget here so no caller can spend past it.
 
 use chrono::{Local, TimeZone};
 use serde_json::{Value, json};
-use tt_config::{ClipSuggestSettings, NextPromptSettings};
+use tt_config::NextPromptSettings;
 use tt_store::SpendLedger;
 
-use crate::{Dispatcher, RequestContext, clip_gate};
+use crate::{Dispatcher, RequestContext};
 
 /// What the app needs to ask: the last turn as the mod saw it, plus the user's settings.
 pub struct SuggestRequest {
@@ -118,55 +117,5 @@ impl Dispatcher {
     fn goal_of(&self, args: &Value) -> Option<String> {
         let id = args.get("taskId").and_then(Value::as_i64)?;
         self.store.task_by_id(id).ok().and_then(|t| t.goal)
-    }
-
-    fn clip_settings(&self) -> ClipSuggestSettings {
-        match &self.clip_settings {
-            Some(settings) => settings.clone(),
-            None => tt_config::load().map(|s| s.clip_suggest).unwrap_or_default(),
-        }
-    }
-
-    pub(crate) fn clip_suggest(
-        &mut self,
-        args: &Value,
-        now_ms: i64,
-        ctx: &RequestContext,
-    ) -> Result<Value, String> {
-        let none = |skipped: &str| Ok(json!({ "items": [], "skipped": skipped }));
-        if !self.clip_settings().enabled {
-            return none("disabled");
-        }
-        let said = args.get("answer").and_then(Value::as_str).unwrap_or_default();
-        let offers = clip_gate::offers(said);
-        if offers.is_empty() {
-            tracing::info!(reason = "no-bang-command", "clip_suggest.skipped");
-            return none("no-bang-command");
-        }
-        if ctx.session.as_deref().is_some_and(|s| self.clip_backoff.quiet(s, now_ms)) {
-            tracing::info!(reason = "ignored", "clip_suggest.skipped");
-            return none("ignored");
-        }
-        tracing::info!(items = offers.len(), "clip_suggest.asked");
-        if let Some(session) = ctx.session.as_deref() {
-            self.clip_backoff.offered(session, now_ms);
-        }
-        let items: Vec<Value> =
-            offers.iter().map(|o| json!({ "label": o.label, "text": o.text })).collect();
-        Ok(json!({ "items": items, "skipped": null }))
-    }
-
-    pub(crate) fn clip_copied(
-        &mut self,
-        args: &Value,
-        ctx: &RequestContext,
-    ) -> Result<Value, String> {
-        if let Some(session) = ctx.session.as_deref() {
-            self.clip_backoff.copied(session);
-        }
-        let index = args.get("index").and_then(Value::as_i64);
-        let count = args.get("count").and_then(Value::as_i64).unwrap_or(1);
-        tracing::info!(index, count, "clip_suggest.copied");
-        Ok(json!({ "recorded": true }))
     }
 }

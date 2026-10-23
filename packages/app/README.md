@@ -51,8 +51,8 @@ tools without manual `claude mcp add` setup:
 - **Calendar** — `calendar_today`, `calendar_next` (reads) and `calendar_set`
   (writes). These exist for *focus protection* — how long until the next
   meeting, how much uninterrupted time is left — not calendar management.
-- **The mod's own** — `inbox_take`, `inbox_ack`, `next_prompt`,
-  `next_prompt_taken`, `clip_suggest` and `clip_copied` serve the mod below. The
+- **The mod's own** — `inbox_take`, `inbox_ack`, `next_prompt` and
+  `next_prompt_taken` serve the mod below. The
   mod denies the model any call to them, so an agent never reads another's notes
   or spends a suggestion budget.
 
@@ -126,8 +126,11 @@ the user's words from the app, into Claude Code itself.
 ### The band above the prompt
 
 ```
-✦ tt  #7 Claude mods (doing)  PR #42 open · checks passing  ready for /done  4m to Standup  n: next prompt
+✦ tt  #7 Claude mods  PR #42 open · checks passing  ready for /done  4m to Standup  n: next prompt
 ```
+
+The band shows only when there is a PR or a meeting to report: the task alone,
+and its board status, are things you know already.
 
 - **Task.** This is the open board task whose worktree holds the session's cwd,
   so a session in a `tt task` checkout sees its own card. If worktrees are
@@ -142,7 +145,7 @@ the user's words from the app, into Claude Code itself.
 
 The same facts go on the status line too, in short form
 (`tt #7 · PR #42 passing · ready for /done · 4m to Standup`),
-alongside the band.
+alongside the band, and under the same rule.
 
 The data comes from this plugin's own MCP server (`task_list`,
 `calendar_next`) via `$.mcp.call`. It refreshes at session
@@ -179,35 +182,11 @@ cannot take a note; the app says so rather than type into its prompt box.
 
 ### Copy suggestions
 
-When a turn ends with an answer, the mod sends its last message to
-`clip_suggest`. The app offers only what Claude hands you to run in the prompt
-with the `!` prefix: a line, indented or inside a fence, that opens with `! `, or
-an inline code span that does. SHAs, paths, links, PR numbers and identifiers are
-never offered, and neither is a message with no such command. Each command is
-offered without its `! `, since the prompt is already in bash mode when you paste, deduplicated, at most
-three, with no model call. A session whose last three offers went uncopied is
-left alone until you copy one, and gets a single probe every 30 minutes. The band grows into a
-column, up to its 4 rows, and offers each on its own row as a `copy` badge and
-the text itself:
-
-```
-✦ tt  #7 Claude mods (doing)  …  n: next prompt  a: copy all
-1:  copy  gh pr merge 9 --squash --admin
-2:  copy  gcloud auth login
-```
-
-Claude Code has no render site under its status line, and a pane docks on the
-right in any terminal wider than about 110 columns, so the band is the bottom
-of the screen a mod can draw.
-
-A digit in the empty prompt (or a click) copies that one; `a`, with the band
-focused, copies all of them in order, apart enough that a clipboard manager
-keeps each entry. The offer clears when the next turn starts. It is on by
-default (Settings → Agent Board → Copy suggestions). Each copy is recorded through
-`clip_copied` as a `clip_suggest.copied` event.
+They come from the `tt` plugin (`packages/core`), which needs no app: its rows sit
+under this band when both are on.
 
 The `$.state` contract is `types/index.d.ts`, and the pure logic in
-`hooks/band.ts`, `hooks/clip.ts`, `hooks/inbox.ts`, `hooks/park.ts` and `hooks/suggest.ts` is
+`hooks/band.ts`, `hooks/inbox.ts`, `hooks/park.ts` and `hooks/suggest.ts` is
 what `tests/` covers:
 
 ```sh

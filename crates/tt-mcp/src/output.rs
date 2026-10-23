@@ -270,23 +270,6 @@ struct NextPrompt {
 
 #[derive(JsonSchema)]
 #[allow(dead_code)]
-struct ClipOfferOut {
-    label: String,
-    text: String,
-}
-
-#[derive(JsonSchema)]
-#[allow(dead_code)]
-#[schemars(rename_all = "camelCase")]
-struct ClipSuggested {
-    /// The `! <command>` lines the message hands the user, empty when none (see `skipped`).
-    items: Vec<ClipOfferOut>,
-    /// `disabled`, `no-bang-command` or `ignored` when nothing is offered; `null` otherwise.
-    skipped: Option<String>,
-}
-
-#[derive(JsonSchema)]
-#[allow(dead_code)]
 #[schemars(rename_all = "camelCase")]
 struct Recorded {
     recorded: bool,
@@ -311,8 +294,7 @@ pub fn schema_for(name: &str) -> Option<Value> {
         "inbox_take" => schema::<InboxTaken>(),
         "inbox_ack" => schema::<InboxAcked>(),
         "next_prompt" => schema::<NextPrompt>(),
-        "next_prompt_taken" | "clip_copied" => schema::<Recorded>(),
-        "clip_suggest" => schema::<ClipSuggested>(),
+        "next_prompt_taken" => schema::<Recorded>(),
         _ => return None,
     })
 }

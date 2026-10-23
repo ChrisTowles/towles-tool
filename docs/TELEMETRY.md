@@ -100,7 +100,7 @@ day in `keyboard.rs`) that no `answersNeedsYou` chord answered. Tips live on the
 binding in `lib/shortcuts.tsx`.
 Its **Agents** tab (`tt_telemetry::summarize_agents`, `crates/tt-telemetry/src/agents.rs`)
 reads two things already logged: any event carrying a numeric `cost_usd` (the prompt
-improvers, `/next`, copy suggestions) rolled up per day and per message, and
+improvers and `/next`) rolled up per day and per message, and
 `agent.status_changed` folded into each checkout's working versus waiting-on-you
 time — a segment runs to that session's next status, its close, or the range's end,
 capped at an hour so a quit app or a night's wait isn't counted as either. The

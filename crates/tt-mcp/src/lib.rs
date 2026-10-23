@@ -17,7 +17,6 @@ use std::time::Instant;
 use chrono::{Local, NaiveDate, TimeZone};
 
 mod calendar_tools;
-mod clip_gate;
 mod hosts;
 mod inbox;
 mod output;
@@ -83,10 +82,6 @@ pub struct Dispatcher {
     calendar_sources: Option<Vec<String>>,
     /// Test hook: keeps `next_prompt` off the real settings file.
     next_prompt_settings: Option<tt_config::NextPromptSettings>,
-    /// Test hook: keeps `clip_suggest` off the real settings file.
-    clip_settings: Option<tt_config::ClipSuggestSettings>,
-    /// In memory only: a restart gives every session a fresh three offers.
-    clip_backoff: clip_gate::Backoff,
 }
 
 /// What the transport knows that the body cannot say: the caller's app terminal (`X-TT-Session`).
@@ -218,8 +213,6 @@ const TOOL_HINTS: &[(&str, &str, Effect)] = &[
     ("inbox_ack", "Acknowledge delivered notes", Effect::Replace),
     ("next_prompt", "Suggest the next prompt", Effect::Read),
     ("next_prompt_taken", "Record a taken suggestion", Effect::Write),
-    ("clip_suggest", "Suggest what to copy", Effect::Read),
-    ("clip_copied", "Record a copied offer", Effect::Write),
 ];
 
 /// Why a tool call produced no result — [`Dispatcher::tools_call`] says what each becomes.
@@ -282,8 +275,6 @@ impl Dispatcher {
             suggest_host: None,
             calendar_sources: None,
             next_prompt_settings: None,
-            clip_settings: None,
-            clip_backoff: clip_gate::Backoff::default(),
         }
     }
 
@@ -327,13 +318,6 @@ impl Dispatcher {
     #[cfg(test)]
     fn with_next_prompt_settings(mut self, settings: tt_config::NextPromptSettings) -> Dispatcher {
         self.next_prompt_settings = Some(settings);
-        self
-    }
-
-    /// Test hook — see [`Dispatcher::clip_settings`].
-    #[cfg(test)]
-    fn with_clip_settings(mut self, settings: tt_config::ClipSuggestSettings) -> Dispatcher {
-        self.clip_settings = Some(settings);
         self
     }
 
@@ -516,8 +500,6 @@ impl Dispatcher {
             "inbox_ack" => self.inbox_ack(args, now_ms, ctx),
             "next_prompt" => self.next_prompt(args, now_ms, ctx),
             "next_prompt_taken" => self.next_prompt_taken(args),
-            "clip_suggest" => self.clip_suggest(args, now_ms, ctx),
-            "clip_copied" => self.clip_copied(args, ctx),
             _ => return Err(ToolError::Unknown),
         };
         result.map_err(ToolError::Failed)

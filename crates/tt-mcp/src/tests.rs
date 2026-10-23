@@ -237,8 +237,6 @@ fn tools_list_is_exactly_the_task_pane_attention_calendar_and_mod_families() {
             "inbox_ack",
             "next_prompt",
             "next_prompt_taken",
-            "clip_suggest",
-            "clip_copied",
         ]
     );
 }
@@ -1848,82 +1846,6 @@ impl SuggestHost for FakeSuggest {
             cost_usd: Some(self.0),
         })
     }
-}
-
-fn clip_dispatcher(enabled: bool) -> Dispatcher {
-    dispatcher().with_clip_settings(tt_config::ClipSuggestSettings { enabled })
-}
-
-const STATUS_REPORT: &str = "Merged as 58f357dd (#783). The `clip_suggest.skipped` and \
-`clip_suggest.asked` events fire from crates/tt-mcp/src/suggest.rs; see \
-https://github.com/o/r/pull/783.";
-
-#[test]
-fn clip_suggest_offers_nothing_for_a_status_report_of_identifiers() {
-    let mut dispatcher = clip_dispatcher(true);
-    let report = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": STATUS_REPORT }));
-    assert_eq!(report["items"], json!([]));
-    assert_eq!(report["skipped"], "no-bang-command");
-    for answer in ["Done!", "a != b", "![img](x.png)"] {
-        let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": answer }));
-        assert_eq!(got["skipped"], "no-bang-command", "{answer}");
-    }
-}
-
-#[test]
-fn clip_suggest_offers_the_bang_commands_without_their_bang() {
-    let mut dispatcher = clip_dispatcher(true);
-    let fenced = "Merge it:\n```sh\n! cd ~/x && gh pr merge 780 --squash --admin\n```";
-    let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": fenced }));
-    assert_eq!(
-        got["items"],
-        json!([{ "label": "gh pr", "text": "cd ~/x && gh pr merge 780 --squash --admin" }])
-    );
-    assert_eq!(got["skipped"], Value::Null);
-    let inline = call_tool(
-        &mut dispatcher,
-        "clip_suggest",
-        json!({ "answer": "Sign in with `! gcloud auth login` first." }),
-    );
-    assert_eq!(inline["items"], json!([{ "label": "gcloud auth", "text": "gcloud auth login" }]));
-}
-
-#[test]
-fn clip_suggest_dedupes_and_caps_at_three() {
-    let mut dispatcher = clip_dispatcher(true);
-    let answer = "! a 1\n! a 1\n! b 2\n! c 3\n! d 4";
-    let got = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": answer }));
-    let texts: Vec<&str> =
-        got["items"].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap()).collect();
-    assert_eq!(texts, ["a 1", "b 2", "c 3"]);
-}
-
-#[test]
-fn clip_suggest_turned_off_offers_nothing() {
-    let mut dispatcher = clip_dispatcher(false);
-    let off = call_tool(&mut dispatcher, "clip_suggest", json!({ "answer": "! cargo test" }));
-    assert_eq!(off["skipped"], "disabled");
-    assert_eq!(call_tool(&mut dispatcher, "clip_copied", json!({ "count": 2 }))["recorded"], true);
-}
-
-#[test]
-fn clip_suggest_goes_quiet_after_three_ignored_offers_until_a_copy() {
-    let mut dispatcher = clip_dispatcher(true);
-    let args = json!({ "answer": "Run `! cargo test`" });
-    let (mine, theirs) = (session("mine"), session("theirs"));
-    for _ in 0..3 {
-        let asked = call_tool_as(&mut dispatcher, "clip_suggest", args.clone(), &mine);
-        assert_eq!(asked["skipped"], Value::Null);
-    }
-    let quiet = call_tool_as(&mut dispatcher, "clip_suggest", args.clone(), &mine);
-    assert_eq!(quiet["items"], json!([]));
-    assert_eq!(quiet["skipped"], "ignored");
-    let other = call_tool_as(&mut dispatcher, "clip_suggest", args.clone(), &theirs);
-    assert_eq!(other["skipped"], Value::Null, "another session is not backed off");
-
-    call_tool_as(&mut dispatcher, "clip_copied", json!({ "count": 1 }), &mine);
-    let again = call_tool_as(&mut dispatcher, "clip_suggest", args, &mine);
-    assert_eq!(again["skipped"], Value::Null, "a copy resets the count");
 }
 
 fn budgeted(cost: f64, budget: f64) -> Dispatcher {

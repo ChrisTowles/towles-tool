@@ -396,20 +396,6 @@ impl Default for NextPromptSettings {
     }
 }
 
-/// The Claude mod's end-of-turn copy offer: the `! <command>` lines Claude hands the user.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(rename_all = "camelCase", default)]
-pub struct ClipSuggestSettings {
-    pub enabled: bool,
-}
-
-impl Default for ClipSuggestSettings {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
-}
-
 /// `tt-clip`'s picker: the chord it types to paste a choice, per kind, as
 /// `+`-joined wtype modifiers ending in a key name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -502,10 +488,6 @@ pub struct UserSettings {
     pub telemetry: TelemetrySettings,
 
     /// Lenient for the same reason as `mcp`.
-    #[serde(default, deserialize_with = "lenient_clip_suggest")]
-    pub clip_suggest: ClipSuggestSettings,
-
-    /// Lenient for the same reason as `mcp`.
     #[serde(default, deserialize_with = "lenient_updates")]
     pub updates: UpdatesSettings,
 
@@ -531,13 +513,6 @@ fn lenient_updates<'de, D: serde::Deserializer<'de>>(
 fn lenient_telemetry<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<TelemetrySettings, D::Error> {
-    let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).unwrap_or_default())
-}
-
-fn lenient_clip_suggest<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<ClipSuggestSettings, D::Error> {
     let value = serde_json::Value::deserialize(deserializer)?;
     Ok(serde_json::from_value(value).unwrap_or_default())
 }
@@ -576,7 +551,6 @@ impl Default for UserSettings {
             mcp: McpSettings::default(),
             next_prompt: NextPromptSettings::default(),
             telemetry: TelemetrySettings::default(),
-            clip_suggest: ClipSuggestSettings::default(),
             updates: UpdatesSettings::default(),
             clipboard: ClipboardSettings::default(),
         }
