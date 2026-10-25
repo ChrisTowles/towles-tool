@@ -62,7 +62,7 @@ jsonc-parser = { version = "0.33.0", features = ["serde"] }
 libc = "0.2"
 # Builds libghostty-vt from source at the crate's pinned ghostty commit;
 # requires zig 0.15.x on PATH (dotfiles functions/18-zig.sh installs it).
-libghostty-vt = "0.2.0"
+libghostty-vt = "0.2.2"
 notify = "6.1.1"
 # Encodes the raw RGBA the system clipboard hands back into a real PNG — see
 # `tt_tasks::pasted::rgba_to_png`. Pinned to the same major the clipboard

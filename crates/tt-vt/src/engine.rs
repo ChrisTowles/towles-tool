@@ -325,7 +325,7 @@ impl Engine {
         self.term.set_default_bg_color(Some(unpack_rgb(theme.bg)))?;
         self.term.set_default_cursor_color(theme.cursor.map(unpack_rgb))?;
         let mut palette = self.term.default_color_palette()?;
-        for (slot, packed) in palette.iter_mut().zip(theme.palette16) {
+        for (slot, packed) in palette.0.iter_mut().zip(theme.palette16) {
             *slot = unpack_rgb(packed);
         }
         self.term.set_default_color_palette(Some(palette))?;
