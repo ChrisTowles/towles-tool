@@ -50,14 +50,14 @@
     "brace-expansion": "^5.0.12"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.1",
+    "@tauri-apps/cli": "^2.12.4",
     "@wdio/cli": "^9.29.1",
     "@wdio/local-runner": "^9.29.1",
     "@wdio/mocha-framework": "^9.29.1",
     "@wdio/spec-reporter": "^9.29.1",
-    "@wdio/tauri-plugin": "^1.2.0",
-    "@wdio/tauri-service": "^1.2.0",
+    "@wdio/tauri-plugin": "^1.5.0",
+    "@wdio/tauri-service": "^1.5.0",
     "better-result": "^2.10.0",
-    "tsx": "^4.23.0"
+    "tsx": "^4.23.15"
   }
 }
