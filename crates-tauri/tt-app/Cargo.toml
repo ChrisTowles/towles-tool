@@ -50,7 +50,7 @@ tokio = { workspace = true, features = ["time", "sync", "rt", "macros", "net", "
 # against the OS trust store (matches tt-collect's ureq client), so networks
 # that TLS-inspect with a corporate root CA (Zscaler and similar) are trusted —
 # rustls's bundled webpki-roots ignores the OS store and fails under them.
-tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake", "native-tls"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake", "native-tls"] }
 # Auth tokens for the per-terminal Claude Code IDE servers (see src/ide.rs).
 uuid = { version = "1", features = ["v4"] }
 # Loopback HTTP transport for the MCP server (see src/mcp_http.rs). HTTP/1.1
