@@ -95,5 +95,12 @@ Or from a shell:
 
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool
-claude plugin enable tt@towles-tool
+claude plugin install tt@towles-tool
+```
+
+Restart Claude Code to load it. To pick up a new release:
+
+```bash
+claude plugin marketplace update towles-tool
+claude plugin update tt@towles-tool
 ```
