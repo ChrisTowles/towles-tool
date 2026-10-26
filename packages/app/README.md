@@ -217,6 +217,9 @@ reports that to the session instead of staying silent.
 
 ## Installation
 
+The plugin needs the towles-tool desktop app running and `tt` on `PATH` — its
+MCP tools, band and hooks all talk to the app.
+
 In Claude Code 2.1.275 or later, one step:
 
 ```text
@@ -227,5 +230,12 @@ Or from a shell:
 
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool
-claude plugin enable towles-tool-app@towles-tool
+claude plugin install towles-tool-app@towles-tool
+```
+
+Restart Claude Code to load it. To pick up a new release:
+
+```bash
+claude plugin marketplace update towles-tool
+claude plugin update towles-tool-app@towles-tool
 ```
