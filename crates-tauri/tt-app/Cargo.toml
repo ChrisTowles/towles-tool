@@ -81,7 +81,7 @@ tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 # compiles to a stub.
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0.1", features = ["v2_40"] }
-cairo-rs = "0.18"
+cairo-rs = "0.22"
 
 # Native NSEvent interception (src/macos_keys.rs): macOS's Cocoa text-editing
 # key bindings intercept some Ctrl chords (Control+C -> insertNewline:) before
