@@ -5,7 +5,6 @@ import {
   browserPaneId,
   filesPaneId,
   filesPaneTarget,
-  jarvisPaneId,
   previewPaneId,
 } from "@/lib/agentboard/pane-ids";
 import type { FolderData } from "@/lib/agentboard/types";
@@ -20,7 +19,7 @@ import { uiAction } from "@/lib/ui-action";
 import type { RailSnapshot } from "./selection-actions";
 import { useTauriEvent } from "@/lib/run";
 
-/** Files, preview, browser and Jarvis panes: the tiles that show a folder
+/** Files, preview and browser panes: the tiles that show a folder
  * rather than run a shell, and the requests that point them at something. */
 export function useViewPanes(args: {
   folderByDir: Map<string, FolderData>;
@@ -63,12 +62,6 @@ export function useViewPanes(args: {
     setActiveFolderDir(dir);
     addPaneToActive(dir, browserPaneId(dir));
     setFocusedPaneId(browserPaneId(dir));
-  }
-
-  // Same, for the native pane — a window rectangle rendered by Bevy, not DOM.
-  function openJarvis(dir: string) {
-    uiAction("agentboard.open_jarvis_pane", "agentboard");
-    placeViewPane(dir, jarvisPaneId(dir));
   }
 
   function showPreviewFile(req: {
@@ -206,7 +199,6 @@ export function useViewPanes(args: {
     openFiles,
     openPreview,
     openBrowser,
-    openJarvis,
     showPreviewFile,
     openFileFromRequest,
     openClaudeSessionInEditor,

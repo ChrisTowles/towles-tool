@@ -153,7 +153,6 @@ const AgentboardBlockSchema = open({
   railRecentHours: Schema.optional(Schema.Number),
   showQuiet: Schema.optional(Schema.Boolean),
   showUnmanagedWorktrees: Schema.optional(Schema.Boolean),
-  jarvisPane: Schema.optional(Schema.Boolean),
   browserPane: Schema.optional(Schema.Boolean),
   pcKeybindings: Schema.optional(Schema.Boolean),
 });

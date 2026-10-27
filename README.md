@@ -35,29 +35,12 @@ Biggest gap first, checked against Claude Desktop 1.22209.0: **handing work to a
 agent is one gesture** (a half-formed thought, a pasted screenshot, `#` to attach
 an issue — and the worktree is minted); **the fleet is one screen**; **a task's
 panes tile beside its terminals** (diff, file tree, a live dev-server preview you
-can draw on, a native GPU pane); **attention is modelled, not guessed**; and
+can draw on); **attention is modelled, not guessed**; and
 **where your day went is answerable** from an on-disk event log. The full tour:
 **[docs/FEATURES.md](docs/FEATURES.md)**.
-Four media carry it, because none covers everything: **HTML/GUI**, **terminal**
-(a real PTY, where the agents work), **git repos** (storage, and how you hand
-work to someone else), and **Bevy** (3D — the newest and least built out).
-
-## Critical goal: Solari, running natively inside the app
-
-The app renders a live **Bevy** scene in a real region of its own window: a
-native compositor surface (`wl_subsurface` on Wayland, `NSView`/`CAMetalLayer` on
-macOS) sits in a rectangle of the Tauri window and Bevy draws into it on the GPU
-— no WebAssembly, no frames over IPC. Only a native surface can host a hardware
-ray-tracing pipeline, which settles the embedding approach; it lives in
-`crates/tt-jarvis` and `crates-tauri/tt-pane`. Bevy comes from
-[slyedoc/bevy](https://github.com/slyedoc/bevy), branch `solari-rt-pipeline`,
-rather than crates.io (`Cargo.lock` pins the revision) — that fork is where
-**Solari**, Bevy's real-time raytraced lighting, is being built, and the goal is
-running it live in a tool used all day, on a real desktop with real windows.
- Building
-that fork costs more than the rest of the workspace together, so it is behind a
-Cargo feature that is off by default — `TT_BEVY=1 bun run dev`, or `--features
-bevy` ([docs/COMMANDS.md](docs/COMMANDS.md#the-bevy-feature)).
+Three media carry it, because none covers everything: **HTML/GUI**, **terminal**
+(a real PTY, where the agents work), and **git repos** (storage, and how you hand
+work to someone else).
 
 ## The two surfaces
 

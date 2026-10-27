@@ -36,7 +36,6 @@ mod task_explorer;
 mod telemetry;
 mod terminal;
 mod update;
-mod wdio_window;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -642,8 +641,6 @@ pub fn run() {
         .manage(queue::QueueState::default())
         .manage(browser::BrowserHost::default())
         .manage(codeserver::CodeServerHost::default())
-        // Shared: a pane outlives the command that created it (see `tt-pane`).
-        .manage(tt_pane::PaneHost::shared())
         .manage(resume::ResumeState::begin())
         .manage(terminal::TermState::default())
         .manage(task::TaskPhases::default())
@@ -683,11 +680,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_task,
             ui_action,
-            tt_pane::commands::pane_attach,
-            tt_pane::commands::pane_set_rect,
-            tt_pane::commands::pane_set_visible,
-            tt_pane::commands::pane_detach,
-            wdio_window::wdio_place_on_test_monitor,
             task_explorer::task_explorer_snapshot,
             agentboard::ab_get_state,
             queue::queue_get,

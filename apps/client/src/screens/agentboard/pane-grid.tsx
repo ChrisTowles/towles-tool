@@ -3,7 +3,6 @@ import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
 import { JumpRecallCard } from "@/components/agentboard-jump-recall";
 import { BrowserPane } from "@/components/browser-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
-import { JarvisPane } from "@/components/jarvis-pane";
 import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
 import type { SessionActions } from "@/lib/agentboard/actions";
@@ -12,9 +11,7 @@ import { paneRects } from "@/lib/agentboard/layout";
 import {
   filesPaneDir,
   isFilesPane,
-  isJarvisPane,
   isPreviewPane,
-  jarvisPaneDir,
   previewPaneDir,
   browserPaneDir,
   isBrowserPane,
@@ -28,7 +25,7 @@ import { paneStyle } from "./helpers";
 import type { ColumnDrag } from "./use-column-drag";
 
 /** The pane area: one flat pool of mounted terminals (never remounted — a remount would respawn
- * the shell) plus the files/preview/jarvis/browser/tombstone panes, all absolutely positioned into
+ * the shell) plus the files/preview/browser/tombstone panes, all absolutely positioned into
  * the active window's tiling. */
 export function PaneGrid(props: {
   /** Session ids whose PTY is mounted, in mount order. */
@@ -55,8 +52,6 @@ export function PaneGrid(props: {
   /** Files an agent asked to show, by folder dir — see the MCP
    * `preview_file` tool (`lib/preview-artifact.ts`). */
   previewRequests: Record<string, PreviewRequest>;
-  /** False when something must appear over the pane area — this screen isn't the active tab. */
-  nativeVisible: boolean;
   /** The label to lead a session's pane with — live Claude title or backend name. */
   labelFor: (s: SessionData) => string;
   /** Terminal focus request: the session to focus, and a nonce so re-requesting
@@ -96,7 +91,6 @@ export function PaneGrid(props: {
     termAttention,
     filesOpenRequests,
     previewRequests,
-    nativeVisible,
     labelFor,
     focusTerminalRequest,
     onSelectSession,
@@ -255,26 +249,6 @@ export function PaneGrid(props: {
           />,
         );
       })}
-      {/* Jarvis panes: a rectangle of the window handed to Bevy as a real
-          compositor surface. Rendered conditionally like the other view panes,
-          which is affordable because unmounting one *retires* it rather than
-          destroying it — the host parks the renderer and revives it if the
-          pane comes back (`crates-tauri/tt-pane`). `visible` is threaded down
-          because the surface composites *above* the webview: no DOM ancestor
-          can hide it. */}
-      {panes
-        .filter(isJarvisPane)
-        .map((id) =>
-          paneBox(
-            id,
-            <JarvisPane
-              folder={folderByDir.get(jarvisPaneDir(id) ?? "")}
-              focused={focusedPaneId === id}
-              visible={nativeVisible}
-              onClose={() => onRemovePane(id)}
-            />,
-          ),
-        )}
       {/* Column dividers: drag to resize (snaps to thirds and fifths),
           double-click for equal columns. Row layout (≤3) has one per boundary;
           the ≥4 grid shares one column boundary across rows. */}

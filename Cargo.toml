@@ -18,7 +18,6 @@ members = [
   "crates/tt-git",
   "crates/tt-claude-sessions",
   "crates/tt-ide",
-  "crates/tt-jarvis",
   "crates/tt-journal",
   "crates/tt-mcp",
   "crates/tt-tasks",
@@ -29,7 +28,6 @@ members = [
   "crates-cli/tt-cli",
   # Tauri-specific crates
   "crates-tauri/tt-app",
-  "crates-tauri/tt-pane",
 ]
 
 
@@ -99,8 +97,6 @@ wait-timeout = "0.2.1"
 # Internal crates - shared
 tt-agentboard = { path = "crates/tt-agentboard" }
 tt-browser = { path = "crates/tt-browser" }
-tt-jarvis = { path = "crates/tt-jarvis" }
-tt-pane = { path = "crates-tauri/tt-pane" }
 tt-claude-code = { path = "crates/tt-claude-code" }
 tt-clipboard = { path = "crates/tt-clipboard" }
 tt-collect = { path = "crates/tt-collect" }
@@ -137,24 +133,15 @@ debug = false
 opt-level = 3
 debug = false
 
-# Bevy and its dependency tree must be optimized even in dev builds — the same
-# reasoning as libghostty-vt above, and Bevy's own documented recommendation. An
-# unoptimized Bevy renders at a small fraction of its release framerate, which
-# would make the native pane look broken in `npm run dev`/`dev:drive` for
-# reasons that have nothing to do with the pane. Applied to all transitive
-# dependencies rather than `bevy` alone, because the cost is in wgpu/naga/glam,
-# not in the facade crate.
+# Every dependency optimized in dev builds, so `bun run dev` does its in-process
+# work (gitoxide status walks, PTY parsing) at something like release speed.
 [profile.dev.package."*"]
 opt-level = 3
 
 # CI-only profile: `dev` without the all-dependencies `opt-level = 3` above.
 #
-# That override exists so `npm run dev` renders the Bevy pane at a usable
-# framerate. CI never runs the renderer — it lints and unit-tests — so there it
-# is pure compile cost, and it lands entirely on the two *codegen* steps rather
-# than the metadata-only clippy ones. Measured on the one `rust-app` run that
-# completed (49m total): `test (tt-app)` 19m53s and `test (native pane)` 14m58s,
-# against `clippy (tt-app)` 9m19s and `clippy (native pane)` 5m04s.
+# CI only lints and unit-tests, so there that override is pure compile cost,
+# landing on the codegen (`test`) steps rather than the metadata-only clippy ones.
 #
 # The libghostty overrides are restated rather than left to `inherits`, so this
 # profile does not depend on whether Cargo propagates package overrides into a

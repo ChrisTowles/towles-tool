@@ -69,7 +69,6 @@ import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
 import {
   useBrowserPane,
-  useJarvisPane,
   useShowQuiet,
   useRailFilter,
   useShowUnmanagedWorktrees,
@@ -159,9 +158,7 @@ export function AgentBoardScreen() {
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether worktrees `tt task` didn't create get rail folders at all.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
-  const [jarvisPane, setJarvisPane] = useJarvisPane();
   const [browserPane] = useBrowserPane();
-  const nativeVisible = onScreen;
   // The idle stub's peek is view state — it belongs to one glance at one repo.
   // Quiet is a persisted view mode instead: its switch is in the rail header,
   // so the hiding is never something you can't find your way back out of.
@@ -355,7 +352,7 @@ export function AgentBoardScreen() {
     addPaneToActive,
     ackFolder,
   });
-  const { openFiles, openPreview, openBrowser, openJarvis } = viewPanes;
+  const { openFiles, openPreview, openBrowser } = viewPanes;
 
   // A BEL or OSC 9/777 — Claude Code's "needs your input".
   useTauriEvent<{ termId: string; kind: string; body?: string }>(
@@ -746,8 +743,6 @@ export function AgentBoardScreen() {
       queryHidden={queryHidden}
       showUnmanagedWorktrees={showUnmanagedWorktrees}
       onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
-      jarvisPane={jarvisPane}
-      onSetJarvisPane={setJarvisPane}
       onOpenRepoManager={openRepoManager}
       onCleanupMissing={() => void cleanupMissing()}
       onClearDismissals={() => void attention.clearDismissals()}
@@ -800,10 +795,9 @@ export function AgentBoardScreen() {
         onRenameCommit: stableRenameCommit,
         onOpenFiles: openFiles,
         onOpenPreview: openPreview,
-        // Undefined while `agentboard.jarvisPane` is off:
+        // Undefined while `agentboard.browserPane` is off:
         // no entry point rather than a disabled pane.
         onOpenBrowser: browserPane ? openBrowser : undefined,
-        onOpenJarvis: jarvisPane ? openJarvis : undefined,
         onClosePane: closePane,
       }}
     />
@@ -899,8 +893,6 @@ export function AgentBoardScreen() {
                   scrollRef={railEdges.ref}
                   edges={railEdges}
                   focusRef={focusRef}
-                  jarvisPane={jarvisPane}
-                  nativeVisible={nativeVisible}
                 />
               </ResizablePanel>
               <ResizableHandle />
@@ -928,7 +920,6 @@ export function AgentBoardScreen() {
                   onOpenFiles={openFiles}
                   onOpenPreview={openPreview}
                   onOpenBrowser={browserPane ? openBrowser : undefined}
-                  onOpenJarvis={jarvisPane ? openJarvis : undefined}
                   onNewSession={newSession}
                   onNewTask={() => openRailNewTask(activeRepo.key)}
                   onRemoveRepo={requestRemoveRepo}
@@ -974,7 +965,6 @@ export function AgentBoardScreen() {
                   termAttention={termAttention}
                   filesOpenRequests={viewPanes.filesOpenRequests}
                   previewRequests={viewPanes.previewRequests}
-                  nativeVisible={nativeVisible}
                   labelFor={labelFor}
                   focusTerminalRequest={focusTerminalRequest}
                   onSelectSession={(dir, id) => {

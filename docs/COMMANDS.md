@@ -69,18 +69,14 @@ the same settings section rolls back to it. The signing key is
 the `TAURI_SIGNING_PRIVATE_KEY` secret, its public half is in
 `tauri.conf.json`, and losing it strands every installed copy on its version.
 
-`clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x), and `tt-app`,
-`tt-pane` and `tt-jarvis` (webkit2gtk/GTK — for `tt-jarvis` only its cadence
-benchmark's dev-deps, which `--all-targets` builds anyway). Bevy is *not* among
-the costs: it sits behind the off-by-default `bevy` feature. Without those
-prereqs, use CI's variant:
+`clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x) and `tt-app`
+(webkit2gtk/GTK). Without those prereqs, use CI's variant:
 
 ```sh
-cargo clippy --workspace --exclude tt-vt --exclude tt-app \
-  --exclude tt-jarvis --exclude tt-pane --all-targets -- -D warnings
+cargo clippy --workspace --exclude tt-vt --exclude tt-app --all-targets -- -D warnings
 ```
 
-Those four are covered by CI's GTK-provisioned `rust-app` job instead, and
+Those two are covered by CI's GTK-provisioned `rust-app` job instead, and
 that job is path-gated — **a new crate needing GTK must be added to both the
 `--exclude` list and the `vt_or_app` paths-filter in `.github/workflows/ci.yml`,
 or it silently gets no Rust CI at all.**
@@ -117,13 +113,7 @@ the mock dev server:
   `status`, `invoke <cmd> [json]` (real IPC), `eval "<js>"`, `shot <name>` (→
   `e2e/screenshots/<name>.png`, which you can `Read`), `click "<css>"`,
   `type "<css>" <text>`, `url <path>`, `console [--clear]`. This is the way to
-  visually/behaviorally debug a change and see the result. **`shot` is blind to
-  the native pane**: a `tt-pane` surface composites *above* the webview, so it's
-  absent from a WebDriver capture however healthy it is. `winshot <name>`
-  captures at the compositor level instead — it fullscreens the window on the
-  test monitor first, which both identifies it among several tasks' identical
-  windows and forces it unoccluded (no frame callbacks otherwise) — and
-  `unplace` gives the monitor back. **A screenshot that
+  visually/behaviorally debug a change and see the result. **A screenshot that
   looks right is not proof the render was clean** — React reports invalid
   markup as a runtime console error that nothing else here can see (no linter,
   no component tests), so every verb prints a `⚠ N console error(s)` summary
@@ -156,32 +146,12 @@ the app to look at (CLI-only, docs-only, crate-internal refactors with no
 ## The CI variant of the Rust checks
 
 `cargo clippy --all` / `cargo test --all` build `tt-vt` (needs zig 0.15.x) and
-`tt-app`, `tt-pane`, `tt-jarvis` (webkit2gtk/GTK). Without those prerequisites
-installed, use CI's variant, which excludes exactly those four.
+`tt-app` (webkit2gtk/GTK). Without those prerequisites installed, use CI's
+variant, which excludes exactly those two.
 
 **A new crate needing GTK must be added to both that `--exclude` list and the
 `vt_or_app` paths-filter in `.github/workflows/ci.yml`**, or it silently gets no
 Rust CI at all.
-
-## The `bevy` feature
-
-Bevy builds from a git fork and a cold build of it dwarfs everything else here,
-so **the renderer is behind a Cargo feature that is off by default** —
-`tt-jarvis`, `tt-pane` and `tt-app` each declare a `bevy` feature and forward it
-down that chain. Off, `tt-pane` compiles the same stub it already uses off
-Linux: the commands stay registered and `pane_attach` reports the pane
-unsupported, so `agentboard.jarvisPane` errors rather than drawing.
-
-```sh
-TT_BEVY=1 bun run dev               # or bun start / bun run dev:drive
-cargo build -p tt-app --features bevy
-cargo clippy -p tt-jarvis -p tt-pane --features tt-jarvis/bevy,tt-pane/bevy --all-targets -- -D warnings
-```
-
-CI compiles the fork in exactly one place — the `rust-app` job's two "native
-pane" steps — and only when a change can affect it (`crates/tt-jarvis/**`,
-`crates-tauri/tt-pane/**`, or a workspace/lockfile/toolchain file). Every other
-job, and every release build, is Bevy-free.
 
 ## Root `package.json` notes
 

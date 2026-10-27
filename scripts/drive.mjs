@@ -4,14 +4,11 @@
 // through the session-less `POST /wdio/eval`; shot/click/type/url each open a
 // short-lived session, or reuse one passed as `--session` (see `session-open`).
 // Run with no verb for the verb list. Ports come from the rendered `.env`.
-import { writeFile, mkdir, rm } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import os from "node:os";
+import { writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { Result } from "better-result";
-import { RemoteRejected, RequestFailed, SpawnFailed } from "./errors.mjs";
+import { RemoteRejected, RequestFailed } from "./errors.mjs";
 import { requireDevPort, resolveWebdriverPort } from "./task-port.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,7 +18,7 @@ const devPort = requireDevPort(repoRoot, { tag: "drive" });
 const wdPort = resolveWebdriverPort(devPort);
 const base = `http://127.0.0.1:${wdPort}`;
 
-/** @typedef {RequestFailed | RemoteRejected | SpawnFailed} DriveError */
+/** @typedef {RequestFailed | RemoteRejected} DriveError */
 
 /** `json` is the parsed body, or `{ raw }` when the server sent non-JSON.
  * @typedef {{ status: number; ok: boolean; json: Record<string, unknown> }} HttpResponse */
@@ -278,65 +275,6 @@ async function surfaceConsoleErrors() {
   }
 }
 
-const execFileAsync = promisify(execFile);
-
-/** A non-zero exit and a missing binary are the same kind of answer here —
- * neither should be a thrown `unknown` mid-verb.
- * @param {string} cmd @param {string[]} args
- * @returns {Promise<import("better-result").Result<string, SpawnFailed>>} */
-async function run(cmd, args) {
-  try {
-    const { stdout } = await execFileAsync(cmd, args);
-    return Result.ok(stdout.trim());
-  } catch (cause) {
-    return Result.err(new SpawnFailed({ command: `${cmd} ${args.join(" ")}`, cause }));
-  }
-}
-
-/** Whole-window compositor shot: `shot` captures the webview, which cannot see a
- * `tt-pane` (a Wayland subsurface above it). Fullscreening on the test monitor
- * first picks this window out of a whole-desktop capture *and* forces it
- * unoccluded — a vsync-paced pane photographs stale otherwise.
- * @param {string} name @returns {Promise<import("better-result").Result<{file: string; rect: Record<string, unknown>}, DriveError | SpawnFailed>>} */
-async function captureWindow(name) {
-  const placed = await evalExpr(
-    `window.__TAURI_INTERNALS__.invoke("wdio_place_on_test_monitor", { fullscreen: true })`,
-  );
-  if (placed.isErr()) return placed;
-  const rect = /** @type {Record<string, unknown>} */ (placed.value);
-  const [x, y, w, h] = [rect.x, rect.y, rect.width, rect.height];
-  if ([x, y, w, h].some((v) => typeof v !== "number")) {
-    return Result.err(
-      new RemoteRejected({ action: "place window", detail: JSON.stringify(rect) }),
-    );
-  }
-  // A native pane needs a few frame callbacks after the fullscreen round-trip;
-  // capturing early is the failure that looks like "the pane renders nothing".
-  await new Promise((r) => setTimeout(r, 1200));
-
-  const tmp = path.join(os.tmpdir(), `tt-winshot-${process.pid}`);
-  await mkdir(tmp, { recursive: true });
-  try {
-    const shot = await run("cosmic-screenshot", ["--interactive=false", "--save-dir", tmp]);
-    if (shot.isErr()) return shot;
-    const desktop = shot.value.split("\n").pop() ?? "";
-    const dir = path.join(repoRoot, "e2e/screenshots");
-    await mkdir(dir, { recursive: true });
-    const file = path.join(dir, `${name}.png`);
-    const cropped = await run("convert", [
-      desktop,
-      "-crop",
-      `${w}x${h}+${x}+${y}`,
-      "+repage",
-      file,
-    ]);
-    if (cropped.isErr()) return cropped;
-    return Result.ok({ file, rect });
-  } finally {
-    await rm(tmp, { recursive: true, force: true });
-  }
-}
-
 /** @param {number} exitCode @returns {never} */
 function usage(exitCode) {
   console.log(
@@ -347,9 +285,6 @@ function usage(exitCode) {
       '  eval "<js expression>"     run JS in the live window, print the result',
       "  invoke <cmd> [jsonArgs]    call a real Rust IPC command",
       "  shot <name> [--session id]     screenshot → e2e/screenshots/<name>.png",
-      "  winshot <name>             whole-window compositor shot (sees native panes;",
-      "                             fullscreens on the test monitor first)",
-      "  unplace                    restore the window from `winshot`'s fullscreen",
       '  click "<css selector>" [--session id]   click an element in the shared window',
       '  clicktext "<text>"         click a button/link by its visible text',
       '  type "<css selector>" <text> [--session id]   type into an element',
@@ -513,28 +448,6 @@ switch (verb) {
     }, session);
     if (navigated.isErr()) failWith(navigated.error);
     console.log(`navigated to ${full}`);
-    break;
-  }
-  case "winshot": {
-    const name = (rest[0] || "winshot").replace(/[^\w.-]/g, "_");
-    const shot = await captureWindow(name);
-    if (shot.isErr()) failWith(shot.error);
-    const { file, rect } = shot.value;
-    console.log(file);
-    console.log(
-      `  window fullscreen on ${rect.monitor} — ${rect.width}x${rect.height}+${rect.x}+${rect.y}`,
-    );
-    if (!rect.isTestMonitor) {
-      console.log("  ⚠ single monitor — this covered the primary screen; restore with `unplace`");
-    }
-    break;
-  }
-  case "unplace": {
-    const restored = await evalExpr(
-      `window.__TAURI_INTERNALS__.invoke("wdio_place_on_test_monitor", { fullscreen: false })`,
-    );
-    if (restored.isErr()) failWith(restored.error);
-    console.log("window restored from fullscreen");
     break;
   }
   case "console": {

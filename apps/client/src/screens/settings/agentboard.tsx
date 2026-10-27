@@ -36,7 +36,7 @@ import {
   type NotifyLevel,
   type UserSettings,
 } from "@/lib/settings";
-import { DEFAULT_BROWSER_PANE, DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
+import { DEFAULT_BROWSER_PANE } from "@/lib/rail-prefs";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
 import { PALETTE } from "@/lib/colors";
 import { cn } from "@/lib/utils";
@@ -222,24 +222,6 @@ export function agentboardSections(
               update((s) => ({
                 ...s,
                 agentboard: { ...s.agentboard, copyOnSelect: v },
-              }))
-            }
-          />
-        ),
-      },
-      {
-        label: "Jarvis pane",
-        keywords: ["jarvis", "bevy", "native", "pane", "3d", "render", "gpu", "rail"],
-        node: (
-          <ToggleRow
-            id="jarvis_pane"
-            label="Jarvis pane"
-            description="Turn on Jarvis, the native Bevy surface: a strip at the bottom of the Agentboard rail, plus a “jarvis” button on each checkout that tiles one as a pane beside its terminals. A proof-of-concept, and Linux/Wayland only — leave it off and nothing is ever drawn. It also needs a build made with the `bevy` Cargo feature, off by default because compiling it dwarfs the rest of the app; without one, opening a pane reports it unsupported. Turning it back off parks what you opened rather than reclaiming it; relaunch for that."
-            checked={settings.agentboard?.jarvisPane ?? DEFAULT_JARVIS_PANE}
-            onCheckedChange={(v) =>
-              update((s) => ({
-                ...s,
-                agentboard: { ...s.agentboard, jarvisPane: v },
               }))
             }
           />

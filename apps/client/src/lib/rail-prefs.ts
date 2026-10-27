@@ -87,8 +87,6 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
   return [show, persist];
 }
 
-/** Off, so the pane costs nothing until asked for: mounting `NativePane` is
- * what starts the render thread. */
 export const DEFAULT_BROWSER_PANE = false;
 
 /** Whether checkouts offer the Chrome pane. Off means no entry point rather
@@ -99,23 +97,6 @@ export function useBrowserPane(): [boolean, (on: boolean) => void] {
     (next: boolean) => {
       setOn(next);
       void persistAgentboardSetting("browserPane", next);
-    },
-    [setOn],
-  );
-  return [on, persist];
-}
-
-export const DEFAULT_JARVIS_PANE = false;
-
-/** One switch for both Bevy surfaces: the rail strip and the `jarvis` pane.
- * Off, no `NativePane` renders at all — but it is not a way to reclaim one
- * after the fact: a shown pane's renderer is parked for the app's life. */
-export function useJarvisPane(): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useLiveSetting((s) => s.agentboard?.jarvisPane, DEFAULT_JARVIS_PANE);
-  const persist = useCallback(
-    (next: boolean) => {
-      setOn(next);
-      void persistAgentboardSetting("jarvisPane", next);
     },
     [setOn],
   );

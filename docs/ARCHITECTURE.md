@@ -2,8 +2,7 @@
 
 The workspace crate by crate. [CLAUDE.md](../CLAUDE.md) keeps a one-line map and
 points here; the deepest subsystems have their own docs ([MCP](MCP.md),
-[telemetry](TELEMETRY.md), [the native pane](NATIVE-PANE.md), [the browser
-pane](BROWSER-PANE.md)).
+[telemetry](TELEMETRY.md), [the browser pane](BROWSER-PANE.md)).
 
 Cargo workspace + bun workspace (`apps/client` only).
 
@@ -83,11 +82,6 @@ the CLI and the app can consume it.
   the port.
 - `tt-vt` — libghostty-vt terminal-state engine behind the canvas terminals.
   Needs zig 0.15.x; see [`crates/tt-vt/CLAUDE.md`](../crates/tt-vt/CLAUDE.md).
-- `tt-jarvis` — the **native pane**: Bevy rendering into a surface it did not
-  create, opt-in and off by default — at build time too, behind the `bevy`
-  Cargo feature this crate, `tt-pane` and `tt-app` all forward
-  ([COMMANDS.md](COMMANDS.md#the-bevy-feature)). Nothing takes a pane down while
-  the app runs, and that is deliberate: **[NATIVE-PANE.md](NATIVE-PANE.md)**.
 - `tt-browser` — Chrome as a supervised child driven over CDP, behind the
   **Chrome pane**. The profile is the app's own and starts empty: the feature is
   login persistence, never an import of the user's Chrome profile. Shutdown goes
@@ -145,8 +139,6 @@ the CLI and the app can consume it.
   locking/ordering/singleton invariants are the easiest place in the repo to
   introduce a subtle bug:
   [`crates-tauri/tt-app/CLAUDE.md`](../crates-tauri/tt-app/CLAUDE.md).
-- `tt-pane` — native child surfaces (Wayland subsurface / macOS `NSView`) the
-  Jarvis and Chrome panes render into.
 
 ## `crates-cli/tt-cli`
 
