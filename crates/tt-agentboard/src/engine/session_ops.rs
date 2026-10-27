@@ -47,6 +47,12 @@ impl Engine {
         closed
     }
 
+    /// The engine can't see PTYs; the host pushes the live ids before each
+    /// rebuild so a prune never deletes a running shell's record.
+    pub fn set_live_sessions(&mut self, ids: HashSet<String>) {
+        self.live_sessions = ids;
+    }
+
     pub fn close_session(&mut self, id: &str, now: i64) -> bool {
         let dir = self.folder_dir_of_session(id);
         let removed = self.sessions.remove(id);
