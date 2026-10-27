@@ -142,11 +142,7 @@ window, merely `hidden` elsewhere, so unmount means "really closed" and the
 unmount effect can kill the process. **A new pane kind that owns a process or
 accumulates state must join the pool and keep its state outside the component.**
 Chrome (`browser-pane.tsx`) is the near miss: it owns a browser process, but that
-lives in Rust, so the component is only a view and stays conditional. Jarvis
-(`jarvis-pane.tsx`) isn't pooled either, since unmounting retires its Bevy
-renderer rather than destroying it — but its body is a compositor surface *above*
-the webview, so `hidden` on an ancestor is invisible to it and screen switches
-must push down `visible={false}`.
+lives in Rust, so the component is only a view and stays conditional.
 
 ## Clickable rows can't be `<button>`s
 

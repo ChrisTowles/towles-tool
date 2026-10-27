@@ -311,7 +311,6 @@ export type UserSettings = {
     railRecentHours?: number;
     showQuiet?: boolean;
     showUnmanagedWorktrees?: boolean;
-    jarvisPane?: boolean;
     browserPane?: boolean;
     /** macOS only — see `lib/keymap.ts`. */
     pcKeybindings?: boolean;

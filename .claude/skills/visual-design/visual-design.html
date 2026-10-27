@@ -245,7 +245,7 @@
         <div class="panes">
           <div class="pane-cell">terminal (pooled — owns a PTY)</div>
           <div class="pane-cell">diff / files / preview (refetch on mount)</div>
-          <div class="pane-cell">jarvis (native Bevy surface)</div>
+          <div class="pane-cell">chrome (CDP frames on a canvas)</div>
           <div class="pane-cell">…</div>
         </div>
       </div>
@@ -266,7 +266,7 @@
         <code>agentboard-bits.tsx</code>, rail chrome + rollup tally in the rail file itself,
         header in <code>screens/agentboard/rail-header.tsx</code>.</td></tr>
       <tr><td>4</td><td>Working-context band</td><td><code>components/agentboard-working-context.tsx</code></td>
-        <td>The focused checkout at full size: title, files/preview/jarvis openers, repo + branch +
+        <td>The focused checkout at full size: title, files/preview/chrome openers, repo + branch +
         diff line, actionable callouts (needs-you, port drift, safe-to-delete). Identity-washed by
         <em>repo</em>.</td></tr>
       <tr><td>5</td><td>Window strip</td><td><code>screens/agentboard/window-strip.tsx</code></td>
@@ -274,8 +274,7 @@
         chip for input.</td></tr>
       <tr><td>6</td><td>Pane grid</td><td><code>screens/agentboard/pane-grid.tsx</code></td>
         <td>Renders the active folder's active window. Terminals come from a flat pool (a pane that
-        owns a process must outlive tab switches); diff/files/preview mount fresh; jarvis is a
-        compositor surface above the webview.</td></tr>
+        owns a process must outlive tab switches); diff/files/preview/chrome mount fresh.</td></tr>
       <tr><td>7</td><td>Status bar</td><td><code>components/status-bar.tsx</code></td>
         <td>Doctor entry, usage meters (5h/week/model), CPU + memory, shell kind, version.</td></tr>
     </table></div>

@@ -47,9 +47,6 @@ import { colCount, dragCol, paneRects, snapCol } from "@/lib/agentboard/layout";
 import {
   previewPaneId,
   isFilesPane,
-  isJarvisPane,
-  jarvisPaneDir,
-  jarvisPaneId,
   filesPaneDir,
   filesPaneId,
   filesPaneTarget,
@@ -742,26 +739,6 @@ describe("folder pane ids", () => {
     expect(folderPaneDir(files)).toBe("/home/me/code/p/proj");
     expect(folderPaneDir(preview)).toBe("/home/me/code/p/proj");
     expect(folderPaneDir("s00deadbeef00cafe")).toBeNull();
-  });
-
-  it("gives the native (jarvis) pane a folder-scoped id, first-class in persistence", () => {
-    const dir = "/home/me/code/p/proj";
-    const jarvis = jarvisPaneId(dir);
-    expect(isJarvisPane(jarvis)).toBe(true);
-    expect(jarvisPaneDir(jarvis)).toBe(dir);
-    // One native surface per folder: each attached pane owns a subsurface and
-    // a vsync-paced Bevy render thread, so the id has to cap it at one.
-    expect(jarvisPaneId(dir)).toBe(jarvis);
-    for (const other of [filesPaneId(dir), previewPaneId(dir)]) {
-      expect(other).not.toBe(jarvis);
-      expect(isJarvisPane(other)).toBe(false);
-    }
-    expect(isFilesPane(jarvis)).toBe(false);
-    // Being in `folderPaneDir` is what makes it survive layout restore.
-    expect(folderPaneDir(jarvis)).toBe(dir);
-    expect(paneSession(jarvis)).toBeNull();
-    expect(isJarvisPane("s00deadbeef00cafe")).toBe(false);
-    expect(jarvisPaneDir("s00deadbeef00cafe")).toBeNull();
   });
 });
 

@@ -34,7 +34,6 @@ tt-tasks = { workspace = true }
 tt-store = { workspace = true }
 tt-telemetry = { workspace = true }
 tt-vt = { workspace = true }
-tt-pane = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 dirs = { workspace = true }
@@ -83,12 +82,6 @@ tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0.1", features = ["v2_40"] }
 cairo-rs = "0.18"
-# Choosing which monitor the automated window fullscreens onto (src/
-# wdio_window.rs) — a Wayland client cannot position its own toplevel, and
-# `fullscreen_on_monitor` is GTK-only. Same 0.18 pin as tt-pane, for the same
-# reason: it must be the gtk that `tauri` links, since `gtk_window()` hands us
-# its types.
-gtk = "0.18"
 
 # Native NSEvent interception (src/macos_keys.rs): macOS's Cocoa text-editing
 # key bindings intercept some Ctrl chords (Control+C -> insertNewline:) before
@@ -111,14 +104,6 @@ block2 = "0.6"
 
 [features]
 wdio = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]
-
-# The native Bevy pane, off by default. Nothing in this crate is conditional on
-# it — the four `tt_pane::commands` stay registered either way — so all it
-# decides is whether the renderer is compiled behind them, which is the whole
-# cost: Bevy builds from a git fork and dominates a cold build. Off, turning
-# `agentboard.jarvisPane` on reports the pane unsupported. Build it in with
-# `cargo build -p tt-app --features bevy`, or `TT_BEVY=1 bun run dev`.
-bevy = ["tt-pane/bevy"]
 
 [dev-dependencies]
 tempfile = "3.14.0"

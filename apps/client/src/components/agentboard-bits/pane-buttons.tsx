@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { AppWindowIcon, CubeIcon, EyeIcon, TreeStructureIcon } from "@phosphor-icons/react";
+import { AppWindowIcon, EyeIcon, TreeStructureIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { CHIP_CLASS } from "./diff-chips";
@@ -54,19 +54,6 @@ export function FilesButton({ onOpen, labeled }: PaneOpenButtonProps) {
       onOpen={onOpen}
       labeled={labeled}
       shortcutTwin="ab-toggle-files"
-    />
-  );
-}
-
-/** Mounted only when `agentboard.jarvisPane` is on. */
-export function JarvisButton({ onOpen, labeled }: PaneOpenButtonProps) {
-  return (
-    <PaneOpenButton
-      glyph={<CubeIcon className="size-3" />}
-      label="jarvis"
-      title="Open the native Bevy pane in this checkout's window — real GPU output, not DOM"
-      onOpen={onOpen}
-      labeled={labeled}
     />
   );
 }

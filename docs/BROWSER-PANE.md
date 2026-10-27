@@ -24,11 +24,11 @@ not a preference.
 ## Why frames, not a window
 
 Neither target OS can embed a foreign process's window: Wayland subsurface
-parentage is per-client (`tt-pane/src/wayland.rs`) and macOS has no supported
+parentage is per-client and macOS has no supported
 cross-process NSView adoption. So Chrome runs headless and its pixels arrive
 as CDP frames painted onto a DOM `<canvas>`, with input dispatched back. That
 is also why the pane needs no platform code at all — one implementation
-serves Linux and macOS, unlike `tt-jarvis`, which is Linux-only.
+serves Linux and macOS.
 
 Being DOM has a second payoff: dialogs and the palette overlay the pane
 normally, and the annotation canvas composites over it, neither of which is
@@ -74,7 +74,7 @@ with it, so it is single-pane only.
 ## Verifying
 
 `bun run dev:drive`, then drive it: the surface is a DOM canvas, so plain
-`drive.mjs shot` sees it and `winshot` is unnecessary. `TT_BROWSER_BIN`
+`drive.mjs shot` sees it. `TT_BROWSER_BIN`
 overrides the binary for tests. Two traps when driving: headless Chrome
 inherits a dark `prefers-color-scheme`, so `about:blank` renders dark and
 looks like "no frames"; and the pane has two stacked canvases — the frame

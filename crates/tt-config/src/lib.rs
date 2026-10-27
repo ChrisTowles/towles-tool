@@ -154,10 +154,6 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
 
-    /// The native Bevy surface (`tt-jarvis`), off by default; needs `tt-app`'s `bevy` feature.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub jarvis_pane: Option<bool>,
-
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_pane: Option<bool>,
 

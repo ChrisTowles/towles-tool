@@ -15,7 +15,6 @@ import { FolderLandedBadge } from "@/components/agentboard-bits/landed-badges";
 import {
   FilesButton,
   BrowserButton,
-  JarvisButton,
   PreviewButton,
 } from "@/components/agentboard-bits/pane-buttons";
 import { IssueChip, PrChip } from "@/components/agentboard-bits/pr-issue-chips";
@@ -46,7 +45,6 @@ export function WorkingContext({
   actions,
   onOpenFiles,
   onOpenPreview,
-  onOpenJarvis,
   onOpenBrowser,
   onNewSession,
   onNewTask,
@@ -61,8 +59,6 @@ export function WorkingContext({
   actions: SessionActions;
   onOpenFiles: (dir: string) => void;
   onOpenPreview: (dir: string) => void;
-  /** Undefined while `agentboard.jarvisPane` is off. */
-  onOpenJarvis?: (dir: string) => void;
   onOpenBrowser?: (dir: string) => void;
   onNewSession: (dir: string) => void;
   /** The form renders in the rail, so the caller must expand a collapsed rail
@@ -118,7 +114,6 @@ export function WorkingContext({
                 {onOpenBrowser && (
                   <BrowserButton onOpen={() => onOpenBrowser(folder.dir)} labeled />
                 )}
-                {onOpenJarvis && <JarvisButton onOpen={() => onOpenJarvis(folder.dir)} labeled />}
               </span>
             )}
             <div className="ml-auto flex shrink-0 items-center gap-2">

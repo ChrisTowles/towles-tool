@@ -113,7 +113,6 @@ export function RepoGroup({
   onRenameCommit,
   onOpenFiles,
   onOpenPreview,
-  onOpenJarvis,
   onOpenBrowser,
   onClosePane,
   idleDirs,
@@ -161,9 +160,6 @@ export function RepoGroup({
   onRenameCommit: (sessionId: string, name: string) => void;
   onOpenFiles: (dir: string) => void;
   onOpenPreview: (dir: string) => void;
-  /** Undefined while `agentboard.jarvisPane` is off: hide the entry point
-   * rather than offer one that opens nothing. */
-  onOpenJarvis?: (dir: string) => void;
   onOpenBrowser?: (dir: string) => void;
   onClosePane: (paneId: string) => void;
   /** Folders the rail *filter* excludes — demoted to a stub rather than gone,
@@ -211,13 +207,12 @@ export function RepoGroup({
     </motion.div>
   );
 
-  // A table, not a ternary chain, so `jarvis`'s absence is expressible: its row
+  // A table, not a ternary chain, so `browser`'s absence is expressible: its row
   // outlives the setting (the layout persists), and no opener means ✕ only.
   const viewPaneOpener: Record<ViewPaneKind, ((dir: string) => void) | undefined> = {
     files: onOpenFiles,
     preview: onOpenPreview,
     browser: onOpenBrowser,
-    jarvis: onOpenJarvis,
   };
 
   const viewRow = (folder: FolderData, paneId: string, kind: ViewPaneKind) => (
@@ -499,7 +494,6 @@ export function RepoGroup({
                   onOpenFiles={() => onOpenFiles(folder.dir)}
                   onOpenPreview={() => onOpenPreview(folder.dir)}
                   onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
-                  onOpenJarvis={onOpenJarvis ? () => onOpenJarvis(folder.dir) : undefined}
                 />
                 {!fCollapsed && sessionRows(folder, "pb-1")}
               </motion.div>

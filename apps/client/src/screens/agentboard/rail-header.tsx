@@ -128,8 +128,6 @@ function ViewMenu(props: {
   onSetShowQuiet: (next: boolean) => void;
   showUnmanagedWorktrees: boolean;
   onSetShowUnmanagedWorktrees: (next: boolean) => void;
-  jarvisPane: boolean;
-  onSetJarvisPane: (next: boolean) => void;
   dismissedPrCount: number;
   clearingDismissals: boolean;
   onClearDismissals: () => void;
@@ -230,17 +228,6 @@ function ViewMenu(props: {
           >
             Worktrees not made by tt task
           </DropdownMenu.CheckboxItem>
-          <DropdownMenu.CheckboxItem
-            checked={props.jarvisPane}
-            closeOnClick={false}
-            onCheckedChange={(on) => {
-              uiAction("agentboard.jarvis_pane", "agentboard", on ? "on" : "off");
-              props.onSetJarvisPane(on);
-            }}
-          >
-            <span className="flex-1">Jarvis pane</span>
-            <span className="text-mini text-kumo-subtle">experimental</span>
-          </DropdownMenu.CheckboxItem>
         </DropdownMenu.Group>
         {props.dismissedPrCount > 0 && (
           <>
@@ -279,8 +266,6 @@ export function RailHeader(props: {
   queryHidden: number;
   showUnmanagedWorktrees: boolean;
   onSetShowUnmanagedWorktrees: (next: boolean) => void;
-  jarvisPane: boolean;
-  onSetJarvisPane: (next: boolean) => void;
   /** Where a created or cloned repo goes, most likely first. */
   parentDirs: string[];
   onOpenRepoManager: () => void;
@@ -342,8 +327,6 @@ export function RailHeader(props: {
             onSetShowQuiet={props.onSetShowQuiet}
             showUnmanagedWorktrees={props.showUnmanagedWorktrees}
             onSetShowUnmanagedWorktrees={props.onSetShowUnmanagedWorktrees}
-            jarvisPane={props.jarvisPane}
-            onSetJarvisPane={props.onSetJarvisPane}
             dismissedPrCount={props.dismissedPrCount}
             clearingDismissals={props.clearingDismissals}
             onClearDismissals={props.onClearDismissals}

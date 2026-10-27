@@ -203,24 +203,11 @@ export async function killPort(port) {
 
 /**
  * @param {string[]} args
- */
-export function withBevyFeature(args) {
-  const on = process.env.TT_BEVY;
-  if (!on || on === "0" || on === "false") return args;
-  const at = args.indexOf("--features");
-  if (at === -1) return [...args, "--features", "bevy"];
-  const merged = [...args];
-  merged[at + 1] = `${merged[at + 1]},bevy`;
-  return merged;
-}
-
-/**
- * @param {string[]} args
  * @param {NodeJS.ProcessEnv} env
  */
 export function spawnTauriDev(args, env) {
   const posix = process.platform !== "win32";
-  const child = spawn("tauri", withBevyFeature(args), {
+  const child = spawn("tauri", args, {
     stdio: "inherit",
     env: { ...env, ...macosDevAppEnv(scriptsRepoRoot) },
     shell: !posix,

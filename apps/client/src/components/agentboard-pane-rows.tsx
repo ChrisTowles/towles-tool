@@ -1,11 +1,11 @@
 // The rail rows that aren't a PTY session. A view pane is a *view of* the
 // folder, so it carries no status and closes without asking.
 import { useState } from "react";
-import { AppWindowIcon, CubeIcon, EyeIcon, TreeStructureIcon } from "@phosphor-icons/react";
+import { AppWindowIcon, EyeIcon, TreeStructureIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { IconBtn } from "@/components/agentboard-bits/primitives";
 import { cn } from "@/lib/utils";
-import { isFilesPane, isJarvisPane, isBrowserPane, isPreviewPane } from "@/lib/agentboard/pane-ids";
+import { isFilesPane, isBrowserPane, isPreviewPane } from "@/lib/agentboard/pane-ids";
 import type { AgWindow } from "@/lib/agentboard/types";
 import { windowColor } from "@/lib/agentboard/windows";
 
@@ -38,13 +38,12 @@ export function WindowSpine({
 /** The pane kinds that are a *view of* the folder rather than something
  * running in it — each still gets a rail row, so what's open in a folder is
  * answerable from the rail alone. */
-export type ViewPaneKind = "files" | "preview" | "browser" | "jarvis";
+export type ViewPaneKind = "files" | "preview" | "browser";
 
 export function viewPaneKind(paneId: string): ViewPaneKind | null {
   if (isFilesPane(paneId)) return "files";
   if (isPreviewPane(paneId)) return "preview";
   if (isBrowserPane(paneId)) return "browser";
-  if (isJarvisPane(paneId)) return "jarvis";
   return null;
 }
 
@@ -59,7 +58,6 @@ const VIEW_PANE_META: Record<
     label: "chrome",
     title: "A real Chrome with persistent sign-ins",
   },
-  jarvis: { Icon: CubeIcon, label: "jarvis", title: "A native Bevy surface tiled in this window" },
 };
 
 /** A view pane as a rail row: quieter than a session (nothing running to

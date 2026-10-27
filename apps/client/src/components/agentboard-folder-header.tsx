@@ -35,7 +35,6 @@ import { FolderLandedBadge, SafeToDeleteBadge } from "@/components/agentboard-bi
 import {
   FilesButton,
   BrowserButton,
-  JarvisButton,
   PreviewButton,
 } from "@/components/agentboard-bits/pane-buttons";
 import { IssueChip, PrChip } from "@/components/agentboard-bits/pr-issue-chips";
@@ -90,7 +89,6 @@ export function FolderHeader({
   onRecreateWorktree,
   onOpenFiles,
   onOpenPreview,
-  onOpenJarvis,
   onOpenBrowser,
 }: {
   title: string;
@@ -130,8 +128,6 @@ export function FolderHeader({
   onRecreateWorktree?: () => void;
   onOpenFiles: () => void;
   onOpenPreview: () => void;
-  /** Undefined while `agentboard.jarvisPane` is off. */
-  onOpenJarvis?: () => void;
   onOpenBrowser?: () => void;
 }) {
   const missing = folder.dirMissing;
@@ -343,7 +339,7 @@ export function FolderHeader({
             name's line in both layouts (`order-2` while the counts wrap below),
             so the rail's controls stay in one column top to bottom. */}
         <div className="order-2 flex shrink-0 items-center gap-1 pl-1 @[26rem]/row:order-3">
-          {/* files/preview/jarvis are pure actions carrying no state
+          {/* files/preview/chrome are pure actions carrying no state
               (unlike the diff chips' dirty counts), so they don't earn
               resting-rail pixels on every folder — they fade in on header hover
               or keyboard focus. `w-0 overflow-hidden` and not opacity alone:
@@ -356,7 +352,6 @@ export function FolderHeader({
               <FilesButton onOpen={onOpenFiles} />
               {folder.hasLaunchConfig && <PreviewButton onOpen={onOpenPreview} />}
               {onOpenBrowser && <BrowserButton onOpen={onOpenBrowser} />}
-              {onOpenJarvis && <JarvisButton onOpen={onOpenJarvis} />}
             </span>
           )}
           {/* No "New session"/"New task" on a ghost — the directory is gone. */}

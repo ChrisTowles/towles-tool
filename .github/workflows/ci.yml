@@ -38,7 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       vt_or_app: ${{ steps.filter.outputs.vt_or_app }}
-      bevy: ${{ steps.filter.outputs.bevy }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -48,24 +47,6 @@ jobs:
             vt_or_app:
               - 'crates/tt-vt/**'
               - 'crates-tauri/tt-app/**'
-              # tt-pane is excluded from the plain `rust` job (GTK), so the
-              # GTK-provisioned `rust-app` job is its ONLY coverage. Leaving it
-              # out of this filter would mean a change touching only that crate
-              # ran no Rust CI at all.
-              - 'crates-tauri/tt-pane/**'
-              - 'Cargo.lock'
-              - 'Cargo.toml'
-              - 'rust-toolchain.toml'
-              - '.github/workflows/ci.yml'
-            # Compiling Bevy from its git fork is the single most expensive
-            # thing this workflow can do, and the `bevy` feature is off by
-            # default precisely so it normally doesn't happen. This narrower
-            # filter is what turns it back on: only a change that can actually
-            # affect the renderer pays for one. Deliberately *not* including
-            # tt-app — nothing there is conditional on the feature.
-            bevy:
-              - 'crates/tt-jarvis/**'
-              - 'crates-tauri/tt-pane/**'
               - 'Cargo.lock'
               - 'Cargo.toml'
               - 'rust-toolchain.toml'
@@ -113,17 +94,14 @@ jobs:
       # needs webkit2gtk/GTK system libs for the Tauri shell, still uncovered by
       # CI). Everything else — every other Tauri-free crate under crates/ plus
       # crates-cli/tt-cli — is covered here.
-      #
-      # crates-tauri/tt-pane is excluded too: it needs both GTK and Tauri, so
-      # the `rust-app` job, which provisions webkit2gtk/GTK, covers it.
       - name: rustfmt
         run: cargo fmt --check
 
       - name: clippy
-        run: cargo clippy --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-pane --all-targets -- -D warnings
+        run: cargo clippy --profile ci --workspace --exclude tt-vt --exclude tt-app --all-targets -- -D warnings
 
       - name: test
-        run: cargo test --profile ci --workspace --exclude tt-vt --exclude tt-app --exclude tt-pane
+        run: cargo test --profile ci --workspace --exclude tt-vt --exclude tt-app
         env:
           # comment-budget's npm wrapper tests need node to prove anything, and
           # skip themselves when it is missing. This turns that silence into a
@@ -194,8 +172,7 @@ jobs:
 
       # No exclude list at all, unlike the Linux jobs: they split around
       # webkit2gtk/GTK, which mac doesn't need (the shell links AppKit and
-      # WebKit from the SDK), and tt-pane's `gtk` is already
-      # `cfg(target_os = "linux")` gated, so `--all-targets` never reaches it.
+      # WebKit from the SDK).
       - name: clippy
         run: cargo clippy --profile ci --workspace --all-targets -- -D warnings
 
@@ -306,21 +283,3 @@ jobs:
         env:
           GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
         run: cargo test --profile ci -p tt-vt -p tt-app --no-default-features
-
-      # The native Bevy pane, with the renderer switched on — the only place in
-      # CI that compiles Bevy. tt-app above no longer does: its `bevy` feature is
-      # off by default, so the steps before this one build the whole shell
-      # without the fork. That makes these two steps the entire cost, hence the
-      # `changes.bevy` gate: a PR that cannot affect the renderer skips them and
-      # the fork never gets built.
-      - name: clippy (native pane)
-        if: needs.changes.outputs.bevy == 'true'
-        env:
-          GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo clippy --profile ci -p tt-jarvis -p tt-pane --features tt-jarvis/bevy,tt-pane/bevy --all-targets -- -D warnings
-
-      - name: test (native pane)
-        if: needs.changes.outputs.bevy == 'true'
-        env:
-          GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
-        run: cargo test --profile ci -p tt-jarvis -p tt-pane --features tt-jarvis/bevy,tt-pane/bevy
