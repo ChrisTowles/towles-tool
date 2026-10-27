@@ -105,6 +105,10 @@ const IDLE_MS: i64 = 30 * 1000;
 /// caller — longer than any real compute, so only a dropped result hits it.
 const GIT_PENDING_GUARD_MS: i64 = 30_000;
 
+/// How long a folder stays off the rail before a poll reaps its state: a `git
+/// checkout` of a repo tracking `repos.json` untracks newer repos for a second.
+const UNTRACKED_GRACE_MS: i64 = 10 * 60 * 1000;
+
 fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &str) {
     if let Err(e) = result {
         log::warn!("failed to persist {what}: {e}");
@@ -151,6 +155,10 @@ pub struct Engine {
     agent_snapshot: AgentSnapshot,
     /// Session records from the previous run, kept until [`Self::retire_prior_run`].
     prior_run: HashSet<String>,
+    /// When each rail folder was last tracked, for [`UNTRACKED_GRACE_MS`].
+    last_tracked: HashMap<String, i64>,
+    /// The host's live PTY ids, pushed in by [`Self::set_live_sessions`].
+    live_sessions: HashSet<String>,
 }
 
 /// What a payload rebuild needs from the system rather than engine state.
@@ -290,6 +298,8 @@ impl Engine {
             thread_sessions: HashMap::new(),
             agent_snapshot: AgentSnapshot::default(),
             prior_run,
+            last_tracked: HashMap::new(),
+            live_sessions: HashSet::new(),
         }
     }
 
@@ -488,6 +498,7 @@ impl Engine {
             // would delete a hidden worktree's session history every poll.
             let mut dirs: HashSet<String> = entries.iter().map(|e| e.dir.clone()).collect();
             dirs.extend(self.task_worktrees.iter().map(|w| w.dir.clone()));
+            let dirs = self.not_yet_reapable(dirs, now);
             if self.sessions.prune(&dirs) {
                 persisted(self.sessions.save(), "sessions");
             }
@@ -501,6 +512,22 @@ impl Engine {
             }
         }
         payload
+    }
+
+    /// `tracked` plus folders tracked within [`UNTRACKED_GRACE_MS`] or holding a
+    /// live PTY's record — the rail's only way back to a running shell.
+    fn not_yet_reapable(&mut self, mut tracked: HashSet<String>, now: i64) -> HashSet<String> {
+        for dir in &tracked {
+            self.last_tracked.insert(dir.clone(), now);
+        }
+        self.last_tracked.retain(|_, seen| now - *seen < UNTRACKED_GRACE_MS);
+        tracked.extend(self.last_tracked.keys().cloned());
+        for (dir, records) in self.sessions.iter() {
+            if records.iter().any(|r| self.live_sessions.contains(&r.id)) {
+                tracked.insert(dir.to_string());
+            }
+        }
+        tracked
     }
 
     /// pid-liveness pin → prune schedule → assemble snapshot.
@@ -632,6 +659,8 @@ impl Engine {
             thread_sessions: HashMap::new(),
             agent_snapshot: AgentSnapshot::default(),
             prior_run: HashSet::new(),
+            last_tracked: HashMap::new(),
+            live_sessions: HashSet::new(),
         }
     }
 }

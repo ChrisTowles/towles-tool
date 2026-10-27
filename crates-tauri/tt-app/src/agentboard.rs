@@ -195,7 +195,12 @@ pub fn stamped_payload(app: &AppHandle) -> StatePayload {
         return simulated;
     }
     let ab = app.state::<Ab>();
-    let mut payload = ab.engine.lock().unwrap().compute_payload(now_ms());
+    let live = app.state::<crate::terminal::TermState>().live_ids();
+    let mut payload = {
+        let mut engine = ab.engine.lock().unwrap();
+        engine.set_live_sessions(live);
+        engine.compute_payload(now_ms())
+    };
     stamp_pty_state(
         &mut payload,
         &app.state::<crate::terminal::TermState>(),

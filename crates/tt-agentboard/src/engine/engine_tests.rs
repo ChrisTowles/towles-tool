@@ -706,3 +706,42 @@ fn set_folder_quiet_marks_every_dir_it_is_given() {
     assert!(!e.folder_meta.quiet_for(&root));
     assert!(!e.folder_meta.quiet_for(&worktree));
 }
+
+#[test]
+fn a_repo_untracked_for_a_moment_keeps_its_sessions_until_the_grace_runs_out() {
+    let (_tmp, mut e) = engine();
+    assert!(e.add_repo("/repo/a"));
+    assert!(e.add_repo("/repo/b"));
+    let s = e.add_session("/repo/b", None, 1000);
+    e.compute_payload(1000);
+
+    // A `git checkout` swapping `repos.json` for an older copy, then back.
+    assert!(e.remove_repo("/repo/b"));
+    e.compute_payload(1001);
+    assert!(e.session_ids_for("/repo/b").contains(&s.id));
+    assert!(e.add_repo("/repo/b"));
+    e.compute_payload(1002);
+    assert!(e.session_ids_for("/repo/b").contains(&s.id));
+
+    assert!(e.remove_repo("/repo/b"));
+    e.compute_payload(1002 + UNTRACKED_GRACE_MS);
+    assert!(e.session_ids_for("/repo/b").is_empty());
+}
+
+#[test]
+fn a_live_shell_keeps_its_record_however_long_its_repo_is_untracked() {
+    let (_tmp, mut e) = engine();
+    assert!(e.add_repo("/repo/a"));
+    assert!(e.add_repo("/repo/b"));
+    let s = e.add_session("/repo/b", None, 1000);
+    e.set_live_sessions(HashSet::from([s.id.clone()]));
+    e.compute_payload(1000);
+
+    assert!(e.remove_repo("/repo/b"));
+    e.compute_payload(1000 + 2 * UNTRACKED_GRACE_MS);
+    assert!(e.session_ids_for("/repo/b").contains(&s.id));
+
+    e.set_live_sessions(HashSet::new());
+    e.compute_payload(1001 + 2 * UNTRACKED_GRACE_MS);
+    assert!(e.session_ids_for("/repo/b").is_empty());
+}
