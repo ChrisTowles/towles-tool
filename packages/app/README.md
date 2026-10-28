@@ -123,34 +123,15 @@ guard.
 `modules` in `hooks/hooks.json`). It carries the app's view of the session, and
 the user's words from the app, into Claude Code itself.
 
-### The band above the prompt
+### PR and meeting toasts
 
-```
-✦ tt  #7 Claude mods  PR #42 open · checks passing  ready for /done  4m to Standup  n: next prompt
-```
+The mod tracks the open board task whose worktree holds the session's cwd (the
+deepest match when worktrees nest) and the next meeting, through this plugin's
+own MCP server (`task_list`, `calendar_next`). It refreshes at session start,
+after every turn, and every 60s, and draws nothing; it only toasts:
 
-The band shows only when there is a PR or a meeting to report: the task alone,
-and its board status, are things you know already.
-
-- **Task.** This is the open board task whose worktree holds the session's cwd,
-  so a session in a `tt task` checkout sees its own card. If worktrees are
-  nested, the deepest match wins.
-- **PR.** The task's open PR, or else its latest, with check state. When
-  its checks settle to passing or failing, a toast says so once.
-- **Ready for /done.** Shown when that PR is open with passing checks: what
-  `/towles-tool-app:done` needs to land it.
-- **Next meeting.** Time until the next meeting, the only calendar fact the app
-  surfaces. It turns yellow inside 15 minutes, and a toast fires once per
-  meeting at 5 minutes.
-
-The same facts go on the status line too, in short form
-(`tt #7 · PR #42 passing · ready for /done · 4m to Standup`),
-alongside the band, and under the same rule.
-
-The data comes from this plugin's own MCP server (`task_list`,
-`calendar_next`) via `$.mcp.call`. It refreshes at session
-start, after every turn, and every 60s. App closed means MCP down, so the
-band and status line hide instead of showing stale state.
+- **PR checks.** When the task's PR checks settle to passing or failing, once.
+- **Next meeting.** Once per meeting, 5 minutes before it starts.
 
 ### Notes from the app
 
@@ -173,7 +154,7 @@ cannot take a note; the app says so rather than type into its prompt box.
 - **`/park [idea]`** files the idea (or, with no argument, the text you
   selected) as a backlog task on this checkout's board, through `task_create`.
   The session never leaves what it is doing.
-- **`/next`**, or `n` on the band, asks what you will type next: one
+- **`/next`** asks what you will type next: one
   `claude -p` call with no tools, MCP, settings or CLAUDE.md, given the last
   turn's tools and commands, its answer, the task's goal and the prompts you
   typed after similar turns. The answer is shown as the dim suggestion, Tab to
@@ -182,11 +163,10 @@ cannot take a note; the app says so rather than type into its prompt box.
 
 ### Copy suggestions
 
-They come from the `tt` plugin (`packages/core`), which needs no app: its rows sit
-under this band when both are on.
+They come from the `tt` plugin (`packages/core`), which needs no app.
 
 The `$.state` contract is `types/index.d.ts`, and the pure logic in
-`hooks/band.ts`, `hooks/inbox.ts`, `hooks/park.ts` and `hooks/suggest.ts` is
+`hooks/snapshot.ts`, `hooks/inbox.ts`, `hooks/park.ts` and `hooks/suggest.ts` is
 what `tests/` covers:
 
 ```sh
@@ -218,7 +198,7 @@ reports that to the session instead of staying silent.
 ## Installation
 
 The plugin needs the towles-tool desktop app running and `tt` on `PATH` — its
-MCP tools, band and hooks all talk to the app.
+MCP tools, mod and hooks all talk to the app.
 
 In Claude Code 2.1.275 or later, one step:
 

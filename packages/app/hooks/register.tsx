@@ -2,18 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, McpToolResult, Register } from 'claude-code'
 
 import type { InboxNote, Snapshot } from '../types'
-import {
-  SERVER,
-  checksToast,
-  meetingFrom,
-  prLabel,
-  readyForDone,
-  shouldWarn,
-  statusLine,
-  taskFor,
-  untilLabel,
-  worthShowing,
-} from './band'
+import { SERVER, checksToast, meetingFrom, shouldWarn, taskFor } from './snapshot'
 import { type Appended, midTurnText, promptText, remember, stranded, unseen } from './inbox'
 import { parkArgs } from './park'
 import { emptyLog, logTool, taken, withAnswer } from './suggest'
@@ -46,7 +35,7 @@ async function call<T>($: EngineInterface, tool: string, args?: Record<string, u
   return payload(await $.mcp.call(SERVER, tool, args)) as T
 }
 
-/** App closed means MCP down: the band and status line then hide rather than show stale state. */
+/** App closed means MCP down: the snapshot clears rather than go stale. */
 async function refresh($: EngineInterface) {
   let next: Snapshot | null
   try {
@@ -60,7 +49,6 @@ async function refresh($: EngineInterface) {
     next = null
   }
   await update($, snapshot, () => next)
-  $.ui.status(statusLine(next))
   if (!next) return
 
   const pr = next.task?.pr ?? null
@@ -184,7 +172,7 @@ export const register: Register = on => {
     })
     $.clock.every(REFRESH_MS, () => void refresh($))
     inboxTimer = $.clock.every(INBOX_MS, () => void takeInbox($))
-    // Last, so a host that registers no commands still gets the band and the inbox.
+    // Last, so a host that registers no commands still gets the toasts and the inbox.
     await $.command.register({
       name: 'park',
       description: 'Park an idea as a backlog task on the tt board, without leaving this session',
@@ -260,44 +248,5 @@ export const register: Register = on => {
     await refresh($)
     void takeInbox($)
     return ran
-  })
-
-  // One row of facts, above whatever else draws the band; a task alone is no news.
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const below = await next(e)
-    if (e.props.hasSurvey) return below
-    const snap = await read($, snapshot)
-    if (!worthShowing(snap)) return below
-
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const task = snap?.task ?? null
-    const meeting = snap?.meeting ?? null
-    const soon = !!meeting && (meeting.live || meeting.minutesUntil <= 15)
-    const canSuggest = !e.props.isWorking && !!(await read($, lastTurn))
-    return (
-      <Box flexDirection="column">
-        <Box flexDirection="row" gap={1}>
-          <Text color="magenta">✦ tt</Text>
-          {task && (
-            <Text wrap="truncate-end">
-              #{task.id} {task.text}
-            </Text>
-          )}
-          {task?.pr && <Text dimColor>{prLabel(task.pr)}</Text>}
-          {readyForDone(task) && <Text color="green">ready for /done</Text>}
-          {meeting && (
-            <Text color={soon ? 'yellow' : undefined} dimColor={!soon}>
-              {untilLabel(meeting)}
-            </Text>
-          )}
-          {canSuggest && (
-            <Button key="next" hotkey="n" plain dimColor onPress={() => void askNext($)}>
-              next prompt
-            </Button>
-          )}
-        </Box>
-        {below}
-      </Box>
-    )
   })
 }
