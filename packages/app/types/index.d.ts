@@ -1,14 +1,14 @@
-/** What the band shows: this checkout's board task and the next meeting, as the app reports them. */
-export type BandTask = {
+/** What the app reports for this session: this checkout's board task and the next meeting, as the app reports them. */
+export type SnapshotTask = {
   id: number
   text: string
   status: string
   pr: { number: number; state: string; checks: string } | null
 }
 
-export type BandMeeting = { id: number; title: string; minutesUntil: number; live: boolean }
+export type SnapshotMeeting = { id: number; title: string; minutesUntil: number; live: boolean }
 
-export type Snapshot = { task: BandTask | null; meeting: BandMeeting | null }
+export type Snapshot = { task: SnapshotTask | null; meeting: SnapshotMeeting | null }
 
 /** A PR's check state as last seen, so a change raises one toast. */
 export type SeenChecks = { pr: number; checks: string }
