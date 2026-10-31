@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import {
   isFolderFiltered,
   isFolderUnmanaged,
+  partitionArchived,
   partitionQuiet,
   searchRepos,
   withoutFolded,
@@ -10,6 +11,10 @@ import type { FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
 import type { RailFilter } from "@/lib/settings";
 
 export type RailIndex = {
+  /** Every repo but the archived ones — before quiet, filter or search. */
+  unarchivedRepos: RepoData[];
+  /** Archived repos, off the rail — what the "Archived" list beneath it offers back. */
+  archivedRepos: RepoData[];
   /** Every repo minus the hand-marked quiet checkouts (`partitionQuiet`) —
    * what is on the rail before anyone types. The standby board walks this one:
    * a search is a way to find a row, not a claim about what exists. */
@@ -76,15 +81,22 @@ export function useRailIndex(args: {
     now,
   } = args;
 
-  // The mark comes off first: everything below — filter, stubs, icon strip —
+  // Archived repos leave before anything else looks: they are not on the rail
+  // at all, so no filter, stub or tally below may count them.
+  const { active: unarchivedRepos, archived: archivedRepos } = useMemo(
+    () => partitionArchived(repos),
+    [repos],
+  );
+
+  // The mark comes off next: everything below — filter, stubs, icon strip —
   // reasons about a rail those checkouts are already gone from.
   const {
     shown: railRepos,
     quietDirs,
     quietCount,
   } = useMemo(
-    () => partitionQuiet(repos, { show: showQuiet, activeFolderDir }),
-    [repos, showQuiet, activeFolderDir],
+    () => partitionQuiet(unarchivedRepos, { show: showQuiet, activeFolderDir }),
+    [unarchivedRepos, showQuiet, activeFolderDir],
   );
 
   const shownRepos = useMemo(() => searchRepos(railRepos, query), [railRepos, query]);
@@ -189,6 +201,8 @@ export function useRailIndex(args: {
   const activeRepo = activeFolder ? repoOf.get(activeFolder.dir) : undefined;
 
   return {
+    unarchivedRepos,
+    archivedRepos,
     railRepos,
     shownRepos,
     queryHidden,

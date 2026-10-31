@@ -273,6 +273,7 @@ pub fn run() {
                     let mut needs_watch = tt_agentboard::NeedsYouWatch::new();
                     // …and once per folder whose last agent stopped working.
                     let mut turn_watch = tt_agentboard::TurnEndWatch::new();
+                    let mut auto_archived_at = 0;
                     loop {
                         emit.notified().await;
                         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -295,6 +296,18 @@ pub fn run() {
                             store::emit_snapshot_from_app(&handle);
                         }
                         queue::observe(&handle, &payload);
+                        let now = store::now_ms();
+                        if now - auto_archived_at >= agentboard::AUTO_ARCHIVE_EVERY_MS {
+                            auto_archived_at = now;
+                            let (h, p) = (handle.clone(), payload.clone());
+                            let archived = tauri::async_runtime::spawn_blocking(move || {
+                                agentboard::auto_archive_tick(&h, &p)
+                            })
+                            .await;
+                            if archived.unwrap_or(false) {
+                                emit.notify_one();
+                            }
+                        }
 
                         if gate.should_emit(&payload, store::now_ms()) {
                             // An agent's turn ending is the only notice that a
@@ -704,6 +717,8 @@ pub fn run() {
             agentboard::ab_close_session,
             agentboard::ab_set_repo_meta,
             agentboard::ab_set_repo_order,
+            agentboard::ab_set_repo_archived,
+            agentboard::ab_set_rail_sort,
             agentboard::ab_set_folder_base_branch,
             agentboard::ab_set_folder_focus,
             agentboard::ab_set_folder_quiet,

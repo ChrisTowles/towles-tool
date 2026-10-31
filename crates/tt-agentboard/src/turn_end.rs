@@ -86,6 +86,7 @@ mod tests {
                 origin_url: None,
                 meta: None,
                 color: Default::default(),
+                archived: false,
                 needs: 0,
                 folders: folders
                     .into_iter()

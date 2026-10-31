@@ -74,6 +74,29 @@ impl Engine {
         true
     }
 
+    /// Set how the rail orders repos and/or the checkouts inside each — see
+    /// [`crate::rail_sort`]; `None` leaves that one alone. Returns whether
+    /// either changed; persisted if so.
+    pub fn set_rail_sort(
+        &mut self,
+        repos: Option<tt_config::RailSort>,
+        tasks: Option<tt_config::RailSort>,
+    ) -> bool {
+        let repos = repos.unwrap_or(self.repo_sort);
+        let tasks = tasks.unwrap_or(self.task_sort);
+        if (repos, tasks) == (self.repo_sort, self.task_sort) {
+            return false;
+        }
+        self.repo_sort = repos;
+        self.task_sort = tasks;
+        if let Ok(mut settings) = tt_config::load() {
+            settings.agentboard.rail_repo_sort = Some(repos);
+            settings.agentboard.rail_task_sort = Some(tasks);
+            persisted(tt_config::save_merge(&settings), "settings");
+        }
+        true
+    }
+
     /// Show (or hide) auto-discovered non-task worktrees; no git recompute.
     pub fn set_show_unmanaged_worktrees(&mut self, show: bool) -> bool {
         if show == self.show_unmanaged_worktrees {

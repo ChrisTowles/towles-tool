@@ -22,6 +22,14 @@ struct ReposConfig {
     /// (`~/code`). May contain a leading `~`; expansion is the caller's job.
     #[serde(default, rename = "scanRoots")]
     scan_roots: Vec<String>,
+    /// Tracked repos hidden from the rail until restored. A subset of
+    /// `repo_paths` by construction: untracking a repo drops it here too.
+    #[serde(
+        default,
+        rename = "archivedPaths",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    archived_paths: Vec<String>,
 }
 
 /// Default location: `<agentboard_shared_dir>/repos.json` — which repos exist
@@ -39,21 +47,73 @@ fn load_config(path: &Path) -> ReposConfig {
     serde_json::from_str(&text).unwrap_or_default()
 }
 
-/// Load the repo-path list, distinguishing a torn read from an absent file:
-/// `Some(vec![])` when the file doesn't exist, `None` when it exists but won't
-/// parse — most likely a read racing another instance's write. Callers
-/// keep their previous in-memory list on `None` rather than degrading to empty.
-pub fn try_load_repos(path: &Path) -> Option<Vec<String>> {
+/// The tracked repos and their archived subset, from one parse — two reads
+/// could straddle another instance's write and disagree.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct TrackedRepos {
+    pub paths: Vec<String>,
+    pub archived: Vec<String>,
+}
+
+impl From<ReposConfig> for TrackedRepos {
+    fn from(c: ReposConfig) -> Self {
+        Self { paths: c.repo_paths, archived: c.archived_paths }
+    }
+}
+
+/// Load the tracked repos, distinguishing a torn read from an absent file:
+/// empty when the file doesn't exist, `None` when it exists but won't parse —
+/// most likely a read racing another instance's write. Callers keep their
+/// previous in-memory lists on `None` rather than degrading to empty.
+pub fn try_load_tracked(path: &Path) -> Option<TrackedRepos> {
     if !path.exists() {
-        return Some(Vec::new());
+        return Some(TrackedRepos::default());
     }
     let text = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str::<ReposConfig>(&text).ok().map(|c| c.repo_paths)
+    serde_json::from_str::<ReposConfig>(&text).ok().map(TrackedRepos::from)
+}
+
+/// [`try_load_tracked`], with a missing or corrupt file as empty.
+pub fn load_tracked(path: &Path) -> TrackedRepos {
+    load_config(path).into()
 }
 
 /// Load the repo-path list. Empty on missing/corrupt file.
 pub fn load_repos(path: &Path) -> Vec<String> {
     load_config(path).repo_paths
+}
+
+/// Archive (or restore) the tracked repos at `dirs` in one write, against the
+/// on-disk file for the same reread-then-write reason as [`add_repo_persisted`].
+/// Archiving an untracked dir is refused, so the list can never name a repo the
+/// rail doesn't have. Returns the merged archived list plus the dirs that
+/// changed; the file is rewritten only when one did.
+pub fn set_repos_archived_persisted(
+    path: &Path,
+    dirs: &[String],
+    archived: bool,
+) -> std::io::Result<(Vec<String>, Vec<String>)> {
+    let mut config = load_config(path);
+    let changed: Vec<String> = dirs
+        .iter()
+        .filter(|dir| set_archived(&config.repo_paths, &mut config.archived_paths, dir, archived))
+        .cloned()
+        .collect();
+    if !changed.is_empty() {
+        save_config(path, &config)?;
+    }
+    Ok((config.archived_paths, changed))
+}
+
+fn set_archived(tracked: &[String], archived: &mut Vec<String>, dir: &str, on: bool) -> bool {
+    if !on {
+        return remove_repo_by_dir(archived, dir);
+    }
+    if archived.iter().any(|d| d == dir) || !tracked.iter().any(|d| d == dir) {
+        return false;
+    }
+    archived.push(dir.to_string());
+    true
 }
 
 /// Load the configured scan roots (`scanRoots`). Empty on missing/corrupt file
@@ -105,6 +165,7 @@ pub fn add_repo_persisted(path: &Path, new_path: &str) -> std::io::Result<(Vec<S
 pub fn remove_repo_persisted(path: &Path, dir: &str) -> std::io::Result<(Vec<String>, bool)> {
     let mut config = load_config(path);
     let removed = remove_repo_by_dir(&mut config.repo_paths, dir);
+    remove_repo_by_dir(&mut config.archived_paths, dir);
     if removed {
         save_config(path, &config)?;
     }
@@ -555,14 +616,14 @@ mod tests {
     #[test]
     fn try_load_distinguishes_missing_from_torn_read() {
         let dir = TempDir::new().unwrap();
-        assert_eq!(try_load_repos(&dir.path().join("nope.json")), Some(vec![]));
+        assert_eq!(try_load_tracked(&dir.path().join("nope.json")), Some(TrackedRepos::default()));
         let path = dir.path().join("repos.json");
         save_repos(&path, &paths(&["/a/x"])).unwrap();
-        assert_eq!(try_load_repos(&path), Some(paths(&["/a/x"])));
+        assert_eq!(try_load_tracked(&path).map(|t| t.paths), Some(paths(&["/a/x"])));
         std::fs::write(&path, r#"{"repoPaths":["/a/x"#).unwrap();
-        assert_eq!(try_load_repos(&path), None);
+        assert_eq!(try_load_tracked(&path), None);
         std::fs::write(&path, "").unwrap();
-        assert_eq!(try_load_repos(&path), None);
+        assert_eq!(try_load_tracked(&path), None);
     }
 
     #[test]
@@ -630,6 +691,52 @@ mod tests {
         let dir = root.path().join("no/git/here");
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(find_repo_root(&dir), dir);
+    }
+
+    #[test]
+    fn archiving_round_trips_and_only_names_tracked_repos() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("repos.json");
+        save_repos(&path, &v(&["/a", "/b"])).unwrap();
+
+        let set = |dirs: &[&str], on| set_repos_archived_persisted(&path, &v(dirs), on).unwrap();
+        assert_eq!(
+            set(&["/a", "/zzz"], true),
+            (v(&["/a"]), v(&["/a"])),
+            "an untracked dir is never archived"
+        );
+        assert!(set(&["/a"], true).1.is_empty(), "re-archive is a no-op");
+        let tracked = load_tracked(&path);
+        assert_eq!(tracked.paths, v(&["/a", "/b"]), "archiving keeps the repo tracked");
+        assert_eq!(tracked.archived, v(&["/a"]));
+
+        assert_eq!(set(&["/a"], false), (v(&[]), v(&["/a"])));
+        assert!(set(&["/a"], false).1.is_empty());
+    }
+
+    #[test]
+    fn untracking_an_archived_repo_forgets_the_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("repos.json");
+        save_repos(&path, &v(&["/a", "/b"])).unwrap();
+        set_repos_archived_persisted(&path, &v(&["/a"]), true).unwrap();
+
+        remove_repo_persisted(&path, "/a").unwrap();
+        assert!(load_tracked(&path).archived.is_empty());
+        add_repo_persisted(&path, "/a").unwrap();
+        assert!(load_tracked(&path).archived.is_empty(), "a re-track comes back unarchived");
+    }
+
+    #[test]
+    fn archive_survives_unrelated_edits() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("repos.json");
+        save_repos(&path, &v(&["/a", "/b"])).unwrap();
+        set_repos_archived_persisted(&path, &v(&["/b"]), true).unwrap();
+        add_repo_persisted(&path, "/c").unwrap();
+        reorder_repos_persisted(&path, &v(&["/c", "/b", "/a"])).unwrap();
+        save_scan_roots(&path, &v(&["~/code"])).unwrap();
+        assert_eq!(load_tracked(&path).archived, v(&["/b"]));
     }
 
     fn v(items: &[&str]) -> Vec<String> {

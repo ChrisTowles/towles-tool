@@ -62,6 +62,7 @@ mod tests {
             needs: 0,
             meta: None,
             color: Default::default(),
+            archived: false,
         };
         StatePayload {
             repos: vec![repo],

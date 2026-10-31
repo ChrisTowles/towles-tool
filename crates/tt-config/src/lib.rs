@@ -145,6 +145,29 @@ pub struct AgentboardSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rail_recent_hours: Option<u32>,
 
+    /// Archive a repo nothing has happened in for this long. `None` or 0 = off —
+    /// the UI turns it off with 0, since `save_merge` keeps a key a `None` skips.
+    /// It offers hours or days, but stores hours either way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_archive_after_hours: Option<u32>,
+
+    /// How the rail orders repos. Read in Rust: the engine sorts the payload.
+    /// `None` = [`DEFAULT_RAIL_SORT`].
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient",
+        default
+    )]
+    pub rail_repo_sort: Option<RailSort>,
+
+    /// How the rail orders the checkouts inside each repo, the main one always first.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient",
+        default
+    )]
+    pub rail_task_sort: Option<RailSort>,
+
     /// Whether hand-marked quiet checkouts are on the rail. Opaque, like
     /// [`rail_filter`](Self::rail_filter).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,6 +210,19 @@ pub enum RailFilter {
     Active,
     Recent,
 }
+
+/// [`Manual`](Self::Manual) is the order you gave it: the Repos drag order for
+/// repos, task creation order for checkouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum RailSort {
+    Manual,
+    Name,
+    Recent,
+}
+
+pub const DEFAULT_RAIL_SORT: RailSort = RailSort::Manual;
 
 pub const DEFAULT_NOTIFY: bool = true;
 

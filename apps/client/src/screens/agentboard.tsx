@@ -178,6 +178,8 @@ export function AgentBoardScreen() {
   const setOverlay = useSetAgentOverlay();
 
   const {
+    unarchivedRepos,
+    archivedRepos,
     railRepos,
     shownRepos,
     queryHidden,
@@ -752,7 +754,8 @@ export function AgentBoardScreen() {
   );
   const checkoutTree = (
     <CheckoutTree
-      repos={repos}
+      repos={unarchivedRepos}
+      archivedRepos={archivedRepos}
       shownRepos={shownRepos}
       query={query}
       onClearQuery={() => setQuery("")}

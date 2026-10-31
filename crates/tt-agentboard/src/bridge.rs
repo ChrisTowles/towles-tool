@@ -413,6 +413,7 @@ fn new_repo_row(entry: &RepoEntry, git: &GitInfo, folder: FolderData) -> RepoDat
         needs,
         meta: None,
         color: Default::default(),
+        archived: false,
     }
 }
 

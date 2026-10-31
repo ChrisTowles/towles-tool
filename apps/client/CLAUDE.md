@@ -159,8 +159,8 @@ in node with no renderer. `node scripts/drive.mjs console` is the check.
 ## The rail, and animation
 
 Two areas with rules of their own, and only when you are inside them: the rail is
-**five files split by what a row *is*** (a new row kind gets a sixth, not a grown
-one) and boxes a control or an alert but never a fact; animation is **`motion`
+**split into files by what a row *is*** (a new row kind gets a new file, not a
+grown one) and boxes a control or an alert but never a fact; animation is **`motion`
 for enter/exit of backend-snapshot lists, `tw-animate-css` for everything else**,
 and the choice is mechanical. Read
 **[docs/CLIENT-RAIL-AND-MOTION.md](../../docs/CLIENT-RAIL-AND-MOTION.md)** before
