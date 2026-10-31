@@ -39,6 +39,10 @@ export const DEFAULT_NOTIFY_THRESHOLD: NotifyLevel = "routine";
  * worked within `railRecentHours`. */
 export type RailFilter = "all" | "active" | "recent";
 
+/** Mirrors `tt_config::RailSort`. `"manual"` is the Repos drag order for repos
+ * and creation order for tasks. */
+export type RailSort = "manual" | "name" | "recent";
+
 type JournalSettings = {
   baseFolder: string;
   dailyPathTemplate: string;
@@ -309,6 +313,11 @@ export type UserSettings = {
     autoCloseLanded?: boolean;
     railFilter?: RailFilter;
     railRecentHours?: number;
+    /** Archive a repo idle this long; unset or 0 is off — off is written as 0,
+     * since the merging save keeps a key that is merely absent. Rust reads it. */
+    autoArchiveAfterHours?: number;
+    railRepoSort?: RailSort;
+    railTaskSort?: RailSort;
     showQuiet?: boolean;
     showUnmanagedWorktrees?: boolean;
     browserPane?: boolean;

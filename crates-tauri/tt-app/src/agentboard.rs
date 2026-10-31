@@ -15,6 +15,51 @@ use tt_agentboard::StatePayload;
 pub use tt_agentboard::engine::{Engine, now_ms};
 
 pub const STATE_EVENT: &str = "agentboard://state";
+pub const AUTO_ARCHIVED_EVENT: &str = "agentboard://auto-archived";
+
+/// How often the emit loop asks whether anything has gone quiet long enough to
+/// archive: the window is hours at the shortest, and the ask reads the settings file.
+pub const AUTO_ARCHIVE_EVERY_MS: i64 = 60_000;
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutoArchived {
+    names: Vec<String>,
+}
+
+/// Archive what `agentboard.autoArchiveAfterHours` says has gone quiet. Blocking
+/// (settings read, engine lock, `repos.json` write), so the emit loop runs it in
+/// `spawn_blocking`. `payload` must be stamped — the engine alone can't see live
+/// shells. Returns whether anything was archived.
+pub fn auto_archive_tick(app: &AppHandle, payload: &StatePayload) -> bool {
+    let Some(hours) = tt_config::load()
+        .ok()
+        .and_then(|s| s.agentboard.auto_archive_after_hours)
+        .filter(|h| *h > 0)
+    else {
+        return false;
+    };
+    let result = app.state::<Ab>().engine.lock().unwrap().auto_archive(payload, hours, now_ms());
+    let archived = match result {
+        Ok(archived) => archived,
+        Err(e) => {
+            tracing::warn!(after_hours = hours, error = %e, "repo.auto_archived failed");
+            return false;
+        }
+    };
+    if archived.is_empty() {
+        return false;
+    }
+    let names = payload
+        .repos
+        .iter()
+        .filter(|r| archived.contains(&r.dir))
+        .inspect(|r| tracing::info!(repo_dir = %r.dir, after_hours = hours, "repo.auto_archived"))
+        .map(|r| r.name.clone())
+        .collect();
+    let _ = app.emit(AUTO_ARCHIVED_EVENT, AutoArchived { names });
+    true
+}
 
 pub struct Ab {
     pub engine: Arc<Mutex<Engine>>,
@@ -561,6 +606,44 @@ pub fn ab_set_repo_order(state: State<Ab>, dirs: Vec<String>) -> Result<(), Stri
             tracing::warn!(count = dirs.len(), error = %e, "repo.order_set failed");
             Err(format!("Couldn't save the repo order: {e}"))
         }
+    }
+}
+
+/// Hides a repo from the rail without untracking it: its checkouts, tasks and
+/// sessions are untouched, and restoring it is the same call with `false`.
+#[tauri::command]
+pub fn ab_set_repo_archived(state: State<Ab>, dir: String, archived: bool) -> Result<(), String> {
+    let dirs = [dir];
+    let result = state.engine.lock().unwrap().set_repos_archived(&dirs, archived, now_ms());
+    let [dir] = dirs;
+    match result {
+        Ok(changed) => {
+            let changed = !changed.is_empty();
+            tracing::info!(repo_dir = %dir, archived, changed, "repo.archived_set");
+            if changed {
+                state.emit.notify_one();
+            }
+            Ok(())
+        }
+        Err(e) => {
+            tracing::warn!(repo_dir = %dir, archived, error = %e, "repo.archived_set failed");
+            Err(format!("Couldn't save the archive: {e}"))
+        }
+    }
+}
+
+/// Rust owns this setting, like `showUnmanagedWorktrees`: the engine sorts the
+/// payload, so the client sets it here rather than writing the settings file.
+#[tauri::command]
+pub fn ab_set_rail_sort(
+    state: State<Ab>,
+    repos: Option<tt_config::RailSort>,
+    tasks: Option<tt_config::RailSort>,
+) {
+    let changed = state.engine.lock().unwrap().set_rail_sort(repos, tasks);
+    tracing::info!(repos = ?repos, tasks = ?tasks, changed, "agentboard.rail_sort_set");
+    if changed {
+        state.emit.notify_one();
     }
 }
 

@@ -171,6 +171,8 @@ export type RepoData = {
   needs: number;
   meta?: RepoMeta;
   color: string;
+  /** Off the rail until restored; its checkouts and sessions keep running. */
+  archived?: boolean;
 };
 
 export type Panes = [string, ...string[]];

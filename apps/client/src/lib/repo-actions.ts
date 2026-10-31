@@ -32,6 +32,33 @@ export async function trackRepo(rawPath: string, screen: ScreenId): Promise<bool
   return true;
 }
 
+/** Archive hides a repo; restore brings it back. Nothing is closed or removed
+ * either way, so neither needs a confirm — the toast carries the undo. */
+export async function setRepoArchived(
+  dir: string,
+  name: string,
+  archived: boolean,
+  screen: ScreenId,
+): Promise<boolean> {
+  const result = await runIpc(invoke("ab_set_repo_archived", { dir, archived }));
+  if (Result.isFailure(result)) {
+    if (!NotInTauri.is(result.failure)) {
+      toast.error(
+        `Couldn't ${archived ? "archive" : "restore"} ${name} — ${result.failure.message}`,
+      );
+    }
+    return false;
+  }
+  uiAction(archived ? "repo.archived" : "repo.restored", screen);
+  if (archived) {
+    toast.success(`Archived ${name}`, {
+      description: "Restore it from Archived at the bottom of the rail.",
+      actions: [{ label: "Undo", onClick: () => void setRepoArchived(dir, name, false, screen) }],
+    });
+  }
+  return true;
+}
+
 /** Closes the live PTYs **first**: untrack first and the sessions are orphaned
  * — the repo leaves the rail and no UI can reach them again. Callers confirm
  * beforehand whenever `sessionIds` is non-empty; there is no undo. */

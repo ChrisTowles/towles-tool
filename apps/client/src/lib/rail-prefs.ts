@@ -1,5 +1,10 @@
 import { useCallback } from "react";
-import { persistAgentboardSetting, useLiveSetting, type RailFilter } from "./settings";
+import {
+  persistAgentboardSetting,
+  useLiveSetting,
+  type RailFilter,
+  type RailSort,
+} from "./settings";
 import { fire, invoke } from "./tauri";
 
 /** Everything, so a fresh install never wonders where a checkout went.
@@ -44,6 +49,28 @@ export function useRailFilter(): {
     [setRecentHoursState],
   );
   return { filter, recentHours, setFilter, setRecentHours };
+}
+
+/** Mirrors `tt_config::DEFAULT_RAIL_SORT`. */
+const DEFAULT_RAIL_SORT: RailSort = "manual";
+
+/** How the rail orders its repos, or the tasks inside each. Rust sorts the
+ * payload, so the setter goes through `ab_set_rail_sort` (which leaves the
+ * other key alone) and Rust owns the write. */
+export function useRailSort(which: "repos" | "tasks"): [RailSort, (next: RailSort) => void] {
+  const [sort, setSortState] = useLiveSetting(
+    (s) => (which === "repos" ? s.agentboard?.railRepoSort : s.agentboard?.railTaskSort),
+    DEFAULT_RAIL_SORT,
+  );
+  // Rust owns this write (see above) — not `persistAgentboardSetting`.
+  const setSort = useCallback(
+    (next: RailSort) => {
+      setSortState(next);
+      fire(invoke("ab_set_rail_sort", { [which]: next }));
+    },
+    [which, setSortState],
+  );
+  return [sort, setSort];
 }
 
 /** Off: a hand-marked quiet checkout is hidden until you say otherwise. */

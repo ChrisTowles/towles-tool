@@ -15,15 +15,23 @@ owns is on the tree only, until its "adopt" chip makes it a task. On Tree the
 checkout tree below *is* the rail, and `lib/rail-nodes.ts` is the one walk its
 cursor, jump digits and fold chords read.
 
-## The checkout tree is seven files, split by what a row *is*
+## The checkout tree is eight files, split by what a row *is*
 
 `components/agentboard-rail.tsx` is the rail's own chrome (collapsed strip,
 rollup tally) — not the tree, which is `agentboard-repo-group` (a repo) →
 `agentboard-folder-header` (a checkout), or `agentboard-home-header` (`~`) → `agentboard-session-row` (a PTY) /
 `agentboard-pane-rows`, plus `agentboard-fold-rows` for the rows that stand for
-rows *not* shown ("N idle", "N unmanaged"), with shared atoms in
-`components/agentboard-bits/` and pure logic in `lib/agentboard/`. A new row kind gets an
-eighth file, not a grown one.
+rows *not* shown ("N idle", "N unmanaged") and `agentboard-archived-rows` for
+the archived repos beneath the tree, with shared atoms in
+`components/agentboard-bits/` and pure logic in `lib/agentboard/`. A new row kind gets a
+ninth file, not a grown one.
+
+**Order is Rust's, archive is a flag.** `tt_agentboard::rail_sort` sorts the
+payload by `agentboard.railRepoSort`/`railTaskSort` (set through
+`ab_set_rail_sort`), so nothing client-side re-sorts. An archived repo
+(`archivedPaths` in `repos.json`) still arrives, flagged `archived`;
+`partitionArchived` takes it off the rail before every other filter, and the
+"N archived" row is the only way back to it.
 
 **`~` is always the first group.** The engine appends one `home`-origin row
 for the home directory (a tracked `~` repo replaces it), and the longest-prefix

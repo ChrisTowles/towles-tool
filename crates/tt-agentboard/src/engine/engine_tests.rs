@@ -745,3 +745,59 @@ fn a_live_shell_keeps_its_record_however_long_its_repo_is_untracked() {
     e.compute_payload(1001 + 2 * UNTRACKED_GRACE_MS);
     assert!(e.session_ids_for("/repo/b").is_empty());
 }
+
+#[test]
+fn an_archived_repo_stays_in_the_payload_flagged_until_restored() {
+    let (_tmp, mut e) = engine();
+    assert!(e.add_repo("/repo/a"));
+    assert!(e.add_repo("/repo/b"));
+    let s = e.add_session("/repo/b", None, 1000);
+
+    let b = vec!["/repo/b".to_string()];
+    assert_eq!(e.set_repos_archived(&b, true, 1000).unwrap(), b);
+    let payload = e.compute_payload(1001);
+    let row = payload.repos.iter().find(|r| r.dir == "/repo/b").unwrap();
+    assert!(row.archived, "archived, not dropped");
+    assert_eq!(row.folders[0].sessions[0].id, s.id, "its sessions survive the archive");
+    assert!(!payload.repos.iter().find(|r| r.dir == "/repo/a").unwrap().archived);
+
+    assert_eq!(e.set_repos_archived(&b, false, 1001).unwrap(), b);
+    assert!(e.compute_payload(1002).repos.iter().all(|r| !r.archived));
+}
+
+#[test]
+fn the_rail_sort_orders_repos_but_home_still_leads() {
+    let (_tmp, mut e) = engine();
+    e.home_dir = Some("/home/u".into());
+    assert!(e.add_repo("/home/u/zeta"));
+    assert!(e.add_repo("/home/u/alpha"));
+    let dirs = |e: &mut Engine| -> Vec<String> {
+        e.compute_payload(1000).repos.into_iter().map(|r| r.dir).collect()
+    };
+    assert_eq!(dirs(&mut e), ["/home/u", "/home/u/zeta", "/home/u/alpha"]);
+
+    // Set directly: `set_rail_sort` writes the real settings file.
+    e.repo_sort = tt_config::RailSort::Name;
+    assert_eq!(dirs(&mut e), ["/home/u", "/home/u/alpha", "/home/u/zeta"]);
+}
+
+#[test]
+fn auto_archive_takes_an_idle_repo_and_a_restore_buys_a_fresh_window() {
+    let (_tmp, mut e) = engine();
+    assert!(e.add_repo("/repo/old"));
+    let hour = crate::auto_archive::HOUR_MS;
+    let now = 100 * hour;
+    // Git has been read, and the newest work is two days back.
+    let mut payload = e.compute_payload(now);
+    payload.repos[0].folders[0].computed_at_ms = now;
+    payload.repos[0].folders[0].worked_at_ms = now - 48 * hour;
+
+    let old = vec!["/repo/old".to_string()];
+    assert_eq!(e.auto_archive(&payload, 24, now).unwrap(), old);
+    assert!(e.compute_payload(now).repos[0].archived);
+    assert!(e.auto_archive(&payload, 24, now).unwrap().is_empty(), "already archived");
+
+    assert_eq!(e.set_repos_archived(&old, false, now).unwrap(), old);
+    let restored = e.compute_payload(now + hour);
+    assert_eq!(restored.repos[0].folders[0].worked_at_ms, now, "the restore counts as work");
+}

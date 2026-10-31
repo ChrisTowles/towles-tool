@@ -16,9 +16,10 @@ import {
 import { DismissButton } from "@/components/store-bits";
 import { DropdownMenu, Input } from "@cloudflare/kumo";
 import { Hint } from "@/components/hint";
+import { plural } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { RAIL_RECENT_HOUR_CHOICES } from "@/lib/rail-prefs";
-import type { RailFilter } from "@/lib/settings";
+import { RAIL_RECENT_HOUR_CHOICES, useRailSort } from "@/lib/rail-prefs";
+import type { RailFilter, RailSort } from "@/lib/settings";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
 import { NewRepoDialog, type NewRepoMode } from "./new-repo-dialog";
@@ -30,7 +31,11 @@ const FILTER_SUMMARY: Record<RailFilter, string> = {
   recent: "only checkouts worked in recently",
 };
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const SORT_LABEL: Record<RailSort, string> = {
+  manual: "Your order",
+  name: "Name",
+  recent: "Recent activity",
+};
 
 // Type-to-narrow over repo, branch and task title. Transient: no persistence,
 // Escape clears, and the count of what it hides sits in the field itself, so a
@@ -203,6 +208,9 @@ function ViewMenu(props: {
           </div>
         )}
         <DropdownMenu.Separator />
+        <SortGroup which="repos" label="Sort repos" />
+        <SortGroup which="tasks" label="Sort tasks in a repo" />
+        <DropdownMenu.Separator />
         <DropdownMenu.Group>
           <DropdownMenu.Label>Also show</DropdownMenu.Label>
           {quietCount > 0 && (
@@ -242,6 +250,33 @@ function ViewMenu(props: {
         )}
       </DropdownMenu.Content>
     </DropdownMenu>
+  );
+}
+
+function SortGroup({ which, label }: { which: "repos" | "tasks"; label: string }) {
+  const [sort, setSort] = useRailSort(which);
+  return (
+    <DropdownMenu.Group>
+      <DropdownMenu.Label>{label}</DropdownMenu.Label>
+      <DropdownMenu.RadioGroup
+        value={sort}
+        onValueChange={(next) => {
+          uiAction(
+            `agentboard.rail_${which === "repos" ? "repo" : "task"}_sort`,
+            "agentboard",
+            next,
+          );
+          setSort(next as RailSort);
+        }}
+      >
+        {(Object.keys(SORT_LABEL) as RailSort[]).map((option) => (
+          <DropdownMenu.RadioItem key={option} value={option} closeOnClick={false}>
+            {SORT_LABEL[option]}
+            <DropdownMenu.RadioItemIndicator />
+          </DropdownMenu.RadioItem>
+        ))}
+      </DropdownMenu.RadioGroup>
+    </DropdownMenu.Group>
   );
 }
 

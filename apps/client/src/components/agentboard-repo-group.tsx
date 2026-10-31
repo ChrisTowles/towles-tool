@@ -47,6 +47,7 @@ import { taskAdoptWorktree, taskSyncBranch, type PrItem, type TaskItem } from "@
 import { NotInTauri } from "@/lib/errors";
 import { uiAction } from "@/lib/ui-action";
 import { railRowMotion } from "@/lib/rail-motion";
+import { setRepoArchived } from "@/lib/repo-actions";
 import { sessionNodeKey } from "@/lib/rail-nodes";
 import { AnimatePresence, motion } from "motion/react";
 
@@ -423,6 +424,7 @@ export function RepoGroup({
             quietDirs={repo.folders.map((f) => f.dir)}
             quiet={repo.folders.every((f) => f.quiet)}
             dirMissing={repo.folders[0].dirMissing}
+            onArchive={() => void setRepoArchived(repo.dir, repo.name, true, "agentboard")}
             onNewTask={() =>
               onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key })
             }

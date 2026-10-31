@@ -325,6 +325,10 @@ pub struct RepoData {
     /// over every repo when the engine builds state.
     #[serde(default)]
     pub color: crate::repo_meta::HexColor,
+    /// Hidden from the rail until restored (`archivedPaths` in repos.json). Still
+    /// scanned, so its tasks and sessions keep working while it is out of sight.
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[cfg(test)]

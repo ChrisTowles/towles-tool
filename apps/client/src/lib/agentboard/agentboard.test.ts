@@ -24,6 +24,7 @@ import {
   issuesForFolder,
   pathScope,
   prForFolder,
+  partitionArchived,
   partitionQuiet,
   searchRepos,
   taskForFolder,
@@ -1350,6 +1351,19 @@ describe("isFolderStale", () => {
 });
 
 const dirs = (repos: RepoData[]) => repos.flatMap((r) => r.folders.map((f) => f.dir));
+
+describe("partitionArchived", () => {
+  it("takes an archived repo off the rail whole, keeping the rest in order", () => {
+    const repos = [
+      repo("a", [folder({ dir: "/a" })]),
+      { ...repo("b", [folder({ dir: "/b" })]), archived: true },
+      repo("c", [folder({ dir: "/c" })]),
+    ];
+    const { active, archived } = partitionArchived(repos);
+    expect(active.map((r) => r.key)).toEqual(["a", "c"]);
+    expect(archived.map((r) => r.key)).toEqual(["b"]);
+  });
+});
 
 describe("partitionQuiet", () => {
   const SHOWN = { show: false, activeFolderDir: null };

@@ -3,9 +3,10 @@ import { useState } from "react";
 import {
   ArchiveIcon,
   ArrowClockwiseIcon,
-  ArrowCounterClockwiseIcon,
   ArrowSquareOutIcon,
   DotsThreeVerticalIcon,
+  EyeIcon,
+  EyeSlashIcon,
   FolderPlusIcon,
   LinkIcon,
   TrashIcon,
@@ -27,6 +28,7 @@ import { AttachIssueDialog } from "./pr-issue-chips";
 export function RepoMenu({
   path,
   onRemove,
+  onArchive,
   dir,
   quietDirs,
   isWorktree,
@@ -40,6 +42,8 @@ export function RepoMenu({
 }: {
   path?: string;
   onRemove: () => void;
+  /** Set only on a repo header: archive covers the whole repo, never one checkout. */
+  onArchive?: () => void;
   dir: string;
   /** What "Mark quiet" covers when that isn't just `dir`: a *repo* header means
    * every checkout under it, or the worktrees stay and the mark looks ignored. */
@@ -181,21 +185,24 @@ export function RepoMenu({
               Attach issue…
             </DropdownMenu.Item>
           )}
-          {/* Same glyph the rail header's toggle wears, so "where did it go"
-              and "bring it back" read as one feature. */}
           <DropdownMenu.Item
             onClick={() => void toggleQuiet()}
             className="whitespace-nowrap"
-            icon={
-              quiet ? (
-                <ArrowCounterClockwiseIcon className="size-3.5" />
-              ) : (
-                <ArchiveIcon className="size-3.5" />
-              )
-            }
+            icon={quiet ? <EyeIcon className="size-3.5" /> : <EyeSlashIcon className="size-3.5" />}
           >
             {quiet ? "Unmark quiet" : "Mark quiet"}
           </DropdownMenu.Item>
+          {/* Same glyph the rail's Archived list wears, so "where did it go"
+              and "bring it back" read as one feature. */}
+          {onArchive && (
+            <DropdownMenu.Item
+              onClick={onArchive}
+              className="whitespace-nowrap"
+              icon={<ArchiveIcon className="size-3.5" />}
+            >
+              Archive repo
+            </DropdownMenu.Item>
+          )}
           {!isWorktree && (
             <DropdownMenu.Item
               variant="danger"

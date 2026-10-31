@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
 import { Button } from "@cloudflare/kumo";
 import { AnimatePresence, motion } from "motion/react";
+import { ArchivedRepoRows } from "@/components/agentboard-archived-rows";
 import { RepoGroup } from "@/components/agentboard-repo-group";
 import type { NewTaskRepo } from "@/components/inline-new-task";
 import type { FolderData, RepoData } from "@/lib/agentboard/types";
@@ -34,6 +35,7 @@ type SharedGroupProps = Omit<
  * no-match states standing in for it. */
 export function CheckoutTree({
   repos,
+  archivedRepos,
   shownRepos,
   query,
   onClearQuery,
@@ -53,7 +55,9 @@ export function CheckoutTree({
   onRecreateWorktree,
   shared,
 }: {
+  /** Every repo on the rail — archived ones are `archivedRepos`. */
   repos: RepoData[];
+  archivedRepos: RepoData[];
   shownRepos: RepoData[];
   query: string;
   onClearQuery: () => void;
@@ -75,10 +79,15 @@ export function CheckoutTree({
 }) {
   return (
     <div className="flex flex-col">
+      {/* A rail of only archived repos is empty too, but says where they went. */}
       {repos.length === 0 && (
         <div className="flex flex-col items-center gap-3 px-3 py-10 text-center">
           <GitBranchIcon className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No repos on the rail yet.</p>
+          <p className="text-sm text-muted-foreground">
+            {archivedRepos.length > 0
+              ? "Every repo is archived — restore one below."
+              : "No repos on the rail yet."}
+          </p>
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -152,6 +161,7 @@ export function CheckoutTree({
           </motion.div>
         ))}
       </AnimatePresence>
+      <ArchivedRepoRows repos={archivedRepos} />
     </div>
   );
 }

@@ -15,9 +15,8 @@ use crate::claude_cli::{AgentScan, CliAgent};
 use crate::git_info::GitInfoCache;
 use crate::procenv::InstanceScope;
 use crate::repos::{
-    RepoEntry, add_repo_persisted, default_repos_path, load_repos, load_scan_roots,
-    remove_repo_persisted, repo_entries, resolve_session_name, save_scan_roots,
-    untrack_missing_persisted,
+    RepoEntry, add_repo_persisted, default_repos_path, load_scan_roots, remove_repo_persisted,
+    repo_entries, resolve_session_name, save_scan_roots, untrack_missing_persisted,
 };
 use crate::sessions::{SessionRecord, SessionStore, default_sessions_path};
 use crate::tracker::{AgentTracker, instance_key};
@@ -121,6 +120,11 @@ pub struct Engine {
     projects_dir: PathBuf,
     repos_path: PathBuf,
     repo_paths: Vec<String>,
+    /// `archivedPaths` from `repos.json`, reloaded with `repo_paths`.
+    archived_paths: Vec<String>,
+    /// `agentboard.railRepoSort` / `railTaskSort` — see [`crate::rail_sort`].
+    repo_sort: tt_config::RailSort,
+    task_sort: tt_config::RailSort,
     /// `repos.json`'s version at the last good parse — four `reload_repos` call
     /// sites fire per scan tick, and the answer only changes on an edit.
     repos_stat: Option<crate::persist::FileVersion>,
@@ -247,6 +251,7 @@ impl Engine {
     pub fn new(scope: InstanceScope) -> Self {
         let projects_dir = tt_config::claude_dir().join("projects");
         let repos_path = default_repos_path();
+        let tracked = crate::repos::load_tracked(&repos_path);
 
         let settings = tt_config::load().unwrap_or_default();
         let compact_recommend_percent = settings
@@ -258,6 +263,9 @@ impl Engine {
             .show_unmanaged_worktrees
             .unwrap_or(tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES);
 
+        let repo_sort = settings.agentboard.rail_repo_sort.unwrap_or(tt_config::DEFAULT_RAIL_SORT);
+        let task_sort = settings.agentboard.rail_task_sort.unwrap_or(tt_config::DEFAULT_RAIL_SORT);
+
         let mut sessions = SessionStore::new(Some(default_sessions_path()));
         if sessions.drop_never_used() {
             persisted(sessions.save(), "sessions");
@@ -267,9 +275,12 @@ impl Engine {
 
         Self {
             projects_dir: projects_dir.clone(),
-            repo_paths: load_repos(&repos_path),
+            repo_paths: tracked.paths,
+            archived_paths: tracked.archived,
+            repo_sort,
+            task_sort,
             // Unset so the first `reload_repos` always reads: only a good parse
-            // stamps this, and `load_repos` swallows a corrupt file as empty.
+            // stamps this, and `load_tracked` swallows a corrupt file as empty.
             repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),
@@ -310,14 +321,15 @@ impl Engine {
     /// Re-read `repos.json` so another writer's changes land without a restart. A
     /// torn read keeps the last known-good list; empty would prune every session.
     fn reload_repos(&mut self) {
-        // A missing file has no version and falls through, which `try_load_repos`
+        // A missing file has no version and falls through, which `try_load_tracked`
         // treats as an empty list — so "the file was deleted" keeps working.
         let stat = crate::persist::file_version(&self.repos_path);
         if stat.is_some() && stat == self.repos_stat {
             return;
         }
-        if let Some(paths) = crate::repos::try_load_repos(&self.repos_path) {
-            self.repo_paths = paths;
+        if let Some(tracked) = crate::repos::try_load_tracked(&self.repos_path) {
+            self.repo_paths = tracked.paths;
+            self.archived_paths = tracked.archived;
             // Caching a corrupt file's stat would stop the next tick re-reading.
             self.repos_stat = stat;
         }
@@ -610,7 +622,12 @@ impl Engine {
         let colors = crate::repo_meta::resolve_colors(&pins);
         for (repo, color) in payload.repos.iter_mut().zip(colors) {
             repo.color = color;
+            repo.archived = self.archived_paths.contains(&repo.dir);
+            crate::rail_sort::sort_folders(&mut repo.folders, self.task_sort);
         }
+        // After the colors are dealt, which follow the manual order so a re-sort
+        // never repaints a repo.
+        crate::rail_sort::sort_repos(&mut payload.repos, self.repo_sort);
         if let Some(i) =
             payload.repos.iter().position(|r| r.folders.iter().any(|f| f.record == RowRecord::Home))
         {
@@ -636,9 +653,13 @@ impl Engine {
     /// Every persisted store in-memory **except** `repos.json`, which points at a
     /// tempdir file. No watcher, so a scan is inert.
     fn new_for_test(repos_path: PathBuf) -> Self {
+        let tracked = crate::repos::load_tracked(&repos_path);
         Self {
             projects_dir: PathBuf::from("/nonexistent/projects"),
-            repo_paths: load_repos(&repos_path),
+            repo_paths: tracked.paths,
+            archived_paths: tracked.archived,
+            repo_sort: tt_config::DEFAULT_RAIL_SORT,
+            task_sort: tt_config::DEFAULT_RAIL_SORT,
             repos_stat: None,
             repos_path,
             tracker: AgentTracker::new(),

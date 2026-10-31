@@ -72,3 +72,8 @@ export function fmtBytes(n: number): string {
   const shown = value < 10 ? (Math.round(value * 10) / 10).toFixed(1) : String(Math.round(value));
   return `${shown} ${units[i]}`;
 }
+
+/** "1 task" / "3 tasks" — regular plurals only. */
+export function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
