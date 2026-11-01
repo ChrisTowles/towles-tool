@@ -185,6 +185,16 @@ export function pruneWins(
   return changedFolderDirs(w, next).length === 0 ? w : next;
 }
 
+/** A folder's windows that hold a session, so opening it lands on a shell: a
+ * window left with only files/preview/browser tiles (its shells all ended) is
+ * dropped. `w` itself when nothing is. */
+export function dropSessionlessWindows(w: WindowsPayload, folderDir: string): WindowsPayload {
+  const windows = w.windows.filter(
+    (win) => win.folderDir !== folderDir || win.panes.some((p) => paneSession(p) !== null),
+  );
+  return windows.length === w.windows.length ? w : normalizeWins({ ...w, windows });
+}
+
 /** One cursor, three levels — Ctrl+Shift+arrows move whatever is focused. The
  * rail level walks the queue's rows (`railRows`); this covers the rest. */
 export type FocusLevel = "rail" | "window" | "pane";
