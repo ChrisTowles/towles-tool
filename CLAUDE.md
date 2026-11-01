@@ -13,7 +13,7 @@ cargo test --all                    # unit + assert_cmd black-box tests
 cargo comment-budget                # comment-volume ratchet vs main — what CI gates on
 bun run dev / bun start             # tauri dev (laggy) / release build + run
 bun run dev:drive                   # dev, with the window automatable
-bun run drive -- <verb>             # drive it (status|invoke|shot|winshot|click|…)
+bun run drive -- <verb>             # drive it (status|invoke|shot|click|…)
 bun run e2e                         # regression suite vs the real shell
 cd apps/client && bun run lint      # oxlint  (`bun run format` for oxfmt)
 ```
@@ -21,10 +21,7 @@ cd apps/client && bun run lint      # oxlint  (`bun run format` for oxfmt)
 `clippy --all`/`test --all` need zig and webkit2gtk/GTK; without those prereqs
 use CI's variant, and **a new crate needing GTK must be added to both its
 `--exclude` list and the `vt_or_app` paths-filter in `.github/workflows/ci.yml`,
-or it silently gets no Rust CI**. **Bevy is behind an off-by-default `bevy`
-feature** that `tt-jarvis`/`tt-pane`/`tt-app` forward down — nothing builds the
-fork unless asked (`TT_BEVY=1 bun run dev`, `--features bevy`), and CI compiles
-it only when those two crates change. Full list, flags and Linux gotchas:
+or it silently gets no Rust CI**. Full list, flags and Linux gotchas:
 **[docs/COMMANDS.md](docs/COMMANDS.md)**. The binary is
 **`tt`** (the `ttr` cutover was hard).
 
@@ -39,10 +36,9 @@ addressed in the PR that surfaced it** — never by narrowing the change or
 to the public**, so its CLI is someone else's build.
 
 **Verifying UI/IPC changes — drive the real app**, never a bare browser or the
-mock dev server: `bun run dev:drive` plus a `drive` verb (`shot` is blind to the
-native pane — use `winshot`), or `bun run e2e` for pass/fail — both need the
-singleton free, so an app already up for this checkout fails `e2e` with a
-WebDriver-never-ready error that reads like a crash. A screenshot that looks
+mock dev server: `bun run dev:drive` plus a `drive` verb, or `bun run e2e` for
+pass/fail — both need the singleton free, so an app already up for this checkout
+fails `e2e` with a WebDriver-never-ready error that reads like a crash. A screenshot that looks
 right is not proof the render was clean: every verb prints a console-error
 summary, and React reports bad markup only at runtime. **After a task that
 touches the app, leave `bun start` running for Chris.**

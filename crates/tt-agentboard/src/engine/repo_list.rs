@@ -55,6 +55,44 @@ impl Engine {
         Ok(())
     }
 
+    /// Hide (or restore) tracked repos on the rail, in one `repos.json` write so
+    /// another window's archive of a different repo survives this one. A restore
+    /// counts as working in it, or auto-archive would take it straight back.
+    /// Returns the dirs that changed.
+    pub fn set_repos_archived(
+        &mut self,
+        dirs: &[String],
+        archived: bool,
+        now_ms: i64,
+    ) -> std::io::Result<Vec<String>> {
+        let (merged, changed) =
+            crate::repos::set_repos_archived_persisted(&self.repos_path, dirs, archived)?;
+        self.archived_paths = merged;
+        if !archived {
+            for dir in &changed {
+                self.touch_folder(dir, now_ms);
+            }
+        }
+        Ok(changed)
+    }
+
+    /// Archive every repo idle past `after_hours` in `payload`, which must be the
+    /// host's *stamped* one: only it knows which shells are live. Returns the
+    /// repos it archived.
+    pub fn auto_archive(
+        &mut self,
+        payload: &StatePayload,
+        after_hours: u32,
+        now_ms: i64,
+    ) -> std::io::Result<Vec<String>> {
+        let after_ms = i64::from(after_hours) * crate::auto_archive::HOUR_MS;
+        let due = crate::auto_archive::auto_archive_candidates(&payload.repos, after_ms, now_ms);
+        if due.is_empty() {
+            return Ok(due);
+        }
+        self.set_repos_archived(&due, true, now_ms)
+    }
+
     /// Untrack every repo whose directory is gone — the rail's "missing" ghosts.
     pub fn untrack_missing(&mut self) -> Vec<String> {
         match untrack_missing_persisted(&self.repos_path) {

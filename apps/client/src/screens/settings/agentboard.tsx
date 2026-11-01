@@ -4,7 +4,7 @@ import { DotsSixVerticalIcon, FolderPlusIcon, GitBranchIcon } from "@phosphor-ic
 import { toast } from "@/lib/toast";
 import { ToggleGroup } from "@cloudflare/kumo/primitives/toggle-group";
 import { Toggle } from "@cloudflare/kumo/primitives/toggle";
-import { Button, Dialog, Input, InputArea, Popover, Select } from "@cloudflare/kumo";
+import { Button, Dialog, Input, InputArea, Popover, Select, Switch } from "@cloudflare/kumo";
 import type { RepoCandidate } from "@/lib/agentboard/actions";
 import { useRepos } from "@/lib/agentboard/state";
 import type { RepoData } from "@/lib/agentboard/types";
@@ -36,7 +36,13 @@ import {
   type NotifyLevel,
   type UserSettings,
 } from "@/lib/settings";
-import { DEFAULT_BROWSER_PANE, DEFAULT_JARVIS_PANE } from "@/lib/rail-prefs";
+import { DEFAULT_BROWSER_PANE } from "@/lib/rail-prefs";
+import {
+  DEFAULT_AUTO_ARCHIVE_HOURS,
+  archiveHours,
+  splitArchiveHours,
+  type ArchiveUnit,
+} from "@/lib/auto-archive";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "@/lib/terminal-prefs";
 import { PALETTE } from "@/lib/colors";
 import { cn } from "@/lib/utils";
@@ -228,24 +234,6 @@ export function agentboardSections(
         ),
       },
       {
-        label: "Jarvis pane",
-        keywords: ["jarvis", "bevy", "native", "pane", "3d", "render", "gpu", "rail"],
-        node: (
-          <ToggleRow
-            id="jarvis_pane"
-            label="Jarvis pane"
-            description="Turn on Jarvis, the native Bevy surface: a strip at the bottom of the Agentboard rail, plus a “jarvis” button on each checkout that tiles one as a pane beside its terminals. A proof-of-concept, and Linux/Wayland only — leave it off and nothing is ever drawn. It also needs a build made with the `bevy` Cargo feature, off by default because compiling it dwarfs the rest of the app; without one, opening a pane reports it unsupported. Turning it back off parks what you opened rather than reclaiming it; relaunch for that."
-            checked={settings.agentboard?.jarvisPane ?? DEFAULT_JARVIS_PANE}
-            onCheckedChange={(v) =>
-              update((s) => ({
-                ...s,
-                agentboard: { ...s.agentboard, jarvisPane: v },
-              }))
-            }
-          />
-        ),
-      },
-      {
         label: "Chrome pane",
         keywords: ["chrome", "browser", "web", "pane", "login", "sign in", "cdp", "headless"],
         node: (
@@ -300,6 +288,25 @@ export function agentboardSections(
                 agentboard: { ...s.agentboard, autoCloseLanded: v },
               }))
             }
+          />
+        ),
+      },
+      {
+        label: "Archive idle repos automatically",
+        keywords: ["archive", "auto", "idle", "inactive", "hide", "repo", "rail", "hours", "days"],
+        node: (
+          <AutoArchiveRow
+            hours={settings.agentboard?.autoArchiveAfterHours}
+            onHours={(next, defer) =>
+              update(
+                (s) => ({
+                  ...s,
+                  agentboard: { ...s.agentboard, autoArchiveAfterHours: next },
+                }),
+                defer ? { defer: true } : undefined,
+              )
+            }
+            onCommit={() => void flush()}
           />
         ),
       },
@@ -960,5 +967,75 @@ function NextPromptEditor({
         onBlur={onCommit}
       />
     </div>
+  );
+}
+
+const ARCHIVE_UNITS = (["hours", "days"] as const).map((u) => ({ value: u, label: u }));
+const DEFAULT_ARCHIVE_UNIT = splitArchiveHours(DEFAULT_AUTO_ARCHIVE_HOURS).unit;
+
+/** Off, or an amount in hours or days — stored as hours either way. The unit is
+ * kept locally while typing, so "48 hours" isn't snapped to "2 days" mid-edit. */
+function AutoArchiveRow({
+  hours,
+  onHours,
+  onCommit,
+}: {
+  hours: number | undefined;
+  /** 0 is off. */
+  onHours: (next: number, defer?: boolean) => void;
+  onCommit: () => void;
+}) {
+  const on = hours !== undefined && hours > 0;
+  const [unit, setUnit] = useState<ArchiveUnit>(
+    () => splitArchiveHours(hours ?? DEFAULT_AUTO_ARCHIVE_HOURS).unit,
+  );
+  // Off still shows what switching on would start at, greyed out.
+  const shown = on ? hours : DEFAULT_AUTO_ARCHIVE_HOURS;
+  const amount = unit === "days" ? shown / 24 : shown;
+  return (
+    <SettingRow
+      label="Archive idle repos automatically"
+      description="Archive a repo once nothing has happened in any of its checkouts for this long — no commits, edits, agent activity or opened panes. Never one with a live shell or something waiting on you. Restoring it starts the clock over."
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          aria-label="Archive after"
+          type="number"
+          min={1}
+          disabled={!on}
+          value={Number(amount.toFixed(2))}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (Number.isFinite(n) && n >= 1) onHours(archiveHours(n, unit), true);
+          }}
+          onBlur={onCommit}
+          className="w-16"
+        />
+        <Select
+          aria-label="Archive after unit"
+          className="w-24"
+          value={unit}
+          disabled={!on}
+          onValueChange={(v) => {
+            if (!v) return;
+            const next = v as ArchiveUnit;
+            uiAction("settings.auto_archive_unit", "settings", next);
+            setUnit(next);
+            // Keep the number you see, change what it counts: 3 days → 3 hours.
+            onHours(archiveHours(Math.round(amount), next));
+          }}
+          items={ARCHIVE_UNITS}
+        />
+        <Switch
+          aria-label="Archive idle repos automatically"
+          checked={on}
+          onCheckedChange={(v) => {
+            uiAction("settings.toggle", "settings", `auto_archive ${v ? "on" : "off"}`);
+            if (v) setUnit(DEFAULT_ARCHIVE_UNIT);
+            onHours(v ? DEFAULT_AUTO_ARCHIVE_HOURS : 0);
+          }}
+        />
+      </div>
+    </SettingRow>
   );
 }

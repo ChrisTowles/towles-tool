@@ -1,6 +1,4 @@
-import { isHomeRepo } from "@/lib/agentboard/folder";
 import type { RepoData } from "@/lib/agentboard/types";
-import { folderNodeKey } from "@/lib/rail-nodes";
 
 /** One entry of the persisted collapse map, already resolved to its new value. */
 export type CollapseChange = { key: string; collapsed: boolean };
@@ -12,20 +10,10 @@ export function railCollapseAll(repos: RepoData[], collapsed: Record<string, boo
   return repos.filter((r) => !collapsed[r.key]).map((r) => ({ key: r.key, collapsed: true }));
 }
 
-// Expand-all reaches both levels: a repo opened onto nothing but folded
-// checkouts would read as a broken chord.
+// Only repos fold: a checkout line carries its sessions inline.
 export function railExpandAll(
   repos: RepoData[],
   collapsed: Record<string, boolean>,
 ): CollapseChange[] {
-  const out: CollapseChange[] = [];
-  for (const repo of repos) {
-    if (collapsed[repo.key]) out.push({ key: repo.key, collapsed: false });
-    if (isHomeRepo(repo)) continue;
-    for (const folder of repo.folders) {
-      const key = folderNodeKey(repo.key, folder.dir);
-      if (collapsed[key]) out.push({ key, collapsed: false });
-    }
-  }
-  return out;
+  return repos.filter((r) => collapsed[r.key]).map((r) => ({ key: r.key, collapsed: false }));
 }

@@ -585,6 +585,7 @@ mod tests {
                 needs: 0,
                 meta: None,
                 color: Default::default(),
+                archived: false,
             }],
             compact_recommend_percent: 30,
             windows: Default::default(),

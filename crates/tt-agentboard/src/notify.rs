@@ -123,6 +123,7 @@ mod tests {
             repos: vec![RepoData {
                 meta: None,
                 color: Default::default(),
+                archived: false,
                 key: format!("path:/{repo}"),
                 dir: format!("/{repo}"),
                 name: repo.to_string(),

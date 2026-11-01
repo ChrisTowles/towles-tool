@@ -80,6 +80,18 @@ export function comparedBaseLabel(folder: Pick<FolderData, "comparedBase">): str
   return base.startsWith("origin/") ? base.slice("origin/".length) : base;
 }
 
+/** Archived repos come off the rail whole, ahead of every other filter — the
+ * rail's one way back to them is the "Archived" list beneath the tree. */
+export function partitionArchived(repos: RepoData[]): {
+  active: RepoData[];
+  archived: RepoData[];
+} {
+  const active: RepoData[] = [];
+  const archived: RepoData[] = [];
+  for (const r of repos) (r.archived ? archived : active).push(r);
+  return { active, archived };
+}
+
 /** The rail minus its quiet checkouts, plus what was taken out. "Mark quiet"
  * is a hide, not a demotion, and it ignores the rail filter — under the
  * default `"all"` a filter-shaped quiet would do nothing at all. The checkout

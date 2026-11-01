@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AppWindowIcon, CubeIcon, FilesIcon, GlobeIcon } from "@phosphor-icons/react";
+import { AppWindowIcon, FilesIcon, GlobeIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
 /** One header row for every pane kind. **The lens leads, the subject follows, the
@@ -78,7 +78,7 @@ export function PaneChrome({
 
 /** `agent` and `shell` keep the rail's `✦`/`❯` glyphs, so a session pane and
  * its rail row name themselves the same way. */
-export type LensKind = "agent" | "shell" | "files" | "web" | "browser" | "jarvis";
+export type LensKind = "agent" | "shell" | "files" | "web" | "browser";
 
 const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof FilesIcon }> = {
   agent: { label: "claude", glyph: "✦" },
@@ -86,8 +86,6 @@ const LENSES: Record<LensKind, { label: string; glyph?: string; icon?: typeof Fi
   files: { label: "files", icon: FilesIcon },
   web: { label: "web", icon: GlobeIcon },
   browser: { label: "chrome", icon: AppWindowIcon },
-  // The one pane that is not DOM at all: a compositor surface Bevy draws into.
-  jarvis: { label: "jarvis", icon: CubeIcon },
 };
 
 /** The chip naming a pane's kind. The word carries it — an icon alone

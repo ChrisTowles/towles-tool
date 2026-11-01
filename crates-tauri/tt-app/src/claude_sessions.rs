@@ -13,9 +13,9 @@ use serde::Serialize;
 use tt_claude_sessions::{
     BarChartDay, CadenceSummary, DirCost, LedgerTotals, ModelBar, ProjectBar, SessionBreakdown,
     SessionDetail, UsageLimits, build_cadence, build_insights, build_ledger_days,
-    build_ledger_model_totals, build_ledger_project_totals, build_session_breakdown, cost_by_dir,
-    find_session_path, ledger_totals, parse_transcript_file, read_cached_usage_limits,
-    scan_sessions_detailed, search_sessions,
+    build_ledger_model_totals, build_ledger_project_totals, cost_by_dir, find_session_path,
+    ledger_totals, load_session_breakdown, read_cached_usage_limits, scan_sessions_detailed,
+    search_sessions,
 };
 
 /// Matching the CLI's `SESSION_LIMIT`.
@@ -226,7 +226,7 @@ pub async fn claude_sessions_breakdown(session_id: String) -> Result<SessionBrea
         let path = find_session_path(&projects_dir, &session_id)
             .map_err(|e| format!("Failed to search sessions: {e}"))?
             .ok_or_else(|| format!("Session {session_id} not found"))?;
-        Ok(build_session_breakdown(&parse_transcript_file(&path)))
+        Ok(load_session_breakdown(&path))
     })
     .await
     .map_err(|e| format!("claude sessions breakdown task panicked: {e}"))?

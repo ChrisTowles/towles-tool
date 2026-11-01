@@ -50,7 +50,7 @@ import { claudeTitleName, sessionLabel } from "@/lib/agentboard/session";
 import { useStableFn, useStableFns } from "@/lib/use-stable-fn";
 import { useAgentboardState, useSetAgentOverlay } from "@/lib/agentboard/state";
 import type { FolderData, RepoData, Selected, SessionData } from "@/lib/agentboard/types";
-import { paneCloseTarget, type FocusLevel } from "@/lib/agentboard/windows";
+import { dropSessionlessWindows, paneCloseTarget, type FocusLevel } from "@/lib/agentboard/windows";
 import type { JumpRecall } from "@/lib/jump-recall";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
 import { useStoreSnapshot } from "@/lib/data";
@@ -69,7 +69,6 @@ import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
 import {
   useBrowserPane,
-  useJarvisPane,
   useShowQuiet,
   useRailFilter,
   useShowUnmanagedWorktrees,
@@ -159,9 +158,7 @@ export function AgentBoardScreen() {
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether worktrees `tt task` didn't create get rail folders at all.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
-  const [jarvisPane, setJarvisPane] = useJarvisPane();
   const [browserPane] = useBrowserPane();
-  const nativeVisible = onScreen;
   // The idle stub's peek is view state — it belongs to one glance at one repo.
   // Quiet is a persisted view mode instead: its switch is in the rail header,
   // so the hiding is never something you can't find your way back out of.
@@ -181,6 +178,8 @@ export function AgentBoardScreen() {
   const setOverlay = useSetAgentOverlay();
 
   const {
+    unarchivedRepos,
+    archivedRepos,
     railRepos,
     shownRepos,
     queryHidden,
@@ -355,7 +354,7 @@ export function AgentBoardScreen() {
     addPaneToActive,
     ackFolder,
   });
-  const { openFiles, openPreview, openBrowser, openJarvis } = viewPanes;
+  const { openFiles, openPreview, openBrowser } = viewPanes;
 
   // A BEL or OSC 9/777 — Claude Code's "needs your input".
   useTauriEvent<{ termId: string; kind: string; body?: string }>(
@@ -414,6 +413,23 @@ export function AgentBoardScreen() {
     updateWins,
   });
   const { newSession, newRootShell, launchClaudeIn } = spawn;
+
+  // Opening a checkout lands on a shell, never a leftover files tile: windows
+  // with no session go, and with none left its first session is mounted, else
+  // a fresh shell started. Through refs, for the mount-only nav handler.
+  const openFolderRef = useRef({ wins, folderByDir, newSession });
+  openFolderRef.current = { wins, folderByDir, newSession };
+  function openFolder(folderDir: string) {
+    selectFolder(folderDir);
+    const cur = openFolderRef.current;
+    if (!cur.wins) return;
+    const kept = dropSessionlessWindows(cur.wins, folderDir);
+    if (kept !== cur.wins) updateWins([folderDir], (w) => dropSessionlessWindows(w, folderDir));
+    if (kept.windows.some((w) => w.folderDir === folderDir)) return;
+    const first = cur.folderByDir.get(folderDir)?.sessions[0];
+    if (first) selectSession(folderDir, first.id);
+    else void cur.newSession(folderDir);
+  }
 
   const lifecycle = sessionLifecycle({
     repos,
@@ -480,7 +496,7 @@ export function AgentBoardScreen() {
     jumpNonce,
     applyCollapse,
     selectSession,
-    selectFolder,
+    selectFolder: openFolder,
     focusWindow: actions.focusWindow,
     setJumpRecall,
     setRailCursor,
@@ -608,7 +624,7 @@ export function AgentBoardScreen() {
     tasks: snapshot.tasks,
     repoByFolder,
     openBrowser: browserPane ? openBrowser : undefined,
-    selectFolder,
+    selectFolder: openFolder,
     actions,
     setStartClaudePrompt: spawn.setStartClaudePrompt,
     openFork: (repoKey, base) => {
@@ -623,6 +639,7 @@ export function AgentBoardScreen() {
     withLiveSession: spawn.withLiveSession,
     setActiveFolderDir,
     ackFolder,
+    openFolder,
     taskCreation,
     viewPanes,
     openNextUp: nav.openNextUp,
@@ -746,8 +763,6 @@ export function AgentBoardScreen() {
       queryHidden={queryHidden}
       showUnmanagedWorktrees={showUnmanagedWorktrees}
       onSetShowUnmanagedWorktrees={setShowUnmanagedWorktrees}
-      jarvisPane={jarvisPane}
-      onSetJarvisPane={setJarvisPane}
       onOpenRepoManager={openRepoManager}
       onCleanupMissing={() => void cleanupMissing()}
       onClearDismissals={() => void attention.clearDismissals()}
@@ -757,7 +772,8 @@ export function AgentBoardScreen() {
   );
   const checkoutTree = (
     <CheckoutTree
-      repos={repos}
+      repos={unarchivedRepos}
+      archivedRepos={archivedRepos}
       shownRepos={shownRepos}
       query={query}
       onClearQuery={() => setQuery("")}
@@ -777,7 +793,6 @@ export function AgentBoardScreen() {
       onRecreateWorktree={recreateWorktree}
       shared={{
         now,
-        compactPct: state.compactRecommendPercent,
         prs: snapshot.prs,
         tasks: snapshot.tasks,
         selectedSessionId: selected?.sessionId ?? null,
@@ -791,7 +806,7 @@ export function AgentBoardScreen() {
         wins,
         actions,
         onToggle: toggleCollapsed,
-        onSelectFolder: selectFolder,
+        onSelectFolder: openFolder,
         onSelect: stableSelect,
         onNewSession: newSession,
         onRemoveRepo: requestRemoveRepo,
@@ -800,10 +815,9 @@ export function AgentBoardScreen() {
         onRenameCommit: stableRenameCommit,
         onOpenFiles: openFiles,
         onOpenPreview: openPreview,
-        // Undefined while `agentboard.jarvisPane` is off:
+        // Undefined while `agentboard.browserPane` is off:
         // no entry point rather than a disabled pane.
         onOpenBrowser: browserPane ? openBrowser : undefined,
-        onOpenJarvis: jarvisPane ? openJarvis : undefined,
         onClosePane: closePane,
       }}
     />
@@ -853,7 +867,7 @@ export function AgentBoardScreen() {
             repos={visibleRepos}
             activeFolderDir={activeFolderDir}
             attentionCount={attention.items.length}
-            onSelectFolder={selectFolder}
+            onSelectFolder={openFolder}
             onExpand={toggleRail}
             expandHint={shortcutHint("ab-toggle-rail")}
           />
@@ -867,16 +881,16 @@ export function AgentBoardScreen() {
               {/* The rail is a sidebar, so it keeps the width it was dragged to
                   when the *window* resizes (`preserve-pixel-size`) — the pane
                   area absorbs the change. The default, preserve-relative-size,
-                  scales it with the window instead, so a comfortable 520px rail
+                  scales it with the window instead, so a comfortable 640px rail
                   ends up a few hundred pixels narrower on a smaller window —
                   below the width a row is laid out for, which is where its
                   right-edge content starts disappearing past the rail's
                   clipping edge. minSize is that width: indent + chevron/icon +
                   a readable title + the four trailing icon buttons. */}
               <ResizablePanel
-                defaultSize="520px"
+                defaultSize="640px"
                 minSize="300px"
-                maxSize="760px"
+                maxSize="880px"
                 groupResizeBehavior="preserve-pixel-size"
               >
                 <RailPanel
@@ -899,8 +913,6 @@ export function AgentBoardScreen() {
                   scrollRef={railEdges.ref}
                   edges={railEdges}
                   focusRef={focusRef}
-                  jarvisPane={jarvisPane}
-                  nativeVisible={nativeVisible}
                 />
               </ResizablePanel>
               <ResizableHandle />
@@ -928,7 +940,6 @@ export function AgentBoardScreen() {
                   onOpenFiles={openFiles}
                   onOpenPreview={openPreview}
                   onOpenBrowser={browserPane ? openBrowser : undefined}
-                  onOpenJarvis={jarvisPane ? openJarvis : undefined}
                   onNewSession={newSession}
                   onNewTask={() => openRailNewTask(activeRepo.key)}
                   onRemoveRepo={requestRemoveRepo}
@@ -968,13 +979,12 @@ export function AgentBoardScreen() {
                     setFocusedPaneId(id);
                     setFocusLevel("pane");
                   }}
-                  onSelectFolder={selectFolder}
+                  onSelectFolder={openFolder}
                   jumpRecall={jumpRecall}
                   onDismissJumpRecall={() => setJumpRecall(null)}
                   termAttention={termAttention}
                   filesOpenRequests={viewPanes.filesOpenRequests}
                   previewRequests={viewPanes.previewRequests}
-                  nativeVisible={nativeVisible}
                   labelFor={labelFor}
                   focusTerminalRequest={focusTerminalRequest}
                   onSelectSession={(dir, id) => {

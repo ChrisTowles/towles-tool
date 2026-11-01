@@ -237,6 +237,7 @@ pub fn state_at(scenario: &Scenario, now_ms: i64) -> StatePayload {
                 needs: 0,
                 meta: None,
                 color: HexColor::default(),
+                archived: false,
             }),
         }
     }

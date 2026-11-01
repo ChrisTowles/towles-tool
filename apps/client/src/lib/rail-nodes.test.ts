@@ -71,17 +71,8 @@ describe("railNodes", () => {
     ]);
   });
 
-  it("keeps a folded row and drops only what it holds", () => {
-    expect(keys(nodes({ [FOLDER_KEY]: true }))).toEqual([
-      "r0:dotfiles",
-      "f1:dotfiles",
-      "s2:a",
-      "s2:b",
-      "r0:tt",
-      "f1:tt",
-      "s2:c",
-      "f1:feat-x",
-    ]);
+  it("keeps a folded repo's row and drops only what it holds; checkouts never fold", () => {
+    expect(keys(nodes({ [FOLDER_KEY]: true }))).toEqual(keys(nodes()));
     expect(keys(nodes({ [REPO_KEY]: true }))).toEqual([
       "r0:dotfiles",
       "f1:dotfiles",
@@ -111,7 +102,7 @@ describe("railNodes", () => {
     expect(primary).toMatchObject({
       kind: "folder",
       dir: "/code/dotfiles",
-      collapseKey: "path:/code/dotfiles::/code/dotfiles",
+      collapseKey: null,
       depth: 1,
     });
   });
@@ -186,16 +177,9 @@ describe("railMove", () => {
     expect(move("right", null)).toBeNull();
   });
 
-  it("folds under the cursor with left, then climbs to what holds it", () => {
-    expect(move("left", FOLDER_KEY)).toEqual({
-      kind: "collapse",
-      key: FOLDER_KEY,
-      collapsed: true,
-    });
-    expect(move("left", FOLDER_KEY, { [FOLDER_KEY]: true })).toEqual({
-      kind: "cursor",
-      key: REPO_KEY,
-    });
+  it("folds a repo under the cursor with left; elsewhere climbs to what holds it", () => {
+    expect(move("left", REPO_KEY)).toEqual({ kind: "collapse", key: REPO_KEY, collapsed: true });
+    expect(move("left", FOLDER_KEY)).toEqual({ kind: "cursor", key: REPO_KEY });
     expect(move("left", "session:d")).toEqual({ kind: "cursor", key: FOLDER_KEY });
     // A folded repo is the top of the tree — nothing left of it.
     expect(move("left", REPO_KEY, { [REPO_KEY]: true })).toBeNull();
@@ -248,8 +232,17 @@ describe("resolveCursor", () => {
   it("hands a vanished row to whatever now stands for it", () => {
     const all = nodes();
     const session = all.find((n) => n.key === "session:d")!;
-    const folded = nodes({ [FOLDER_KEY]: true });
-    expect(resolveCursor(folded, session)?.key).toBe(FOLDER_KEY);
+    const unmanaged = railNodes({
+      repos: REPOS,
+      idleDirs: new Map(),
+      idleRevealed: new Set(),
+      unmanagedDirs: new Map([[REPO_KEY, new Set(["/code/tt/wt/feat-x"])]]),
+      unmanagedRevealed: new Set(),
+      collapsed: {},
+      wins: null,
+    });
+    // Its checkout folded into the stub too, so the repo row stands for it.
+    expect(resolveCursor(unmanaged, session)?.key).toBe(REPO_KEY);
     // With the whole repo folded, the repo row is what is left of it.
     expect(resolveCursor(nodes({ [REPO_KEY]: true }), session)?.key).toBe(REPO_KEY);
     expect(resolveCursor([], session)).toBeNull();
@@ -257,7 +250,7 @@ describe("resolveCursor", () => {
 });
 
 describe("railCollapseAll / railExpandAll", () => {
-  it("folds every still-open repo and unfolds both levels back", () => {
+  it("folds every still-open repo and unfolds them back", () => {
     expect(railCollapseAll(REPOS, {})).toEqual([
       { key: "path:/code/dotfiles", collapsed: true },
       { key: REPO_KEY, collapsed: true },
@@ -267,7 +260,6 @@ describe("railCollapseAll / railExpandAll", () => {
     ]);
     expect(railExpandAll(REPOS, { [REPO_KEY]: true, [FOLDER_KEY]: true })).toEqual([
       { key: REPO_KEY, collapsed: false },
-      { key: FOLDER_KEY, collapsed: false },
     ]);
     expect(railExpandAll(REPOS, {})).toEqual([]);
   });

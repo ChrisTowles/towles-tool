@@ -142,11 +142,7 @@ window, merely `hidden` elsewhere, so unmount means "really closed" and the
 unmount effect can kill the process. **A new pane kind that owns a process or
 accumulates state must join the pool and keep its state outside the component.**
 Chrome (`browser-pane.tsx`) is the near miss: it owns a browser process, but that
-lives in Rust, so the component is only a view and stays conditional. Jarvis
-(`jarvis-pane.tsx`) isn't pooled either, since unmounting retires its Bevy
-renderer rather than destroying it — but its body is a compositor surface *above*
-the webview, so `hidden` on an ancestor is invisible to it and screen switches
-must push down `visible={false}`.
+lives in Rust, so the component is only a view and stays conditional.
 
 ## Clickable rows can't be `<button>`s
 
@@ -163,8 +159,8 @@ in node with no renderer. `node scripts/drive.mjs console` is the check.
 ## The rail, and animation
 
 Two areas with rules of their own, and only when you are inside them: the rail is
-**five files split by what a row *is*** (a new row kind gets a sixth, not a grown
-one) and boxes a control or an alert but never a fact; animation is **`motion`
+**split into files by what a row *is*** (a new row kind gets a new file, not a
+grown one) and boxes a control or an alert but never a fact; animation is **`motion`
 for enter/exit of backend-snapshot lists, `tw-animate-css` for everything else**,
 and the choice is mechanical. Read
 **[docs/CLIENT-RAIL-AND-MOTION.md](../../docs/CLIENT-RAIL-AND-MOTION.md)** before

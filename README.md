@@ -35,29 +35,12 @@ Biggest gap first, checked against Claude Desktop 1.22209.0: **handing work to a
 agent is one gesture** (a half-formed thought, a pasted screenshot, `#` to attach
 an issue — and the worktree is minted); **the fleet is one screen**; **a task's
 panes tile beside its terminals** (diff, file tree, a live dev-server preview you
-can draw on, a native GPU pane); **attention is modelled, not guessed**; and
+can draw on); **attention is modelled, not guessed**; and
 **where your day went is answerable** from an on-disk event log. The full tour:
 **[docs/FEATURES.md](docs/FEATURES.md)**.
-Four media carry it, because none covers everything: **HTML/GUI**, **terminal**
-(a real PTY, where the agents work), **git repos** (storage, and how you hand
-work to someone else), and **Bevy** (3D — the newest and least built out).
-
-## Critical goal: Solari, running natively inside the app
-
-The app renders a live **Bevy** scene in a real region of its own window: a
-native compositor surface (`wl_subsurface` on Wayland, `NSView`/`CAMetalLayer` on
-macOS) sits in a rectangle of the Tauri window and Bevy draws into it on the GPU
-— no WebAssembly, no frames over IPC. Only a native surface can host a hardware
-ray-tracing pipeline, which settles the embedding approach; it lives in
-`crates/tt-jarvis` and `crates-tauri/tt-pane`. Bevy comes from
-[slyedoc/bevy](https://github.com/slyedoc/bevy), branch `solari-rt-pipeline`,
-rather than crates.io (`Cargo.lock` pins the revision) — that fork is where
-**Solari**, Bevy's real-time raytraced lighting, is being built, and the goal is
-running it live in a tool used all day, on a real desktop with real windows.
- Building
-that fork costs more than the rest of the workspace together, so it is behind a
-Cargo feature that is off by default — `TT_BEVY=1 bun run dev`, or `--features
-bevy` ([docs/COMMANDS.md](docs/COMMANDS.md#the-bevy-feature)).
+Three media carry it, because none covers everything: **HTML/GUI**, **terminal**
+(a real PTY, where the agents work), and **git repos** (storage, and how you hand
+work to someone else).
 
 ## The two surfaces
 
@@ -110,22 +93,53 @@ same machinery. The guide: **[docs/TASKS-GUIDE.md](docs/TASKS-GUIDE.md)**; the
 conventions: **[docs/WORKTREE-TASKS.md](docs/WORKTREE-TASKS.md)**; every
 command: **[docs/COMMANDS.md](docs/COMMANDS.md)**.
 
-## Claude Code plugin
+## Claude Code plugins
 
-The repo doubles as a Claude Code plugin marketplace. **`tt`** (in
-[`packages/core`](packages/core/README.md)) packages the map-vs-territory
-workflow commands — `/tt:blindspot`, `/tt:brainstorm`, `/tt:interview`,
-`/tt:references` before implementation, `/tt:plan` during, `/tt:pitch`,
-`/tt:comprehend`, `/tt:memories`, `/tt:handoff` after. **`towles-tool-app`**
-([`packages/app`](packages/app/README.md)) bridges Claude Code to the app itself:
-its MCP server over loopback HTTP, the `towles-tool` and `task-onboarding`
-skills, a hook that refreshes PR/issue data after a `gh` mutation.
+The repo doubles as a Claude Code plugin marketplace named `towles-tool`, with
+two plugins you install separately:
+
+- **`tt`** ([`packages/core`](packages/core/README.md)) — the map-vs-territory
+  workflow commands: `/tt:blindspot`, `/tt:brainstorm`, `/tt:interview`,
+  `/tt:references` before implementation, `/tt:plan` during, `/tt:pitch`,
+  `/tt:comprehend`, `/tt:memories`, `/tt:handoff` after, and `/tt:pr`/`/tt:prm`
+  to land the work. Its mod offers each `! <command>` Claude hands you as a copy
+  row above the prompt. Needs nothing else installed.
+- **`towles-tool-app`** ([`packages/app`](packages/app/README.md)) — bridges
+  Claude Code to the desktop app: its MCP server over loopback HTTP (board
+  tasks, Preview pane, calendar), a band above the prompt with this checkout's
+  task, PR and next meeting, `/park` and `/next`, the `towles-tool` and
+  `task-onboarding` skills, and a hook that refreshes PR/issue data after a `gh`
+  mutation. **Requires the app running and `tt` on `PATH`**; without them its
+  tools and hooks have nothing to talk to.
+
+Install from inside Claude Code (2.1.275 or later):
+
+```text
+/plugin install tt --marketplace ChrisTowles/towles-tool
+/plugin install towles-tool-app --marketplace ChrisTowles/towles-tool
+```
+
+Or from a shell:
 
 ```sh
-claude plugin marketplace add ChrisTowles/towles-tool   # `update` to pull the latest
-claude plugin enable tt@towles-tool
-claude plugin enable towles-tool-app@towles-tool
+claude plugin marketplace add ChrisTowles/towles-tool
+claude plugin install tt@towles-tool
+claude plugin install towles-tool-app@towles-tool
 ```
+
+Restart Claude Code to load them, and check with
+`claude plugin list`. To pick up a new release, refresh the marketplace, then
+update each plugin:
+
+```sh
+claude plugin marketplace update towles-tool
+claude plugin update tt@towles-tool
+claude plugin update towles-tool-app@towles-tool
+```
+
+A release is just a `version` bump in a package's `.claude-plugin/plugin.json`
+landing on `main` — `.githooks/pre-commit` bumps it for any commit that touches
+a plugin package.
 
 ## Layout and lineage
 

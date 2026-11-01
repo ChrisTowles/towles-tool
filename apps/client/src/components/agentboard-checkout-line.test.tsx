@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
-import { FolderHeader } from "@/components/agentboard-folder-header";
+import { CheckoutLine } from "@/components/agentboard-checkout-line";
 import { renderWithProviders } from "@/test/render";
 import type { FolderData } from "@/lib/agentboard/types";
 import type { SessionActions } from "@/lib/agentboard/actions";
-
-const LONG = "docs/anthropic-application-form";
 
 const folder = {
   name: "toolbox",
@@ -14,7 +12,7 @@ const folder = {
   repoRoot: "/home/me/code/p/toolbox",
   record: { origin: "checkout" },
   dirMissing: false,
-  branch: LONG,
+  branch: "docs/anthropic-application-form",
   isWorktree: false,
   uncommittedFiles: 6,
   uncommittedAdded: 98,
@@ -27,26 +25,26 @@ const folder = {
   quiet: false,
 } as unknown as FolderData;
 
-describe("FolderHeader on the primary checkout", () => {
-  it("keeps the checkout name in a block with a width floor, and lets the branch truncate", () => {
+describe("CheckoutLine on the primary checkout", () => {
+  it("names the line by its branch and carries its session chips inline", () => {
     renderWithProviders(
-      <FolderHeader
+      <CheckoutLine
         title="toolbox"
         folder={folder}
         needs={0}
-        collapsed={false}
         active={false}
         cursor={false}
         now={0}
         actions={{} as SessionActions}
-        onToggle={vi.fn<() => void>()}
+        onSelect={vi.fn<() => void>()}
         onNewSession={vi.fn<() => void>()}
         onOpenFiles={vi.fn<() => void>()}
         onOpenPreview={vi.fn<() => void>()}
-      />,
+      >
+        <span>chip-a</span>
+      </CheckoutLine>,
     );
-    const name = screen.getByText("Root");
-    expect(name.parentElement?.parentElement).toHaveClass("min-w-40");
-    expect(screen.getByText(`⎇ ${LONG}`)).toHaveClass("truncate", "min-w-0");
+    expect(screen.getByRole("button", { name: folder.branch })).toHaveClass("truncate");
+    expect(screen.getByText("chip-a")).toBeInTheDocument();
   });
 });

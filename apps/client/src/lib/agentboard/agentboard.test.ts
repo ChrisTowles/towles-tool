@@ -24,6 +24,7 @@ import {
   issuesForFolder,
   pathScope,
   prForFolder,
+  partitionArchived,
   partitionQuiet,
   searchRepos,
   taskForFolder,
@@ -47,9 +48,6 @@ import { colCount, dragCol, paneRects, snapCol } from "@/lib/agentboard/layout";
 import {
   previewPaneId,
   isFilesPane,
-  isJarvisPane,
-  jarvisPaneDir,
-  jarvisPaneId,
   filesPaneDir,
   filesPaneId,
   filesPaneTarget,
@@ -83,6 +81,7 @@ import {
   changedFolderDirs,
   moveFocus,
   dropPane,
+  dropSessionlessWindows,
   paneCloseTarget,
   successorPane,
   hydrateWins,
@@ -743,26 +742,6 @@ describe("folder pane ids", () => {
     expect(folderPaneDir(preview)).toBe("/home/me/code/p/proj");
     expect(folderPaneDir("s00deadbeef00cafe")).toBeNull();
   });
-
-  it("gives the native (jarvis) pane a folder-scoped id, first-class in persistence", () => {
-    const dir = "/home/me/code/p/proj";
-    const jarvis = jarvisPaneId(dir);
-    expect(isJarvisPane(jarvis)).toBe(true);
-    expect(jarvisPaneDir(jarvis)).toBe(dir);
-    // One native surface per folder: each attached pane owns a subsurface and
-    // a vsync-paced Bevy render thread, so the id has to cap it at one.
-    expect(jarvisPaneId(dir)).toBe(jarvis);
-    for (const other of [filesPaneId(dir), previewPaneId(dir)]) {
-      expect(other).not.toBe(jarvis);
-      expect(isJarvisPane(other)).toBe(false);
-    }
-    expect(isFilesPane(jarvis)).toBe(false);
-    // Being in `folderPaneDir` is what makes it survive layout restore.
-    expect(folderPaneDir(jarvis)).toBe(dir);
-    expect(paneSession(jarvis)).toBeNull();
-    expect(isJarvisPane("s00deadbeef00cafe")).toBe(false);
-    expect(jarvisPaneDir("s00deadbeef00cafe")).toBeNull();
-  });
 });
 
 const win = (id: string, folderDir: string, panes: Panes) => ({
@@ -901,6 +880,27 @@ describe("successorPane", () => {
 
 const valid = (sessions: string[], folders: string[]) =>
   [new Set(sessions), new Set(folders)] as const;
+
+describe("dropSessionlessWindows", () => {
+  it("drops a folder's files-only window so opening it lands on a shell", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/f", ["~files:/f"]), win("w2", "/f", ["s1", "~files:/f"])],
+      activeWindows: { "/f": "w1" },
+    };
+    expect(dropSessionlessWindows(w, "/f")).toEqual({
+      windows: [win("w2", "/f", ["s1", "~files:/f"])],
+      activeWindows: {},
+    });
+  });
+
+  it("leaves other folders and an untouched folder alone", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/g", ["~files:/g"]), win("w2", "/f", ["s1"])],
+      activeWindows: { "/f": "w2", "/g": "w1" },
+    };
+    expect(dropSessionlessWindows(w, "/f")).toBe(w);
+  });
+});
 
 describe("pruneWins", () => {
   it("drops ghost session panes so survivors tile from the first task", () => {
@@ -1373,6 +1373,19 @@ describe("isFolderStale", () => {
 });
 
 const dirs = (repos: RepoData[]) => repos.flatMap((r) => r.folders.map((f) => f.dir));
+
+describe("partitionArchived", () => {
+  it("takes an archived repo off the rail whole, keeping the rest in order", () => {
+    const repos = [
+      repo("a", [folder({ dir: "/a" })]),
+      { ...repo("b", [folder({ dir: "/b" })]), archived: true },
+      repo("c", [folder({ dir: "/c" })]),
+    ];
+    const { active, archived } = partitionArchived(repos);
+    expect(active.map((r) => r.key)).toEqual(["a", "c"]);
+    expect(archived.map((r) => r.key)).toEqual(["b"]);
+  });
+});
 
 describe("partitionQuiet", () => {
   const SHOWN = { show: false, activeFolderDir: null };

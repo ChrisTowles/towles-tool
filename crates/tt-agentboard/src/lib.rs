@@ -12,6 +12,7 @@
 
 use thiserror::Error;
 
+pub mod auto_archive;
 pub mod bridge;
 pub mod claude_cli;
 pub mod cleanup;
@@ -31,6 +32,7 @@ pub mod pr_base;
 pub mod procenv;
 pub mod pty_status;
 pub mod queue;
+pub mod rail_sort;
 pub mod repo_meta;
 pub mod repos;
 pub mod resume;

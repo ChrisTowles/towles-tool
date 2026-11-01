@@ -2,8 +2,6 @@ const FILES_PANE_PREFIX = "~files:";
 
 const PREVIEW_PANE_PREFIX = "~preview:";
 
-const JARVIS_PANE_PREFIX = "~jarvis:";
-
 const BROWSER_PANE_PREFIX = "~browser:";
 
 export function filesPaneId(folderDir: string): string {
@@ -45,20 +43,6 @@ export function previewPaneDir(paneId: string): string | null {
   return isPreviewPane(paneId) ? paneId.slice(PREVIEW_PANE_PREFIX.length) : null;
 }
 
-/** A rectangle of the window handed to `tt-jarvis`'s Bevy renderer as a real
- * compositor surface, tiled beside the folder's terminals. */
-export function jarvisPaneId(folderDir: string): string {
-  return `${JARVIS_PANE_PREFIX}${folderDir}`;
-}
-
-export function isJarvisPane(paneId: string): boolean {
-  return paneId.startsWith(JARVIS_PANE_PREFIX);
-}
-
-export function jarvisPaneDir(paneId: string): string | null {
-  return isJarvisPane(paneId) ? paneId.slice(JARVIS_PANE_PREFIX.length) : null;
-}
-
 /** A real Chrome on the app-owned profile, streamed onto a canvas. */
 export function browserPaneId(folderDir: string): string {
   return `${BROWSER_PANE_PREFIX}${folderDir}`;
@@ -73,12 +57,7 @@ export function browserPaneDir(paneId: string): string | null {
 }
 
 export function folderPaneDir(paneId: string): string | null {
-  return (
-    filesPaneDir(paneId) ??
-    previewPaneDir(paneId) ??
-    jarvisPaneDir(paneId) ??
-    browserPaneDir(paneId)
-  );
+  return filesPaneDir(paneId) ?? previewPaneDir(paneId) ?? browserPaneDir(paneId);
 }
 
 /** A session pane is its own id; folder panes have none. */

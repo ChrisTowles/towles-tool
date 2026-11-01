@@ -1,5 +1,10 @@
 import { useCallback } from "react";
-import { persistAgentboardSetting, useLiveSetting, type RailFilter } from "./settings";
+import {
+  persistAgentboardSetting,
+  useLiveSetting,
+  type RailFilter,
+  type RailSort,
+} from "./settings";
 import { fire, invoke } from "./tauri";
 
 /** Everything, so a fresh install never wonders where a checkout went.
@@ -46,6 +51,28 @@ export function useRailFilter(): {
   return { filter, recentHours, setFilter, setRecentHours };
 }
 
+/** Mirrors `tt_config::DEFAULT_RAIL_SORT`. */
+const DEFAULT_RAIL_SORT: RailSort = "manual";
+
+/** How the rail orders its repos, or the tasks inside each. Rust sorts the
+ * payload, so the setter goes through `ab_set_rail_sort` (which leaves the
+ * other key alone) and Rust owns the write. */
+export function useRailSort(which: "repos" | "tasks"): [RailSort, (next: RailSort) => void] {
+  const [sort, setSortState] = useLiveSetting(
+    (s) => (which === "repos" ? s.agentboard?.railRepoSort : s.agentboard?.railTaskSort),
+    DEFAULT_RAIL_SORT,
+  );
+  // Rust owns this write (see above) — not `persistAgentboardSetting`.
+  const setSort = useCallback(
+    (next: RailSort) => {
+      setSortState(next);
+      fire(invoke("ab_set_rail_sort", { [which]: next }));
+    },
+    [which, setSortState],
+  );
+  return [sort, setSort];
+}
+
 /** Off: a hand-marked quiet checkout is hidden until you say otherwise. */
 const DEFAULT_SHOW_QUIET = false;
 
@@ -87,8 +114,6 @@ export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
   return [show, persist];
 }
 
-/** Off, so the pane costs nothing until asked for: mounting `NativePane` is
- * what starts the render thread. */
 export const DEFAULT_BROWSER_PANE = false;
 
 /** Whether checkouts offer the Chrome pane. Off means no entry point rather
@@ -99,23 +124,6 @@ export function useBrowserPane(): [boolean, (on: boolean) => void] {
     (next: boolean) => {
       setOn(next);
       void persistAgentboardSetting("browserPane", next);
-    },
-    [setOn],
-  );
-  return [on, persist];
-}
-
-export const DEFAULT_JARVIS_PANE = false;
-
-/** One switch for both Bevy surfaces: the rail strip and the `jarvis` pane.
- * Off, no `NativePane` renders at all — but it is not a way to reclaim one
- * after the fact: a shown pane's renderer is parked for the app's life. */
-export function useJarvisPane(): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useLiveSetting((s) => s.agentboard?.jarvisPane, DEFAULT_JARVIS_PANE);
-  const persist = useCallback(
-    (next: boolean) => {
-      setOn(next);
-      void persistAgentboardSetting("jarvisPane", next);
     },
     [setOn],
   );

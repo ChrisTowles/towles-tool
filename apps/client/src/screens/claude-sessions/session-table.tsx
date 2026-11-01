@@ -207,6 +207,37 @@ function TokenBar({ color, fraction }: { color: string; fraction: number }) {
   );
 }
 
+type AgentRow = {
+  label: string;
+  agentType: string | null;
+  tokens: number;
+  costUsd: number;
+  color: string;
+};
+
+/** The session's own spend, then each subagent's. The session row is the Ledger
+ * row minus its subagents, since the Ledger row already includes them. */
+function agentRows(session: ClaudeSession | null, data: SessionBreakdown | null): AgentRow[] {
+  if (!session || !data) return [];
+  const subs = data.subagents.map((s) => ({
+    label: s.description,
+    agentType: s.agentType,
+    tokens: s.inputTokens + s.outputTokens,
+    costUsd: s.costUsd,
+    color: toolColor("Agent"),
+  }));
+  const subTokens = subs.reduce((n, s) => n + s.tokens, 0);
+  const subCost = subs.reduce((n, s) => n + s.costUsd, 0);
+  const own = {
+    label: "This session",
+    agentType: null,
+    tokens: Math.max(0, session.inputTokens + session.outputTokens - subTokens),
+    costUsd: Math.max(0, session.costUsd - subCost),
+    color: toolColor(null),
+  };
+  return [own, ...subs];
+}
+
 /** Turn/tool drill-down for one session — fetched on open, the only
  * per-session re-parse in the screen. */
 export function BreakdownDialog({
@@ -236,6 +267,9 @@ export function BreakdownDialog({
     .toSorted((a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens))
     .slice(0, 10);
   const maxTurn = Math.max(1, ...topTurns.map((t) => t.inputTokens + t.outputTokens));
+  // The session's own row, then its 10 heaviest subagents.
+  const agents = agentRows(session, data).slice(0, 11);
+  const maxAgent = Math.max(1, ...agents.map((a) => a.tokens));
 
   return (
     <Dialog.Root open={!!session} onOpenChange={(o) => !o && onClose()}>
@@ -257,6 +291,42 @@ export function BreakdownDialog({
           <p className="text-sm text-muted-foreground">Parsing session…</p>
         ) : data ? (
           <div className="flex flex-col gap-5">
+            {agents.length > 1 && (
+              <section>
+                <h4 className="mb-2 text-mini font-medium uppercase tracking-wider text-muted-foreground">
+                  Subagents
+                </h4>
+                <div className="flex flex-col gap-1.5">
+                  {agents.map((a, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <span
+                        className="size-2.5 shrink-0 rounded-[3px]"
+                        style={{ background: a.color }}
+                      />
+                      <span className="w-52 truncate text-foreground" title={a.label}>
+                        {a.label}
+                      </span>
+                      <span className="w-24 shrink-0 truncate text-xs text-muted-foreground">
+                        {a.agentType}
+                      </span>
+                      <TokenBar color={a.color} fraction={a.tokens / maxAgent} />
+                      <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                        {fmtTokens(a.tokens)}
+                      </span>
+                      <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                        {fmtUsd(a.costUsd)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {data.subagents.length > agents.length - 1 && (
+                  <p className="mt-1.5 text-mini text-muted-foreground">
+                    Top {agents.length - 1} of {data.subagents.length} subagents.
+                  </p>
+                )}
+              </section>
+            )}
+
             <section>
               <h4 className="mb-2 text-mini font-medium uppercase tracking-wider text-muted-foreground">
                 Where the tokens went
@@ -302,9 +372,17 @@ export function BreakdownDialog({
                         className="size-2.5 shrink-0 rounded-[3px]"
                         style={{ background: toolColor(t.toolName) }}
                       />
-                      <span className="w-52 truncate text-foreground" title={t.name}>
+                      <span
+                        className="w-52 truncate text-foreground"
+                        title={t.agent ? `${t.name} — ${t.agent}` : t.name}
+                      >
                         {t.name}
                       </span>
+                      {data.subagents.length > 0 && (
+                        <span className="w-24 shrink-0 truncate text-xs text-muted-foreground">
+                          {t.agent ?? "session"}
+                        </span>
+                      )}
                       <TokenBar
                         color={toolColor(t.toolName)}
                         fraction={(t.inputTokens + t.outputTokens) / maxTurn}

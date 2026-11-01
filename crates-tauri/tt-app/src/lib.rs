@@ -36,7 +36,6 @@ mod task_explorer;
 mod telemetry;
 mod terminal;
 mod update;
-mod wdio_window;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -274,6 +273,7 @@ pub fn run() {
                     let mut needs_watch = tt_agentboard::NeedsYouWatch::new();
                     // …and once per folder whose last agent stopped working.
                     let mut turn_watch = tt_agentboard::TurnEndWatch::new();
+                    let mut auto_archived_at = 0;
                     loop {
                         emit.notified().await;
                         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -296,6 +296,18 @@ pub fn run() {
                             store::emit_snapshot_from_app(&handle);
                         }
                         queue::observe(&handle, &payload);
+                        let now = store::now_ms();
+                        if now - auto_archived_at >= agentboard::AUTO_ARCHIVE_EVERY_MS {
+                            auto_archived_at = now;
+                            let (h, p) = (handle.clone(), payload.clone());
+                            let archived = tauri::async_runtime::spawn_blocking(move || {
+                                agentboard::auto_archive_tick(&h, &p)
+                            })
+                            .await;
+                            if archived.unwrap_or(false) {
+                                emit.notify_one();
+                            }
+                        }
 
                         if gate.should_emit(&payload, store::now_ms()) {
                             // An agent's turn ending is the only notice that a
@@ -642,8 +654,6 @@ pub fn run() {
         .manage(queue::QueueState::default())
         .manage(browser::BrowserHost::default())
         .manage(codeserver::CodeServerHost::default())
-        // Shared: a pane outlives the command that created it (see `tt-pane`).
-        .manage(tt_pane::PaneHost::shared())
         .manage(resume::ResumeState::begin())
         .manage(terminal::TermState::default())
         .manage(task::TaskPhases::default())
@@ -683,11 +693,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_task,
             ui_action,
-            tt_pane::commands::pane_attach,
-            tt_pane::commands::pane_set_rect,
-            tt_pane::commands::pane_set_visible,
-            tt_pane::commands::pane_detach,
-            wdio_window::wdio_place_on_test_monitor,
             task_explorer::task_explorer_snapshot,
             agentboard::ab_get_state,
             queue::queue_get,
@@ -712,6 +717,8 @@ pub fn run() {
             agentboard::ab_close_session,
             agentboard::ab_set_repo_meta,
             agentboard::ab_set_repo_order,
+            agentboard::ab_set_repo_archived,
+            agentboard::ab_set_rail_sort,
             agentboard::ab_set_folder_base_branch,
             agentboard::ab_set_folder_focus,
             agentboard::ab_set_folder_quiet,

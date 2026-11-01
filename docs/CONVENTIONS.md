@@ -79,8 +79,7 @@ hardest are repeated in [CLAUDE.md](../CLAUDE.md); this is the whole list.
   number, so the bug arrived disguised as success. Two defences, both cheap:
   panic on the failure of whatever you are measuring *through*, and confirm
   pixels reached the screen (`cosmic-screenshot`, or a renderer-side capture
-  like `tt_jarvis::jarvis::capture_frame_after` when the window may be
-  offscreen) before believing any figure.
+  when the window may be offscreen) before believing any figure.
 - **Test windows go on the secondary monitor.** Chris works on the primary
   while a harness runs, so a window landing there interrupts him once per run.
   Wayland clients cannot position their own toplevels; target an output by

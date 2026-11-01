@@ -10,3 +10,12 @@ export const railRowMotion = {
   exit: { opacity: 0, height: 0, overflow: "hidden" },
   transition: { duration: 0.15, ease: "easeOut" },
 } as const;
+
+/** Enter/exit for a chip inline on a checkout line: a fade only, since the
+ * line wraps and a width tween would shove its siblings sideways. */
+export const railChipMotion = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.15, ease: "easeOut" },
+} as const;

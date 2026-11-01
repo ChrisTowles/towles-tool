@@ -15,15 +15,24 @@ owns is on the tree only, until its "adopt" chip makes it a task. On Tree the
 checkout tree below *is* the rail, and `lib/rail-nodes.ts` is the one walk its
 cursor, jump digits and fold chords read.
 
-## The checkout tree is seven files, split by what a row *is*
+## The checkout tree is eight files, split by what a row *is*
 
 `components/agentboard-rail.tsx` is the rail's own chrome (collapsed strip,
-rollup tally) — not the tree, which is `agentboard-repo-group` (a repo) →
-`agentboard-folder-header` (a checkout), or `agentboard-home-header` (`~`) → `agentboard-session-row` (a PTY) /
-`agentboard-pane-rows`, plus `agentboard-fold-rows` for the rows that stand for
-rows *not* shown ("N idle", "N unmanaged"), with shared atoms in
-`components/agentboard-bits/` and pure logic in `lib/agentboard/`. A new row kind gets an
-eighth file, not a grown one.
+rollup tally) — not the tree, which is `agentboard-repo-group` (a repo, in a
+left column) → `agentboard-checkout-line` (a checkout, one line), or
+`agentboard-home-header` (`~`) → `agentboard-session-chip` (a PTY, inline on its
+line) / `agentboard-pane-chips`, plus `agentboard-fold-rows` for the rows that stand for
+rows *not* shown ("N idle", "N unmanaged") and `agentboard-archived-rows` for
+the archived repos beneath the tree, with shared atoms in
+`components/agentboard-bits/` and pure logic in `lib/agentboard/`. A new row kind gets a
+ninth file, not a grown one.
+
+**Order is Rust's, archive is a flag.** `tt_agentboard::rail_sort` sorts the
+payload by `agentboard.railRepoSort`/`railTaskSort` (set through
+`ab_set_rail_sort`), so nothing client-side re-sorts. An archived repo
+(`archivedPaths` in `repos.json`) still arrives, flagged `archived`;
+`partitionArchived` takes it off the rail before every other filter, and the
+"N archived" row is the only way back to it.
 
 **`~` is always the first group.** The engine appends one `home`-origin row
 for the home directory (a tracked `~` repo replaces it), and the longest-prefix
@@ -46,10 +55,15 @@ only needs-you, port drift, safe-to-delete and deleting keep a resting box. A
 pane *header* is the opposite case and keeps the bordered `labeled` form. The
 rest of the look lives in the `visual-design` skill.
 
-A folder row is **one line when the rail is wide enough, two when it isn't** —
-`@container/row` at 26rem, an `order` swap keeping the toolbar on the name's line
-while git counts drop below. Container, not viewport: the rail is independently
-resizable, so the question is *this row's* room.
+**Built for a wide rail, degrading by container.** At 34rem a repo's name is a
+sticky left column beside its checkout lines (`@container/repo`); narrower, it
+stacks back into a header row. A checkout line is name | session chips | facts
+from 24rem (`@container/line`); narrower, its chips wrap onto a second line.
+Checkout lines never fold — their sessions *are* the line — so only repos
+collapse. Branch, PR, base and spend are not on the line at all: they are the
+task header's labeled facts (`agentboard-working-context`), along with model,
+cache and context in the pane chrome. Container, not viewport: the rail is
+independently resizable.
 
 ## Two animation idioms — the choice is mechanical, not stylistic
 

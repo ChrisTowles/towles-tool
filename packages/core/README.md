@@ -70,7 +70,7 @@ offers are deduplicated, at most three, with no model call.
 ```
 
 The rows sit at the bottom of the band above the prompt, under anything another
-mod draws there (the `towles-tool-app` band). A digit in the empty prompt (or a
+mod draws there. A digit in the empty prompt (or a
 click) copies that one; `a`, with the band focused, copies all of them in order,
 apart enough that a clipboard manager keeps each entry. The offer clears when
 the next turn starts. A session whose last three offers went uncopied is left
@@ -95,5 +95,12 @@ Or from a shell:
 
 ```bash
 claude plugin marketplace add ChrisTowles/towles-tool
-claude plugin enable tt@towles-tool
+claude plugin install tt@towles-tool
+```
+
+Restart Claude Code to load it. To pick up a new release:
+
+```bash
+claude plugin marketplace update towles-tool
+claude plugin update tt@towles-tool
 ```

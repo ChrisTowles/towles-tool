@@ -128,6 +128,9 @@ const NotifyLevelSchema = Schema.Literals(["routine", "important", "urgent"]);
  * asks about the last N hours. */
 const RailFilterSchema = Schema.Literals(["all", "active", "recent"]);
 
+/** Mirrors Rust's `tt_config::RailSort`. */
+const RailSortSchema = Schema.Literals(["manual", "name", "recent"]);
+
 /** An optional key whose unrecognized value reads as unset, mirroring the Rust
  * reader's tolerance: a newer build's level or a hand-edit must not fail the
  * whole settings parse. */
@@ -151,9 +154,11 @@ const AgentboardBlockSchema = open({
   autoCloseLanded: Schema.optional(Schema.Boolean),
   railFilter: lenient(RailFilterSchema),
   railRecentHours: Schema.optional(Schema.Number),
+  autoArchiveAfterHours: Schema.optional(Schema.Number),
+  railRepoSort: lenient(RailSortSchema),
+  railTaskSort: lenient(RailSortSchema),
   showQuiet: Schema.optional(Schema.Boolean),
   showUnmanagedWorktrees: Schema.optional(Schema.Boolean),
-  jarvisPane: Schema.optional(Schema.Boolean),
   browserPane: Schema.optional(Schema.Boolean),
   pcKeybindings: Schema.optional(Schema.Boolean),
 });

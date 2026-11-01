@@ -158,7 +158,7 @@ impl WindowsStore {
 /// Pane-id prefixes marking a *folder* pane, which encodes a folder dir instead
 /// of a session id. Must match the prefixes `folderPaneDir` walks in
 /// `apps/client/src/lib/agentboard/pane-ids.ts`.
-const FOLDER_PANE_PREFIXES: [&str; 4] = ["~files:", "~preview:", "~jarvis:", "~browser:"];
+const FOLDER_PANE_PREFIXES: [&str; 3] = ["~files:", "~preview:", "~browser:"];
 
 /// The folder dir a folder-pane id points at (`None` for session panes).
 fn folder_pane_dir(pane_id: &str) -> Option<&str> {
