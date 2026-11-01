@@ -82,10 +82,11 @@ export function railNodes(v: RailVisibility): RailNode[] {
         repoKey: repo.key,
         dir: folder.dir,
         sessionId: null,
-        collapseKey: key,
+        // A checkout line never folds: its sessions sit on the line itself.
+        collapseKey: null,
         depth: 1,
       });
-      if (!collapsed[key]) pushSessions(out, repo, folder, wins, 2);
+      pushSessions(out, repo, folder, wins, 2);
     }
   }
   return out;

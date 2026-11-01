@@ -55,17 +55,10 @@ describe("railHotkeyTargets", () => {
     expect(targets({ collapsed: { [SOLO.key]: true } })).toEqual(["c", "d", "e"]);
   });
 
-  it("skips a collapsed checkout inside an expanded repo", () => {
+  it("ignores a checkout key left in the collapse map — checkout lines never fold", () => {
     expect(targets({ collapsed: { [`${MULTI.key}::/code/tt`]: true } })).toEqual([
       "a",
       "b",
-      "d",
-      "e",
-    ]);
-  });
-
-  it("skips a collapsed single-checkout repo's checkout row like any other", () => {
-    expect(targets({ collapsed: { [`${SOLO.key}::/code/dotfiles`]: true } })).toEqual([
       "c",
       "d",
       "e",

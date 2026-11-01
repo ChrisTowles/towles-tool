@@ -793,7 +793,6 @@ export function AgentBoardScreen() {
       onRecreateWorktree={recreateWorktree}
       shared={{
         now,
-        compactPct: state.compactRecommendPercent,
         prs: snapshot.prs,
         tasks: snapshot.tasks,
         selectedSessionId: selected?.sessionId ?? null,
@@ -882,16 +881,16 @@ export function AgentBoardScreen() {
               {/* The rail is a sidebar, so it keeps the width it was dragged to
                   when the *window* resizes (`preserve-pixel-size`) — the pane
                   area absorbs the change. The default, preserve-relative-size,
-                  scales it with the window instead, so a comfortable 520px rail
+                  scales it with the window instead, so a comfortable 640px rail
                   ends up a few hundred pixels narrower on a smaller window —
                   below the width a row is laid out for, which is where its
                   right-edge content starts disappearing past the rail's
                   clipping edge. minSize is that width: indent + chevron/icon +
                   a readable title + the four trailing icon buttons. */}
               <ResizablePanel
-                defaultSize="520px"
+                defaultSize="640px"
                 minSize="300px"
-                maxSize="760px"
+                maxSize="880px"
                 groupResizeBehavior="preserve-pixel-size"
               >
                 <RailPanel

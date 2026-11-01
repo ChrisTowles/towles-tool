@@ -42,8 +42,9 @@ specimens, token/recipe tables, the ΔE rationale — is
   a state: an unwashed header *means* main checkout. Status and attention
   always render unchanged on top. **The rails barely wash**: a repo row (queue
   or tree) wears its color on icon and name (ink lifted toward the foreground,
-  since the palette is muted) and a solid left edge; only a tree *repo header*
-  adds a 6% wash, never the rows beneath. A repo pill is neutral until picked —
+  since the palette is muted) and a solid left edge — the tree's repo column
+  included, which takes no wash at all, nor do the checkout lines beside it;
+  the task header is the one surface that washes. A repo pill is neutral until picked —
   with every row washed, color stops meaning anything and drowns the status it
   must never outrank.
 - **A box is a control or an alert, never a fact.** Rail facts (diff counts,
