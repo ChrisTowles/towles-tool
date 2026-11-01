@@ -81,6 +81,7 @@ import {
   changedFolderDirs,
   moveFocus,
   dropPane,
+  dropSessionlessWindows,
   paneCloseTarget,
   successorPane,
   hydrateWins,
@@ -879,6 +880,27 @@ describe("successorPane", () => {
 
 const valid = (sessions: string[], folders: string[]) =>
   [new Set(sessions), new Set(folders)] as const;
+
+describe("dropSessionlessWindows", () => {
+  it("drops a folder's files-only window so opening it lands on a shell", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/f", ["~files:/f"]), win("w2", "/f", ["s1", "~files:/f"])],
+      activeWindows: { "/f": "w1" },
+    };
+    expect(dropSessionlessWindows(w, "/f")).toEqual({
+      windows: [win("w2", "/f", ["s1", "~files:/f"])],
+      activeWindows: {},
+    });
+  });
+
+  it("leaves other folders and an untouched folder alone", () => {
+    const w: WindowsPayload = {
+      windows: [win("w1", "/g", ["~files:/g"]), win("w2", "/f", ["s1"])],
+      activeWindows: { "/f": "w2", "/g": "w1" },
+    };
+    expect(dropSessionlessWindows(w, "/f")).toBe(w);
+  });
+});
 
 describe("pruneWins", () => {
   it("drops ghost session panes so survivors tile from the first task", () => {

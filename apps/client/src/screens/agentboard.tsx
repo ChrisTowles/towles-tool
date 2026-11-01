@@ -50,7 +50,7 @@ import { claudeTitleName, sessionLabel } from "@/lib/agentboard/session";
 import { useStableFn, useStableFns } from "@/lib/use-stable-fn";
 import { useAgentboardState, useSetAgentOverlay } from "@/lib/agentboard/state";
 import type { FolderData, RepoData, Selected, SessionData } from "@/lib/agentboard/types";
-import { paneCloseTarget, type FocusLevel } from "@/lib/agentboard/windows";
+import { dropSessionlessWindows, paneCloseTarget, type FocusLevel } from "@/lib/agentboard/windows";
 import type { JumpRecall } from "@/lib/jump-recall";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
 import { useStoreSnapshot } from "@/lib/data";
@@ -414,6 +414,23 @@ export function AgentBoardScreen() {
   });
   const { newSession, newRootShell, launchClaudeIn } = spawn;
 
+  // Opening a checkout lands on a shell, never a leftover files tile: windows
+  // with no session go, and with none left its first session is mounted, else
+  // a fresh shell started. Through refs, for the mount-only nav handler.
+  const openFolderRef = useRef({ wins, folderByDir, newSession });
+  openFolderRef.current = { wins, folderByDir, newSession };
+  function openFolder(folderDir: string) {
+    selectFolder(folderDir);
+    const cur = openFolderRef.current;
+    if (!cur.wins) return;
+    const kept = dropSessionlessWindows(cur.wins, folderDir);
+    if (kept !== cur.wins) updateWins([folderDir], (w) => dropSessionlessWindows(w, folderDir));
+    if (kept.windows.some((w) => w.folderDir === folderDir)) return;
+    const first = cur.folderByDir.get(folderDir)?.sessions[0];
+    if (first) selectSession(folderDir, first.id);
+    else void cur.newSession(folderDir);
+  }
+
   const lifecycle = sessionLifecycle({
     repos,
     wins,
@@ -479,7 +496,7 @@ export function AgentBoardScreen() {
     jumpNonce,
     applyCollapse,
     selectSession,
-    selectFolder,
+    selectFolder: openFolder,
     focusWindow: actions.focusWindow,
     setJumpRecall,
     setRailCursor,
@@ -607,7 +624,7 @@ export function AgentBoardScreen() {
     tasks: snapshot.tasks,
     repoByFolder,
     openBrowser: browserPane ? openBrowser : undefined,
-    selectFolder,
+    selectFolder: openFolder,
     actions,
     setStartClaudePrompt: spawn.setStartClaudePrompt,
     openFork: (repoKey, base) => {
@@ -622,6 +639,7 @@ export function AgentBoardScreen() {
     withLiveSession: spawn.withLiveSession,
     setActiveFolderDir,
     ackFolder,
+    openFolder,
     taskCreation,
     viewPanes,
     openNextUp: nav.openNextUp,
@@ -789,7 +807,7 @@ export function AgentBoardScreen() {
         wins,
         actions,
         onToggle: toggleCollapsed,
-        onSelectFolder: selectFolder,
+        onSelectFolder: openFolder,
         onSelect: stableSelect,
         onNewSession: newSession,
         onRemoveRepo: requestRemoveRepo,
@@ -850,7 +868,7 @@ export function AgentBoardScreen() {
             repos={visibleRepos}
             activeFolderDir={activeFolderDir}
             attentionCount={attention.items.length}
-            onSelectFolder={selectFolder}
+            onSelectFolder={openFolder}
             onExpand={toggleRail}
             expandHint={shortcutHint("ab-toggle-rail")}
           />
@@ -962,7 +980,7 @@ export function AgentBoardScreen() {
                     setFocusedPaneId(id);
                     setFocusLevel("pane");
                   }}
-                  onSelectFolder={selectFolder}
+                  onSelectFolder={openFolder}
                   jumpRecall={jumpRecall}
                   onDismissJumpRecall={() => setJumpRecall(null)}
                   termAttention={termAttention}

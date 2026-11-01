@@ -28,6 +28,7 @@ export function useBoardRequests(args: {
   ) => Promise<void>;
   setActiveFolderDir: Dispatch<SetStateAction<string | null>>;
   ackFolder: (folderDir: string) => void;
+  openFolder: (folderDir: string) => void;
   taskCreation: TaskCreation;
   viewPanes: Pick<
     ViewPanes,
@@ -113,8 +114,7 @@ export function useBoardRequests(args: {
       } else if (req.kind === "queue-next") {
         args.openNextUp();
       } else {
-        setActiveFolderDir(req.folderDir);
-        ackFolder(req.folderDir);
+        args.openFolder(req.folderDir);
       }
     };
     const pending = consumePendingAgentboardNav();
