@@ -1,42 +1,14 @@
-// The rail rows that aren't a PTY session. A view pane is a *view of* the
-// folder, so it carries no status and closes without asking.
+// The checkout-line chips that aren't a PTY session. A view pane is a *view
+// of* the folder, so it carries no status and closes without asking.
 import { useState } from "react";
 import { AppWindowIcon, EyeIcon, TreeStructureIcon } from "@phosphor-icons/react";
 import { Hint } from "@/components/hint";
 import { IconBtn } from "@/components/agentboard-bits/primitives";
 import { cn } from "@/lib/utils";
 import { isFilesPane, isBrowserPane, isPreviewPane } from "@/lib/agentboard/pane-ids";
-import type { AgWindow } from "@/lib/agentboard/types";
-import { windowColor } from "@/lib/agentboard/windows";
-
-/** Color, not a text label: window names carry no signal in the rail. */
-export function WindowSpine({
-  win,
-  folderWins,
-  count,
-  onFocus,
-}: {
-  win: AgWindow;
-  folderWins: AgWindow[];
-  count: number;
-  onFocus: () => void;
-}) {
-  return (
-    <Hint label={`window “${win.name}” — ${count} panes, click to focus`}>
-      <button
-        type="button"
-        onClick={onFocus}
-        aria-label={`Focus window ${win.name}`}
-        className="absolute inset-y-1 left-4 z-10 flex w-2 justify-center"
-      >
-        <span className={cn("h-full w-[3px] rounded-full", windowColor(folderWins, win.id))} />
-      </button>
-    </Hint>
-  );
-}
 
 /** The pane kinds that are a *view of* the folder rather than something
- * running in it — each still gets a rail row, so what's open in a folder is
+ * running in it — each still gets a chip, so what's open in a folder is
  * answerable from the rail alone. */
 export type ViewPaneKind = "files" | "preview" | "browser";
 
@@ -60,10 +32,9 @@ const VIEW_PANE_META: Record<
   },
 };
 
-/** A view pane as a rail row: quieter than a session (nothing running to
- * have a status) but present, because "what is open here" is a question the
- * rail should answer. Click focuses, ✕ closes. */
-export function ViewPaneRow({
+/** Quieter than a session chip: nothing running, so no status. Click focuses,
+ * ✕ closes. */
+export function ViewPaneChip({
   kind,
   active,
   onSelect,
@@ -77,7 +48,7 @@ export function ViewPaneRow({
   const { Icon, label, title } = VIEW_PANE_META[kind];
   const [hovered, setHovered] = useState(false);
   return (
-    <Hint label={title} side="right">
+    <Hint label={title} side="bottom">
       <div
         role="button"
         tabIndex={0}
@@ -88,18 +59,20 @@ export function ViewPaneRow({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={cn(
-          "relative ml-1.5 flex cursor-pointer items-center gap-2.5 border-l-2 border-transparent py-1 pr-3 pl-9",
-          hovered && "bg-accent",
-          active && "border-l-agent bg-accent",
+          "relative flex h-6 cursor-pointer items-center gap-1.5 rounded-sm px-1.5",
+          (hovered || active) && "bg-kumo-tint",
         )}
       >
-        <Icon className="w-4 shrink-0 text-muted-foreground/60" />
-        <span className="min-w-0 flex-1 truncate font-mono text-mini text-muted-foreground">
-          {label}
-        </span>
+        <Icon className="size-3.5 shrink-0 text-kumo-subtle" />
+        <span className="font-mono text-mini text-kumo-subtle">{label}</span>
         {hovered && (
-          <span className="absolute inset-y-0 right-2 z-10 flex items-center gap-1 bg-accent pl-1.5">
-            <IconBtn title={`close ${label} pane`} onClick={onClose} className="hover:text-danger">
+          <span className="absolute inset-y-0 right-0 z-10 flex items-center rounded-r-sm bg-kumo-tint pl-1">
+            <IconBtn
+              ghost
+              title={`close ${label} pane`}
+              onClick={onClose}
+              className="size-5 hover:text-danger"
+            >
               ✕
             </IconBtn>
           </span>

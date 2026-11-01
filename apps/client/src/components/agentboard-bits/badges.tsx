@@ -73,34 +73,6 @@ export function GhostBadge() {
   );
 }
 
-/** The `⎇ branch` line. Worktree tasks are the common case, so they stay
- * muted; the primary checkout is the special row and carries the sky tint. */
-export function BranchLabel({
-  branch,
-  isWorktree,
-  onClick,
-}: {
-  branch: string;
-  isWorktree: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    // Every surface truncates this element first, so the tooltip is the only
-    // place a long branch is readable.
-    <Hint
-      label={
-        isWorktree
-          ? branch
-          : `${branch} — primary checkout, the main clone; its .git is load-bearing for every worktree`
-      }
-    >
-      <span className="min-w-0 truncate font-mono text-mini text-kumo-subtle" onClick={onClick}>
-        ⎇ {branch}
-      </span>
-    </Hint>
-  );
-}
-
 /** Why a mid-delete row went inert. Red, not `GhostBadge`'s gray: this is an
  * active, irreversible deletion. `label` is the backend's live phase text. */
 export function DeletingBadge({ label }: { label?: string }) {

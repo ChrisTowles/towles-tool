@@ -1,14 +1,16 @@
-/** The working-context band above the panes — deliberately the rail's folder
- * row at a larger size, sharing its grammar (`agentboard-folder-header.tsx`,
- * the `visual-design` skill). Pane *chrome* is `agentboard-pane.tsx`. */
+/** The task header above the panes: what the rail's checkout line leaves out
+ * (branch, PR, base, spend) as labeled facts under the task's goal
+ * (`agentboard-checkout-line.tsx`, the `visual-design` skill). Pane *chrome*
+ * is `agentboard-pane.tsx`. */
 import { FolderPlusIcon, GitPullRequestIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
-import type { CSSProperties } from "react";
+import type { ReactNode } from "react";
 import { Hint } from "@/components/hint";
-import { DeletingBadge, GhostBadge, BranchLabel } from "@/components/agentboard-bits/badges";
+import { BranchDriftBadge, DeletingBadge, GhostBadge } from "@/components/agentboard-bits/badges";
 import {
   BaseMovedChip,
   ComparedBaseBadge,
   CommittedChip,
+  CostChip,
   UncommittedChip,
 } from "@/components/agentboard-bits/diff-chips";
 import { FolderLandedBadge } from "@/components/agentboard-bits/landed-badges";
@@ -20,10 +22,12 @@ import {
 import { IssueChip, PrChip } from "@/components/agentboard-bits/pr-issue-chips";
 import { IconBtn } from "@/components/agentboard-bits/primitives";
 import { RepoMenu } from "@/components/agentboard-bits/repo-menu";
+import { syncBranch } from "@/components/agentboard-bits/sync-branch";
 import { DevServersButton } from "@/components/dev-servers";
 import type { NewTaskRepo } from "@/components/inline-new-task";
 import type { SessionActions } from "@/lib/agentboard/actions";
-import { folderIsHome, pathScope } from "@/lib/agentboard/folder";
+import { useDirCost } from "@/lib/agentboard/cost";
+import { folderBranchDrift, folderIsHome, pathScope } from "@/lib/agentboard/folder";
 import { humanizeFolderName } from "@/lib/agentboard/folder-name";
 import {
   folderActionableItems,
@@ -78,116 +82,133 @@ export function WorkingContext({
   const humanTitle = folder.isWorktree ? task?.text?.trim() : undefined;
   const displayTitle =
     humanTitle || (folder.isWorktree ? humanizeFolderName(folder.name) : folder.name);
-  // A lone clone's folder name *is* the repo name: let the plate be the title
-  // rather than printing the same word twice.
-  const titled = !home && displayTitle !== repo.name;
   const band = repoBandStyle(repo, "var(--card)");
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
+  const drift = folderBranchDrift(folder);
+  const onSync = syncBranch(folder);
+  const cost = useDirCost(folder.dir);
+  const clean =
+    folder.uncommittedFiles === 0 && folder.committedFiles === 0 && folder.commitsBehind === 0;
   return (
-    // The repo's color the way the rail's repo header wears it: solid edge,
-    // faint wash, and the plate's name in it — nothing else on top is tinted.
+    // The repo's color the way the rail's repo column wears it: solid edge and
+    // a faint wash; only the repo name takes its ink.
     <div
       style={band?.band}
-      className="flex flex-col gap-1.5 border-b border-l-[3px] border-l-transparent bg-card px-4 py-2"
+      className="flex flex-col gap-3 border-b border-l-[3px] border-l-transparent bg-card px-5 pt-3 pb-3"
     >
-      <div className="flex items-stretch gap-3">
-        <RepoPlate name={home ? "~" : repo.name} scope={scope} inkStyle={band?.ink} />
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-          {/* Two clusters, not one run of icons: pane openers beside the title,
-            checkout-level actions at the right edge, where a destructive-ish
-            menu isn't a slip away from what you clicked to read. */}
-          <div className="flex items-center gap-2">
-            {titled && (
-              <Hint label={humanTitle ? folder.name : undefined}>
-                <span className="min-w-0 max-w-[28rem] truncate text-lg font-semibold leading-tight">
-                  {displayTitle}
-                </span>
-              </Hint>
+      <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="flex min-w-0 items-center gap-1.5 font-mono text-mini text-kumo-subtle">
+            <span style={band?.ink} className="shrink-0 font-semibold">
+              {scope}
+              {home ? "~" : repo.name}
+            </span>
+            {!home && folder.branch && (
+              <>
+                <span aria-hidden>/</span>
+                <span className="truncate">{folder.branch}</span>
+              </>
             )}
-            {missing && <GhostBadge />}
-            {!missing && (
-              <span className="flex shrink-0 items-center gap-1.5">
-                <FilesButton onOpen={() => onOpenFiles(folder.dir)} labeled />
-                {folder.hasLaunchConfig && (
-                  <PreviewButton onOpen={() => onOpenPreview(folder.dir)} labeled />
-                )}
-                {onOpenBrowser && (
-                  <BrowserButton onOpen={() => onOpenBrowser(folder.dir)} labeled />
-                )}
-              </span>
-            )}
-            <div className="ml-auto flex shrink-0 items-center gap-2">
+          </span>
+          <Hint label={humanTitle ? folder.name : undefined}>
+            <span className="min-w-0 truncate text-lg font-semibold leading-tight">
+              {home ? "Home" : displayTitle}
+            </span>
+          </Hint>
+        </div>
+        {missing && <GhostBadge />}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {!missing && (
+            <>
+              <FilesButton onOpen={() => onOpenFiles(folder.dir)} labeled />
+              {folder.hasLaunchConfig && (
+                <PreviewButton onOpen={() => onOpenPreview(folder.dir)} labeled />
+              )}
+              {onOpenBrowser && <BrowserButton onOpen={() => onOpenBrowser(folder.dir)} labeled />}
               {/* Always mounted (dimmed sans launch.json) so it stays
-                discoverable; the dense rail stays gated. */}
-              {!missing && <DevServersButton folder={folder} actions={actions} />}
-              {!missing && (
-                <IconBtn
-                  title="New session"
-                  shortcut="ab-new-session"
-                  onClick={() => {
-                    onNewSession(folder.dir);
-                  }}
-                  className="hover:text-agent"
-                >
-                  <PlusIcon className="size-3.5" />
-                </IconBtn>
-              )}
-              {!missing && !home && (
-                <IconBtn
-                  title="New task — goal, issues, branch"
-                  shortcut="ab-new-task"
-                  onClick={() => {
-                    newTask();
-                  }}
-                  className="hover:text-agent"
-                >
-                  <FolderPlusIcon className="size-3.5" />
-                </IconBtn>
-              )}
-              {!home && (
-                <RepoMenu
-                  path={folder.dir}
-                  dir={folder.dir}
-                  isWorktree={folder.isWorktree}
-                  quiet={folder.quiet}
-                  onNewTask={!missing ? newTask : undefined}
-                  onDeleteWorktree={
-                    !missing && folder.isWorktree
-                      ? () => onDeleteWorktree(folder.dir, folder.name)
-                      : undefined
-                  }
-                  onRemove={() => onRemoveRepo([folder.dir], folder.name)}
-                  taskId={!missing ? task?.id : undefined}
-                  dirMissing={missing}
-                />
-              )}
-            </div>
-          </div>
-          {/* Port drift and safe-to-delete get a callout below, not a chip
-            here — a chip duplicating its own callout is noise. */}
+                discoverable; the rail's line gates it. */}
+              <DevServersButton folder={folder} actions={actions} />
+              <IconBtn
+                title="New session"
+                shortcut="ab-new-session"
+                onClick={() => {
+                  onNewSession(folder.dir);
+                }}
+                className="hover:text-agent"
+              >
+                <PlusIcon className="size-3.5" />
+              </IconBtn>
+            </>
+          )}
+          {!missing && !home && (
+            <IconBtn
+              title="New task — goal, issues, branch"
+              shortcut="ab-new-task"
+              onClick={() => {
+                newTask();
+              }}
+              className="hover:text-agent"
+            >
+              <FolderPlusIcon className="size-3.5" />
+            </IconBtn>
+          )}
           {!home && (
-            <div className="flex min-w-0 items-center gap-x-2 text-sm text-muted-foreground">
-              <div className="flex min-w-0 items-center gap-x-1.5 overflow-hidden">
-                {folder.branch && (
-                  <BranchLabel branch={folder.branch} isWorktree={folder.isWorktree} />
-                )}
-                {deleting && <DeletingBadge />}
-                <ComparedBaseBadge folder={folder} />
-                <BaseMovedChip stats={folder} />
-                {pr && <PrChip pr={pr} stats={folder} />}
-                {task?.issues.map((issue) => (
-                  <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
-                ))}
-                <FolderLandedBadge folder={folder} pr={pr} />
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <UncommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
-                <CommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
-              </div>
-            </div>
+            <RepoMenu
+              path={folder.dir}
+              dir={folder.dir}
+              isWorktree={folder.isWorktree}
+              quiet={folder.quiet}
+              onNewTask={!missing ? newTask : undefined}
+              onDeleteWorktree={
+                !missing && folder.isWorktree
+                  ? () => onDeleteWorktree(folder.dir, folder.name)
+                  : undefined
+              }
+              onRemove={() => onRemoveRepo([folder.dir], folder.name)}
+              taskId={!missing ? task?.id : undefined}
+              dirMissing={missing}
+            />
           )}
         </div>
       </div>
+      {/* The facts the rail leaves out, each under its own label so they read
+        as columns. Port drift and safe-to-delete get a callout below instead. */}
+      {!home && !missing && (
+        <div className="flex flex-wrap gap-x-10 gap-y-2">
+          {(pr || (task?.issues.length ?? 0) > 0) && (
+            <Fact label="Pull request">
+              {pr && <PrChip pr={pr} stats={folder} />}
+              {task?.issues.map((issue) => (
+                <IssueChip key={`${issue.repo}#${issue.number}`} taskId={task.id} issue={issue} />
+              ))}
+              <FolderLandedBadge folder={folder} pr={pr} />
+            </Fact>
+          )}
+          <Fact label="Changes">
+            {clean ? (
+              <span className="font-mono text-mini text-kumo-subtle">clean</span>
+            ) : (
+              <>
+                <UncommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
+                <CommittedChip stats={folder} onOpen={() => onOpenFiles(folder.dir)} labeled />
+              </>
+            )}
+          </Fact>
+          <Fact label="Base">
+            <ComparedBaseBadge folder={folder} />
+            <BaseMovedChip stats={folder} />
+            {drift && onSync && (
+              <BranchDriftBadge recorded={drift.recorded} live={drift.live} onSync={onSync} />
+            )}
+            {deleting && <DeletingBadge />}
+          </Fact>
+          {cost && cost.costUsd >= 0.01 && (
+            <Fact label="Spend, 30 days">
+              <CostChip dir={folder.dir} />
+            </Fact>
+          )}
+        </div>
+      )}
       {!missing && (
         <ActionableCallouts
           items={folderActionableItems(folder, pr)}
@@ -200,33 +221,12 @@ export function WorkingContext({
   );
 }
 
-/** Mono at display size, so a repo name reads as the directory name it is, not
- * a headline competing with the title. Never the repo's own hue: the band is
- * already washed in it, and hue-on-hue costs the legibility size bought. */
-function RepoPlate({
-  name,
-  scope,
-  inkStyle,
-}: {
-  name: string;
-  scope: string | null;
-  inkStyle: CSSProperties | undefined;
-}) {
+/** One labeled column of the header's fact row. */
+function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex shrink-0 flex-col justify-center gap-0.5 border-r border-border/60 pr-3">
-      {scope && (
-        <span className="font-mono text-micro leading-none tracking-widest text-muted-foreground/70">
-          {scope}
-        </span>
-      )}
-      <Hint label={`${scope ?? ""}${name}`}>
-        <span
-          style={inkStyle}
-          className="max-w-[13rem] truncate font-mono text-xl font-semibold leading-none text-foreground"
-        >
-          {name}
-        </span>
-      </Hint>
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-mini text-kumo-subtle">{label}</span>
+      <div className="flex min-w-0 items-center gap-1.5">{children}</div>
     </div>
   );
 }
