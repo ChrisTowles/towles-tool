@@ -36,7 +36,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # Pinned ghostty commit tt-vt builds against — kept in sync with ci.yml.
-  GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
+  GHOSTTY_COMMIT: a887df42c56f6de86c0fe6da9c4eeca37931e083
 
 jobs:
   build:
@@ -102,9 +102,6 @@ jobs:
         with:
           version: 0.15.2
           use-cache: false
-
-      # A shipped binary runs on CPUs other than the runner's.
-      - uses: ./.github/actions/zig-baseline
 
       - name: Cache ghostty source
         id: ghostty-cache

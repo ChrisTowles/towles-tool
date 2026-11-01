@@ -127,7 +127,7 @@ jobs:
     # linker bug build.yml has to work around (ziglang/zig#31658).
     runs-on: macos-14
     env:
-      GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
+      GHOSTTY_COMMIT: a887df42c56f6de86c0fe6da9c4eeca37931e083
       GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
     steps:
       - uses: actions/checkout@v7
@@ -192,11 +192,11 @@ jobs:
     # plain `rust` job. It lints and tests both; the wdio feature stays off
     # (`--no-default-features`) so the E2E-only plugins aren't compiled in CI.
     #
-    # Pinned ghostty commit that libghostty-vt-sys 0.2.0 builds against (see the
+    # Pinned ghostty commit that libghostty-vt-sys 0.2.2 builds against (see the
     # GHOSTTY_COMMIT constant in that crate's build.rs). Keep this in sync when
     # bumping libghostty-vt.
     env:
-      GHOSTTY_COMMIT: fdbf9ff3a31d7531b691cb49c98fc465a1a503a0
+      GHOSTTY_COMMIT: a887df42c56f6de86c0fe6da9c4eeca37931e083
     steps:
       - uses: actions/checkout@v7
 
@@ -261,8 +261,6 @@ jobs:
           git clone --filter=blob:none --no-checkout \
             https://github.com/ghostty-org/ghostty.git ghostty-src
           git -C ghostty-src checkout "$GHOSTTY_COMMIT"
-
-      - uses: ./.github/actions/zig-baseline
 
       - uses: Swatinem/rust-cache@v2
         with:
