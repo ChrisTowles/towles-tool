@@ -15,6 +15,7 @@ const TOOL_COLORS: Record<string, string> = {
   Glob: PALETTE[0],
   Read: PALETTE[1],
   Task: PALETTE[3],
+  Agent: PALETTE[3],
   Grep: PALETTE[4],
   Edit: PALETTE[5],
   MultiEdit: PALETTE[5],
