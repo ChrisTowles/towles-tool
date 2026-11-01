@@ -37,7 +37,10 @@ pub use analyzer::{
     SessionAnalysis, aggregate_session_tools, analyze_session, extract_project_name,
     get_model_name, get_primary_model,
 };
-pub use breakdown::{SessionBreakdown, TurnBreakdown, build_session_breakdown, find_session_path};
+pub use breakdown::{
+    SessionBreakdown, SubagentSpend, TurnBreakdown, build_session_breakdown, find_session_path,
+    load_session_breakdown,
+};
 pub use by_dir::{DirCost, cost_by_dir};
 pub use cadence::{CadenceSummary, DayBucket, DayHourCell, build_cadence};
 pub use insights::{Insight, InsightKind, build_insights};

@@ -135,13 +135,11 @@ pub(crate) fn collect_candidates(
         let Some(session_id) = name.strip_suffix(".jsonl") else {
             continue;
         };
-        let mtime = file_entry
-            .metadata()?
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let path = file_entry.path();
+        // A subagent still running after the parent's last write keeps the
+        // session live.
+        let mtime =
+            subagent_transcripts(&path).iter().map(|p| mtime_ms(p)).fold(mtime_ms(&path), i64::max);
         if cutoff_ms > 0 && mtime < cutoff_ms {
             continue;
         }
@@ -149,17 +147,65 @@ pub(crate) fn collect_candidates(
             mtime,
             session_id: session_id.to_string(),
             encoded: encoded.clone(),
-            path: file_entry.path(),
+            path,
         });
     }
     Ok(())
+}
+
+fn mtime_ms(path: &Path) -> i64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// The session's Agent-tool subagent transcripts, sorted. Claude Code writes
+/// each to `<project>/<session-id>/subagents/*.jsonl` rather than into the
+/// session's own file, so the session's spend includes theirs.
+pub(crate) fn subagent_transcripts(session_path: &Path) -> Vec<PathBuf> {
+    let Some(dir) = session_path.file_stem().map(|stem| session_path.with_file_name(stem)) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(dir.join("subagents")) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|ext| ext == "jsonl"))
+        .collect();
+    paths.sort();
+    paths
 }
 
 fn detail_from_candidate(
     Candidate { mtime, session_id, encoded, path }: Candidate,
 ) -> SessionDetail {
     let entries = parse_transcript_file(&path);
-    let analysis = analyze_session(&entries);
+    // Spend is summed per transcript so each agent's repeated reads count
+    // against its own context, not the parent's.
+    let mut analysis = analyze_session(&entries);
+    let mut usage = usage_totals(&entries);
+    for sub in subagent_transcripts(&path) {
+        let sub_entries = parse_transcript_file(&sub);
+        let a = analyze_session(&sub_entries);
+        analysis.opus_tokens += a.opus_tokens;
+        analysis.sonnet_tokens += a.sonnet_tokens;
+        analysis.haiku_tokens += a.haiku_tokens;
+        analysis.fable_tokens += a.fable_tokens;
+        analysis.repeated_reads += a.repeated_reads;
+        analysis.cost_usd += a.cost_usd;
+        for (slot, cost) in analysis.cost_by_model.iter_mut().zip(a.cost_by_model) {
+            *slot += cost;
+        }
+        let u = usage_totals(&sub_entries);
+        usage.input_tokens += u.input_tokens;
+        usage.output_tokens += u.output_tokens;
+        usage.cache_read_tokens += u.cache_read_tokens;
+        usage.cache_creation_tokens += u.cache_creation_tokens;
+    }
     // Human prompts only — the transcript's `user` lines are mostly
     // machine noise (tool results, envelopes), which must not count.
     let prompts = user_prompts_with_timestamps(&entries);
@@ -178,7 +224,7 @@ fn detail_from_candidate(
         title: session_title(&entries),
         cwd: session_cwd(&entries),
         programmatic: session_is_programmatic(&entries),
-        usage: usage_totals(&entries),
+        usage,
         opus_tokens: analysis.opus_tokens,
         sonnet_tokens: analysis.sonnet_tokens,
         haiku_tokens: analysis.haiku_tokens,
@@ -540,6 +586,32 @@ mod tests {
         // Fable: (10*10 + 5*50 + 100*1.0) / 1e6
         assert!((d.cost_usd - 0.00045).abs() < 1e-9);
         assert_eq!(d.prompt_blob, "hello ledger");
+    }
+
+    #[test]
+    fn scan_adds_subagent_spend_to_parent_session() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("-home-u-code-demo");
+        let subagents = proj.join("abc").join("subagents");
+        std::fs::create_dir_all(&subagents).unwrap();
+        let line = |id: &str, input: i64, output: i64| {
+            format!(
+                "{{\"type\":\"assistant\",\"requestId\":\"r-{id}\",\"message\":{{\"id\":\"{id}\",\"role\":\"assistant\",\"model\":\"claude-fable-5\",\"usage\":{{\"input_tokens\":{input},\"output_tokens\":{output}}}}}}}\n"
+            )
+        };
+        std::fs::write(proj.join("abc.jsonl"), line("m1", 10, 5)).unwrap();
+        // A streaming re-log inside the subagent file still counts once.
+        std::fs::write(subagents.join("agent-1.jsonl"), line("m2", 100, 50).repeat(2)).unwrap();
+        std::fs::write(subagents.join("agent-1.meta.json"), "{}").unwrap();
+
+        let details = scan_sessions_detailed(tmp.path(), 10, 0.0, 1_700_000_000_000).unwrap();
+        assert_eq!(details.len(), 1, "a subagent file is not a session of its own");
+        let d = &details[0];
+        assert_eq!(d.session_id, "abc");
+        assert_eq!(d.billable(), 165);
+        assert_eq!(d.fable_tokens, 165);
+        // Fable: (110*10 + 55*50) / 1e6
+        assert!((d.cost_usd - 0.00385).abs() < 1e-9);
     }
 
     #[test]

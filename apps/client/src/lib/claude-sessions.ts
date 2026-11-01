@@ -110,6 +110,17 @@ type TurnBreakdown = {
   /** Dominant tool for color-coding; null for user prompts. */
   toolName: string | null;
   model: string;
+  /** The subagent that took this step; null for the session itself. */
+  agent: string | null;
+};
+
+type SubagentSpend = {
+  /** Its launch description, else its transcript's file stem. */
+  description: string;
+  agentType: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
 };
 
 export type SessionBreakdown = {
@@ -117,6 +128,8 @@ export type SessionBreakdown = {
   tools: ToolTotal[];
   /** Session steps in transcript order. */
   turns: TurnBreakdown[];
+  /** Agent-tool subagents, ranked by in+out tokens. */
+  subagents: SubagentSpend[];
 };
 
 /** Parses that session on demand, rather than riding the cached scan. */
