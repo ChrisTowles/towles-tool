@@ -17,15 +17,17 @@ use crate::tools::extract_tool_data;
 use crate::types::ToolData;
 use tt_claude_code::{TranscriptEntry, parse_transcript_file};
 
-pub fn find_session_path(projects_dir: &Path, session_id: &str) -> Result<Option<PathBuf>> {
-    for project_entry in std::fs::read_dir(projects_dir)? {
-        let project_path = project_entry?.path();
-        if !project_path.is_dir() {
-            continue;
-        }
-        let jsonl_path = project_path.join(format!("{session_id}.jsonl"));
-        if jsonl_path.exists() {
-            return Ok(Some(jsonl_path));
+pub fn find_session_path(projects_dirs: &[PathBuf], session_id: &str) -> Result<Option<PathBuf>> {
+    for projects_dir in projects_dirs {
+        for project_entry in std::fs::read_dir(projects_dir)? {
+            let project_path = project_entry?.path();
+            if !project_path.is_dir() {
+                continue;
+            }
+            let jsonl_path = project_path.join(format!("{session_id}.jsonl"));
+            if jsonl_path.exists() {
+                return Ok(Some(jsonl_path));
+            }
         }
     }
     Ok(None)
@@ -317,8 +319,10 @@ mod tests {
         let file = proj.join("wanted.jsonl");
         std::fs::write(&file, "{}").unwrap();
 
-        assert_eq!(find_session_path(tmp.path(), "wanted").unwrap(), Some(file));
-        assert_eq!(find_session_path(tmp.path(), "missing").unwrap(), None);
+        let other = tempfile::tempdir().unwrap();
+        let roots = [other.path().to_path_buf(), tmp.path().to_path_buf()];
+        assert_eq!(find_session_path(&roots, "wanted").unwrap(), Some(file));
+        assert_eq!(find_session_path(&roots, "missing").unwrap(), None);
     }
 
     #[test]

@@ -72,6 +72,10 @@ impl SessionDetail {
 /// `-slot-<n>` and anything from `-claude-worktrees` on. The Ledger compares
 /// repos, and one repo checked out five ways is still one repo.
 pub fn normalize_repo_name(encoded_project: &str) -> String {
+    // A Claude Desktop Cowork session runs in its own scratch dir, never a repo.
+    if encoded_project.contains("-Claude-local-agent-mode-sessions-") {
+        return "cowork".to_string();
+    }
     // Worktree dirs encode as `<repo>--claude-worktrees-<name>`; the doubled
     // `-` means the marker survives as `-claude-worktrees` after splitting.
     let base = match encoded_project.find("-claude-worktrees") {
@@ -90,10 +94,11 @@ pub fn normalize_repo_name(encoded_project: &str) -> String {
     }
 }
 
-/// Scan `projects_dir` for sessions touched in the last `days` (0 = all),
-/// newest first, capped at `limit`, parsing each survivor's transcript once.
+/// Scan every `projects_dirs` root for sessions touched in the last `days`
+/// (0 = all), newest first, capped at `limit`, parsing each survivor's
+/// transcript once.
 pub fn scan_sessions_detailed(
-    projects_dir: &Path,
+    projects_dirs: &[PathBuf],
     limit: usize,
     days: f64,
     now_ms: i64,
@@ -102,12 +107,14 @@ pub fn scan_sessions_detailed(
 
     // Cheap pass: paths + mtimes only, so the limit applies before any parse.
     let mut candidates: Vec<Candidate> = Vec::new();
-    for project_entry in std::fs::read_dir(projects_dir)? {
-        let project_entry = project_entry?;
-        if !project_entry.path().is_dir() {
-            continue;
+    for projects_dir in projects_dirs {
+        for project_entry in std::fs::read_dir(projects_dir)? {
+            let project_entry = project_entry?;
+            if !project_entry.path().is_dir() {
+                continue;
+            }
+            collect_candidates(&project_entry.path(), cutoff_ms, &mut candidates)?;
         }
-        collect_candidates(&project_entry.path(), cutoff_ms, &mut candidates)?;
     }
     candidates.sort_by_key(|c| std::cmp::Reverse(c.mtime));
     candidates.truncate(limit);
@@ -440,6 +447,12 @@ mod tests {
         );
         // A non-numeric "slot" suffix is left alone.
         assert_eq!(normalize_repo_name("-home-u-code-time-slot-machine"), "time-slot-machine");
+        assert_eq!(
+            normalize_repo_name(
+                "-home-u--config-Claude-local-agent-mode-sessions-org-acct-local-abc-outputs"
+            ),
+            "cowork"
+        );
     }
 
     #[test]
@@ -573,7 +586,9 @@ mod tests {
         )
         .unwrap();
 
-        let details = scan_sessions_detailed(tmp.path(), 10, 0.0, 1_700_000_000_000).unwrap();
+        let details =
+            scan_sessions_detailed(&[tmp.path().to_path_buf()], 10, 0.0, 1_700_000_000_000)
+                .unwrap();
         assert_eq!(details.len(), 1);
         let d = &details[0];
         assert_eq!(d.session_id, "abc");
@@ -604,7 +619,9 @@ mod tests {
         std::fs::write(subagents.join("agent-1.jsonl"), line("m2", 100, 50).repeat(2)).unwrap();
         std::fs::write(subagents.join("agent-1.meta.json"), "{}").unwrap();
 
-        let details = scan_sessions_detailed(tmp.path(), 10, 0.0, 1_700_000_000_000).unwrap();
+        let details =
+            scan_sessions_detailed(&[tmp.path().to_path_buf()], 10, 0.0, 1_700_000_000_000)
+                .unwrap();
         assert_eq!(details.len(), 1, "a subagent file is not a session of its own");
         let d = &details[0];
         assert_eq!(d.session_id, "abc");
@@ -628,8 +645,39 @@ mod tests {
         )
         .unwrap();
 
-        let details = scan_sessions_detailed(tmp.path(), 10, 0.0, 1_700_000_000_000).unwrap();
+        let details =
+            scan_sessions_detailed(&[tmp.path().to_path_buf()], 10, 0.0, 1_700_000_000_000)
+                .unwrap();
         assert_eq!(details[0].user_turns, 2);
         assert_eq!(details[0].prompt_times_ms, vec![1_783_797_232_831]);
+    }
+
+    #[test]
+    fn scan_reads_every_projects_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let line = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"model\":\"claude-fable-5\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n";
+        let cli = tmp.path().join("cli");
+        let cowork = tmp.path().join("cowork");
+        std::fs::create_dir_all(cli.join("-home-u-code-demo")).unwrap();
+        std::fs::write(cli.join("-home-u-code-demo/a.jsonl"), line).unwrap();
+        let cowork_proj =
+            cowork.join("-home-u--config-Claude-local-agent-mode-sessions-o-a-local-x");
+        std::fs::create_dir_all(&cowork_proj).unwrap();
+        std::fs::write(cowork_proj.join("b.jsonl"), line).unwrap();
+
+        let mut projects: Vec<_> =
+            scan_sessions_detailed(&[cli, cowork], 10, 0.0, 1_700_000_000_000)
+                .unwrap()
+                .into_iter()
+                .map(|d| (d.session_id, d.project))
+                .collect();
+        projects.sort();
+        assert_eq!(
+            projects,
+            vec![
+                ("a".to_string(), "demo".to_string()),
+                ("b".to_string(), "cowork".to_string())
+            ]
+        );
     }
 }

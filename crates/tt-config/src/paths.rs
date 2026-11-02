@@ -14,6 +14,42 @@ pub fn claude_json_path() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".claude.json")
 }
 
+/// Claude Desktop's data dir: `~/.config/Claude` on Linux, `~/Library/Application
+/// Support/Claude` on macOS.
+pub fn claude_desktop_dir() -> PathBuf {
+    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("Claude")
+}
+
+/// Every directory holding Claude Code session transcripts: `~/.claude/projects`
+/// (the CLI and Desktop's Code tab) plus each Desktop Cowork session's private
+/// `.claude/projects`. Only directories that exist are returned.
+pub fn claude_projects_dirs() -> Vec<PathBuf> {
+    claude_projects_dirs_in(&claude_dir(), &claude_desktop_dir())
+}
+
+pub(crate) fn claude_projects_dirs_in(claude_dir: &Path, desktop_dir: &Path) -> Vec<PathBuf> {
+    // Cowork: `local-agent-mode-sessions/<org>/<account>/local_<id>/.claude/projects`,
+    // and the same under `<account>/agent/` for the background agent's sessions.
+    let mut cowork: Vec<PathBuf> = subdirs(&desktop_dir.join("local-agent-mode-sessions"))
+        .flat_map(|org| subdirs(&org))
+        .flat_map(|account| subdirs(&account).chain(subdirs(&account.join("agent"))))
+        .filter(|s| s.file_name().is_some_and(|n| n.to_string_lossy().starts_with("local_")))
+        .map(|s| s.join(".claude").join("projects"))
+        .filter(|p| p.is_dir())
+        .collect();
+    cowork.sort();
+    let cli = claude_dir.join("projects");
+    cli.is_dir().then_some(cli).into_iter().chain(cowork).collect()
+}
+
+fn subdirs(dir: &Path) -> impl Iterator<Item = PathBuf> + use<> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+}
+
 /// Expands a leading `~` or `~/` to the home dir; `~user` passes through.
 pub fn expand_tilde(raw: &str) -> PathBuf {
     expand_tilde_with(raw, dirs::home_dir().as_deref())

@@ -89,12 +89,12 @@ pub struct ClaudeSessionsSummary {
 }
 
 fn scan(days: f64) -> Result<Vec<SessionDetail>, String> {
-    let projects_dir = tt_config::claude_dir().join("projects");
-    if !projects_dir.exists() {
-        return Err("No Claude projects directory found at ~/.claude/projects/".to_string());
+    let projects_dirs = tt_config::claude_projects_dirs();
+    if projects_dirs.is_empty() {
+        return Err("No Claude sessions found in ~/.claude/projects/ or Claude Desktop".to_string());
     }
     let now_ms = chrono::Local::now().timestamp_millis();
-    scan_sessions_detailed(&projects_dir, SESSION_LIMIT, days, now_ms).map_err(|e| e.to_string())
+    scan_sessions_detailed(&projects_dirs, SESSION_LIMIT, days, now_ms).map_err(|e| e.to_string())
 }
 
 /// Blocking pool: multi-MB parses would freeze the main thread.
@@ -222,8 +222,7 @@ pub async fn claude_sessions_insights(
 pub async fn claude_sessions_breakdown(session_id: String) -> Result<SessionBreakdown, String> {
     tracing::info!("claude_sessions.breakdown_opened");
     tauri::async_runtime::spawn_blocking(move || {
-        let projects_dir = tt_config::claude_dir().join("projects");
-        let path = find_session_path(&projects_dir, &session_id)
+        let path = find_session_path(&tt_config::claude_projects_dirs(), &session_id)
             .map_err(|e| format!("Failed to search sessions: {e}"))?
             .ok_or_else(|| format!("Session {session_id} not found"))?;
         Ok(load_session_breakdown(&path))
