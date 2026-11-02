@@ -715,3 +715,35 @@ fn unscoped_paths_match_historic_defaults() {
     assert!(agentboard_dir().unwrap().ends_with("towles-tool/agentboard"));
     set_scope_env(None);
 }
+
+#[test]
+fn claude_projects_dirs_lists_the_cli_dir_then_each_cowork_session() {
+    let root = TempDir::new().unwrap();
+    let claude = root.path().join(".claude");
+    let desktop = root.path().join("Claude");
+    std::fs::create_dir_all(claude.join("projects")).unwrap();
+    let account = desktop.join("local-agent-mode-sessions/org/acct");
+    for s in ["local_b", "local_a"] {
+        std::fs::create_dir_all(account.join(s).join(".claude/projects")).unwrap();
+    }
+    std::fs::create_dir_all(account.join("agent/local_ditto_x/.claude/projects")).unwrap();
+    // A session that never ran Claude Code, and a non-session sibling.
+    std::fs::create_dir_all(account.join("local_c")).unwrap();
+    std::fs::create_dir_all(account.join("skills/.claude/projects")).unwrap();
+
+    assert_eq!(
+        claude_projects_dirs_in(&claude, &desktop),
+        vec![
+            claude.join("projects"),
+            account.join("agent/local_ditto_x/.claude/projects"),
+            account.join("local_a/.claude/projects"),
+            account.join("local_b/.claude/projects"),
+        ]
+    );
+}
+
+#[test]
+fn claude_projects_dirs_is_empty_without_either_install() {
+    let root = TempDir::new().unwrap();
+    assert!(claude_projects_dirs_in(&root.path().join("a"), &root.path().join("b")).is_empty());
+}
