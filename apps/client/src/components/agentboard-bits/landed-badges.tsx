@@ -116,7 +116,6 @@ export function DiscardBadge({ onDiscard }: { onDiscard: () => void }) {
           setArmed(false);
           onDiscard();
         }}
-        onBlur={() => setArmed(false)}
         onKeyDown={(e) => {
           if (e.key === "Escape") setArmed(false);
         }}

@@ -79,11 +79,12 @@ impl RepoCache {
         {
             return Ok(Repo { repo: entry.repo.to_thread_local() });
         }
-        let repo = gix::open(&key).map_err(|e| match e {
-            gix::open::Error::NotARepository { .. } => {
+        let repo = gix::open(&key).map_err(|e| {
+            if e.is_not_found() {
                 GitError::NotARepo(key.display().to_string())
+            } else {
+                GitError::Open { path: key.display().to_string(), detail: e.to_string() }
             }
-            other => GitError::Open { path: key.display().to_string(), detail: other.to_string() },
         })?;
         let repo = repo.into_sync();
         let handle = repo.to_thread_local();
@@ -160,11 +161,12 @@ impl std::fmt::Debug for Repo {
 
 impl Repo {
     pub fn open(dir: &Path) -> Result<Self> {
-        let repo = gix::open(dir).map_err(|e| match e {
-            gix::open::Error::NotARepository { .. } => {
+        let repo = gix::open(dir).map_err(|e| {
+            if e.is_not_found() {
                 GitError::NotARepo(dir.display().to_string())
+            } else {
+                GitError::Open { path: dir.display().to_string(), detail: e.to_string() }
             }
-            other => GitError::Open { path: dir.display().to_string(), detail: other.to_string() },
         })?;
         Ok(Self { repo })
     }

@@ -2,8 +2,10 @@ import { Result } from "effect";
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import type { BlockedDelete, RemoveTarget } from "@/lib/agentboard/actions";
+import { prForFolder } from "@/lib/agentboard/folder";
 import {
   blockerShortLabel,
+  folderDiscardable,
   landingSummaryForDir,
   type TaskBlocker,
 } from "@/lib/agentboard/landing";
@@ -103,6 +105,14 @@ export function useWorktreeDelete(args: {
 
   function discardWorktree(dir: string, label: string) {
     const folder = repos.flatMap((r) => r.folders).find((f) => f.dir === dir);
+    // Re-judged against the latest poll, not the render that armed the box: work
+    // that landed since goes through the dialog that says what would be lost.
+    const repo = repos.find((r) => r.folders.some((f) => f.dir === dir));
+    const pr = folder && repo ? prForFolder(prs, repo.originUrl, folder.branch) : undefined;
+    if (!folder || !folderDiscardable(folder, pr)) {
+      requestDeleteWorktree(dir, label);
+      return;
+    }
     // It never got work, so the task it stood for was abandoned, not done.
     const bound = tasks.find((t) => t.worktree?.dir === dir);
     uiAction("agentboard.discard_worktree", "agentboard", bound ? "abandoned" : "no-task");
