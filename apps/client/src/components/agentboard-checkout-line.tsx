@@ -1,6 +1,4 @@
 import { Result } from "effect";
-// A checkout as one line under its repo: name, its sessions inline, then what
-// needs saying about it. Branch, PR, base and spend live in the task header.
 import { useState, type ReactNode } from "react";
 import { toast } from "@/lib/toast";
 import { TrashIcon } from "@phosphor-icons/react";
@@ -17,19 +15,16 @@ import {
   SettingUpBadge,
 } from "@/components/agentboard-bits/badges";
 import { CommittedChip, UncommittedChip } from "@/components/agentboard-bits/diff-chips";
-import { FolderLandedBadge, SafeToDeleteBadge } from "@/components/agentboard-bits/landed-badges";
 import {
-  BrowserButton,
-  FilesButton,
-  PreviewButton,
-} from "@/components/agentboard-bits/pane-buttons";
-import { IconBtn } from "@/components/agentboard-bits/primitives";
+  DeleteBlockedBadge,
+  DiscardBadge,
+  FolderLandedBadge,
+  SafeToDeleteBadge,
+} from "@/components/agentboard-bits/landed-badges";
+import { LineActionBar } from "@/components/agentboard-bits/line-action-bar";
 import { RepoMenu } from "@/components/agentboard-bits/repo-menu";
-import { DevServersButton } from "@/components/dev-servers";
 import { Input } from "@cloudflare/kumo";
-import { PlusIcon } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import type { SessionActions } from "@/lib/agentboard/actions";
 import {
   comparedBaseLabel,
   folderCreating,
@@ -38,12 +33,21 @@ import {
   folderRemoving,
 } from "@/lib/agentboard/folder";
 import { humanizeFolderName } from "@/lib/agentboard/folder-name";
-import { folderSafeToDelete } from "@/lib/agentboard/landing";
+import {
+  folderDiscardable,
+  folderSafeToDelete,
+  stillBlocking,
+  type TaskBlocker,
+} from "@/lib/agentboard/landing";
 import { folderPortDrift } from "@/lib/agentboard/session";
 import { collapsedLiveColor } from "@/lib/agentboard/status";
 import type { FolderData } from "@/lib/agentboard/types";
 import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
 
+/** A checkout as one line under its repo: name, its sessions inline, then what
+ * needs saying about it. Its actions live on the selected line
+ * (`LineActionBar`), never a hover overlay. Branch, PR, base and spend live in
+ * the task header. */
 export function CheckoutLine({
   title,
   folder,
@@ -58,11 +62,12 @@ export function CheckoutLine({
   deletingLabel,
   onAdoptWorktree,
   settingUpSince,
-  actions,
   onSelect,
   onNewSession,
   onRemoveRepo,
   onDeleteWorktree,
+  onDiscardWorktree,
+  deleteBlockers,
   onRecreateWorktree,
   onOpenFiles,
   onOpenPreview,
@@ -87,12 +92,15 @@ export function CheckoutLine({
   onAdoptWorktree?: () => void;
   /** Epoch ms; absent means nothing is installing. */
   settingUpSince?: number;
-  actions: SessionActions;
   onSelect: () => void;
   onNewSession: () => void;
   onRemoveRepo?: () => void;
   /** Set only on worktree checkouts: untracking one makes no sense. */
   onDeleteWorktree?: () => void;
+  /** Dialog-free delete for a worktree that holds no work. */
+  onDiscardWorktree?: () => void;
+  /** What refused this checkout's last delete; absent once one succeeds. */
+  deleteBlockers?: TaskBlocker[];
   /** Set only on a `no worktree` task row. */
   onRecreateWorktree?: () => void;
   onOpenFiles: () => void;
@@ -108,7 +116,7 @@ export function CheckoutLine({
   const displayTitle =
     humanTitle || (folder.isWorktree ? humanizeFolderName(title) : folder.branch || "Root");
   const liveColor = collapsedLiveColor(folder.sessions);
-  const [hovered, setHovered] = useState(false);
+  const blockers = stillBlocking(deleteBlockers ?? [], folder);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
 
@@ -128,15 +136,8 @@ export function CheckoutLine({
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setHovered(false);
-      }}
       className={cn(
-        "@container/line relative border-l-2 border-transparent pr-3 pl-2",
-        hovered && "bg-kumo-tint/50",
+        "@container/line relative border-l-2 border-transparent pr-3 pl-2 hover:bg-kumo-tint/50",
         active && "border-l-agent bg-kumo-tint/60",
         needs > 0 && "border-l-warn bg-warn/10",
         cursor && "ring-1 ring-inset ring-agent",
@@ -166,6 +167,11 @@ export function CheckoutLine({
             <Hint label={folder.branch ?? folder.dir} side="right">
               <button
                 type="button"
+                data-hud={
+                  active
+                    ? `${displayTitle} is open${task && !missing ? " · double-click to rename" : ""}`
+                    : `Open ${displayTitle}: its sessions, files and actions`
+                }
                 onClick={onSelect}
                 onDoubleClick={startRename}
                 className={cn(
@@ -182,7 +188,10 @@ export function CheckoutLine({
           {quiet && !missing && <QuietBadge />}
         </div>
 
-        <div className="order-last col-span-2 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 @[24rem]/line:order-none @[24rem]/line:col-span-1">
+        <div
+          data-hud="Click a session to focus it"
+          className="order-last col-span-2 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 @[24rem]/line:order-none @[24rem]/line:col-span-1"
+        >
           {children}
         </div>
 
@@ -219,6 +228,14 @@ export function CheckoutLine({
               )}
               {folder.hasPortDrift && <PortDriftBadge drift={folderPortDrift(folder)} />}
               <FolderLandedBadge folder={folder} pr={pr} />
+              {blockers.length > 0 && !deleting && onDeleteWorktree && (
+                <DeleteBlockedBadge blockers={blockers} onRetry={onDeleteWorktree} />
+              )}
+              {/* A refusal outranks the offer: both on one line would contradict. */}
+              {onDiscardWorktree &&
+                !deleting &&
+                blockers.length === 0 &&
+                folderDiscardable(folder, pr) && <DiscardBadge onDiscard={onDiscardWorktree} />}
               {folder.isWorktree && onDeleteWorktree && folderSafeToDelete(folder, pr) && (
                 <SafeToDeleteBadge
                   base={comparedBaseLabel(folder)}
@@ -232,49 +249,41 @@ export function CheckoutLine({
               {folder.commitsAhead > 0 && <CommittedChip stats={folder} onOpen={onOpenFiles} />}
             </>
           )}
+          {/* Always on screen, never hover-gated: the one route to every
+              secondary action, delete included, from any pointer position. */}
+          {onRemoveRepo && (
+            <span
+              data-hud={`More actions: ${onDeleteWorktree ? "delete, " : ""}external editor, sync, quiet`}
+            >
+              <RepoMenu
+                ghost
+                path={folder.dir}
+                onRemove={onRemoveRepo}
+                dir={folder.dir}
+                isWorktree={folder.isWorktree}
+                quiet={folder.quiet}
+                // Every item needs a directory except closing the task out,
+                // which is the one thing a detached line is *for*.
+                onDeleteWorktree={!missing || folderDetached(folder) ? onDeleteWorktree : undefined}
+                deleteLabel={missing ? "Close task…" : undefined}
+                taskId={!missing ? task?.id : undefined}
+                dirMissing={missing}
+              />
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Actions overlay the facts on hover or focus rather than reserving a
-          column, so a resting line spends its width on names. */}
-      {hovered && !renaming && (
-        <div className="absolute top-1 right-2 z-10 flex items-center gap-1 rounded-md bg-kumo-tint pl-1.5">
-          {!missing && (
-            <>
-              <FilesButton onOpen={onOpenFiles} />
-              {folder.hasLaunchConfig && <PreviewButton onOpen={onOpenPreview} />}
-              {onOpenBrowser && <BrowserButton onOpen={onOpenBrowser} />}
-              {folder.hasLaunchConfig && (
-                <DevServersButton folder={folder} actions={actions} ghost />
-              )}
-              <IconBtn
-                ghost
-                title="New session"
-                shortcut="ab-new-session"
-                onClick={onNewSession}
-                className="hover:text-agent"
-              >
-                <PlusIcon className="size-3.5" />
-              </IconBtn>
-            </>
-          )}
-          {onRemoveRepo && (
-            <RepoMenu
-              ghost
-              path={folder.dir}
-              onRemove={onRemoveRepo}
-              dir={folder.dir}
-              isWorktree={folder.isWorktree}
-              quiet={folder.quiet}
-              // Every item needs a directory except closing the task out,
-              // which is the one thing a detached line is *for*.
-              onDeleteWorktree={!missing || folderDetached(folder) ? onDeleteWorktree : undefined}
-              deleteLabel={missing ? "Close task…" : undefined}
-              taskId={!missing ? task?.id : undefined}
-              dirMissing={missing}
-            />
-          )}
-        </div>
+      {active && !renaming && !missing && (
+        <LineActionBar
+          folder={folder}
+          onOpenFiles={onOpenFiles}
+          onOpenPreview={onOpenPreview}
+          onOpenBrowser={onOpenBrowser}
+          onNewSession={onNewSession}
+          onRename={task ? startRename : undefined}
+          onDeleteWorktree={onDeleteWorktree}
+        />
       )}
     </div>
   );

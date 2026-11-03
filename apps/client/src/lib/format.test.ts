@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtBytes, fmtDiffLines, fmtDuration, fmtElapsed, fmtTokens } from "./format";
+import { diffBlocks, fmtBytes, fmtDiffLines, fmtDuration, fmtElapsed, fmtTokens } from "./format";
 
 describe("fmtTokens", () => {
   it("abbreviates to K and M", () => {
@@ -88,5 +88,29 @@ describe("fmtBytes", () => {
   it("promotes on the rounded value, never reading '1024 KB'", () => {
     expect(fmtBytes(1024 ** 2 - 1)).toBe("1.0 MB");
     expect(fmtBytes(-5)).toBe("0 B");
+  });
+});
+
+describe("diffBlocks", () => {
+  it("fills nothing for no change", () => {
+    expect(diffBlocks(0, 0)).toEqual({ add: 0, del: 0 });
+  });
+
+  it("fills one block per order of magnitude, capped", () => {
+    const filled = (a: number, r: number) => {
+      const b = diffBlocks(a, r);
+      return b.add + b.del;
+    };
+    expect(filled(5, 0)).toBe(1);
+    expect(filled(414, 162)).toBe(3);
+    expect(filled(61_800, 553)).toBe(5);
+    expect(filled(9_000_000, 1)).toBe(5);
+  });
+
+  it("splits by share, each nonzero side keeping a block", () => {
+    expect(diffBlocks(414, 162)).toEqual({ add: 2, del: 1 });
+    expect(diffBlocks(61_800, 553)).toEqual({ add: 4, del: 1 });
+    expect(diffBlocks(0, 40)).toEqual({ add: 0, del: 2 });
+    expect(diffBlocks(3, 1)).toEqual({ add: 1, del: 0 });
   });
 });

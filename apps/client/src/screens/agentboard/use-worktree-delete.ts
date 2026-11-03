@@ -2,15 +2,24 @@ import { Result } from "effect";
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import type { BlockedDelete, RemoveTarget } from "@/lib/agentboard/actions";
-import { landingSummaryForDir } from "@/lib/agentboard/landing";
+import {
+  blockerShortLabel,
+  landingSummaryForDir,
+  type TaskBlocker,
+} from "@/lib/agentboard/landing";
 import { liveSessions } from "@/lib/agentboard/session";
 import type { RepoData } from "@/lib/agentboard/types";
 import { taskDelete, type PrItem, type TaskItem, type TaskOutcome } from "@/lib/data";
 import { invoke, runIpc } from "@/lib/tauri";
+import { hudNote } from "@/lib/rail-hud";
 import { uiAction } from "@/lib/ui-action";
 
 export type WorktreeDelete = {
   requestDeleteWorktree: (dir: string, label: string) => void;
+  /** Delete a worktree that holds no work, with no dialog: the guards still run. */
+  discardWorktree: (dir: string, label: string) => void;
+  /** Dir → what refused its last delete, so the rail can say so at rest. */
+  blockedByDir: ReadonlyMap<string, TaskBlocker[]>;
   confirmDeleteWorktree: () => void;
 
   confirmDeleteWt: RemoveTarget | null;
@@ -53,6 +62,17 @@ export function useWorktreeDelete(args: {
   const [blockedDelete, setBlockedDelete] = useState<BlockedDelete | null>(null);
   const [stoppingPort, setStoppingPort] = useState<number | null>(null);
   const [deletingDirs, setDeletingDirs] = useState<Set<string>>(new Set());
+  const [blockedByDir, setBlockedByDir] = useState<ReadonlyMap<string, TaskBlocker[]>>(new Map());
+
+  function recordBlockers(dir: string, blockers: TaskBlocker[] | null) {
+    setBlockedByDir((prev) => {
+      if (!blockers && !prev.has(dir)) return prev;
+      const next = new Map(prev);
+      if (blockers) next.set(dir, blockers);
+      else next.delete(dir);
+      return next;
+    });
+  }
 
   // Generation per dir, bumped on every start and end, so an attempt resolving
   // after the user moved on can tell it's stale and not reopen a closed dialog.
@@ -79,6 +99,25 @@ export function useWorktreeDelete(args: {
       baseBranch: folder?.baseBranch,
       landing: landingSummaryForDir(repos, prs, dir),
     });
+  }
+
+  function discardWorktree(dir: string, label: string) {
+    const folder = repos.flatMap((r) => r.folders).find((f) => f.dir === dir);
+    // It never got work, so the task it stood for was abandoned, not done.
+    const bound = tasks.find((t) => t.worktree?.dir === dir);
+    uiAction("agentboard.discard_worktree", "agentboard", bound ? "abandoned" : "no-task");
+    bumpDeleteFlow(dir);
+    void performDeleteWorktree(
+      {
+        label,
+        dirs: [dir],
+        // Its shells die with it, so claim those exits before Rust kills them.
+        sessionIds: folder ? liveSessions(folder).map((s) => s.id) : [],
+        baseBranch: folder?.baseBranch,
+        landing: landingSummaryForDir(repos, prs, dir),
+      },
+      { outcome: bound ? "abandoned" : undefined },
+    );
   }
 
   function confirmDeleteWorktree() {
@@ -125,6 +164,14 @@ export function useWorktreeDelete(args: {
     Result.match(removed, {
       onSuccess: (verdict) => {
         if (verdict.status === "blocked") {
+          recordBlockers(dir, verdict.blockers);
+          const first = verdict.blockers[0];
+          hudNote(
+            first
+              ? `Delete of ${target.label} blocked: ${blockerShortLabel(first)}`
+              : `Delete of ${target.label} blocked`,
+            "warn",
+          );
           if (current)
             setBlockedDelete({
               target,
@@ -136,15 +183,17 @@ export function useWorktreeDelete(args: {
           return;
         }
         endDeleteFlow(dir);
+        recordBlockers(dir, null);
         for (const id of target.sessionIds) onSessionRemoved(id);
         for (const message of verdict.messages) toast(message);
-        toast.success(
-          target.dirMissing
-            ? `Closed ${verdict.name || target.label}`
-            : `Deleted worktree ${verdict.name || target.label}`,
-        );
+        const done = target.dirMissing
+          ? `Closed ${verdict.name || target.label}`
+          : `Deleted worktree ${verdict.name || target.label}`;
+        toast.success(done);
+        hudNote(done, "ok");
       },
       onFailure: (e) => {
+        hudNote(`Delete of ${target.label} failed: ${e.message}`, "danger");
         if (current) toast.error(e.message);
       },
     });
@@ -192,6 +241,8 @@ export function useWorktreeDelete(args: {
 
   return {
     requestDeleteWorktree,
+    discardWorktree,
+    blockedByDir,
     confirmDeleteWorktree,
     confirmDeleteWt,
     clearConfirm: () => setConfirmDeleteWt(null),

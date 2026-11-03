@@ -2,9 +2,9 @@
 //!
 //! Its "Set up dev server" flow saves what it detects to `<dir>/.claude/
 //! launch.json`. We read that same file so a config that works there works here:
-//! the app lists a folder's configs, launches one by typing `runtimeExecutable
-//! runtimeArgs…` into a PTY, and [`port_listening`] tells "already running" from
-//! "stopped" so a second launch is never offered while something holds the port.
+//! the app lists a folder's configs and launches one by typing `runtimeExecutable
+//! runtimeArgs…` into a PTY; the app's port probe keeps a second launch from
+//! being offered while something holds the port.
 //!
 //! The file is owned by Claude Desktop — we read it, never write it — so parsing
 //! is tolerant: every field defaults, unknown fields are ignored, and an
@@ -86,31 +86,6 @@ const JSONC_OPTIONS: jsonc_parser::ParseOptions = jsonc_parser::ParseOptions {
     allow_hexadecimal_numbers: false,
     allow_unary_plus_numbers: false,
 };
-
-/// Whether something is accepting TCP connections on localhost:`port` — the
-/// "already running" probe. A connect, not a bind test, so only a listener
-/// genuinely serving counts; both loopback stacks are tried since dev servers
-/// bind either.
-pub fn port_listening(port: u16) -> bool {
-    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
-    let timeout = std::time::Duration::from_millis(250);
-    [
-        SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
-        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
-    ]
-    .iter()
-    .any(|addr| match TcpStream::connect_timeout(addr, timeout) {
-        // A connect into the ephemeral range can "succeed" with no listener:
-        // TCP simultaneous open lets the socket connect to itself when the
-        // kernel picks source port == dest port. Such a stream has local ==
-        // peer, which a real accepted connection never does.
-        Ok(stream) => match (stream.local_addr(), stream.peer_addr()) {
-            (Ok(local), Ok(peer)) => local != peer,
-            _ => true, // connected but unreadable addrs: trust the connect
-        },
-        Err(_) => false,
-    })
-}
 
 #[cfg(test)]
 mod tests {
@@ -275,48 +250,5 @@ mod tests {
     fn has_launch_file_false_without_one() {
         let root = tempfile::TempDir::new().unwrap();
         assert!(!has_launch_file(root.path()));
-    }
-
-    fn ephemeral_range_start() -> u16 {
-        std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
-            .ok()
-            .and_then(|s| s.split_whitespace().next()?.parse().ok())
-            .unwrap_or(32768)
-    }
-
-    /// Bind a listener *below* the ephemeral range, so the kernel can't hand
-    /// this port to an unrelated `bind(0)` while the test is mid-flight.
-    fn bind_below_ephemeral_range() -> Option<(std::net::TcpListener, u16)> {
-        let start = ephemeral_range_start();
-        (1024..start)
-            .rev()
-            .take(500)
-            .find_map(|port| std::net::TcpListener::bind(("127.0.0.1", port)).ok())
-            .map(|listener| {
-                let port = listener.local_addr().expect("bound listener has an addr").port();
-                (listener, port)
-            })
-    }
-
-    #[test]
-    fn port_listening_tracks_a_real_listener() {
-        let Some((listener, port)) = bind_below_ephemeral_range() else {
-            return;
-        };
-        assert!(port_listening(port), "a bound listener must read as listening");
-        drop(listener);
-
-        // `drop` closes *our* descriptor, not necessarily the socket: a
-        // subprocess forked while the listener was open inherits a duplicate
-        // and holds it in LISTEN. So the honest assertion is that the port
-        // frees up promptly, not that it is free the instant we let go.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while port_listening(port) {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "port {port} still listening 10s after its listener was dropped"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        }
     }
 }

@@ -1,6 +1,9 @@
-import { CheckIcon, GitMergeIcon } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { CheckIcon, GitMergeIcon, TrashIcon, WarningIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@cloudflare/kumo";
+import { Hint } from "@/components/hint";
 import { comparedBaseLabel } from "@/lib/agentboard/folder";
+import { blockerShortLabel, type TaskBlocker } from "@/lib/agentboard/landing";
 import type { FolderData, LandedVia } from "@/lib/agentboard/types";
 import { type PrItem } from "@/lib/data";
 
@@ -86,5 +89,83 @@ export function SafeToDeleteBadge({
         </button>
       }
     />
+  );
+}
+
+/** How long an armed discard waits for its second click before standing down. */
+const DISCARD_ARM_MS = 4000;
+
+/** A worktree that never got work: the first click arms, the second deletes.
+ * The confirm lives in the box itself — nothing is lost, so no dialog. */
+export function DiscardBadge({ onDiscard }: { onDiscard: () => void }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = setTimeout(() => setArmed(false), DISCARD_ARM_MS);
+    return () => clearTimeout(timer);
+  }, [armed]);
+
+  if (armed)
+    return (
+      <button
+        type="button"
+        autoFocus
+        data-hud="Click again to delete this worktree · Esc keeps it"
+        onClick={(e) => {
+          e.stopPropagation();
+          setArmed(false);
+          onDiscard();
+        }}
+        onBlur={() => setArmed(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setArmed(false);
+        }}
+        className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-danger/60 bg-danger/15 px-1.5 font-mono text-mini text-danger"
+      >
+        <TrashIcon className="size-3" /> confirm discard
+      </button>
+    );
+  return (
+    <button
+      type="button"
+      data-hud="Discard: no commits, no changes and no agent here, so nothing would be lost"
+      onClick={(e) => {
+        e.stopPropagation();
+        setArmed(true);
+      }}
+      className="flex h-5 shrink-0 items-center gap-1 rounded-md border border-kumo-hairline px-1.5 font-mono text-mini text-kumo-subtle transition-colors hover:border-danger/50 hover:bg-danger/10 hover:text-danger"
+    >
+      <TrashIcon className="size-3" /> discard
+    </button>
+  );
+}
+
+/** The last delete's refusal, kept on the line until a retry settles it, so
+ * "it won't delete" always comes with the reason. Clicking retries. */
+export function DeleteBlockedBadge({
+  blockers,
+  onRetry,
+}: {
+  blockers: TaskBlocker[];
+  onRetry: () => void;
+}) {
+  const first = blockers[0];
+  const label = first ? blockerShortLabel(first) : "refused";
+  const detail = blockers.map((b) => `${b.message} ${b.remedy}`.trim()).join(" · ");
+  return (
+    <Hint label={detail || "The last delete was refused"}>
+      <button
+        type="button"
+        data-hud={`Delete blocked: ${label}. Click to try again and see the fixes`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onRetry();
+        }}
+        className="flex h-5 max-w-48 min-w-0 items-center gap-1 rounded-md border border-warn/50 bg-warn/10 px-1.5 font-mono text-mini text-warn transition-colors hover:bg-warn/20"
+      >
+        <WarningIcon className="size-3 shrink-0" />
+        <span className="truncate">blocked · {label}</span>
+      </button>
+    </Hint>
   );
 }

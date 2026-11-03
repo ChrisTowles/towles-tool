@@ -107,6 +107,9 @@ const GIT_PENDING_GUARD_MS: i64 = 30_000;
 /// How long a folder stays off the rail before a poll reaps its state: a `git
 /// checkout` of a repo tracking `repos.json` untracks newer repos for a second.
 const UNTRACKED_GRACE_MS: i64 = 10 * 60 * 1000;
+/// How long a just-added session record outlives an untracked folder: a new
+/// task's worktree reaches the rail within a poll or two.
+const FRESH_RECORD_MS: i64 = 60 * 1000;
 
 fn persisted<E: std::fmt::Display>(result: std::result::Result<(), E>, what: &str) {
     if let Err(e) = result {
@@ -526,8 +529,10 @@ impl Engine {
         payload
     }
 
-    /// `tracked` plus folders tracked within [`UNTRACKED_GRACE_MS`] or holding a
-    /// live PTY's record — the rail's only way back to a running shell.
+    /// `tracked` plus folders tracked within [`UNTRACKED_GRACE_MS`], holding a
+    /// live PTY's record, or holding a record younger than [`FRESH_RECORD_MS`]. A brand-new
+    /// task's worktree is none of the first two when its session is added: the
+    /// rail hasn't discovered it and its pane hasn't spawned the PTY yet.
     fn not_yet_reapable(&mut self, mut tracked: HashSet<String>, now: i64) -> HashSet<String> {
         for dir in &tracked {
             self.last_tracked.insert(dir.clone(), now);
@@ -535,7 +540,10 @@ impl Engine {
         self.last_tracked.retain(|_, seen| now - *seen < UNTRACKED_GRACE_MS);
         tracked.extend(self.last_tracked.keys().cloned());
         for (dir, records) in self.sessions.iter() {
-            if records.iter().any(|r| self.live_sessions.contains(&r.id)) {
+            let keep = |r: &SessionRecord| {
+                self.live_sessions.contains(&r.id) || now - r.created_at < FRESH_RECORD_MS
+            };
+            if records.iter().any(keep) {
                 tracked.insert(dir.to_string());
             }
         }

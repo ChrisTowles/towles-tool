@@ -604,7 +604,7 @@ mod render;
 mod test_support;
 
 pub use branch::{BranchRefused, SyncError, live_task_branch, sync_task_branch};
-pub use claims::{PortClaim, PortRegistry, PortStatus, port_occupied, port_report};
+pub use claims::{PortClaim, PortRegistry, PortStatus, port_listening, port_occupied, port_report};
 pub use create::{
     CreateOpts, CreatePhase, CreatedTask, IssueTask, PrCheck, TaskSource, check_pr, create_task,
     issue_task,

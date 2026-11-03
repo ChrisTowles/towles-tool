@@ -338,7 +338,7 @@ export function AgentBoardScreen() {
       removePane(id);
     },
   });
-  const { requestDeleteWorktree } = worktreeDelete;
+  const { requestDeleteWorktree, discardWorktree, blockedByDir } = worktreeDelete;
 
   // The live Claude title while the shell runs, else the backend-derived name.
   const labelFor = (s: SessionData) =>
@@ -811,6 +811,8 @@ export function AgentBoardScreen() {
         onNewSession: newSession,
         onRemoveRepo: requestRemoveRepo,
         onDeleteWorktree: requestDeleteWorktree,
+        onDiscardWorktree: discardWorktree,
+        deleteBlockers: blockedByDir,
         settingUpDirs: taskCreation.settingUpDirs,
         onRenameCommit: stableRenameCommit,
         onOpenFiles: openFiles,
