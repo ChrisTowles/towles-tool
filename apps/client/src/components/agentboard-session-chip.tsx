@@ -97,7 +97,7 @@ export const SessionChip = memo(function SessionChip({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={cn(
-          "relative flex h-6 max-w-64 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm pr-1.5 text-xs",
+          "relative flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm pr-1.5 text-xs",
           hovered && !needs && "bg-kumo-tint",
           active && !needs && "bg-kumo-tint",
           cursor && "ring-1 ring-inset ring-agent",

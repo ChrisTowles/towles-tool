@@ -190,7 +190,7 @@ export function CheckoutLine({
 
         <div
           data-hud="Click a session to focus it"
-          className="order-last col-span-2 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5 @[32rem]/line:order-none @[32rem]/line:col-span-1"
+          className="order-last col-span-2 flex min-w-0 flex-col items-stretch gap-y-0.5 @[32rem]/line:order-none @[32rem]/line:col-span-1"
         >
           {children}
         </div>
