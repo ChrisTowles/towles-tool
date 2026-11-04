@@ -17,6 +17,7 @@ use std::sync::mpsc::{SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{Child, MasterPty, PtySize};
+#[cfg(all(unix, not(target_os = "linux")))]
 use sysinfo::{Pid as SysPid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tt_vt::{Input as VtInput, KeyEvent, Sender as VtSender};
 
@@ -401,7 +402,12 @@ fn reap(mut session: Session) {
 /// A backgrounded subshell keeps the session id for life, even reparented to
 /// init; one that called `setsid` is spared, being a real detach. Unix-only —
 /// Windows' `session_id` is the login session.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
+fn kill_session_stragglers(shell_pid: u32) {
+    crate::procfs::kill_session_members(shell_pid);
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
 fn kill_session_stragglers(shell_pid: u32) {
     let mut sys = System::new();
     sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
