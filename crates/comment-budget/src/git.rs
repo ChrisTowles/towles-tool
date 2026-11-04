@@ -103,7 +103,8 @@ impl Repo {
         let id = self
             .repo
             .merge_base(resolve(rev)?, head)
-            .map_err(|e| format!("no merge-base with `{rev}`: {e}"))?;
+            .map_err(|e| format!("no merge-base with `{rev}`: {e}"))?
+            .ok_or_else(|| format!("no merge-base with `{rev}`: no common history"))?;
         let read = |e: &dyn std::fmt::Display| format!("read the base tree: {e}");
         let tree = self.repo.find_commit(id).map_err(|e| read(&e))?.tree().map_err(|e| read(&e))?;
         let mut recorder = gix::traverse::tree::Recorder::default();

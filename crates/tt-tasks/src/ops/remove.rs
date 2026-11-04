@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::claims::{port_occupied, port_registry_path, release_task_ports};
+use super::claims::{port_listening, port_registry_path, release_task_ports};
 use super::{
     OpsError, PrProbe, Result, base_refs, dir_names, discover_root, orphaned_count, run_teardown,
     uncommitted_count, work_state,
@@ -193,10 +193,12 @@ pub fn remove_task(
     let unreachable = orphaned_count(&dir);
     // Name the holder of each foreign port — a blocker is only actionable if
     // the user can tell which process to stop. Skipped under --force, where it
-    // would only decorate a log line at the cost of two subprocesses.
+    // would only decorate a log line at the cost of two subprocesses. A listener,
+    // not a failed bind: an outbound connection that drew a claimed port as its
+    // ephemeral source port holds nothing to stop.
     let mut foreign: Vec<ForeignPort> = claimed_ports(&dir)
         .into_iter()
-        .filter(|&p| port_occupied(p) && !docker_owns_port(&name, p))
+        .filter(|&p| port_listening(p) && !docker_owns_port(&name, p))
         .map(|port| ForeignPort {
             port,
             holder: if opts.force { None } else { crate::ports::holder(port) },

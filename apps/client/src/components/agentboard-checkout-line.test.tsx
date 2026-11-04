@@ -4,7 +4,6 @@ import { screen } from "@testing-library/react";
 import { CheckoutLine } from "@/components/agentboard-checkout-line";
 import { renderWithProviders } from "@/test/render";
 import type { FolderData } from "@/lib/agentboard/types";
-import type { SessionActions } from "@/lib/agentboard/actions";
 
 const folder = {
   name: "toolbox",
@@ -35,7 +34,6 @@ describe("CheckoutLine on the primary checkout", () => {
         active={false}
         cursor={false}
         now={0}
-        actions={{} as SessionActions}
         onSelect={vi.fn<() => void>()}
         onNewSession={vi.fn<() => void>()}
         onOpenFiles={vi.fn<() => void>()}

@@ -75,7 +75,7 @@ pub use git_info::{
     compute_git_info, file_patch, prune_stale_worktree,
 };
 pub use git_meter::{GitWork, GitWorkMeter};
-pub use launch::{LaunchConfig, port_listening, read_launch_file};
+pub use launch::{LaunchConfig, read_launch_file};
 pub use notify::{NeedsYouEdge, NeedsYouWatch};
 pub use repo_meta::{HexColor, RepoMeta};
 pub use repos::{RepoEntry, default_repos_path, load_repos, remove_repo_persisted, repo_entries};

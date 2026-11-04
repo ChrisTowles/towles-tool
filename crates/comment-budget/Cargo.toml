@@ -18,7 +18,7 @@ exclude = ["npm", "pyproject.toml", "tests/npm_pins.rs", "tests/npm_postinstall.
 # Declared here rather than inherited from the workspace: this crate is
 # published, so its dependency contract is its own.
 [dependencies]
-gix = { version = "0.86.0", features = ["blob-diff", "revision", "dirwalk"] }
+gix = { version = "0.90.0", features = ["blob-diff", "revision", "dirwalk"] }
 tree-sitter = "0.26"
 tree-sitter-hcl = "1.1.0"
 tree-sitter-rust = "0.24.2"

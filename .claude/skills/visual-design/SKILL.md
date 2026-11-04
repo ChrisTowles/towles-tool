@@ -49,7 +49,7 @@ specimens, token/recipe tables, the ΔE rationale — is
   must never outrank.
 - **A box is a control or an alert, never a fact.** Rail facts (diff counts,
   branch, base-moved) are bare `font-mono`; the box arrives on hover. Only
-  needs-you, port drift, safe-to-delete and deleting keep a resting box. A
+  needs-you, port drift, safe-to-delete, discard, delete-blocked and deleting keep a resting box. A
   pane header (one toolbar, room to spare) keeps the bordered, worded form.
 - **Hierarchy:** repo → folder → session (`✦` agent / `❯` shell); attention
   bubbles up, and a deeper level never outranks its parent.

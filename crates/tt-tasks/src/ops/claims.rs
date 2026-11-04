@@ -39,6 +39,49 @@ pub fn port_occupied(port: u16) -> bool {
     unusable("127.0.0.1") || unusable("::1")
 }
 
+/// Whether something listens on `port` — unlike [`port_occupied`], an outbound
+/// connection that drew it as its ephemeral source port doesn't count. The
+/// kernel's socket table answers for any bind address and a full accept queue;
+/// a loopback connect is the fallback where that table can't be read.
+pub fn port_listening(port: u16) -> bool {
+    let table = ["/proc/net/tcp", "/proc/net/tcp6"].map(|p| fs::read_to_string(p).ok());
+    if table.iter().any(Option::is_some) {
+        return table.iter().flatten().any(|t| table_has_listener(t, port));
+    }
+    loopback_accepts(port)
+}
+
+/// A `/proc/net/tcp{,6}` row in state `0A` (LISTEN) on `port`, any address.
+pub(crate) fn table_has_listener(table: &str, port: u16) -> bool {
+    table.lines().skip(1).any(|row| {
+        let mut cols = row.split_whitespace().skip(1);
+        let local = cols.next().and_then(|a| a.rsplit(':').next());
+        let state = cols.nth(1);
+        state == Some("0A") && local.and_then(|p| u16::from_str_radix(p, 16).ok()) == Some(port)
+    })
+}
+
+fn loopback_accepts(port: u16) -> bool {
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
+    let timeout = std::time::Duration::from_millis(250);
+    [
+        SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
+    ]
+    .iter()
+    .any(|addr| match TcpStream::connect_timeout(addr, timeout) {
+        // A connect into the ephemeral range can "succeed" with no listener:
+        // TCP simultaneous open lets the socket connect to itself when the
+        // kernel picks source port == dest port. Such a stream has local ==
+        // peer, which a real accepted connection never does.
+        Ok(stream) => match (stream.local_addr(), stream.peer_addr()) {
+            (Ok(local), Ok(peer)) => local != peer,
+            _ => true, // connected but unreadable addrs: trust the connect
+        },
+        Err(_) => false,
+    })
+}
+
 pub(crate) fn checkout_keyed_filename(checkout: &Path, file: &str) -> String {
     let mut h = DefaultHasher::new();
     checkout.hash(&mut h);

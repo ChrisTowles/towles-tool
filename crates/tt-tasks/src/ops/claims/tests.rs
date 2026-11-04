@@ -174,3 +174,73 @@ fn the_report_probes_each_port_for_a_listener() {
     let report = port_report(&sr);
     assert!(report.iter().find(|r| r.port == held).unwrap().occupied);
 }
+
+fn ephemeral_range_start() -> u16 {
+    std::fs::read_to_string("/proc/sys/net/ipv4/ip_local_port_range")
+        .ok()
+        .and_then(|s| s.split_whitespace().next()?.parse().ok())
+        .unwrap_or(32768)
+}
+
+/// Bind a listener *below* the ephemeral range, so the kernel can't hand
+/// this port to an unrelated `bind(0)` while the test is mid-flight.
+fn bind_below_ephemeral_range() -> Option<(std::net::TcpListener, u16)> {
+    let start = ephemeral_range_start();
+    (1024..start)
+        .rev()
+        .take(500)
+        .find_map(|port| std::net::TcpListener::bind(("127.0.0.1", port)).ok())
+        .map(|listener| {
+            let port = listener.local_addr().expect("bound listener has an addr").port();
+            (listener, port)
+        })
+}
+
+#[test]
+fn port_listening_tracks_a_real_listener() {
+    let Some((listener, port)) = bind_below_ephemeral_range() else {
+        return;
+    };
+    assert!(port_listening(port), "a bound listener must read as listening");
+    drop(listener);
+
+    // `drop` closes *our* descriptor, not necessarily the socket: a
+    // subprocess forked while the listener was open inherits a duplicate
+    // and holds it in LISTEN. So the honest assertion is that the port
+    // frees up promptly, not that it is free the instant we let go.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while port_listening(port) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "port {port} still listening 10s after its listener was dropped"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+// Linux refuses a bind onto a connected socket's source port; macOS allows it.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_outbound_connections_source_port_is_not_listening() {
+    // The false "port in use" that blocked deletes: a claimed port the kernel
+    // handed out as some connection's ephemeral source port refuses a bind,
+    // yet nothing listens there for the removal guard to stop. Linux refuses
+    // that bind; macOS allows it, so the premise is only checked here.
+    let server = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let client = std::net::TcpStream::connect(server.local_addr().unwrap()).unwrap();
+    let source = client.local_addr().unwrap().port();
+    if cfg!(target_os = "linux") {
+        assert!(port_occupied(source));
+    }
+    assert!(!port_listening(source));
+}
+
+#[test]
+fn the_socket_table_counts_only_listen_rows_on_the_port() {
+    let table = "  sl  local_address rem_address   st tx_queue\n\
+   0: 00000000:0BB8 00000000:0000 0A 00000000:00000000\n\
+   1: 0100007F:BB00 0100007F:1144 06 00000000:00000000\n";
+    assert!(table_has_listener(table, 3000), "LISTEN on 0.0.0.0:3000");
+    assert!(!table_has_listener(table, 0xBB00), "TIME_WAIT source port is not a listener");
+    assert!(!table_has_listener(table, 4420));
+}

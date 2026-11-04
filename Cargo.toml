@@ -50,7 +50,7 @@ dirs = "6.0.0"
 # fetch) and why. Default features are the pure-Rust set
 # (`max-performance-safe`); `zlib-ng` is deliberately not enabled so the build
 # needs no C toolchain on either Linux or macOS.
-gix = { version = "0.86.0", features = ["status", "dirwalk", "blob-diff", "revision", "index", "attributes"] }
+gix = { version = "0.90.0", features = ["status", "dirwalk", "blob-diff", "revision", "index", "attributes"] }
 indexmap = "2.7.1"
 inquire = "0.9.4"
 # jsonc-parser: reads the JSON-with-comments dialect editors write (VS Code /
@@ -76,13 +76,13 @@ serde_json = "1.0.145"
 # SHA-256 for the pinned code-server download; already in the tree via tauri.
 sha2 = "0.10.9"
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
-tauri = "2.11.1"
+tauri = "2.12.5"
 tauri-build = "2.6.1"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2.5.0"
 # native-tls, not the default rustls: a TLS-inspecting proxy's root CA is only in the OS store.
-tauri-plugin-updater = { version = "~2.12.0", default-features = false, features = ["native-tls", "system-proxy", "zip"] }
+tauri-plugin-updater = { version = "~2.14.1", default-features = false, features = ["native-tls", "system-proxy", "zip"] }
 thiserror = "2.0.17"
 tokio = "1.48.0"
 # Instrumentation. `tracing` is the API every crate calls; the subscriber's

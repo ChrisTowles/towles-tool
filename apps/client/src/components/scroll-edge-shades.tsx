@@ -48,7 +48,7 @@ export function ScrollEdgeShades({ above, below }: Edges) {
         aria-hidden
         className={cn(
           shade,
-          "top-0 bg-gradient-to-b from-black to-transparent",
+          "top-0 bg-gradient-to-b from-background to-transparent",
           above ? "opacity-100" : "opacity-0",
         )}
       />
@@ -56,7 +56,7 @@ export function ScrollEdgeShades({ above, below }: Edges) {
         aria-hidden
         className={cn(
           shade,
-          "bottom-0 bg-gradient-to-t from-black to-transparent",
+          "bottom-0 bg-gradient-to-t from-background to-transparent",
           below ? "opacity-100" : "opacity-0",
         )}
       />

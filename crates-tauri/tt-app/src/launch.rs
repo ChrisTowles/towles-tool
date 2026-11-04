@@ -73,7 +73,7 @@ fn launch_configs_blocking(
         .map(|(config, session_id)| {
             let port_listening = config
                 .port
-                .map(|p| *probed.entry(p).or_insert_with(|| tt_agentboard::port_listening(p)))
+                .map(|p| *probed.entry(p).or_insert_with(|| tt_tasks::ops::port_listening(p)))
                 .unwrap_or(false);
             LaunchConfigStatus { config, port_listening, session_id }
         })

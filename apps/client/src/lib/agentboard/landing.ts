@@ -17,6 +17,23 @@ export function folderSafeToDelete(
   return pr?.state === "merged" && folderHoldsNoWork(folder);
 }
 
+/** A worktree that never got work: no commits past its base, a clean tree, no
+ * agent in it and no PR in flight. Deleting it loses nothing, so the rail
+ * offers that at rest — where {@link folderSafeToDelete} needs a merged PR.
+ * A bare shell doesn't count: selecting a checkout opens one. */
+export function folderDiscardable(
+  folder: Pick<
+    FolderData,
+    "isWorktree" | "dirty" | "commitsAhead" | "commitsUnlanded" | "sessions"
+  >,
+  pr: Pick<PrItem, "state"> | undefined,
+): boolean {
+  if (!folder.isWorktree || pr?.state === "open" || pr?.state === "merged") return false;
+  if (folder.commitsAhead > 0 || !folderHoldsNoWork(folder)) return false;
+  // A session started with a purpose is a task just begun, even before its agent registers.
+  return !folder.sessions.some((s) => s.live && (s.agents.length > 0 || Boolean(s.purpose)));
+}
+
 /** Proven by git itself (merge, rebase or squash alike) or by a merged PR. */
 export function folderLanded(
   folder: Pick<FolderData, "landed">,
@@ -45,6 +62,29 @@ const DISCARDED: Record<string, string> = {
   dirtyTree: "changes",
   unreachableCommits: "commits",
 };
+
+/** The last refusal's blockers that the folder's current facts still bear out:
+ * committing or cleaning up clears the badge without a retry. A port can't be
+ * re-checked from here, so it stands until the next attempt. */
+export function stillBlocking(
+  blockers: TaskBlocker[],
+  folder: Pick<FolderData, "dirty" | "commitsUnlanded">,
+): TaskBlocker[] {
+  return blockers.filter((b) => {
+    if (b.kind === "dirtyTree") return folder.dirty;
+    if (b.kind === "unreachableCommits") return folder.commitsUnlanded > 0;
+    return true;
+  });
+}
+
+/** A blocker named in the few words a rail box has room for. */
+export function blockerShortLabel(blocker: Pick<TaskBlocker, "kind" | "message" | "port">): string {
+  if (blocker.kind === "dirtyTree") return "uncommitted changes";
+  if (blocker.kind === "unreachableCommits") return "unpushed commits";
+  if (blocker.kind === "foreignPort")
+    return typeof blocker.port === "number" ? `port ${blocker.port} in use` : "port in use";
+  return blocker.message;
+}
 
 /** Label for the force button in the blocked-delete dialog. */
 export function forceDeleteLabel(blockers: TaskBlocker[]): string {
