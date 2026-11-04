@@ -43,6 +43,9 @@ import {
   type TaskBlocker,
   folderHoldsNoWork,
   folderSafeToDelete,
+  folderDiscardable,
+  blockerShortLabel,
+  stillBlocking,
 } from "@/lib/agentboard/landing";
 import { colCount, dragCol, paneRects, snapCol } from "@/lib/agentboard/layout";
 import {
@@ -458,6 +461,77 @@ describe("folderHoldsNoWork", () => {
     expect(
       folderHoldsNoWork(folder({ landed: "upstream gone", commitsAhead: 2, commitsUnlanded: 2 })),
     ).toBe(false);
+  });
+});
+
+describe("folderDiscardable", () => {
+  const empty = { isWorktree: true };
+
+  it("is true for a worktree that never got a commit, change or session", () => {
+    expect(folderDiscardable(folder(empty), undefined)).toBe(true);
+  });
+
+  it("is false for the primary checkout", () => {
+    expect(folderDiscardable(folder({}), undefined)).toBe(false);
+  });
+
+  it("is false once the branch has a commit, landed or not", () => {
+    expect(folderDiscardable(folder({ ...empty, commitsAhead: 1 }), undefined)).toBe(false);
+  });
+
+  it("is false with uncommitted changes", () => {
+    expect(folderDiscardable(folder({ ...empty, dirty: true }), undefined)).toBe(false);
+  });
+
+  it("is false while an agent is live in it", () => {
+    const sessions = [session({ live: true, agents: [agent("idle")] })];
+    expect(folderDiscardable(folder({ ...empty, sessions }), undefined)).toBe(false);
+  });
+
+  it("counts a session started with a purpose before its agent registers", () => {
+    const sessions = [session({ live: true, purpose: "fix the hook" })];
+    expect(folderDiscardable(folder({ ...empty, sessions }), undefined)).toBe(false);
+  });
+
+  it("ignores a bare shell, which selecting the checkout opens", () => {
+    const sessions = [session({ live: true })];
+    expect(folderDiscardable(folder({ ...empty, sessions }), undefined)).toBe(true);
+  });
+
+  it("leaves a merged PR to safe-to-delete and an open one alone", () => {
+    expect(folderDiscardable(folder(empty), pr({ state: "merged" }))).toBe(false);
+    expect(folderDiscardable(folder(empty), pr({ state: "open" }))).toBe(false);
+    expect(folderDiscardable(folder(empty), pr({ state: "closed" }))).toBe(true);
+  });
+});
+
+const blockerOf = (kind: string, port?: number) => ({ kind, message: "the long sentence", port });
+
+describe("stillBlocking", () => {
+  const blocker = (kind: string) => ({ kind, message: "", remedy: "", losesWork: false });
+
+  it("drops what the folder's current facts no longer bear out", () => {
+    const all = [blocker("dirtyTree"), blocker("unreachableCommits"), blocker("foreignPort")];
+    const kinds = (f: Partial<FolderData>) => stillBlocking(all, folder(f)).map((b) => b.kind);
+    expect(kinds({ dirty: true, commitsUnlanded: 2 })).toEqual([
+      "dirtyTree",
+      "unreachableCommits",
+      "foreignPort",
+    ]);
+    expect(kinds({})).toEqual(["foreignPort"]);
+  });
+});
+
+describe("blockerShortLabel", () => {
+  it("names each known blocker in a few words", () => {
+    expect(blockerShortLabel(blockerOf("dirtyTree"))).toBe("uncommitted changes");
+    expect(blockerShortLabel(blockerOf("unreachableCommits"))).toBe("unpushed commits");
+    expect(blockerShortLabel(blockerOf("foreignPort", 5173))).toBe("port 5173 in use");
+    expect(blockerShortLabel(blockerOf("foreignPort"))).toBe("port in use");
+  });
+
+  it("falls back to the backend's message for an unknown kind", () => {
+    expect(blockerShortLabel(blockerOf("somethingNew"))).toBe("the long sentence");
   });
 });
 

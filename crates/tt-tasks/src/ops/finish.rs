@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use super::remove::{claimed_ports, docker_owns_port};
 use super::{
-    PrProbe, base_refs, orphaned_count, port_occupied, repo_at, uncommitted_count, work_state,
+    PrProbe, base_refs, orphaned_count, port_listening, repo_at, uncommitted_count, work_state,
 };
 use crate::landed::WorkState;
 use crate::pr::PullRequest;
@@ -103,7 +103,7 @@ pub fn stop_own_listeners(dir: &Path) -> Result<Vec<String>, String> {
     let me = std::process::id() as i32;
     let mut messages = Vec::new();
     for port in claimed_ports(dir) {
-        if !port_occupied(port) || docker_owns_port(&name, port) {
+        if !port_listening(port) || docker_owns_port(&name, port) {
             continue;
         }
         if crate::ports::holder(port).is_some_and(|h| h.pid == me) {

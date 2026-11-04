@@ -747,6 +747,21 @@ fn a_live_shell_keeps_its_record_however_long_its_repo_is_untracked() {
 }
 
 #[test]
+fn a_new_task_worktrees_session_survives_until_the_rail_finds_the_worktree() {
+    // The "session started but the rail says start Claude" race: `task_create`
+    // adds the record before the rail tracks the worktree or the pane spawns
+    // its PTY, and a poll in that gap must not reap it.
+    let (_tmp, mut e) = engine();
+    assert!(e.add_repo("/repo/a"));
+    let s = e.add_session("/repo/a/.claude/worktrees/new", None, 1000);
+    e.compute_payload(1001);
+    assert!(e.session_ids_for("/repo/a/.claude/worktrees/new").contains(&s.id));
+
+    e.compute_payload(1000 + FRESH_RECORD_MS);
+    assert!(e.session_ids_for("/repo/a/.claude/worktrees/new").is_empty());
+}
+
+#[test]
 fn an_archived_repo_stays_in_the_payload_flagged_until_restored() {
     let (_tmp, mut e) = engine();
     assert!(e.add_repo("/repo/a"));

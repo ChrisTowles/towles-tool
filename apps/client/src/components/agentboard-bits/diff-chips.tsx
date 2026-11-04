@@ -20,7 +20,7 @@ import { errorMessage } from "@/lib/errors";
 import { fire, invoke, ipcOr, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
-import { fmtDiffLines, fmtUsd } from "@/lib/format";
+import { DIFF_BLOCKS, diffBlocks, fmtDiffLines, fmtUsd } from "@/lib/format";
 import { useDirCost } from "@/lib/agentboard/cost";
 
 /** Which branch every git stat here was measured against, and the one place to
@@ -228,6 +228,32 @@ function ChipLabel({ text, labeled }: { text: string; labeled: boolean }) {
   return <span className="opacity-60">{text}</span>;
 }
 
+/** Exact `+N −M` where there's room (the pane header); on the rail a block bar
+ * whose length is the change's order of magnitude, the numbers on hover. */
+function DiffLines({ added, removed, exact }: { added: number; removed: number; exact: boolean }) {
+  if (exact)
+    return (
+      <>
+        <span className="text-ok">+{fmtDiffLines(added)}</span>
+        <span className="text-danger">−{fmtDiffLines(removed)}</span>
+      </>
+    );
+  const { add, del } = diffBlocks(added, removed);
+  return (
+    <span aria-label={`+${added} −${removed} lines`} className="flex items-center gap-px">
+      {Array.from({ length: DIFF_BLOCKS }, (_, i) => (
+        <span
+          key={i}
+          className={cn(
+            "size-1.5 rounded-[1px]",
+            i < add ? "bg-ok" : i < add + del ? "bg-danger" : "bg-kumo-hairline",
+          )}
+        />
+      ))}
+    </span>
+  );
+}
+
 /** Ticks on its own interval: a caller-passed `now` would freeze exactly when
  * nothing is changing, which is when the user is asking whether anything is alive. */
 function CheckedAgo({ computedAtMs }: { computedAtMs: number | undefined }) {
@@ -264,6 +290,11 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
                   ? `At least ${uncommittedFiles} files not committed — an untracked directory was too large to list; open the files pane for which one.`
                   : `${uncommittedFiles} file${uncommittedFiles === 1 ? "" : "s"} not committed — staged, unstaged or untracked.`}
             </span>
+            {!clean && (
+              <span className="font-mono">
+                +{fmtDiffLines(uncommittedAdded)} −{fmtDiffLines(uncommittedRemoved)} lines
+              </span>
+            )}
             <span className="opacity-70">
               {clean
                 ? "Deleting this checkout would lose nothing that isn't on the branch."
@@ -301,8 +332,7 @@ export function UncommittedChip({ stats, onOpen, labeled = false }: DiffChipProp
           ) : (
             <>
               <span>{filesLabel}</span>
-              <span className="text-ok">+{fmtDiffLines(uncommittedAdded)}</span>
-              <span className="text-danger">−{fmtDiffLines(uncommittedRemoved)}</span>
+              <DiffLines added={uncommittedAdded} removed={uncommittedRemoved} exact={labeled} />
             </>
           )}
         </button>
@@ -362,13 +392,13 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
           <span>{labeled ? "none" : "files"}</span>
         ) : landedClean ? (
           <span>
-            {stats.landed} +{fmtDiffLines(committedAdded)} −{fmtDiffLines(committedRemoved)}
+            {stats.landed}
+            {labeled && ` +${fmtDiffLines(committedAdded)} −${fmtDiffLines(committedRemoved)}`}
           </span>
         ) : (
           <>
             <span>{partly ? `${commitsUnlanded}/${commitsAhead}c` : `${commitsAhead}c`}</span>
-            <span className="text-ok">+{fmtDiffLines(committedAdded)}</span>
-            <span className="text-danger">−{fmtDiffLines(committedRemoved)}</span>
+            <DiffLines added={committedAdded} removed={committedRemoved} exact={labeled} />
           </>
         )}
       </HoverCardTrigger>
@@ -397,6 +427,11 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
               {commitsAhead} commit{commitsAhead === 1 ? "" : "s"} not on {base} yet.
             </>
           )}{" "}
+          {commitsAhead > 0 && !landedClean && (
+            <span className="font-mono">
+              +{fmtDiffLines(committedAdded)} −{fmtDiffLines(committedRemoved)} lines.{" "}
+            </span>
+          )}
           <CheckedAgo computedAtMs={stats.computedAtMs} />.{" "}
           {withHint("Opens the files pane", "ab-toggle-files")}.
         </p>

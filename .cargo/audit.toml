@@ -1,0 +1,3 @@
+# Each ignored advisory gets its reason here, and goes once its fix ships.
+[advisories]
+ignore = []

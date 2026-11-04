@@ -165,7 +165,7 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
   return (
     <span className="flex shrink-0 items-center gap-1">
       <span
-        className="rounded-md border border-kumo-hairline bg-muted/40 px-1 font-mono text-micro text-kumo-subtle"
+        className="font-mono text-micro text-kumo-subtle"
         title="A git worktree of this repo that no task claims — adopt it to track it as your own work"
       >
         no task
@@ -173,7 +173,8 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
       {onAdopt && (
         <button
           type="button"
-          className="rounded-md px-1 font-mono text-micro text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+          className="rounded-md border border-kumo-hairline px-1 font-mono text-micro text-kumo-subtle hover:bg-kumo-tint hover:text-kumo-default"
+          data-hud="Adopt: track this worktree as one of your tasks"
           title="Track this worktree as one of your tasks — the row keeps its place"
           onClick={(e) => {
             e.stopPropagation();

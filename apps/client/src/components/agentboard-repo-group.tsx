@@ -37,7 +37,7 @@ import {
   taskForFolder,
   withoutFolded,
 } from "@/lib/agentboard/folder";
-import { folderRemovableTask } from "@/lib/agentboard/landing";
+import { folderRemovableTask, type TaskBlocker } from "@/lib/agentboard/landing";
 import type { FolderData, RepoData, SessionData, WindowsPayload } from "@/lib/agentboard/types";
 import { taskAdoptWorktree, type PrItem, type TaskItem } from "@/lib/data";
 import { NotInTauri } from "@/lib/errors";
@@ -87,6 +87,8 @@ export function RepoGroup({
   onNewTask,
   onRemoveRepo,
   onDeleteWorktree,
+  onDiscardWorktree,
+  deleteBlockers,
   onRecreateWorktree,
   settingUpDirs,
   onRenameCommit,
@@ -132,6 +134,9 @@ export function RepoGroup({
   onNewTask: (repo: NewTaskRepo) => void;
   onRemoveRepo: (dirs: string[], label: string) => void;
   onDeleteWorktree: (dir: string, label: string) => void;
+  onDiscardWorktree: (dir: string, label: string) => void;
+  /** Dir → what refused its last delete. */
+  deleteBlockers: ReadonlyMap<string, TaskBlocker[]>;
   onRecreateWorktree: (folder: FolderData) => void;
   /** Checkouts whose setup step is still running → when it started (epoch ms). */
   settingUpDirs?: Map<string, number>;
@@ -227,7 +232,7 @@ export function RepoGroup({
       <>
         <AnimatePresence initial={false}>{out}</AnimatePresence>
         {empty && (
-          <span className="flex items-center gap-2 px-1.5 text-mini text-kumo-subtle">
+          <span className="flex items-center gap-2 px-1.5 text-mini whitespace-nowrap text-kumo-subtle">
             <button
               type="button"
               onClick={() => onNewSession(folder.dir, true)}
@@ -432,7 +437,6 @@ export function RepoGroup({
                       onAdoptWorktree={adoptWorktree(folder)}
                       deletingLabel={folderPhaseLabel(folder)}
                       settingUpSince={settingUpDirs?.get(folder.dir)}
-                      actions={actions}
                       onSelect={() => onSelectFolder(folder.dir)}
                       onNewSession={() => onNewSession(folder.dir)}
                       onRemoveRepo={() => onRemoveRepo([folder.dir], folder.name)}
@@ -441,6 +445,12 @@ export function RepoGroup({
                           ? () => onDeleteWorktree(folder.dir, folder.name)
                           : undefined
                       }
+                      onDiscardWorktree={
+                        folderRemovableTask(folder)
+                          ? () => onDiscardWorktree(folder.dir, folder.name)
+                          : undefined
+                      }
+                      deleteBlockers={deleteBlockers.get(folder.dir)}
                       onRecreateWorktree={
                         folderRecreateBranch(folder) && folderDetached(folder)
                           ? () => onRecreateWorktree(folder)

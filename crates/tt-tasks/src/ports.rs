@@ -90,7 +90,7 @@ pub(crate) fn stop_listeners(port: u16) -> Result<Stopped, PortError> {
     }
     // Already free is success, not failure: the user reads "a dev server may be
     // running", quits it in their own terminal, *then* clicks the button.
-    if !crate::ops::port_occupied(port) {
+    if !crate::ops::port_listening(port) {
         return Ok(Stopped { pgids: Vec::new(), graceful: true });
     }
     let pgids = listening_pgids(port);
@@ -209,7 +209,7 @@ fn signal_groups(_pgids: &[i32], _signal: i32) {}
 fn wait_until_free(port: u16, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
-        if !crate::ops::port_occupied(port) {
+        if !crate::ops::port_listening(port) {
             return true;
         }
         if Instant::now() >= deadline {

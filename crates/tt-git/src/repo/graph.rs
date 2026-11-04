@@ -9,7 +9,7 @@ impl Repo {
     pub fn merge_base(&self, a: &str, b: &str) -> Option<gix::ObjectId> {
         let a = self.resolve(a)?;
         let b = self.resolve(b)?;
-        self.inner().merge_base(a, b).ok().map(|id| id.detach())
+        self.inner().merge_base(a, b).ok().flatten().map(|id| id.detach())
     }
 
     /// Commits on `head` that `base` lacks, and vice versa — the pair
@@ -25,7 +25,8 @@ impl Repo {
         let Some(head_id) = self.resolve(head) else {
             return (0, 0);
         };
-        let Some(merge_base) = self.inner().merge_base(base_id, head_id).ok().map(|id| id.detach())
+        let Some(merge_base) =
+            self.inner().merge_base(base_id, head_id).ok().flatten().map(|id| id.detach())
         else {
             return (0, 0);
         };
@@ -85,7 +86,11 @@ impl Repo {
         if ancestor == descendant {
             return true;
         }
-        self.inner().merge_base(ancestor, descendant).is_ok_and(|base| base.detach() == ancestor)
+        self.inner()
+            .merge_base(ancestor, descendant)
+            .ok()
+            .flatten()
+            .is_some_and(|base| base.detach() == ancestor)
     }
 
     /// Commits reachable from `HEAD` but from no branch and no remote — work

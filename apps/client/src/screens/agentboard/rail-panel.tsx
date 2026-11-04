@@ -1,10 +1,12 @@
-import type { ReactNode, Ref, RefObject } from "react";
+import { useState, type ReactNode, type Ref, type RefObject } from "react";
 import { RollupChip } from "@/components/agentboard-rail";
 import { ScrollEdgeShades } from "@/components/scroll-edge-shades";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { RepoData } from "@/lib/agentboard/types";
 import { RailViewToggle } from "./rail-view-toggle";
 import type { RailView } from "@/lib/screens";
+import { hudTextAt } from "@/lib/rail-hud";
+import { RailHud } from "./rail-hud";
 import { SimBar } from "./sim-bar";
 
 /** The expanded rail: the Tree/Queue switch, rollup tally, then whichever body
@@ -34,8 +36,21 @@ export function RailPanel({
   edges: { above: boolean; below: boolean };
   focusRef: RefObject<HTMLDivElement | null>;
 }) {
+  // Delegated: every control that explains itself carries `data-hud`, so the
+  // status line needs no wiring per row.
+  const [hovered, setHovered] = useState<{ text: string; at: number } | null>(null);
+  const describe = (target: EventTarget | null) => {
+    const text = hudTextAt(target);
+    setHovered(text ? { text, at: Date.now() } : null);
+  };
   return (
-    <div className="flex h-full flex-col border-r">
+    <div
+      className="flex h-full flex-col border-r"
+      onPointerOver={(e) => describe(e.target)}
+      onPointerLeave={() => setHovered(null)}
+      onFocus={(e) => describe(e.target)}
+      onBlur={() => setHovered(null)}
+    >
       <RailViewToggle view={view} onChange={onViewChange} />
       <SimBar />
       <RollupChip repos={repos} compactPct={compactPct} now={now} />
@@ -49,6 +64,7 @@ export function RailPanel({
         </ScrollArea>
         <ScrollEdgeShades above={edges.above} below={edges.below} />
       </div>
+      <RailHud hovered={hovered} />
     </div>
   );
 }

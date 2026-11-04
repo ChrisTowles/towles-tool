@@ -51,14 +51,18 @@ one with something waiting on you.
 **In a rail row, a box means a control or an alert — never a fact**, because a
 rail that boxes everything ranks nothing. Facts (diff counts, branch, base-moved,
 pane buttons) are bare mono type (`CHIP_CLASS`) with the box arriving on hover;
-only needs-you, port drift, safe-to-delete and deleting keep a resting box. A
+only needs-you, port drift, safe-to-delete, discard, delete-blocked and deleting
+keep a resting box. **Hover never reveals a verb**: a line's actions are the
+worded `LineActionBar` on the selected checkout plus an always-visible ⋯, and
+anything that explains itself carries `data-hud` for the rail's status line
+(`screens/agentboard/rail-hud.tsx`) instead of a tooltip. A
 pane *header* is the opposite case and keeps the bordered `labeled` form. The
 rest of the look lives in the `visual-design` skill.
 
 **Built for a wide rail, degrading by container.** At 34rem a repo's name is a
 sticky left column beside its checkout lines (`@container/repo`); narrower, it
 stacks back into a header row. A checkout line is name | session chips | facts
-from 24rem (`@container/line`); narrower, its chips wrap onto a second line.
+from 32rem (`@container/line`); narrower, its chips take a second line of their own.
 Checkout lines never fold — their sessions *are* the line — so only repos
 collapse. Branch, PR, base and spend are not on the line at all: they are the
 task header's labeled facts (`agentboard-working-context`), along with model,
