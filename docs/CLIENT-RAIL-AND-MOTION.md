@@ -63,6 +63,8 @@ rest of the look lives in the `visual-design` skill.
 sticky left column beside its checkout lines (`@container/repo`); narrower, it
 stacks back into a header row. A checkout line is name | session chips | facts
 from 32rem (`@container/line`); narrower, its chips take a second line of their own.
+Either way the chips stack one per row, never side by side, so a long session
+title gets the column's full width.
 Checkout lines never fold — their sessions *are* the line — so only repos
 collapse. Branch, PR, base and spend are not on the line at all: they are the
 task header's labeled facts (`agentboard-working-context`), along with model,
