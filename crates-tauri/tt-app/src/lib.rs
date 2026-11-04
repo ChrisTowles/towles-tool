@@ -22,6 +22,8 @@ mod mcp;
 mod mcp_http;
 mod next_prompt;
 mod preview;
+#[cfg(target_os = "linux")]
+mod procfs;
 mod queue;
 mod resume;
 mod scheduler;
