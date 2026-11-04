@@ -31,25 +31,25 @@ function TaskBadge() {
   if (!task) return null;
   if (!task.isWorktree) {
     return (
-      <span title={`Main checkout — ${task.label}`}>
+      <span title={`Main checkout — ${task.label}`} className="flex min-w-0">
         <Badge
           variant="outline"
-          className="text-kumo-subtle"
-          icon={<GitBranchIcon className="size-3 text-info" />}
+          className="max-w-full min-w-0 text-kumo-subtle"
+          icon={<GitBranchIcon className="size-3 shrink-0 text-info" />}
         >
-          {task.label}
+          <span className="truncate">{task.label}</span>
         </Badge>
       </span>
     );
   }
   return (
-    <span title={`Task worktree — ${task.label}`}>
+    <span title={`Task worktree — ${task.label}`} className="flex min-w-0">
       <Badge
         variant="outline"
-        className={identityColor(task.label).badge}
-        icon={<GitBranchIcon className="size-3" />}
+        className={cn("max-w-full min-w-0", identityColor(task.label).badge)}
+        icon={<GitBranchIcon className="size-3 shrink-0" />}
       >
-        {taskShortName(task.label)}
+        <span className="truncate">{taskShortName(task.label)}</span>
       </Badge>
     </span>
   );
@@ -82,8 +82,8 @@ function CheckoutKindChip() {
 }
 
 /** Dead-center: the clock plus the next meeting's countdown (amber inside 15
- * minutes). Absolutely centered so it stays put regardless of what sits
- * left/right, on the shared app clock. */
+ * minutes), in the header grid's middle track so the sides truncate before
+ * they reach it. */
 function ClockCluster() {
   const { openTab, activeTab } = useWorkspace();
   const { snapshot } = useStoreSnapshot();
@@ -95,14 +95,13 @@ function ClockCluster() {
   const eventSoon = nextEvent && nextEvent.startTs - now < 15 * 60_000;
 
   return (
-    <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
+    <div className="flex items-center gap-2 whitespace-nowrap">
       <CheckoutKindChip />
       <span className="text-kumo-subtle/40">·</span>
       <span className="font-mono text-sm font-semibold tabular-nums text-kumo-default">
         {fmtClock(now)}
       </span>
-      {/* First to go when the header gets tight — the centre cluster is
-          absolutely positioned, so it collides rather than compressing. */}
+      {/* First to go when the header gets tight. */}
       <span className="hidden text-kumo-subtle/40 xl:inline">·</span>
       <span className="hidden text-xs text-kumo-subtle xl:inline">{fmtDate(now)}</span>
       {nextEvent && (
@@ -137,111 +136,113 @@ export function AppHeader() {
   return (
     <header
       className={cn(
-        "relative flex h-11 shrink-0 items-center gap-2 border-b border-kumo-hairline px-2",
+        "grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-kumo-hairline px-2",
         task?.isWorktree && identityColor(task.label).wash,
       )}
     >
-      <Tooltip
-        content={
-          <>
-            {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}{" "}
-            <Kbd>{shortcutHint("sidebar")}</Kbd>
-          </>
-        }
-        render={
-          <Button
-            variant="ghost"
-            shape="square"
-            size="sm"
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={() => {
-              clicked("sidebar");
-              toggleSidebar();
-            }}
-            icon={sidebarCollapsed ? <SidebarSimpleIcon /> : <SidebarSimpleIcon />}
-          />
-        }
-      />
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+        <Tooltip
+          content={
+            <>
+              {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}{" "}
+              <Kbd>{shortcutHint("sidebar")}</Kbd>
+            </>
+          }
+          render={
+            <Button
+              variant="ghost"
+              shape="square"
+              size="sm"
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => {
+                clicked("sidebar");
+                toggleSidebar();
+              }}
+              icon={sidebarCollapsed ? <SidebarSimpleIcon /> : <SidebarSimpleIcon />}
+            />
+          }
+        />
 
-      <h1 className="font-heading shrink-0 px-1 text-sm font-semibold">Towles Tool</h1>
+        <h1 className="font-heading shrink-0 px-1 text-sm font-semibold">Towles Tool</h1>
 
-      <TaskBadge />
-      {/* Second to go, for the same reason: the top task is context, not a
+        <TaskBadge />
+        {/* Second to go, for the same reason: the top task is context, not a
           signal. */}
-      <span className="hidden min-w-0 lg:flex">
-        <NextUpChip />
-      </span>
+        <span className="hidden min-w-0 lg:flex">
+          <NextUpChip />
+        </span>
+      </div>
 
       <ClockCluster />
 
-      <div className="flex-1" />
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        <NeedsYouChip />
+        <CollectorDot />
 
-      <NeedsYouChip />
-      <CollectorDot />
-
-      {/* Status left of the rule, controls right. Without it the freshness dot
+        {/* Status left of the rule, controls right. Without it the freshness dot
           reads as a bullet belonging to "N need you". */}
-      <div className="mx-1 h-4 w-px shrink-0 bg-kumo-hairline" />
+        <div className="mx-1 h-4 w-px shrink-0 bg-kumo-hairline" />
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="w-56 justify-between text-kumo-subtle"
-        onClick={() => {
-          clicked("palette");
-          setPaletteOpen(true);
-        }}
-      >
-        <span className="flex items-center gap-2">
-          <MagnifyingGlassIcon className="size-3.5" />
-          Search…
-        </span>
-        <Kbd>{shortcutHint("palette")}</Kbd>
-      </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-56 min-w-0 shrink justify-between text-kumo-subtle"
+          onClick={() => {
+            clicked("palette");
+            setPaletteOpen(true);
+          }}
+        >
+          <span className="flex items-center gap-2">
+            <MagnifyingGlassIcon className="size-3.5" />
+            Search…
+          </span>
+          <Kbd>{shortcutHint("palette")}</Kbd>
+        </Button>
 
-      <ThemeToggle />
+        <ThemeToggle />
 
-      <Tooltip
-        content={
-          <>
-            Zen focus mode <Kbd>{shortcutHint("zen")}</Kbd>
-          </>
-        }
-        render={
-          <Button
-            variant="ghost"
-            shape="square"
-            size="sm"
-            aria-label="Enter zen focus mode"
-            onClick={() => {
-              clicked("zen");
-              toggleZen();
-            }}
-            icon={<SparkleIcon />}
-          />
-        }
-      />
+        <Tooltip
+          content={
+            <>
+              Zen focus mode <Kbd>{shortcutHint("zen")}</Kbd>
+            </>
+          }
+          render={
+            <Button
+              variant="ghost"
+              shape="square"
+              size="sm"
+              aria-label="Enter zen focus mode"
+              onClick={() => {
+                clicked("zen");
+                toggleZen();
+              }}
+              icon={<SparkleIcon />}
+            />
+          }
+        />
 
-      <Tooltip
-        content={
-          <>
-            Settings <Kbd>{shortcutHint("settings")}</Kbd>
-          </>
-        }
-        render={
-          <Button
-            variant="ghost"
-            shape="square"
-            size="sm"
-            aria-label="Open settings"
-            onClick={() => {
-              clicked("settings");
-              openSettingsTab();
-            }}
-            icon={<GearIcon />}
-          />
-        }
-      />
+        <Tooltip
+          content={
+            <>
+              Settings <Kbd>{shortcutHint("settings")}</Kbd>
+            </>
+          }
+          render={
+            <Button
+              variant="ghost"
+              shape="square"
+              size="sm"
+              aria-label="Open settings"
+              onClick={() => {
+                clicked("settings");
+                openSettingsTab();
+              }}
+              icon={<GearIcon />}
+            />
+          }
+        />
+      </div>
     </header>
   );
 }
