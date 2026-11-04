@@ -16,7 +16,10 @@ const isMac = process.platform === "darwin";
 
 // macOS takes an app's name and icon from the Info.plist of its `.app`, so the `app` bundle
 // target is built and launched from inside (stdio stays inherited). Other platforms skip it.
-const bundleArgs = isMac ? ["--bundles", "app"] : ["--no-bundle"];
+// A from-source build never self-updates, so it skips the signed updater artifacts (whose key only CI holds).
+const bundleArgs = isMac
+  ? ["--bundles", "app", "--config", JSON.stringify({ bundle: { createUpdaterArtifacts: false } })]
+  : ["--no-bundle"];
 
 // One `tt` on PATH serves every checkout, so it drifts to whichever worktree installed it last.
 // `--force` because the version rarely moves, and its own target dir because sharing thrashes both.

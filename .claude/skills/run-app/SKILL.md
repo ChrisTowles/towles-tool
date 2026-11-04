@@ -13,7 +13,7 @@ Paths below are relative to the repo/task root.
 
 ## Prerequisites
 
-- **zig 0.15.x on `PATH`** (compiles `libghostty-vt-sys`). Missing/wrong
+- **zig 0.17.x on `PATH`** (compiles `libghostty-vt-sys`). Missing/wrong
   version → build fails in `tt-vt`, not `tt-app`.
 - **Linux only:**
   ```bash

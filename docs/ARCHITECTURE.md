@@ -81,7 +81,7 @@ the CLI and the app can consume it.
   the app uses to pose as an "IDE". Transport-free; the lockfile's *filename* is
   the port.
 - `tt-vt` — libghostty-vt terminal-state engine behind the canvas terminals.
-  Needs zig 0.15.x; see [`crates/tt-vt/CLAUDE.md`](../crates/tt-vt/CLAUDE.md).
+  Needs zig 0.17.x; see [`crates/tt-vt/CLAUDE.md`](../crates/tt-vt/CLAUDE.md).
 - `tt-browser` — Chrome as a supervised child driven over CDP, behind the
   **Chrome pane**. The profile is the app's own and starts empty: the feature is
   login persistence, never an import of the user's Chrome profile. Shutdown goes

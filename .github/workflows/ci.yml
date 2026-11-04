@@ -87,7 +87,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # crates/tt-vt builds `libghostty-vt`, whose build script compiles
-      # libghostty from a ghostty source checkout and needs zig 0.15.x on PATH
+      # libghostty from a ghostty source checkout and needs zig 0.17.x on PATH
       # (GHOSTTY_SOURCE_DIR). That toolchain is provisioned only in the separate
       # `rust-app` job below, so tt-vt is excluded here — along with
       # crates-tauri/tt-app, the only crate that depends on it (and which also
@@ -123,11 +123,9 @@ jobs:
     # tt-app's NSEvent monitor, the mac terminal path, tt-browser's Chrome
     # lookup. Deliberately ungated: a Linux-only API can be introduced by any
     # crate, so the paths filter that spares rust-app would miss it.
-    # macos-14 rather than macos-latest is what dodges the zig 0.15/Xcode 26.4
-    # linker bug build.yml has to work around (ziglang/zig#31658).
     runs-on: macos-14
     env:
-      GHOSTTY_COMMIT: a887df42c56f6de86c0fe6da9c4eeca37931e083
+      GHOSTTY_COMMIT: 521cf2c5d30bd48028ca61546c64e7913764073d
       GHOSTTY_SOURCE_DIR: ${{ github.workspace }}/ghostty-src
     steps:
       - uses: actions/checkout@v7
@@ -148,7 +146,7 @@ jobs:
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.1
           use-cache: false
 
       - name: Cache ghostty source
@@ -196,7 +194,7 @@ jobs:
     # GHOSTTY_COMMIT constant in that crate's build.rs). Keep this in sync when
     # bumping libghostty-vt.
     env:
-      GHOSTTY_COMMIT: a887df42c56f6de86c0fe6da9c4eeca37931e083
+      GHOSTTY_COMMIT: 521cf2c5d30bd48028ca61546c64e7913764073d
     steps:
       - uses: actions/checkout@v7
 
@@ -243,7 +241,7 @@ jobs:
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.1
           use-cache: false
 
       # Cache the ghostty checkout so we only clone on a commit bump. The clone
