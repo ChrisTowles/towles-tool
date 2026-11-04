@@ -218,15 +218,20 @@ fn port_listening_tracks_a_real_listener() {
     }
 }
 
+// Linux refuses a bind onto a connected socket's source port; macOS allows it.
+#[cfg(target_os = "linux")]
 #[test]
-fn an_outbound_connections_source_port_is_occupied_but_not_listening() {
+fn an_outbound_connections_source_port_is_not_listening() {
     // The false "port in use" that blocked deletes: a claimed port the kernel
     // handed out as some connection's ephemeral source port refuses a bind,
-    // yet nothing listens there for the removal guard to stop.
+    // yet nothing listens there for the removal guard to stop. Linux refuses
+    // that bind; macOS allows it, so the premise is only checked here.
     let server = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let client = std::net::TcpStream::connect(server.local_addr().unwrap()).unwrap();
     let source = client.local_addr().unwrap().port();
-    assert!(port_occupied(source));
+    if cfg!(target_os = "linux") {
+        assert!(port_occupied(source));
+    }
     assert!(!port_listening(source));
 }
 
