@@ -205,6 +205,16 @@ export function withoutFolded(
   return folders.filter((f) => !folded.has(f.dir));
 }
 
+/** The checkouts a folded repo still shows: the one you are in and a task still
+ * being created. A fold is never what hides where you are — the render
+ * (`RepoGroup`) and the walk (`railNodes`) both ask this. */
+export function keptWhenCollapsed(
+  folders: FolderData[],
+  activeFolderDir: string | null,
+): FolderData[] {
+  return folders.filter((f) => f.dir === activeFolderDir || folderCreating(f));
+}
+
 /** Whether `filter` demotes this folder to the per-repo "N idle" stub row. */
 export function isFolderFiltered(
   f: FolderData,

@@ -32,6 +32,7 @@ function nodes(
   collapsed: Record<string, boolean> = {},
   wins: WindowsPayload | null = null,
   repos: RepoData[] = REPOS,
+  activeFolderDir: string | null = null,
 ) {
   return railNodes({
     repos,
@@ -40,6 +41,7 @@ function nodes(
     unmanagedDirs: new Map(),
     unmanagedRevealed: new Set(),
     collapsed,
+    activeFolderDir,
     wins,
   });
 }
@@ -56,6 +58,15 @@ function move(
 }
 
 describe("railNodes", () => {
+  it("keeps the checkout you are in as a row under its folded repo", () => {
+    expect(keys(nodes({ [REPO_KEY]: true }, null, [MULTI], "/code/tt/wt/feat-x"))).toEqual([
+      "r0:tt",
+      "f1:feat-x",
+      "s2:d",
+      "s2:e",
+    ]);
+  });
+
   it("emits every visible row in render order, sessions under their checkout", () => {
     expect(keys(nodes())).toEqual([
       "r0:dotfiles",
@@ -126,6 +137,7 @@ describe("railNodes", () => {
       unmanagedDirs: new Map(),
       unmanagedRevealed: new Set(),
       collapsed: {},
+      activeFolderDir: null,
       wins: null,
     });
     expect(keys(hidden).some((k) => k.endsWith("dotfiles"))).toBe(false);
@@ -139,6 +151,7 @@ describe("railNodes", () => {
       unmanagedDirs: new Map([[REPO_KEY, new Set(["/code/tt/wt/feat-x"])]]),
       unmanagedRevealed: new Set<string>(),
       collapsed: {},
+      activeFolderDir: null,
       wins: null,
     };
     expect(keys(railNodes(v))).toEqual(["r0:tt", "f1:tt", "s2:c"]);
@@ -207,6 +220,7 @@ describe("railMove", () => {
           unmanagedDirs: new Map(),
           unmanagedRevealed: new Set(),
           collapsed: {},
+          activeFolderDir: null,
           wins: null,
         }),
         cursor: "path:/code/empty::/code/empty",
@@ -239,6 +253,7 @@ describe("resolveCursor", () => {
       unmanagedDirs: new Map([[REPO_KEY, new Set(["/code/tt/wt/feat-x"])]]),
       unmanagedRevealed: new Set(),
       collapsed: {},
+      activeFolderDir: null,
       wins: null,
     });
     // Its checkout folded into the stub too, so the repo row stands for it.

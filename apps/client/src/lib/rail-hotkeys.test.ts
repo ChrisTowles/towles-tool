@@ -28,6 +28,7 @@ function targets(args: Partial<Parameters<typeof railHotkeyTargets>[0]> = {}) {
     unmanagedDirs: new Map(),
     unmanagedRevealed: new Set(),
     collapsed: {},
+    activeFolderDir: null,
     wins: null,
     ...args,
   }).map((t) => t.sessionId);
@@ -46,6 +47,7 @@ describe("railHotkeyTargets", () => {
       unmanagedDirs: new Map(),
       unmanagedRevealed: new Set(),
       collapsed: {},
+      activeFolderDir: null,
       wins: null,
     });
     expect(first).toEqual({ sessionId: "c", folderDir: "/code/tt" });
