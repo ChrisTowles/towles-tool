@@ -382,20 +382,12 @@ struct RequiredPlugin {
 const APP_PLUGIN_INSTALL_CMD: &str = "claude plugin marketplace add ChrisTowles/towles-tool \
                                       && claude plugin enable towles-tool-app@towles-tool";
 
-/// `code-simplifier` (an official plugin some skills shell out to) and this
-/// repo's own `towles-tool-app` (the `tt` MCP server plus the nudge hook).
-const REQUIRED_PLUGINS: &[RequiredPlugin] = &[
-    RequiredPlugin {
-        id: "code-simplifier@claude-plugins-official",
-        name: "code-simplifier",
-        install_hint: "Run: claude plugin install code-simplifier@claude-plugins-official --scope user",
-    },
-    RequiredPlugin {
-        id: "towles-tool-app@towles-tool",
-        name: "towles-tool-app",
-        install_hint: APP_PLUGIN_INSTALL_CMD,
-    },
-];
+/// This repo's own `towles-tool-app` (the `tt` MCP server plus the nudge hook).
+const REQUIRED_PLUGINS: &[RequiredPlugin] = &[RequiredPlugin {
+    id: "towles-tool-app@towles-tool",
+    name: "towles-tool-app",
+    install_hint: APP_PLUGIN_INSTALL_CMD,
+}];
 
 /// One shared `claude plugin list --json` call, checked against every id.
 fn check_claude_plugins() -> Vec<PluginCheck> {
@@ -572,7 +564,7 @@ mod tests {
                 warning: None,
             }],
             gh_auth: true,
-            plugins: vec![NameOk { name: "code-simplifier".to_string(), ok: true }],
+            plugins: vec![NameOk { name: "towles-tool-app".to_string(), ok: true }],
             agentboard: vec![NameOk { name: "repos".to_string(), ok: false }],
         };
         let json = serde_json::to_value(&result).unwrap();
@@ -695,10 +687,9 @@ plugin:towles-tool-app:towles-tool: http://127.0.0.1:47870/mcp - ✔ Connected
     }
 
     #[test]
-    fn required_plugins_cover_code_simplifier_and_the_app_plugin() {
+    fn required_plugins_are_just_the_app_plugin() {
         let ids: Vec<&str> = REQUIRED_PLUGINS.iter().map(|p| p.id).collect();
-        assert!(ids.contains(&"code-simplifier@claude-plugins-official"));
-        assert!(ids.contains(&"towles-tool-app@towles-tool"));
+        assert_eq!(ids, ["towles-tool-app@towles-tool"]);
     }
 
     #[test]
