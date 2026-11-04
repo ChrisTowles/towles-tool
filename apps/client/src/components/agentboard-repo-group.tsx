@@ -32,6 +32,7 @@ import {
   folderPhaseLabel,
   folderTask,
   isHomeRepo,
+  keptWhenCollapsed,
   pathScope,
   prForFolder,
   taskForFolder,
@@ -289,6 +290,10 @@ export function RepoGroup({
     idle,
     showIdle,
   );
+  const lineFolders = repoCollapsed
+    ? keptWhenCollapsed(shownFolders, activeFolderDir)
+    : shownFolders;
+  const foldedCount = shownFolders.length - lineFolders.length;
   // Both folds gave way at once: the one row left has to undo both, or a repo
   // of nothing but agents' worktrees opens onto another stub.
   if (shownFolders.length === 0) {
@@ -400,72 +405,72 @@ export function RepoGroup({
               initialIssue={taskFormSeed?.issue}
             />
           )}
-          {repoCollapsed ? (
+          {/* Keyed on the fold so folding remounts the list instead of
+              playing a full exit on every line as if each were deleted. */}
+          <AnimatePresence key={repoCollapsed ? "folded" : "open"} initial={false}>
+            {lineFolders.map((folder) => {
+              const deleting = folderBusy(folder);
+              return (
+                <motion.div
+                  key={folder.dir}
+                  {...railRowMotion}
+                  // Dim via `animate`, not a class: motion writes an inline
+                  // opacity no class could win against.
+                  animate={{ ...railRowMotion.animate, opacity: deleting ? 0.5 : 1 }}
+                  className={cn(deleting && "pointer-events-none")}
+                >
+                  <CheckoutLine
+                    title={folder.name}
+                    folder={folder}
+                    quiet={quiet.has(folder.dir)}
+                    needs={folder.needs}
+                    pr={prForFolder(prs, repo.originUrl, folder.branch)}
+                    task={taskForFolder(tasks, folder.dir)}
+                    cursor={cursorKey === folderNodeKey(repo.key, folder.dir)}
+                    now={now}
+                    active={activeFolderDir === folder.dir}
+                    deleting={deleting}
+                    onAdoptWorktree={adoptWorktree(folder)}
+                    deletingLabel={folderPhaseLabel(folder)}
+                    settingUpSince={settingUpDirs?.get(folder.dir)}
+                    onSelect={() => onSelectFolder(folder.dir)}
+                    onNewSession={() => onNewSession(folder.dir)}
+                    onRemoveRepo={() => onRemoveRepo([folder.dir], folder.name)}
+                    onDeleteWorktree={
+                      folderRemovableTask(folder)
+                        ? () => onDeleteWorktree(folder.dir, folder.name)
+                        : undefined
+                    }
+                    onDiscardWorktree={
+                      folderRemovableTask(folder)
+                        ? () => onDiscardWorktree(folder.dir, folder.name)
+                        : undefined
+                    }
+                    deleteBlockers={deleteBlockers.get(folder.dir)}
+                    onRecreateWorktree={
+                      folderRecreateBranch(folder) && folderDetached(folder)
+                        ? () => onRecreateWorktree(folder)
+                        : undefined
+                    }
+                    onOpenFiles={() => onOpenFiles(folder.dir)}
+                    onOpenPreview={() => onOpenPreview(folder.dir)}
+                    onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
+                  >
+                    {chips(folder)}
+                  </CheckoutLine>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+          {foldedCount > 0 && (
             <button
               type="button"
               onClick={() => onToggle(repo.key)}
               className="px-3 py-2 text-left text-mini text-kumo-subtle hover:text-kumo-default"
             >
-              {shownFolders.length} checkout{shownFolders.length === 1 ? "" : "s"} folded
+              {foldedCount} {lineFolders.length > 0 ? "more " : ""}checkout
+              {foldedCount === 1 ? "" : "s"} folded
             </button>
-          ) : (
-            // Collapse test outside AnimatePresence: inside, folding a repo
-            // would play a full exit on every line as if each were deleted.
-            <AnimatePresence initial={false}>
-              {shownFolders.map((folder) => {
-                const deleting = folderBusy(folder);
-                return (
-                  <motion.div
-                    key={folder.dir}
-                    {...railRowMotion}
-                    // Dim via `animate`, not a class: motion writes an inline
-                    // opacity no class could win against.
-                    animate={{ ...railRowMotion.animate, opacity: deleting ? 0.5 : 1 }}
-                    className={cn(deleting && "pointer-events-none")}
-                  >
-                    <CheckoutLine
-                      title={folder.name}
-                      folder={folder}
-                      quiet={quiet.has(folder.dir)}
-                      needs={folder.needs}
-                      pr={prForFolder(prs, repo.originUrl, folder.branch)}
-                      task={taskForFolder(tasks, folder.dir)}
-                      cursor={cursorKey === folderNodeKey(repo.key, folder.dir)}
-                      now={now}
-                      active={activeFolderDir === folder.dir}
-                      deleting={deleting}
-                      onAdoptWorktree={adoptWorktree(folder)}
-                      deletingLabel={folderPhaseLabel(folder)}
-                      settingUpSince={settingUpDirs?.get(folder.dir)}
-                      onSelect={() => onSelectFolder(folder.dir)}
-                      onNewSession={() => onNewSession(folder.dir)}
-                      onRemoveRepo={() => onRemoveRepo([folder.dir], folder.name)}
-                      onDeleteWorktree={
-                        folderRemovableTask(folder)
-                          ? () => onDeleteWorktree(folder.dir, folder.name)
-                          : undefined
-                      }
-                      onDiscardWorktree={
-                        folderRemovableTask(folder)
-                          ? () => onDiscardWorktree(folder.dir, folder.name)
-                          : undefined
-                      }
-                      deleteBlockers={deleteBlockers.get(folder.dir)}
-                      onRecreateWorktree={
-                        folderRecreateBranch(folder) && folderDetached(folder)
-                          ? () => onRecreateWorktree(folder)
-                          : undefined
-                      }
-                      onOpenFiles={() => onOpenFiles(folder.dir)}
-                      onOpenPreview={() => onOpenPreview(folder.dir)}
-                      onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
-                    >
-                      {chips(folder)}
-                    </CheckoutLine>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
           )}
           {!repoCollapsed && unmanaged.size > 0 && (
             <FoldToggleRow

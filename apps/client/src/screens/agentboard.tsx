@@ -255,9 +255,19 @@ export function AgentBoardScreen() {
       unmanagedDirs,
       unmanagedRevealed,
       collapsed,
+      activeFolderDir,
       wins,
     }),
-    [shownRepos, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed, collapsed, wins],
+    [
+      shownRepos,
+      idleDirs,
+      idleRevealed,
+      unmanagedDirs,
+      unmanagedRevealed,
+      collapsed,
+      activeFolderDir,
+      wins,
+    ],
   );
   const railTree = useMemo(() => railNodes(railVis), [railVis]);
   const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);

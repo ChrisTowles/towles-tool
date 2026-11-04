@@ -1,4 +1,4 @@
-import { isHomeRepo, withoutFolded } from "@/lib/agentboard/folder";
+import { isHomeRepo, keptWhenCollapsed, withoutFolded } from "@/lib/agentboard/folder";
 import type { FolderData, RepoData, SessionData, WindowsPayload } from "@/lib/agentboard/types";
 
 /** One row of the rail, in render order. `key` is the cursor's identity and,
@@ -27,6 +27,8 @@ export type RailVisibility = {
   /** Repo keys whose unmanaged rows are peeked open. */
   unmanagedRevealed: Set<string>;
   collapsed: Record<string, boolean>;
+  /** Stays a row under a folded repo (`keptWhenCollapsed`). */
+  activeFolderDir: string | null;
   wins: WindowsPayload | null;
 };
 
@@ -36,7 +38,16 @@ export type RailVisibility = {
 // children, and a repo the filter emptied shrinks to a stub with no header,
 // so it is no row at all.
 export function railNodes(v: RailVisibility): RailNode[] {
-  const { repos, idleDirs, idleRevealed, unmanagedDirs, unmanagedRevealed, collapsed, wins } = v;
+  const {
+    repos,
+    idleDirs,
+    idleRevealed,
+    unmanagedDirs,
+    unmanagedRevealed,
+    collapsed,
+    activeFolderDir,
+    wins,
+  } = v;
   const out: RailNode[] = [];
   for (const repo of repos) {
     const shown = withoutFolded(
@@ -73,8 +84,8 @@ export function railNodes(v: RailVisibility): RailNode[] {
       collapseKey: repo.key,
       depth: 0,
     });
-    if (collapsed[repo.key]) continue;
-    for (const folder of shown) {
+    const lines = collapsed[repo.key] ? keptWhenCollapsed(shown, activeFolderDir) : shown;
+    for (const folder of lines) {
       const key = folderNodeKey(repo.key, folder.dir);
       out.push({
         key,

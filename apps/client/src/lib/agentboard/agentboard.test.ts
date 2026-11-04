@@ -29,6 +29,7 @@ import {
   searchRepos,
   taskForFolder,
   IDLE_GRACE_MS,
+  keptWhenCollapsed,
   withoutFolded,
 } from "@/lib/agentboard/folder";
 import { branchRedundant, humanizeFolderName } from "@/lib/agentboard/folder-name";
@@ -1294,6 +1295,24 @@ describe("foldedRepoLabel", () => {
     expect(foldedRepoLabel(3, 0)).toBe("3 idle");
     expect(foldedRepoLabel(0, 6)).toBe("6 unmanaged");
     expect(foldedRepoLabel(1, 7)).toBe("8 hidden");
+  });
+});
+
+describe("keptWhenCollapsed", () => {
+  const a = folder({ dir: "/a" });
+  const b = folder({ dir: "/b" });
+  const creating = folder({ dir: "/c", phase: { state: "creating", label: "creating" } });
+
+  it("keeps only the checkout you are in", () => {
+    expect(keptWhenCollapsed([a, b], "/b")).toEqual([b]);
+  });
+
+  it("keeps a task still being created, before it is ever selected", () => {
+    expect(keptWhenCollapsed([a, creating], null)).toEqual([creating]);
+  });
+
+  it("folds everything else", () => {
+    expect(keptWhenCollapsed([a, b], null)).toEqual([]);
   });
 });
 
