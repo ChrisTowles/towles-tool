@@ -232,7 +232,7 @@ export function RepoGroup({
       <>
         <AnimatePresence initial={false}>{out}</AnimatePresence>
         {empty && (
-          <span className="flex items-center gap-2 px-1.5 text-mini text-kumo-subtle">
+          <span className="flex items-center gap-2 px-1.5 text-mini whitespace-nowrap text-kumo-subtle">
             <button
               type="button"
               onClick={() => onNewSession(folder.dir, true)}
