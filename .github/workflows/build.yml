@@ -36,7 +36,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # Pinned ghostty commit tt-vt builds against — kept in sync with ci.yml.
-  GHOSTTY_COMMIT: a887df42c56f6de86c0fe6da9c4eeca37931e083
+  GHOSTTY_COMMIT: 521cf2c5d30bd48028ca61546c64e7913764073d
 
 jobs:
   build:
@@ -58,21 +58,6 @@ jobs:
       - name: Add macOS Rust target
         if: startsWith(inputs.platform, 'macos')
         run: rustup target add aarch64-apple-darwin
-
-      # zig 0.15.x can't link against Xcode 26.4's SDK (ziglang/zig#31658):
-      # select the newest older Xcode still on the image, if any.
-      - name: Work around zig/Xcode 26.4 linker bug (ziglang/zig#31658)
-        if: startsWith(inputs.platform, 'macos')
-        run: |
-          for dir in $(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -rV); do
-            version=$(basename "$dir" .app | sed 's/Xcode_//')
-            if [ "$(printf '%s\n26.4\n' "$version" | sort -V | head -1)" != "26.4" ]; then
-              sudo xcode-select -s "$dir/Contents/Developer"
-              echo "Selected $dir for zig build (avoiding the 26.4 SDK bug)"
-              exit 0
-            fi
-          done
-          echo "::warning::No pre-26.4 Xcode found on this runner; zig build may hit ziglang/zig#31658"
 
       - name: Cache apt packages
         if: startsWith(inputs.platform, 'ubuntu')
@@ -100,7 +85,7 @@ jobs:
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.1
           use-cache: false
 
       - name: Cache ghostty source

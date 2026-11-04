@@ -62,7 +62,7 @@ feature lands on its natural surface, with the shared logic in Tauri-free crates
 
 ## Quick start
 
-Needs Node.js 24+, a stable Rust toolchain, [zig](https://ziglang.org/) 0.15.x on
+Needs Node.js 24+, a stable Rust toolchain, [zig](https://ziglang.org/) 0.17.x on
 `PATH` (the `tt-vt` terminal engine builds against libghostty-vt), and on Linux
 `webkit2gtk` plus the usual [Tauri system
 dependencies](https://v2.tauri.app/start/prerequisites/).

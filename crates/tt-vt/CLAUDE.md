@@ -10,9 +10,15 @@ half of this wire protocol.
 
 ## Build requirement
 
-Needs **zig 0.15.x** on `PATH` to compile `libghostty-vt-sys` (dotfiles
-`functions/18-zig.sh` sets this up). Without it, or with a mismatched zig
-version, the build fails at the `libghostty-vt-sys` crate, not here.
+Needs **zig 0.17.x** on `PATH` to compile `libghostty-vt-sys` (`brew install
+zig` on macOS). Without it, or with a mismatched zig version, the build fails
+at the `libghostty-vt-sys` crate, not here. 0.15.x cannot link against the
+macOS 26 SDK, whose `.tbd` stubs list only `arm64e` (ziglang/zig#31658).
+
+`libghostty-vt` is git-pinned in the workspace `Cargo.toml`, and CI clones the
+ghostty commit that rev pins (`GHOSTTY_COMMIT` in `.github/workflows/`): bump
+both together, reading `GHOSTTY_COMMIT` from the binding's
+`crates/libghostty-vt-sys/build.rs`.
 
 ## The Debug-mode parser trap
 

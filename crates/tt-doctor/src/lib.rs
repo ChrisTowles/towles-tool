@@ -78,7 +78,7 @@ const TOOLS: &[(&str, &str, bool)] = &[
 /// A machine on a different minor can't build `tt-vt`, so the check treats a
 /// mismatch as a hard failure, not just "zig missing".
 const ZIG_REQUIRED_MAJOR: u32 = 0;
-const ZIG_REQUIRED_MINOR: u32 = 15;
+const ZIG_REQUIRED_MINOR: u32 = 17;
 
 /// A worktree task safe to reclaim with `tt task clean`. The "landed" judgement
 /// is [`tt_tasks::ops::work_state`]'s — never a hand-rolled git-merged check —
@@ -607,14 +607,14 @@ mod tests {
 
     #[test]
     fn zig_version_satisfies_only_the_required_minor() {
-        assert!(zig_version_satisfies("0.15.0"));
-        assert!(zig_version_satisfies("0.15.2"));
-        assert!(zig_version_satisfies("0.15"));
-        assert!(zig_version_satisfies(extract_version("0.15.0-dev.123+abc").as_deref().unwrap()));
+        assert!(zig_version_satisfies("0.17.0"));
+        assert!(zig_version_satisfies("0.17.1"));
+        assert!(zig_version_satisfies("0.17"));
+        assert!(zig_version_satisfies(extract_version("0.17.0-dev.123+abc").as_deref().unwrap()));
 
-        assert!(!zig_version_satisfies("0.14.0"), "older minor can't build tt-vt");
-        assert!(!zig_version_satisfies("0.16.0"), "newer minor can't build tt-vt");
-        assert!(!zig_version_satisfies("1.15.0"), "wrong major");
+        assert!(!zig_version_satisfies("0.15.2"), "older minor can't build tt-vt");
+        assert!(!zig_version_satisfies("0.18.0"), "newer minor can't build tt-vt");
+        assert!(!zig_version_satisfies("1.17.0"), "wrong major");
         assert!(!zig_version_satisfies("garbage"));
         assert!(!zig_version_satisfies(""));
     }
@@ -631,7 +631,7 @@ mod tests {
         assert!(wrong.warning.is_none());
         assert_eq!(wrong.version.as_deref(), Some("0.14.0"), "keeps the found version");
 
-        let good = zig_result(Some("0.15.2".to_string()));
+        let good = zig_result(Some("0.17.1".to_string()));
         assert!(good.ok);
         assert!(good.warning.is_none());
     }

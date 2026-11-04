@@ -69,7 +69,7 @@ the same settings section rolls back to it. The signing key is
 the `TAURI_SIGNING_PRIVATE_KEY` secret, its public half is in
 `tauri.conf.json`, and losing it strands every installed copy on its version.
 
-`clippy --all`/`test --all` build `tt-vt` (needs zig 0.15.x) and `tt-app`
+`clippy --all`/`test --all` build `tt-vt` (needs zig 0.17.x) and `tt-app`
 (webkit2gtk/GTK). Without those prereqs, use CI's variant:
 
 ```sh
@@ -145,7 +145,7 @@ the app to look at (CLI-only, docs-only, crate-internal refactors with no
 
 ## The CI variant of the Rust checks
 
-`cargo clippy --all` / `cargo test --all` build `tt-vt` (needs zig 0.15.x) and
+`cargo clippy --all` / `cargo test --all` build `tt-vt` (needs zig 0.17.x) and
 `tt-app` (webkit2gtk/GTK). Without those prerequisites installed, use CI's
 variant, which excludes exactly those two.
 

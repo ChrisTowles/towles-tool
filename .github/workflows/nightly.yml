@@ -24,7 +24,7 @@ env:
   # Pinned ghostty commit that libghostty-vt-sys 0.2.2 builds against (see the
   # GHOSTTY_COMMIT constant in that crate's build.rs). Keep in sync with ci.yml
   # when bumping libghostty-vt.
-  GHOSTTY_COMMIT: a887df42c56f6de86c0fe6da9c4eeca37931e083
+  GHOSTTY_COMMIT: 521cf2c5d30bd48028ca61546c64e7913764073d
 
 jobs:
   # Full workspace test, unconditionally including tt-vt and tt-app — the two
@@ -73,7 +73,7 @@ jobs:
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.1
           use-cache: false
 
       - name: Cache ghostty source
@@ -153,7 +153,7 @@ jobs:
       - name: Provision Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: 0.17.1
           use-cache: false
 
       - name: Cache ghostty source

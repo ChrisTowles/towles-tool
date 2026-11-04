@@ -22,7 +22,7 @@ use libghostty_vt::selection::gesture::{
 use libghostty_vt::selection::{FormatOptions, Order, Selection};
 use libghostty_vt::style::{StyleColor, Underline};
 use libghostty_vt::terminal::{
-    ColorScheme, Mode, Options, Point, PointCoordinate, PointSpace, ScrollViewport, Terminal,
+    ColorScheme, Mode, Point, PointCoordinate, PointSpace, ScrollViewport, Terminal,
 };
 
 use crate::frame::{flags, Colors, Cursor, CursorShape, Frame, Modes};
@@ -64,6 +64,7 @@ pub type Result<T> = std::result::Result<T, VtError>;
 pub struct EngineOptions {
     pub cols: u16,
     pub rows: u16,
+    /// Scrollback limit in lines (ghostty prunes at page granularity, so a few more survive).
     pub max_scrollback: usize,
 }
 
@@ -168,11 +169,8 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(opts: EngineOptions) -> Result<Self> {
-        let mut term = Terminal::new(Options {
-            cols: opts.cols,
-            rows: opts.rows,
-            max_scrollback: opts.max_scrollback,
-        })?;
+        let mut term = Terminal::new(opts.cols, opts.rows)?;
+        term.set_scrollback_max_lines(Some(opts.max_scrollback))?;
 
         let pty_out: Rc<RefCell<Vec<u8>>> = Rc::default();
         let title_changed: Rc<StdCell<bool>> = Rc::default();
@@ -772,12 +770,12 @@ impl Engine {
         let title = self
             .title_changed
             .replace(false)
-            .then(|| self.term.title().map(str::to_owned))
+            .then(|| self.term.title().map(|b| String::from_utf8_lossy(b).into_owned()))
             .transpose()?;
         let pwd = self
             .pwd_changed
             .replace(false)
-            .then(|| self.term.pwd().map(str::to_owned))
+            .then(|| self.term.pwd().map(|b| String::from_utf8_lossy(b).into_owned()))
             .transpose()?;
 
         let snap = self.render.update(&self.term)?;

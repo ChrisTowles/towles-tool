@@ -1,8 +1,7 @@
 //! Terminal state on libghostty-vt.
 //!
 //! Building this crate compiles libghostty-vt from source at the Rust
-//! binding's pinned ghostty commit and needs `zig` 0.15.x on PATH
-//! (dotfiles `functions/18-zig.sh`).
+//! binding's pinned ghostty commit and needs `zig` 0.17.x on PATH.
 
 pub mod engine;
 pub mod fence;
