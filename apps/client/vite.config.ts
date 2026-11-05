@@ -1,8 +1,42 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { resolveDevPort } from "../../scripts/task-port.mjs";
+
+// tt-app embeds `dist/` and cargo fingerprints it by mtime, so rewriting identical files
+// recompiles tt-app on every `tauri build`. Write only changed files; prune stale ones.
+function writeOnlyChanged(): Plugin {
+  let outDir = "";
+  let emitted = new Set<string>();
+  return {
+    name: "tt:write-only-changed",
+    apply: "build",
+    enforce: "post",
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    generateBundle: {
+      order: "post",
+      handler(_, bundle) {
+        emitted = new Set(Object.keys(bundle));
+        for (const [name, out] of Object.entries(bundle)) {
+          const file = path.join(outDir, name);
+          const bytes = Buffer.from(out.type === "chunk" ? out.code : out.source);
+          if (existsSync(file) && readFileSync(file).equals(bytes)) delete bundle[name];
+        }
+      },
+    },
+    writeBundle() {
+      for (const rel of readdirSync(outDir, { recursive: true, encoding: "utf8" })) {
+        const file = path.join(outDir, rel);
+        const name = rel.split(path.sep).join("/");
+        if (!emitted.has(name) && statSync(file).isFile()) rmSync(file);
+      }
+    },
+  };
+}
 
 // Dev-only: stamps the owning component's name into the DOM for the element
 // inspector — as the *first class* (the hover tooltip shows only `classList`)
@@ -101,7 +135,10 @@ export default defineConfig(({ command }) => ({
   plugins: [
     react(command === "serve" ? { babel: { plugins: [componentNamePlugin] } } : undefined),
     tailwindcss(),
+    writeOnlyChanged(),
   ],
+  // writeOnlyChanged prunes instead; emptying first would rewrite every file.
+  build: { emptyOutDir: false },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
