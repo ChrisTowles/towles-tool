@@ -10,9 +10,7 @@ import {
   nextItem,
   nextUpArrival,
   onYouHead,
-  parseFoldedLanes,
   railRows,
-  rowForFolder,
   stepRow,
   rankMove,
   reasonChip,
@@ -154,10 +152,8 @@ describe("schema + nextItem", () => {
 
 describe("rail rows", () => {
   const q = queue([item(1), item(2, { lane: "running" }), item(3, { lane: "idle" })]);
-  it("skip folded lanes and find a checkout's row", () => {
+  it("skip folded lanes", () => {
     expect(railRows(q, new Set(["running"])).map((i) => i.title)).toEqual(["t1", "t3"]);
-    expect(rowForFolder(q, "/w2")?.title).toBe("t2");
-    expect(rowForFolder(q, null)).toBeUndefined();
     expect(onYouHead(q)?.title).toBe("t1");
   });
   it("step within bounds, from nothing to the first", () => {
@@ -255,18 +251,5 @@ describe("queue actions", () => {
     expect(restartable(item(1, { reason: "unblock" }))).toBe(true);
     expect(restartable(item(1, { reason: "unblock", sessionId: null }))).toBe(false);
     expect(restartable(item(1))).toBe(false);
-  });
-});
-
-describe("parseFoldedLanes", () => {
-  it("restores stored folds and drops lanes that no longer exist", () => {
-    expect(parseFoldedLanes(JSON.stringify(["idle", "gone"]))).toEqual(new Set(["idle"]));
-    expect(parseFoldedLanes(JSON.stringify([]))).toEqual(new Set());
-  });
-
-  it("leaves the default to the caller when nothing valid is stored", () => {
-    expect(parseFoldedLanes(null)).toBeNull();
-    expect(parseFoldedLanes("{nope")).toBeNull();
-    expect(parseFoldedLanes(JSON.stringify({ idle: true }))).toBeNull();
   });
 });

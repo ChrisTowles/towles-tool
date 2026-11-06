@@ -7,7 +7,19 @@
   },
   "rules": {
     "react/react-in-jsx-scope": "off",
-    "unicorn/consistent-function-scoping": "warn"
+    "unicorn/consistent-function-scoping": "warn",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "react",
+            "importNames": ["useSyncExternalStore", "useReducer", "createContext", "useContext"],
+            "message": "App state is an atom (lib/atoms, docs/CLIENT-STATE.md): no hand-rolled stores, reducers or contexts."
+          }
+        ]
+      }
+    ]
   },
   "settings": {
     "react": {
@@ -24,6 +36,62 @@
       "files": ["src/lib/focus-target.ts", "src/lib/settings-target.ts"],
       "rules": {
         "unicorn/no-useless-spread": "off"
+      }
+    },
+    {
+      "files": ["src/lib/atoms/react.ts", "src/screens/claude-sessions/shared.tsx"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": [
+        "src/lib/board/**",
+        "src/lib/agentboard/**",
+        "src/lib/atoms/registry.ts",
+        "src/lib/atoms/feed.ts",
+        "src/lib/atoms/persisted.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react",
+                "message": "The state model is React-free: atoms and pure functions only (docs/CLIENT-STATE.md)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/screens/agentboard.tsx",
+        "src/components/queue-rail.tsx",
+        "src/screens/agentboard/checkout-tree.tsx",
+        "src/screens/agentboard/pane-grid.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react",
+                "importNames": [
+                  "useState",
+                  "useReducer",
+                  "useSyncExternalStore",
+                  "createContext",
+                  "useContext"
+                ],
+                "message": "Agent Board state lives in lib/board (one record atom, derived atoms); read it with useAtomValue (docs/CLIENT-STATE.md)."
+              }
+            ]
+          }
+        ]
       }
     }
   ]

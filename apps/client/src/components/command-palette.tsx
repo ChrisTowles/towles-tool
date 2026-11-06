@@ -1,3 +1,5 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 import { useState, type ReactNode } from "react";
 import { toast } from "@/lib/toast";
 import {
@@ -14,10 +16,10 @@ import {
   TerminalWindowIcon,
 } from "@phosphor-icons/react";
 import { CommandPalette as Palette } from "@cloudflare/kumo";
-import { useTheme } from "@/components/theme-provider";
+import { themeAtom, setTheme } from "@/lib/theme";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
-import { useRepos } from "@/lib/agentboard/state";
-import { storeAddTask, useStoreSnapshot } from "@/lib/data";
+import { reposAtom } from "@/lib/agentboard/state";
+import { storeAddTask } from "@/lib/data";
 import { openExternalUrl } from "@/lib/open-url";
 import {
   paletteRepoEntries,
@@ -36,25 +38,27 @@ import { SCREENS } from "@/lib/screens";
 import { shortcutHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
-import { useWorkspace } from "@/lib/workspace";
+import {
+  activeTabAtom,
+  openSettingsTab,
+  openTab,
+  openTabWithFocus,
+  paletteOpenAtom,
+  recentTabsAtom,
+  setPaletteOpen,
+  toggleSidebar,
+} from "@/lib/workspace";
 
 /** ⌘K launcher. Live sections — recent screens, Agentboard checkouts and
  * sessions, Board tasks, open PRs and issues — come from the same read-only hooks
  * the screens use; `shortcutHint()` keeps glyphs platform-correct, not hardcoded. */
 export function CommandPalette() {
-  const {
-    paletteOpen,
-    setPaletteOpen,
-    recent,
-    activeTab,
-    openTab,
-    openTabWithFocus,
-    openSettingsTab,
-    toggleSidebar,
-  } = useWorkspace();
-  const { theme, setTheme } = useTheme();
-  const repos = useRepos();
-  const { snapshot } = useStoreSnapshot();
+  const paletteOpen = useAtomValue(paletteOpenAtom);
+  const recent = useAtomValue(recentTabsAtom);
+  const activeTab = useAtomValue(activeTabAtom);
+  const theme = useAtomValue(themeAtom);
+  const repos = useAtomValue(reposAtom);
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
   const [query, setQuery] = useState("");
 
   const resolvedDark =

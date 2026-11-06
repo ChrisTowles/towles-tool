@@ -3,10 +3,20 @@
 React 19 + Vite frontend — the root [`CLAUDE.md`](../../CLAUDE.md) has the shell
 overview; this file has the frontend-internal conventions a read won't surface.
 
+## State is atoms — read [docs/CLIENT-STATE.md](../../docs/CLIENT-STATE.md) first
+
+Shared or backend-driven state is an Effect atom in one registry, never a
+`useState` copy, a ref mirror or a context: one owner, one writer, everything
+else derived at read time, handlers `read()` at call time. Agent Board's UI is
+one record in `lib/board/`, written only by transitions that `normalize` holds
+invariants over. An effect that writes state in reaction to state is the bug
+this replaced — derive the value instead. Leaf view state (input text, hover,
+menu open) may stay in `useState`; `.oxlintrc.json` gates the rest.
+
 ## Three unrelated things are called "tab" here
 
-**Workspace tabs** — open-screens bookkeeping in `useWorkspace()`
-(`lib/workspace.tsx`, persisted by `workspace-persistence.ts`). No visible tab
+**Workspace tabs** — open-screens bookkeeping in `tabsAtom` and its actions
+(`lib/workspace.ts`, reduced and persisted by `workspace-persistence.ts`). No visible tab
 strip (the sidebar is the only nav), but screens stay mounted when you switch
 away and `close-tab`/`next-tab`/`tab-1`…`9` act on this set headlessly; this is
 what "tab" usually means. **Settings' sub-tab panel** and Agent Board's Tree/Queue switch are Kumo's `Tabs`
@@ -51,7 +61,7 @@ Domain wrappers in `lib/*.ts` run their effect and return
 `acquireRelease` under a stream, so unlisten always runs; `subscribeThen` when
 the current state must be read only *after* listening. **Pollers** are
 `usePoll`/`startPoll` (`Schedule.spaced`, ticks skipped while the tab is hidden);
-`lib/now.tsx`-style clock ticks stay `setInterval`.
+Clocks are `nowAtom`/`nowSecondsAtom` (`lib/now.ts`), ticking only while read.
 `.claude/hooks/guard-effect-ipc.sh` flags drift. There is no `mock-data.ts`
 either: each module owns its browser-dev fallback (`mockSnapshot` in
 `lib/data.ts`, `mockView` in `lib/slack.ts`), gated on `!isTauri()`.
@@ -69,8 +79,8 @@ makes the number lie, and palette items score as neither. `allowInEditable` is
 likewise two-sided, working only if the owning component *also* checks
 `matchesEditableOverride` to yield the keystroke rather than consume it
 (`components/terminal-view.tsx`); it is gated behind
-`agentboard.shortcutsWorkInTerminal` via `useShortcutsWorkInTerminal`, refreshed
-on window focus and on `tt:settings-saved`, so a save propagates immediately.
+`agentboard.shortcutsWorkInTerminal`, read at keydown (`readShortcutsWorkInTerminal`)
+from the settings atom, so a save applies to the next keystroke.
 
 **On mac, `mod` is ⌘ but a shift-bearing chord also answers to Ctrl+Shift**, so
 one spelling drives both platforms and no external remapper is needed — the same
@@ -85,7 +95,7 @@ chords Cocoa takes before any DOM keydown are `tt-app`'s `macos_keys.rs`.
 
 Agent Board is **one mounted `AgentBoardScreen`** with two rails over the same
 PTYs, panes and selection, picked by the Tree/Queue tabs atop the rail.
-`railView` lives in `useWorkspace()` (persisted, `Mod+Shift+T` flips it) so
+`railView` is `railViewAtom` in `lib/workspace.ts` (persisted, `Mod+Shift+T` flips it) so
 `App` can activate its shortcut scope: bindings both rails share are scope
 `agentboard`, and each rail's own chords are scope `queue` or `tree`, in the
 handler map only while that rail is up (Alt+Shift+↑ is rank-top on one,
@@ -96,11 +106,11 @@ The queue rail (`components/queue-rail.tsx`) is **the tree's checkouts, roots
 included, ordered to work one at a time** — keyed by `folderDir`, with a task
 lending a row its title and rank; a backlog task with no checkout, a PR or a CI
 run is not a row, and what the tree leaves out (quiet checkouts, idle unmanaged
-worktrees) the queue does too (`railQueue`). `railRows` (`lib/queue.tsx`) is the one walk the
+worktrees) the queue does too (`railQueue`). `railRows` (`lib/queue.ts`, read through `queueRowsAtom`) is the one walk the
 cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9 jump digits read — folded lanes
 skipped, so the keyboard sees what you see —
-and the ring follows the checkout on screen however it got there
-(`rowForFolder`). **The queue is pulled, never pushed** — somewhere you go when
+and the ring follows the checkout on screen however it got there, or the row
+that took its place when that row goes (`ringItemAtom`). **The queue is pulled, never pushed** — somewhere you go when
 you're done, not something that calls you over. When the head of On you
 changes, `nextUpArrival` opens it only when nothing is open and nothing is typed
 in, else does nothing: no banner, no flash. Rows and lane headers are one flat

@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 /** The task header above the panes: what the rail's checkout line leaves out
  * (branch, PR, base, spend) as labeled facts under the task's goal
  * (`agentboard-checkout-line.tsx`, the `visual-design` skill). Pane *chrome*
@@ -26,7 +27,7 @@ import { syncBranch } from "@/components/agentboard-bits/sync-branch";
 import { DevServersButton } from "@/components/dev-servers";
 import type { NewTaskRepo } from "@/components/inline-new-task";
 import type { SessionActions } from "@/lib/agentboard/actions";
-import { useDirCost } from "@/lib/agentboard/cost";
+import { dirCostAtom } from "@/lib/agentboard/cost";
 import { folderBranchDrift, folderIsHome, pathScope } from "@/lib/agentboard/folder";
 import { humanizeFolderName } from "@/lib/agentboard/folder-name";
 import {
@@ -86,7 +87,7 @@ export function WorkingContext({
   const newTask = () => onNewTask({ name: repo.name, dir: repo.folders[0].dir, key: repo.key });
   const drift = folderBranchDrift(folder);
   const onSync = syncBranch(folder);
-  const cost = useDirCost(folder.dir);
+  const cost = useAtomValue(dirCostAtom(folder.dir));
   const clean =
     folder.uncommittedFiles === 0 && folder.committedFiles === 0 && folder.commitsBehind === 0;
   return (

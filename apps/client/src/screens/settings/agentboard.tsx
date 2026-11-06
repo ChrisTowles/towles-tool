@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DotsSixVerticalIcon, FolderPlusIcon, GitBranchIcon } from "@phosphor-icons/react";
@@ -6,7 +7,7 @@ import { ToggleGroup } from "@cloudflare/kumo/primitives/toggle-group";
 import { Toggle } from "@cloudflare/kumo/primitives/toggle";
 import { Button, Dialog, Input, InputArea, Popover, Select, Switch } from "@cloudflare/kumo";
 import type { RepoCandidate } from "@/lib/agentboard/actions";
-import { useRepos } from "@/lib/agentboard/state";
+import { reposAtom } from "@/lib/agentboard/state";
 import type { RepoData } from "@/lib/agentboard/types";
 import {
   applyRepoOrder,
@@ -483,7 +484,7 @@ function AgentboardSettings() {
  * *tracked* repos: an untracked candidate has nowhere to show an icon, so
  * those rows carry a Track action rather than dead controls. */
 function RepoManager() {
-  const repos = useRepos();
+  const repos = useAtomValue(reposAtom);
   const [candidates, setCandidates] = useState<RepoCandidate[]>([]);
   const [query, setQuery] = useState("");
   const [confirm, setConfirm] = useState<{

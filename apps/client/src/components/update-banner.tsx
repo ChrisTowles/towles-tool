@@ -1,10 +1,11 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { useState } from "react";
 import { SparkleIcon, XIcon } from "@phosphor-icons/react";
 import { Button } from "@cloudflare/kumo";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom } from "@/lib/workspace";
 import { installUpdate, updateLabel, useUpdateAvailable, useUpdateProgress } from "@/lib/update";
 
 /** Full-width strip offering a newer release. Dismiss is session-only — no
@@ -12,7 +13,7 @@ import { installUpdate, updateLabel, useUpdateAvailable, useUpdateProgress } fro
 export function UpdateBanner() {
   const update = useUpdateAvailable();
   const progress = useUpdateProgress();
-  const { activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
 

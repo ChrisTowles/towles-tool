@@ -16,14 +16,14 @@ import type { PreviewRequest } from "@/lib/preview-artifact";
 import { fire, invoke, ipcOr } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
-import type { RailSnapshot } from "./selection-actions";
+import type { RailSnapshot } from "@/lib/board/derive";
 import { useTauriEvent } from "@/lib/run";
 
 /** Files, preview and browser panes: the tiles that show a folder
  * rather than run a shell, and the requests that point them at something. */
 export function useViewPanes(args: {
   folderByDir: Map<string, FolderData>;
-  railRef: RefObject<RailSnapshot>;
+  railRef: { readonly current: RailSnapshot };
   activeFolderDirRef: RefObject<string | null>;
   setActiveFolderDir: Dispatch<SetStateAction<string | null>>;
   setFocusedPaneId: Dispatch<SetStateAction<string | null>>;

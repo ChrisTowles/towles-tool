@@ -1,23 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useAtomEffect, useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
+import { useMemo } from "react";
 import { WorkingContext } from "@/components/agentboard-working-context";
-import { QueueRail, FOLDED_BY_DEFAULT } from "@/components/queue-rail";
+import { QueueRail } from "@/components/queue-rail";
 import { RailIconStrip } from "@/components/agentboard-rail";
-import { useNow, useNowInterval } from "@/lib/now";
+import { nowAtom } from "@/lib/now";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useScrollEdges } from "@/components/scroll-edge-shades";
 import { cleanupMissing } from "./agentboard/helpers";
-import { useCollapseState } from "./agentboard/use-collapse-state";
 import { useColumnDrag } from "./agentboard/use-column-drag";
 import { useAttention } from "./agentboard/use-attention";
-import { useRailIndex } from "./agentboard/use-rail-index";
 import { useTaskCreation } from "./agentboard/use-task-creation";
 import { useTauriEvent } from "@/lib/run";
-import { useWindowLayout } from "./agentboard/use-window-layout";
 import { useWorktreeDelete } from "./agentboard/use-worktree-delete";
 import { useCacheExpiryToast } from "./agentboard/use-cache-expiry-toast";
-import { usePeekReveal } from "./agentboard/use-peek-reveal";
 import { useBoardRequests } from "./agentboard/use-board-requests";
-import { useSessionSpawn, type FocusTerminalRequest } from "./agentboard/use-session-spawn";
+import { useSessionSpawn } from "./agentboard/use-session-spawn";
 import { useViewPanes } from "./agentboard/use-view-panes";
 import { boardShortcuts } from "./agentboard/board-shortcuts";
 import { BoardDialogs } from "./agentboard/board-dialogs";
@@ -32,252 +30,227 @@ import { LandQueueDialog } from "./agentboard/land-dialog";
 import { useQueueActions } from "./agentboard/queue-actions";
 import { defaultTaskRepo, RailNewTask } from "./agentboard/rail-new-task";
 import { RailPanel } from "./agentboard/rail-panel";
-import { selectionActions, type RailSnapshot } from "./agentboard/selection-actions";
 import { sessionActions } from "./agentboard/session-actions";
 import { sessionLifecycle } from "./agentboard/session-lifecycle";
 import { WindowStrip } from "./agentboard/window-strip";
-import type { RemoveTarget } from "@/lib/agentboard/actions";
 import {
   folderRecreateBranch,
   folderRemoving,
   prForFolder,
   taskForFolder,
   folderTask,
-  isFolderUnmanaged,
   isHomeRepo,
 } from "@/lib/agentboard/folder";
 import { claudeTitleName, sessionLabel } from "@/lib/agentboard/session";
 import { useStableFn, useStableFns } from "@/lib/use-stable-fn";
-import { useAgentboardState, useSetAgentOverlay } from "@/lib/agentboard/state";
-import type { FolderData, RepoData, Selected, SessionData } from "@/lib/agentboard/types";
-import { dropSessionlessWindows, paneCloseTarget, type FocusLevel } from "@/lib/agentboard/windows";
-import type { JumpRecall } from "@/lib/jump-recall";
+import { setAgentOverlay, agentboardAtom } from "@/lib/agentboard/state";
+import type { FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
+import { dropSessionlessWindows, paneCloseTarget } from "@/lib/agentboard/windows";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
-import { useStoreSnapshot } from "@/lib/data";
-import {
-  filterQueue,
-  nextUpArrival,
-  onYouHead,
-  parseFoldedLanes,
-  railRows,
-  rowForFolder,
-  useTaskQueue,
-} from "@/lib/queue";
+
+import { nextUpArrival, onYouHead, taskQueueAtom } from "@/lib/queue";
 import type { Lane } from "@/lib/schemas/queue";
-import { focusTargetStore, useFocusTarget } from "@/lib/focus-target";
-import { railHotkeyTargets } from "@/lib/rail-hotkeys";
-import { railNodes, resolveCursor, type RailNode } from "@/lib/rail-nodes";
+import { focusTargetAtom, useFocusTarget } from "@/lib/focus-target";
 import {
   useBrowserPane,
   useShowQuiet,
   useRailFilter,
   useShowUnmanagedWorktrees,
 } from "@/lib/rail-prefs";
-import { useWorkspace } from "@/lib/workspace";
+import {
+  activeTabAtom,
+  openSettingsTab,
+  openTab,
+  railViewAtom,
+  setRailView,
+} from "@/lib/workspace";
 import { repoParentDirs } from "@/lib/new-repo";
 import { uiAction } from "@/lib/ui-action";
 import { toast } from "@/lib/toast";
-
-const LAST_TASK_REPO_KEY = "tt-agentboard-last-task-repo";
+import { read, write } from "@/lib/atoms/registry";
+import {
+  activeFolderDirRef,
+  boardField,
+  cwdsRef,
+  jumpNonce,
+  expectedKills,
+  foldedLanesAtom,
+  lastTaskRepoAtom,
+  selectedIdRef,
+  setActiveFolderDir,
+  setConfirmRemove,
+  setFocusedPaneId,
+  setFocusLevel,
+  setFocusTerminalRequest,
+  setFoldedLanes,
+  setIdleRevealed,
+  setJumpRecall,
+  setOpen,
+  setQuery,
+  setRailCursor,
+  setRailTaskBase,
+  setRailTaskRepoKey,
+  setRenaming,
+  setRepoFilter,
+  setSelected,
+  setSnoozeId,
+  setSplitOpen,
+  setTermAttention,
+  setTitles,
+  setUnmanagedRevealed,
+} from "@/lib/board/atoms";
+import {
+  addPaneToActive,
+  applyCollapse,
+  RAIL_COLLAPSE_KEY,
+  removePane,
+  toggleCollapsed,
+  toggleRail,
+  updateWins,
+} from "@/lib/board/commands";
+import {
+  activeFolderAtom,
+  activeRepoAtom,
+  activeWinAtom,
+  archiveSplitAtom,
+  collapsedAtom,
+  cursorNodeAtom,
+  hotkeyTargetsAtom,
+  idleDirsAtom,
+  lookupsAtom,
+  onYouHeadIdAtom,
+  queueRowsAtom,
+  quietSplitAtom,
+  railQueueAtom,
+  railRef,
+  railTreeAtom,
+  ringItemAtom,
+  shownQueueAtom,
+  shownReposAtom,
+  splitCandidatesAtom,
+  unmanagedDirsAtom,
+  visibleReposAtom,
+  windowsForFolderAtom,
+  winsAtom,
+} from "@/lib/board/derive";
+import { SELECTION } from "@/lib/board/selection";
 
 /** Agent Board — one screen, two rails over the same checkouts. The queue rail
  * is their tasks (Next up, then the lanes), worked one at a time; the tree rail
  * is every repo → checkout → session, walked by place. Either way,
  * picking a row puts its terminals and panes beside it, and the panes, shells
  * and selection are the same ones. Agent status is reported, never re-rendered. */
-const FOLDED_LANES_KEY = "tt-queue-folded-lanes";
+// Board commands with no render inputs: module scope, one identity for ever.
+const onTitle = (id: string, title: string) =>
+  setTitles((m) => (m[id] === title ? m : { ...m, [id]: title }));
 
-function readStored(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
+const openRepoManager = () => {
+  uiAction("repo.manage_opened", "agentboard");
+  openSettingsTab({ tab: "agentboard" });
+};
+
+function toggleLane(lane: Lane) {
+  uiAction("queue.lane_toggle", "agentboard", lane);
+  setFoldedLanes((cur) => toggled(cur, lane));
 }
 
 export function AgentBoardScreen() {
-  const state = useAgentboardState();
-  const { snapshot } = useStoreSnapshot();
-  const { openTab, activeTab, openSettingsTab, railView, setRailView } = useWorkspace();
+  const state = useAtomValue(agentboardAtom);
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
+  const activeTab = useAtomValue(activeTabAtom);
+  const railView = useAtomValue(railViewAtom);
   const tree = railView === "tree";
   const onScreen = activeTab === "agentboard";
   // Deep-link focus: a "needs you" popover row scrolls its PR or repo into view here.
   const focusRef = useFocusTarget<HTMLDivElement>("agentboard");
-  const now = useNow();
+  const now = useAtomValue(nowAtom);
   const repos = state.repos;
-  const repoByFolder = useMemo(
-    () => new Map(repos.flatMap((r) => r.folders.map((f) => [f.dir, r] as const))),
-    [repos],
-  );
-
-  const [selected, setSelected] = useState<Selected>(null);
-  const [jumpRecall, setJumpRecall] = useState<JumpRecall | null>(null);
-  // A ref, not previous state: `selectSession` clears the card in the same batch that sets it.
-  const jumpNonce = useRef(0);
-  // The tile that last claimed a click — the sole driver of the violet ring.
-  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null);
-  const [focusLevel, setFocusLevel] = useState<FocusLevel>("rail");
-  // Agent Board's cursor: one row of `railTree`, kept as the node so a row that
-  // disappears can hand the cursor to whatever now stands for it.
-  const [railCursor, setRailCursor] = useState<RailNode | null>(null);
-  const { queue, live: queueLive } = useTaskQueue();
-  // Never persisted, like the tree's search: a queue that opens narrowed to
-  // yesterday's repos is a queue with work missing and no memory of why.
-  const [repoFilter, setRepoFilter] = useState<ReadonlySet<string>>(() => new Set());
+  const queueLive = useAtomValue(taskQueueAtom).live;
   const railEdges = useScrollEdges();
-  const [foldedLanes, setFoldedLanes] = useState<Set<Lane>>(
-    () => parseFoldedLanes(readStored(FOLDED_LANES_KEY)) ?? new Set(FOLDED_BY_DEFAULT),
-  );
-  useEffect(() => {
-    try {
-      localStorage.setItem(FOLDED_LANES_KEY, JSON.stringify([...foldedLanes]));
-    } catch {
-      // Unremembered folds just reopen at the default next launch.
-    }
-  }, [foldedLanes]);
-  // The checkout whose snooze menu is open — `z` opens it from the keyboard.
-  const [snoozeId, setSnoozeId] = useState<string | null>(null);
-  // The nonce lets a re-request of the *same* session still fire.
-  const [focusTerminalRequest, setFocusTerminalRequest] = useState<FocusTerminalRequest | null>(
-    null,
-  );
-  const [activeFolderDir, setActiveFolderDir] = useState<string | null>(null);
-  // Shown only with more than one candidate; a single one is added directly.
-  const [splitOpen, setSplitOpen] = useState(false);
-  // Pending remove awaiting confirmation because it would kill live sessions.
-  const [confirmRemove, setConfirmRemove] = useState<RemoveTarget | null>(null);
-  // Session ids whose PTY is mounted (kept alive for scrollback), + their cwd.
-  const [open, setOpen] = useState<string[]>([]);
-  const cwds = useRef<Record<string, string>>({});
-  const expectedKills = useRef<Set<string>>(new Set());
-  const { collapsed, toggleCollapsed, applyCollapse, railCollapsed, toggleRail } = useCollapseState(
-    state,
-    "agentboard",
-  );
+
+  // The UI record, field by field: each read wakes this screen only when that
+  // field changes. Writes go through board/atoms' setters and board/commands.
+  const selected = useAtomValue(boardField("selected"));
+  const jumpRecall = useAtomValue(boardField("jumpRecall"));
+  const focusedPaneId = useAtomValue(boardField("focusedPaneId"));
+  const focusLevel = useAtomValue(boardField("focusLevel"));
+  const repoFilter = useAtomValue(boardField("repoFilter"));
+  const foldedLanes = useAtomValue(foldedLanesAtom);
+  const snoozeId = useAtomValue(boardField("snoozeId"));
+  const focusTerminalRequest = useAtomValue(boardField("focusTerminalRequest"));
+  const activeFolderDir = useAtomValue(boardField("activeFolderDir"));
+  const splitOpen = useAtomValue(boardField("splitOpen"));
+  const confirmRemove = useAtomValue(boardField("confirmRemove"));
+  const open = useAtomValue(boardField("open"));
+  const idleRevealed = useAtomValue(boardField("idleRevealed"));
+  const unmanagedRevealed = useAtomValue(boardField("unmanagedRevealed"));
+  const query = useAtomValue(boardField("query"));
+  const renaming = useAtomValue(boardField("renaming"));
+  const titles = useAtomValue(boardField("titles"));
+  const termAttention = useAtomValue(boardField("termAttention"));
+  const railTaskRepoKey = useAtomValue(boardField("railTaskRepoKey"));
+  const railTaskBase = useAtomValue(boardField("railTaskBase"));
+
+  const collapsed = useAtomValue(collapsedAtom);
+  const railCollapsed = !!collapsed[RAIL_COLLAPSE_KEY];
   // Filtered-out folders demote to a per-repo "N idle" stub, never hidden.
   const { filter, recentHours, setFilter, setRecentHours } = useRailFilter();
   // Whether worktrees `tt task` didn't create get rail folders at all.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
   const [browserPane] = useBrowserPane();
-  // The idle stub's peek is view state — it belongs to one glance at one repo.
-  // Quiet is a persisted view mode instead: its switch is in the rail header,
-  // so the hiding is never something you can't find your way back out of.
-  const { idleRevealed, unmanagedRevealed, toggleIdleRevealed, toggleUnmanagedRevealed } =
-    usePeekReveal();
+  // Quiet is a persisted view mode: its switch is in the rail header, so the
+  // hiding is never something you can't find your way back out of.
   const [showQuiet, setShowQuiet] = useShowQuiet();
-  // Never persisted: a rail that opened already narrowed to yesterday's search
-  // is a rail with repos missing and no memory of why.
-  const [query, setQuery] = useState("");
-  const [renaming, setRenaming] = useState<string | null>(null);
-  // Live PTY titles (Claude emits `✳ <title>`), preferred over the backend label.
-  const [titles, setTitles] = useState<Record<string, string>>({});
-  const onTitle = (id: string, title: string) =>
-    setTitles((m) => (m[id] === title ? m : { ...m, [id]: title }));
-  // Raised by BEL / OSC 9 since the user last looked at the session.
-  const [termAttention, setTermAttention] = useState<Record<string, true>>({});
-  const setOverlay = useSetAgentOverlay();
 
+  const { active: unarchivedRepos, archived: archivedRepos } = useAtomValue(archiveSplitAtom);
+  const { shown: railRepos, quietDirs, quietCount } = useAtomValue(quietSplitAtom);
+  const shownRepos = useAtomValue(shownReposAtom);
+  const queryHidden = railRepos.length - shownRepos.length;
+  const idleDirs = useAtomValue(idleDirsAtom);
+  const unmanagedDirs = useAtomValue(unmanagedDirsAtom);
+  const visibleRepos = useAtomValue(visibleReposAtom);
   const {
-    unarchivedRepos,
-    archivedRepos,
-    railRepos,
-    shownRepos,
-    queryHidden,
-    quietDirs,
-    quietCount,
-    idleDirs,
-    unmanagedDirs,
-    visibleRepos,
     missingRepoCount,
     folderOf,
-    folderNameByDir,
     sessionById,
     folderByDir,
-    activeFolder,
-    activeRepo,
-  } = useRailIndex({
-    repos,
-    filter,
-    recentHours,
-    idleRevealed,
-    unmanagedRevealed,
-    showQuiet,
-    query,
-    activeFolderDir,
-    now,
-  });
+    repoOf: repoByFolder,
+  } = useAtomValue(lookupsAtom);
+  const activeFolder = useAtomValue(activeFolderAtom);
+  const activeRepo = useAtomValue(activeRepoAtom);
+  const railQueue = useAtomValue(railQueueAtom);
+  const shownQueue = useAtomValue(shownQueueAtom);
+  const wins = useAtomValue(winsAtom);
+  const rows = useAtomValue(queueRowsAtom);
+  const railTree = useAtomValue(railTreeAtom);
+  const cursorNode = useAtomValue(cursorNodeAtom);
+  const cursorKey = cursorNode?.key ?? null;
+  const hotkeyTargets = useAtomValue(hotkeyTargetsAtom);
+  const ringItem = useAtomValue(ringItemAtom);
+  const ringId = ringItem?.folderDir ?? null;
+  const windowsForFolder = useAtomValue(windowsForFolderAtom);
+  const activeWin = useAtomValue(activeWinAtom);
+  const splitCandidates = useAtomValue(splitCandidatesAtom);
 
-  // The queue is the tree's checkouts in another order: what the tree leaves out
-  // — quiet ones, and unmanaged worktrees nothing is running in — it does too.
-  const railQueue = useMemo(() => {
-    const onRail = new Set(
-      railRepos.flatMap((r) =>
-        r.folders
-          .filter((f) => !isFolderUnmanaged(f) || f.dir === activeFolderDir)
-          .map((f) => f.dir),
-      ),
+  const setOverlay = setAgentOverlay;
+  const toggleIdleRevealed = (repoKey: string) => {
+    uiAction("agentboard.idle_peek", "agentboard", idleRevealed.has(repoKey) ? "hide" : "show");
+    setIdleRevealed((keys) => toggled(keys, repoKey));
+  };
+  const toggleUnmanagedRevealed = (repoKey: string) => {
+    uiAction(
+      "agentboard.unmanaged_peek",
+      "agentboard",
+      unmanagedRevealed.has(repoKey) ? "hide" : "show",
     );
-    return filterQueue(
-      queue,
-      (dir) => onRail.has(dir),
-      new Set(),
-      () => undefined,
-    );
-  }, [queue, railRepos, activeFolderDir]);
-  const shownQueue = useMemo(
-    () =>
-      filterQueue(
-        railQueue,
-        () => true,
-        repoFilter,
-        (dir) => repoByFolder.get(dir)?.key,
-      ),
-    [railQueue, repoFilter, repoByFolder],
-  );
-
-  const { wins, updateWins, addPaneToActive, removePane } = useWindowLayout({
-    state,
-    repos,
-    open,
-    cwds,
-  });
+    setUnmanagedRevealed((keys) => toggled(keys, repoKey));
+  };
 
   // Hold-to-reveal jump keys: the badges paint on the rows the numbering is
-  // computed from, so what you press is what you read. The targets are kept
-  // even while nothing is held — the handlers address them without a repaint.
+  // computed from, so what you press is what you read. The collapsed strip has
+  // no rows to badge, so it offers no numbers. Keyed by session on the tree, by
+  // checkout on the queue.
   const hotkeysHeld = useModifierHeld("ab-jump-session-1");
-  const rows = useMemo(() => railRows(shownQueue, foldedLanes), [shownQueue, foldedLanes]);
-  const railVis = useMemo(
-    () => ({
-      repos: shownRepos,
-      idleDirs,
-      idleRevealed,
-      unmanagedDirs,
-      unmanagedRevealed,
-      collapsed,
-      activeFolderDir,
-      wins,
-    }),
-    [
-      shownRepos,
-      idleDirs,
-      idleRevealed,
-      unmanagedDirs,
-      unmanagedRevealed,
-      collapsed,
-      activeFolderDir,
-      wins,
-    ],
-  );
-  const railTree = useMemo(() => railNodes(railVis), [railVis]);
-  const cursorNode = useMemo(() => resolveCursor(railTree, railCursor), [railTree, railCursor]);
-  const cursorKey = cursorNode?.key ?? null;
-  const hotkeyTargets = useMemo(() => railHotkeyTargets(railVis), [railVis]);
-  // Every row is a checkout, so the ring follows the one on screen, however it got there.
-  const ringItem = rowForFolder(shownQueue, activeFolderDir);
-  const ringId = ringItem?.folderDir ?? null;
-  // The collapsed strip has no rows to badge, so it offers no numbers. Keyed by
-  // session on the tree, by checkout on the queue.
   const showHotkeys = hotkeysHeld && !railCollapsed;
   const treeHotkeys = useMemo(
     () =>
@@ -292,48 +265,14 @@ export function AgentBoardScreen() {
     [showHotkeys, tree, rows],
   );
 
-  // Read live by the terminal://notify listener, which must not re-subscribe.
-  const selectedRef = useRef<string | null>(null);
-  useEffect(() => {
-    selectedRef.current = selected?.sessionId ?? null;
-  });
-  // Lets an async task-create ask, on resolve, whether the user has moved on.
-  const activeFolderDirRef = useRef<string | null>(null);
-  useEffect(() => {
-    activeFolderDirRef.current = activeFolderDir;
-  });
-  // Same, for the rail: the mount-only nav-request handler's closure would only
-  // ever see the empty first-render snapshot.
-  const railRef = useRef<RailSnapshot>({ repos, folderNameByDir, railQueue, shownQueue, railTree });
-  useEffect(() => {
-    railRef.current = { repos, folderNameByDir, railQueue, shownQueue, railTree };
-  });
-
   useCacheExpiryToast(repos, now);
 
-  const { ackFolder, selectFolder, mountSession, selectSession } = selectionActions({
-    railRef,
-    cwds,
-    addPaneToActive,
-    setOpen,
-    setSelected,
-    setJumpRecall,
-    setRailCursor,
-    setActiveFolderDir,
-    setFocusedPaneId,
-    setFocusLevel,
-    setTermAttention,
-  });
+  const { ackFolder, selectFolder, mountSession, selectSession } = SELECTION;
 
   const parentDirs = useMemo(
     () => repoParentDirs(repos.filter((r) => !isHomeRepo(r)).map((r) => r.dir)),
     [repos],
   );
-
-  const openRepoManager = () => {
-    uiAction("repo.manage_opened", "agentboard");
-    openSettingsTab({ tab: "agentboard" });
-  };
 
   const attention = useAttention({ snapshot, now, openTab });
 
@@ -371,27 +310,11 @@ export function AgentBoardScreen() {
     "terminal://notify",
     ({ termId, kind, body }) => {
       // The session the user is looking at doesn't need a badge.
-      if (termId === selectedRef.current && document.hasFocus()) return;
+      if (termId === selectedIdRef.current && document.hasFocus()) return;
       setTermAttention((m) => (m[termId] ? m : { ...m, [termId]: true }));
       if (kind === "notify" && body) toast(body);
     },
   );
-
-  const windowsForFolder = useMemo(
-    () => wins?.windows.filter((w) => w.folderDir === activeFolderDir) ?? [],
-    [wins, activeFolderDir],
-  );
-  const activeWin =
-    windowsForFolder.find(
-      (w) => w.id === (activeFolderDir && wins?.activeWindows[activeFolderDir]),
-    ) ?? windowsForFolder[0];
-
-  // What ab-split-session (⌘⇧S) has to choose from: sessions not in *any* window.
-  const splitCandidates = useMemo(() => {
-    if (!activeFolder) return [];
-    const openIds = new Set(windowsForFolder.flatMap((w) => w.panes));
-    return activeFolder.sessions.filter((s) => !openIds.has(s.id));
-  }, [activeFolder, windowsForFolder]);
 
   function splitIntoWindow() {
     if (!activeFolderDir) {
@@ -413,7 +336,7 @@ export function AgentBoardScreen() {
 
   const spawn = useSessionSpawn({
     folderOf,
-    cwds,
+    cwds: cwdsRef,
     collapsed,
     selectSession,
     setOverlay,
@@ -426,19 +349,19 @@ export function AgentBoardScreen() {
 
   // Opening a checkout lands on a shell, never a leftover files tile: windows
   // with no session go, and with none left its first session is mounted, else
-  // a fresh shell started. Through refs, for the mount-only nav handler.
-  const openFolderRef = useRef({ wins, folderByDir, newSession });
-  openFolderRef.current = { wins, folderByDir, newSession };
+  // a fresh shell started. Reads the atoms at call time, so the mount-only nav
+  // handler sees what is on screen now.
+  const newSessionLatest = useStableFn(newSession);
   function openFolder(folderDir: string) {
     selectFolder(folderDir);
-    const cur = openFolderRef.current;
-    if (!cur.wins) return;
-    const kept = dropSessionlessWindows(cur.wins, folderDir);
-    if (kept !== cur.wins) updateWins([folderDir], (w) => dropSessionlessWindows(w, folderDir));
+    const cur = read(winsAtom);
+    if (!cur) return;
+    const kept = dropSessionlessWindows(cur, folderDir);
+    if (kept !== cur) updateWins([folderDir], (w) => dropSessionlessWindows(w, folderDir));
     if (kept.windows.some((w) => w.folderDir === folderDir)) return;
-    const first = cur.folderByDir.get(folderDir)?.sessions[0];
+    const first = read(lookupsAtom).folderByDir.get(folderDir)?.sessions[0];
     if (first) selectSession(folderDir, first.id);
-    else void cur.newSession(folderDir);
+    else void newSessionLatest(folderDir, false, false);
   }
 
   const lifecycle = sessionLifecycle({
@@ -490,7 +413,7 @@ export function AgentBoardScreen() {
     windowsForFolder,
     sessionById,
     folderOf,
-    cwds,
+    cwds: cwdsRef,
     railRef,
     shownRepos,
     railQueue,
@@ -516,74 +439,51 @@ export function AgentBoardScreen() {
   });
   useAdvanceAfterSubmit(nav.advanceFrom, sessionById);
 
-  function toggleLane(lane: Lane) {
-    uiAction("queue.lane_toggle", "agentboard", lane);
-    setFoldedLanes((cur) => toggled(cur, lane));
-  }
-
   // The head of On you changed: open it only where nothing would be
-  // interrupted. Never moves DOM focus, and never announces itself.
-  const onYou = onYouHead(railQueue);
-  const onYouId = onYou?.folderDir ?? null;
-  const lastOnYouId = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    if (!queueLive) return;
-    const verdict = nextUpArrival(lastOnYouId.current, onYou, {
+  // interrupted. Never moves DOM focus, and never announces itself. The tree
+  // is walked by place: the queue's pull is the queue's business.
+  useAtomEffect(onYouHeadIdAtom, (id) => {
+    if (id == null || read(railViewAtom) === "tree") return;
+    const head = onYouHead(read(railQueueAtom));
+    const verdict = nextUpArrival(undefined, head, {
       terminalFocused: terminalFocused(),
-      selectedId: activeFolderDir,
+      selectedId: read(boardField("activeFolderDir")),
     });
-    lastOnYouId.current = onYouId;
-    // The tree is walked by place: the queue's pull is the queue's business.
-    if (!onYou || tree) return;
-    if (verdict === "open") nav.selectQueueItem(onYou, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on a new head only; the rest is read at that moment
-  }, [onYouId, queueLive]);
+    if (head && verdict === "open") nav.selectQueueItem(head, false);
+  });
   // A deep link to a PR lands on its checkout's row, which a folded lane would hide.
-  useEffect(
-    () =>
-      focusTargetStore.subscribe(() => {
-        const t = focusTargetStore.get();
-        if (t?.screen !== "agentboard") return;
-        // A PR is a queue row; a repo is a tree row.
-        if (t.kind === "repo") return setRailView("tree");
-        if (t.kind !== "pr") return;
-        setRailView("queue");
-        const row = railRef.current.railQueue.items.find(
-          (i) => i.pr && `${i.pr.repo}#${i.pr.number}` === t.id,
-        );
-        // A filter that hides the row gives way to it.
-        if (row && !railRef.current.shownQueue.items.includes(row)) setRepoFilter(new Set());
-        if (row)
-          setFoldedLanes((cur) => {
-            if (!cur.has(row.lane)) return cur;
-            const next = new Set(cur);
-            next.delete(row.lane);
-            return next;
-          });
-      }),
-    [setRailView],
-  );
+  useAtomEffect(focusTargetAtom, (t) => {
+    if (t?.screen !== "agentboard") return;
+    // A PR is a queue row; a repo is a tree row.
+    if (t.kind === "repo") return setRailView("tree");
+    if (t.kind !== "pr") return;
+    setRailView("queue");
+    const row = railRef.current.railQueue.items.find(
+      (i) => i.pr && `${i.pr.repo}#${i.pr.number}` === t.id,
+    );
+    // A filter that hides the row gives way to it.
+    if (row && !railRef.current.shownQueue.items.includes(row)) setRepoFilter(new Set());
+    if (row)
+      setFoldedLanes((cur) => {
+        if (!cur.has(row.lane)) return cur;
+        const next = new Set(cur);
+        next.delete(row.lane);
+        return next;
+      });
+  });
 
   const taskCreation = useTaskCreation({
     mountSession,
     selectSession,
     launchClaudeIn,
-    selectedRef,
+    selectedRef: selectedIdRef,
     activeFolderDirRef,
     railCollapsed,
     toggleRail,
   });
 
-  // The setup badge is `m:ss` against a clock that otherwise ticks every 15s,
-  // so it would read 0:00 throughout. Bounded by the install itself.
-  useNowInterval(taskCreation.settingUpDirs.size > 0 ? 1000 : undefined);
-
   // The rail's new-task form, for one repo: a queue chip or a tree `+` picks it,
-  // the shortcut takes the default. Opening again closes it.
-  const [railTaskRepoKey, setRailTaskRepoKey] = useState<string | null>(null);
-  // Set only by a fork, and cleared with the form.
-  const [railTaskBase, setRailTaskBase] = useState<string | undefined>(undefined);
-
+  // the shortcut takes the default. Opening again closes it. A fork sets the base.
   function openRailNewTask(repoKey?: string) {
     if (railCollapsed) toggleRail();
     setRailTaskBase(undefined);
@@ -593,7 +493,7 @@ export function AgentBoardScreen() {
     }
     const picked = repoKey
       ? repos.find((r) => r.key === repoKey)
-      : defaultTaskRepo(repos, activeRepo?.key, localStorage.getItem(LAST_TASK_REPO_KEY));
+      : defaultTaskRepo(repos, activeRepo?.key, read(lastTaskRepoAtom));
     if (!picked) return;
     setRailTaskRepoKey(picked.key);
   }
@@ -739,7 +639,7 @@ export function AgentBoardScreen() {
         setRailTaskBase(undefined);
       }}
       onSubmit={(repo, input) => {
-        localStorage.setItem(LAST_TASK_REPO_KEY, repo.key);
+        write(lastTaskRepoAtom, repo.key);
         setRailTaskRepoKey(null);
         setRailTaskBase(undefined);
         void taskCreation.createTask(
@@ -977,7 +877,7 @@ export function AgentBoardScreen() {
                   open={open}
                   // The standby board lists checkouts: quiet ones stay off it.
                   repos={railRepos}
-                  cwds={cwds}
+                  cwds={cwdsRef}
                   activeWin={activeWin}
                   activeFolderDir={activeFolderDir}
                   sessionById={sessionById}

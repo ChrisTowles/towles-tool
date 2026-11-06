@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowClockwiseIcon, LightningIcon } from "@phosphor-icons/react";
@@ -35,14 +36,7 @@ import {
   type RuleScore,
   type TelemetryRecord,
 } from "@/lib/telemetry";
-import {
-  loadUserSettings,
-  nextSavedViewId,
-  onSettingsChanged,
-  saveUserSettings,
-  type SavedView,
-  type UserSettings,
-} from "@/lib/settings";
+import { nextSavedViewId, type SavedView, updateSettings, userSettingsAtom } from "@/lib/settings";
 import { AttentionTab } from "@/screens/telemetry/attention-tab";
 import { BuildsTab } from "@/screens/telemetry/builds-tab";
 import { DEFAULT_GROUP, DEFAULT_RANGE, DashboardTab } from "@/screens/telemetry/dashboard-tab";
@@ -52,7 +46,7 @@ import { KeyboardTab } from "@/screens/telemetry/keyboard-tab";
 import { LogFilterBar } from "@/screens/telemetry/log-filter-bar";
 import { DEFAULT_RULES_RANGE, RulesTab, type RulesRange } from "@/screens/telemetry/rules-tab";
 import { QueryTab } from "@/screens/telemetry/query-tab";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom, openSettingsTab } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 import { DayPicker } from "@/screens/telemetry/day-picker";
 import { TELEMETRY_TABS } from "@/screens/telemetry/tab-strip";
@@ -76,8 +70,12 @@ const QUERY_DEBOUNCE_MS = 200;
 // it — the same restore-at-import pattern the workspace tabs use.
 const restoredFilters = loadTelemetryFilters(localStorage.getItem(TELEMETRY_FILTERS_KEY));
 
+function saveViews(next: SavedView[]) {
+  updateSettings((s) => ({ ...s, savedViews: next }));
+}
+
 export function TelemetryScreen() {
-  const { activeTab, openSettingsTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const [tab, setTab] = useState("overview");
   const [days, setDays] = useState<string[] | null>(null);
   const [day, setDay] = useState<string | null>(null);
@@ -89,7 +87,7 @@ export function TelemetryScreen() {
   const [filters, setFilters] = useState<Filter[]>(restoredFilters.filters);
   const [page, setPage] = useState<RecordPage | null>(null);
   const [pageLoading, setPageLoading] = useState(false);
-  const [settings, setSettings] = useState<UserSettings | null>(null);
+  const settings = useAtomValue(userSettingsAtom).settings;
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [selected, setSelected] = useState<TelemetryRecord | null>(null);
   const [attention, setAttention] = useState<AttentionSummary | null>(null);
@@ -113,8 +111,6 @@ export function TelemetryScreen() {
   useEffect(() => {
     saveTelemetryFilters({ kind, days: logDays, filters, query });
   }, [kind, logDays, filters, query]);
-
-  useEffect(() => onSettingsChanged(() => void loadUserSettings().then(setSettings)), []);
 
   async function loadEvents(d: string) {
     setLoading(true);
@@ -392,18 +388,11 @@ export function TelemetryScreen() {
     setActiveViewId(view.id);
   }
 
-  async function saveViews(next: SavedView[]) {
-    if (!settings) return;
-    const updated = { ...settings, savedViews: next };
-    setSettings(updated);
-    if (!(await saveUserSettings(updated))) toast.error("Could not save the view.");
-  }
-
   function saveView(label: string) {
     if (!settings) return;
     const id = nextSavedViewId(settings.savedViews, label);
     uiAction("telemetry.view_saved", "telemetry", id);
-    void saveViews([
+    saveViews([
       ...settings.savedViews,
       { id, label, filters: effectiveFilters(kind, filters), days: logDays, query },
     ]);
@@ -413,7 +402,7 @@ export function TelemetryScreen() {
   function deleteView(id: string) {
     if (!settings) return;
     uiAction("telemetry.view_deleted", "telemetry", id);
-    void saveViews(settings.savedViews.filter((v) => v.id !== id));
+    saveViews(settings.savedViews.filter((v) => v.id !== id));
     if (activeViewId === id) setActiveViewId(null);
   }
 

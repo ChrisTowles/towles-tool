@@ -17,7 +17,7 @@ import {
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
 import { uiAction } from "@/lib/ui-action";
 import { useClipboardCopy } from "@/lib/use-clipboard-copy";
-import { useWorkspace } from "@/lib/workspace";
+import { openTab } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 import { fmtTokens, fmtUsd } from "@/lib/format";
 import { ProjectName, reportSessionsError, toolColor } from "@/screens/claude-sessions/shared";
@@ -116,7 +116,7 @@ function SortableTh({
  * breakdown dialog header. */
 export function SessionButtons({ session }: { session: ClaudeSession }) {
   const { copiedKey, copy } = useClipboardCopy();
-  const { openTab } = useWorkspace();
+
   const { cwd } = session;
 
   return (

@@ -29,11 +29,11 @@ import type { ColumnDrag } from "./use-column-drag";
  * the active window's tiling. */
 export function PaneGrid(props: {
   /** Session ids whose PTY is mounted, in mount order. */
-  open: string[];
+  open: readonly string[];
   /** The whole rail, for the nothing-selected standby board. */
   repos: RepoData[];
   /** Fallback cwd per session, for terminals whose folder isn't resolvable. */
-  cwds: React.RefObject<Record<string, string>>;
+  cwds: { readonly current: Readonly<Record<string, string>> };
   activeWin: AgWindow | undefined;
   activeFolderDir: string | null;
   sessionById: Map<string, SessionData>;

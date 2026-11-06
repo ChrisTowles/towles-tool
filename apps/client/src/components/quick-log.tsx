@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { useEffect, useState } from "react";
 import { toast } from "@/lib/toast";
@@ -5,7 +6,7 @@ import { Dialog, Input } from "@cloudflare/kumo";
 import { journalLog, storeAddTask } from "@/lib/data";
 import { NotInTauri, type IpcError } from "@/lib/errors";
 import { formatLogLine, parseQuickLog } from "@/lib/quick-log-format";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
 /** Surface a failed capture. Browser dev gets the "not wired" note rather than
@@ -21,7 +22,7 @@ function reportCaptureError(error: IpcError) {
 export function QuickLog() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const { activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
 
   useEffect(() => {
     const onOpen = () => setOpen(true);

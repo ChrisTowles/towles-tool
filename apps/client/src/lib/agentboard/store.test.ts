@@ -6,7 +6,7 @@ import {
   overlayConfirmed,
   settleOverlays,
 } from "./overlays";
-import { createAgentboardStore, EMPTY_STATE } from "./store";
+import { EMPTY_STATE, INITIAL_AGENTBOARD, updateAgentboard, type AgentboardMsg } from "./store";
 import type { SessionData, StatePayload } from "./types";
 
 const session = (id: string, working: boolean): SessionData => ({
@@ -72,59 +72,63 @@ describe("settleOverlays", () => {
   });
 });
 
-describe("createAgentboardStore", () => {
+type Msg = AgentboardMsg;
+const run = (...msgs: Msg[]) => msgs.reduce(updateAgentboard, INITIAL_AGENTBOARD);
+const accept = (p: StatePayload, now: number): Msg => ({ kind: "Accept", payload: p, now });
+
+describe("updateAgentboard", () => {
   it("shares unchanged subtrees across payloads", () => {
-    const store = createAgentboardStore();
-    store.accept(payload(1, [session("a", false), session("b", false)], 5), 0);
-    const first = store.state.get();
-    store.accept(payload(2, [session("a", true), session("b", false)], 5), 0);
-    const second = store.state.get();
-    expect(second).not.toBe(first);
-    expect(sessionOf(second, "b")).toBe(sessionOf(first, "b"));
-    expect(sessionOf(second, "a")).not.toBe(sessionOf(first, "a"));
-    expect(second.ts).toBe(2);
+    const m1 = run(accept(payload(1, [session("a", false), session("b", false)], 5), 0));
+    const m2 = updateAgentboard(
+      m1,
+      accept(payload(2, [session("a", true), session("b", false)], 5), 0),
+    );
+    expect(m2.view).not.toBe(m1.view);
+    expect(sessionOf(m2.view, "b")).toBe(sessionOf(m1.view, "b"));
+    expect(sessionOf(m2.view, "a")).not.toBe(sessionOf(m1.view, "a"));
+    expect(m2.view.ts).toBe(2);
   });
 
   it("treats a payload differing only in `ts` as no event", () => {
-    const store = createAgentboardStore();
-    store.accept(payload(1, [session("a", false)]), 0);
-    const first = store.state.get();
-    let woken = 0;
-    store.state.subscribe(() => woken++);
-    store.accept(payload(2, [session("a", false)]), 0);
-    expect(store.state.get()).toBe(first);
-    expect(woken).toBe(0);
+    const m1 = run(accept(payload(1, [session("a", false)]), 0));
+    const m2 = updateAgentboard(m1, accept(payload(2, [session("a", false)]), 0));
+    expect(m2.view).toBe(m1.view);
   });
 
   it("ignores a payload older than one already seen", () => {
-    const store = createAgentboardStore();
-    store.accept(payload(5, [session("a", true)]), 0);
-    store.accept(payload(3, [session("a", false)]), 0);
-    expect(sessionOf(store.state.get(), "a").working).toBe(true);
+    const m = run(
+      accept(payload(5, [session("a", true)]), 0),
+      accept(payload(3, [session("a", false)]), 0),
+    );
+    expect(sessionOf(m.view, "a").working).toBe(true);
   });
 
   it("holds an overlay across a snapshot that disagrees and ends it on one that agrees", () => {
-    const store = createAgentboardStore();
-    store.accept(payload(100, [session("a", false)]), 100);
-    store.setOverlay("a", OVERLAY_STARTED, 150);
-    expect(sessionOf(store.state.get(), "a").working).toBe(true);
-
-    store.accept(payload(200, [session("a", false), session("b", false)]), 200);
-    expect(sessionOf(store.state.get(), "a").working).toBe(true);
-
-    store.accept(payload(300, [session("a", true), session("b", false)]), 300);
-    expect(sessionOf(store.state.get(), "a").working).toBe(true);
-    store.accept(payload(400, [session("a", false), session("b", false)]), 400);
-    expect(sessionOf(store.state.get(), "a").working).toBe(false);
+    let m = run(accept(payload(100, [session("a", false)]), 100), {
+      kind: "SetOverlay",
+      id: "a",
+      overlay: OVERLAY_STARTED,
+      now: 150,
+    });
+    expect(sessionOf(m.view, "a").working).toBe(true);
+    m = updateAgentboard(m, accept(payload(200, [session("a", false), session("b", false)]), 200));
+    expect(sessionOf(m.view, "a").working).toBe(true);
+    m = updateAgentboard(m, accept(payload(300, [session("a", true), session("b", false)]), 300));
+    expect(sessionOf(m.view, "a").working).toBe(true);
+    m = updateAgentboard(m, accept(payload(400, [session("a", false), session("b", false)]), 400));
+    expect(sessionOf(m.view, "a").working).toBe(false);
   });
 
   it("settles a never-confirmed overlay at the backstop", () => {
-    const store = createAgentboardStore();
-    store.accept(payload(100, [session("a", false)]), 100);
-    store.setOverlay("a", OVERLAY_STARTED, 150);
-    store.settle(150 + OVERLAY_BACKSTOP_MS - 1);
-    expect(sessionOf(store.state.get(), "a").working).toBe(true);
-    store.settle(150 + OVERLAY_BACKSTOP_MS);
-    expect(sessionOf(store.state.get(), "a").working).toBe(false);
+    let m = run(accept(payload(100, [session("a", false)]), 100), {
+      kind: "SetOverlay",
+      id: "a",
+      overlay: OVERLAY_STARTED,
+      now: 150,
+    });
+    m = updateAgentboard(m, { kind: "Settle", now: 150 + OVERLAY_BACKSTOP_MS - 1 });
+    expect(sessionOf(m.view, "a").working).toBe(true);
+    m = updateAgentboard(m, { kind: "Settle", now: 150 + OVERLAY_BACKSTOP_MS });
+    expect(sessionOf(m.view, "a").working).toBe(false);
   });
 });

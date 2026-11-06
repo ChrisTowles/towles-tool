@@ -1,10 +1,11 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { useCallback, useEffect, useState } from "react";
 import { Result } from "effect";
 import { SlackDmViewSchema, SlackFileDataSchema, SlackThreadSchema } from "./schemas/slack";
 import { errorMessage, type IpcError } from "./errors";
 import { invoke, isTauri, runIpc } from "./tauri";
 import { usePoll } from "./run";
-import { useStoreSnapshot } from "./store-snapshot";
+import { storeSnapshotAtom } from "./store-snapshot";
 import type { DmItem } from "./data";
 
 /** Private URLs need the bearer header, so images go through {@link slackDmFile}. */
@@ -197,7 +198,7 @@ export function useSlackDm(): {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
-  const signal = dmSignal(useStoreSnapshot().snapshot.dms);
+  const signal = dmSignal(useAtomValue(storeSnapshotAtom).snapshot.dms);
 
   const load = useCallback(async () => {
     setRevision((n) => n + 1);

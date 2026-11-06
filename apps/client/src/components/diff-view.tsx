@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 // The quick diff: a checkout's branch against its base, file by file, without
 // booting a VS Code workbench. Read-only — editing is the Files pane's job.
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +10,7 @@ import {
   type FilePatch,
   closeDiffView,
   patchRows,
-  useDiffView,
+  diffViewAtom,
   type DiffViewTarget,
 } from "@/lib/diff-view";
 import { fmtDiffLines } from "@/lib/format";
@@ -26,7 +27,7 @@ const ROW_TONE = {
 const SIGIL = { add: "+", del: "−", ctx: " " } as const;
 
 export function DiffView() {
-  const target = useDiffView();
+  const target = useAtomValue(diffViewAtom);
   return (
     <Dialog.Root open={target != null} onOpenChange={(open) => !open && closeDiffView()}>
       <Dialog

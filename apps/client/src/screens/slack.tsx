@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { Fragment, useCallback, useState } from "react";
 import { ArrowClockwiseIcon, ChatCircleIcon } from "@phosphor-icons/react";
@@ -14,7 +15,7 @@ import { ThreadPanel } from "@/components/slack/thread-panel";
 import { NewDivider } from "@/components/slack/new-divider";
 import { usePinToBottom } from "@/components/slack/use-pin-to-bottom";
 import { useSlackSeen } from "@/lib/use-slack-seen";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom } from "@/lib/workspace";
 
 /** Messages — the chat panel for the one watched Slack DM. Ignores the
  * collector's `enabled` flag, so it works with the watcher off; the list is
@@ -26,7 +27,7 @@ export function SlackScreen() {
 
   const messages = view?.messages ?? [];
   const showThread = (view?.configured ?? true) && !(error && messages.length === 0);
-  const visible = useWorkspace().activeTab === "slack";
+  const visible = useAtomValue(activeTabAtom) === "slack";
   const firstUnseen = useSlackSeen(messages, visible);
   const { viewportRef, listRef, composerRef, repin } = usePinToBottom(
     showThread && visible,

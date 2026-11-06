@@ -1,3 +1,5 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 import { Result } from "effect";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
@@ -11,8 +13,8 @@ import {
 import { toast } from "@/lib/toast";
 import { Button, Tabs } from "@cloudflare/kumo";
 import { StatTile } from "@/components/store-bits";
-import { fmtAge, useStoreSnapshot, type McpCall } from "@/lib/data";
-import { useNow } from "@/lib/now";
+import { fmtAge, type McpCall } from "@/lib/data";
+import { nowAtom } from "@/lib/now";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { invoke, ipcOr, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
@@ -76,8 +78,8 @@ function serverLabel(status: McpStatus | null, active: boolean): string {
 }
 
 export function McpScreen() {
-  const { snapshot, live } = useStoreSnapshot();
-  const now = useNow();
+  const { snapshot, live } = useAtomValue(storeSnapshotAtom);
+  const now = useAtomValue(nowAtom);
   const { tools, reload } = useMcpToolDocs();
   const [tab, setTab] = useState("overview");
   const [selected, setSelected] = useState<McpCall | null>(null);

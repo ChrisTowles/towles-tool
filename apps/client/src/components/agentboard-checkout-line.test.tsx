@@ -33,7 +33,6 @@ describe("CheckoutLine on the primary checkout", () => {
         needs={0}
         active={false}
         cursor={false}
-        now={0}
         onSelect={vi.fn<() => void>()}
         onOpenFiles={vi.fn<() => void>()}
         onOpenPreview={vi.fn<() => void>()}

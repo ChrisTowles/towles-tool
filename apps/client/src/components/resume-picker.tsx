@@ -11,7 +11,7 @@ import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import type { ResumeCandidate } from "@/lib/agentboard/requests";
 import { fmtAge } from "@/lib/data";
-import { useWorkspace } from "@/lib/workspace";
+import { openTab } from "@/lib/workspace";
 import { cn } from "@/lib/utils";
 
 /** Relaunches the Claude sessions from the previous run (`claude --resume`) —
@@ -23,7 +23,6 @@ export function ResumePicker() {
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState(false);
   const settled = useRef(false);
-  const { openTab } = useWorkspace();
 
   useEffect(() => {
     void (async () => {
@@ -45,7 +44,7 @@ export function ResumePicker() {
       setChosen(new Set(found.map((c) => c.paneId)));
       setOpen(true);
     })();
-  }, [openTab]);
+  }, []);
 
   function toggle(paneId: string) {
     setChosen((prev) => {
@@ -151,12 +150,12 @@ export function ResumePicker() {
   );
 }
 
-function relaunch(picked: ResumeCandidate[], openTab: (id: "agentboard") => void) {
+function relaunch(picked: ResumeCandidate[], open: (id: "agentboard") => void) {
   if (picked.length === 0) return;
   // Agentboard owns the pane→PTY machinery, so hand off rather than
   // duplicating it. It may not be mounted yet at boot, which is exactly why
   // the open-session bridge stashes a queue (see `requestOpenSession`).
-  openTab("agentboard");
+  open("agentboard");
   // Oldest first: Agentboard activates each folder as it restores it, so the
   // last one handed over is the one left on screen — that should be the
   // session you were most recently in.

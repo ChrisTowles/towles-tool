@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useAtomEffect, useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
+import { useRef, useState } from "react";
 import {
   ArrowClockwiseIcon,
   GitBranchIcon,
@@ -10,11 +12,15 @@ import {
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { Input, Tabs } from "@cloudflare/kumo";
-import { useTheme } from "@/components/theme-provider";
-import { useStoreSnapshot } from "@/lib/data";
-import { useNow } from "@/lib/now";
+import { themeAtom, colorThemeAtom, setTheme, setColorTheme } from "@/lib/theme";
+
+import { nowAtom } from "@/lib/now";
 import { isEmptyQuery } from "@/lib/settings-filter";
-import { settingsTargetStore, type SettingsTarget } from "@/lib/settings-target";
+import {
+  consumeSettingsTarget,
+  settingsTargetAtom,
+  type SettingsTarget,
+} from "@/lib/settings-target";
 import { useUserSettings, type SaveState } from "@/lib/settings";
 import { uiAction } from "@/lib/ui-action";
 import { useAppVersion } from "@/lib/version";
@@ -38,7 +44,7 @@ const TABS = [
 ] as const;
 
 /** The tab + prefilled filter this screen was deep-linked to (see
- * `useWorkspace().openSettingsTab`), consumed once from `settingsTargetStore`.
+ * `openSettingsTab`), consumed once from `settingsTargetStore`.
  * An unknown tab falls back to General. */
 function resolveTarget(target: SettingsTarget | null): {
   tab: string;
@@ -66,32 +72,27 @@ function SaveStatus({ state }: { state: SaveState }) {
 }
 
 export function SettingsScreen() {
-  const { theme, setTheme, colorTheme, setColorTheme } = useTheme();
+  const theme = useAtomValue(themeAtom);
+  const colorTheme = useAtomValue(colorThemeAtom);
   const { settings, saveState, update, flush } = useUserSettings();
-  const { snapshot } = useStoreSnapshot();
-  const now = useNow();
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
+  const now = useAtomValue(nowAtom);
   const version = useAppVersion();
-  // Consume the store exactly once (on mount) so the tab/filter initializers
+  // Take the deep link exactly once (on mount) so the tab/filter initializers
   // below don't race each other for the same one-shot target.
-  const [initialTarget] = useState(() => settingsTargetStore.consume());
-  const initialResolved = resolveTarget(initialTarget);
+  const [initialResolved] = useState(() => resolveTarget(consumeSettingsTarget()));
   const [tab, setTab] = useState(initialResolved.tab);
   const [query, setQuery] = useState(initialResolved.filter);
   const filterRef = useRef<HTMLInputElement>(null);
 
   // A deep link fired while this screen is already mounted (just hidden)
   // doesn't remount it, so watch the store and re-apply a fresh target live.
-  const pendingTarget = useSyncExternalStore(
-    settingsTargetStore.subscribe,
-    settingsTargetStore.get,
-    settingsTargetStore.get,
-  );
-  useEffect(() => {
-    if (!pendingTarget) return;
-    const resolved = resolveTarget(settingsTargetStore.consume());
+  useAtomEffect(settingsTargetAtom, (pending) => {
+    if (!pending) return;
+    const resolved = resolveTarget(consumeSettingsTarget());
     setTab(resolved.tab);
     setQuery(resolved.filter);
-  }, [pendingTarget]);
+  });
 
   const run = (key: string) => snapshot.runs.find((r) => r.collector === key);
 

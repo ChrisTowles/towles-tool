@@ -21,11 +21,11 @@ export type RailVisibility = {
   /** Repo key → checkout dirs the rail filter is hiding. */
   idleDirs: Map<string, Set<string>>;
   /** Repo keys whose idle rows are peeked open. */
-  idleRevealed: Set<string>;
+  idleRevealed: ReadonlySet<string>;
   /** Repo key → the unclaimed checkout dirs folded into the "N unmanaged" stub. */
   unmanagedDirs: Map<string, Set<string>>;
   /** Repo keys whose unmanaged rows are peeked open. */
-  unmanagedRevealed: Set<string>;
+  unmanagedRevealed: ReadonlySet<string>;
   collapsed: Record<string, boolean>;
   /** Stays a row under a folded repo (`keptWhenCollapsed`). */
   activeFolderDir: string | null;

@@ -1,16 +1,17 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { useEffect, useState } from "react";
 import { SparkleIcon } from "@phosphor-icons/react";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { withHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom } from "@/lib/workspace";
 
 /** A pill shown only while zen focus mode is on, so hidden chrome is never
  * mysterious. It must stay **bottom**-right: with the header hidden, each screen's
  * trailing action cluster slides to y=0, where this clipped badges and ate clicks. */
 export function ZenIndicator({ onExit }: { onExit: () => void }) {
   const [visible, setVisible] = useState(true);
-  const { activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
 
   useEffect(() => {
     let hideTimer: ReturnType<typeof setTimeout>;

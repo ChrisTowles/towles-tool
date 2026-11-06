@@ -1,8 +1,7 @@
-import { useEffect } from "react";
 import { toast } from "@/lib/toast";
 import { latestKeyboardScore } from "@/lib/keyboard-score";
 import type { ScreenId } from "@/lib/screens";
-import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
+import { readSetting } from "@/lib/settings";
 import { SHORTCUTS, modifierHint, shortcutHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 
@@ -91,28 +90,10 @@ function save(s: CoachState): void {
 
 let state: CoachState | null = null;
 let stepRun = { count: 0, at: 0 };
-let enabled = true;
 
 export const DEFAULT_SHORTCUT_COACH = true;
 
-/**
- * Tracks `agentboard.shortcutCoach` for {@link mouseAction}, whose reader is a
- * plain click handler — hence a module global, not `useLiveSetting`.
- */
-export function useShortcutCoachSetting(): void {
-  useEffect(() => {
-    let alive = true;
-    const unsubscribe = onSettingsChanged(() => {
-      void loadUserSettings().then((s) => {
-        if (alive && s) enabled = s.agentboard?.shortcutCoach ?? DEFAULT_SHORTCUT_COACH;
-      });
-    });
-    return () => {
-      alive = false;
-      unsubscribe();
-    };
-  }, []);
-}
+const coachEnabled = () => readSetting((s) => s.agentboard?.shortcutCoach, DEFAULT_SHORTCUT_COACH);
 
 /**
  * Call *alongside* the action's own handler: it replaces the click's plain
@@ -124,7 +105,10 @@ export function mouseAction(id: string, screen: ScreenId): void {
 
   uiAction(`mouse.${id}`, screen);
 
-  const r = noteClick(state ?? load(), id, { enabled, keyboardUsesToday: uses(id) });
+  const r = noteClick(state ?? load(), id, {
+    enabled: coachEnabled(),
+    keyboardUsesToday: uses(id),
+  });
   state = r.state;
   save(state);
   if (!r.nudge) return;
@@ -138,7 +122,7 @@ const JUMP_TIP = "ab-jump-session-1";
  * "hold to number the rail" tip. */
 export function railStep(screen: ScreenId): void {
   stepRun = noteStep(stepRun, Date.now());
-  if (!enabled || stepRun.count < STEP_RUN) return;
+  if (!coachEnabled() || stepRun.count < STEP_RUN) return;
   const s = state ?? load();
   if (s.nudged.includes(JUMP_TIP)) return;
   state = { ...s, nudged: [...s.nudged, JUMP_TIP] };

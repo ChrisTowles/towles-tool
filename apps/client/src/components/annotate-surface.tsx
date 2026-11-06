@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 /** Draw-on-page annotation, shared by the preview and Chrome panes. They
  * differ only in `capture`: a WebKit snapshot already contains the ink, a CDP
  * screenshot does not — hence `compositeInk`. */
@@ -28,7 +29,7 @@ import {
   folderSendTargets,
   previewWriteFeedback,
 } from "@/lib/preview";
-import { NOT_LISTENING_HINT, inboxSend, useInbox } from "@/lib/inbox";
+import { NOT_LISTENING_HINT, inboxSend, inboxAtom } from "@/lib/inbox";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { Result } from "effect";
@@ -83,7 +84,7 @@ export function AnnotateSurface({
   const draftRef = useRef<Annotation | null>(null);
   const redrawRef = useRef<() => void>(() => {});
 
-  const { listening } = useInbox();
+  const { listening } = useAtomValue(inboxAtom);
   const targets = useMemo(() => folderSendTargets(folder, listening), [folder, listening]);
   const target = targets.find((t) => t.sessionId === targetId);
 

@@ -1,3 +1,6 @@
+import * as Atom from "effect/reactivity/Atom";
+import { read, write } from "@/lib/atoms/registry";
+
 /** Which modifier the app's shortcuts take: ⌘ on a Mac, Ctrl elsewhere — and Ctrl on a
  * Mac too once `agentboard.pcKeybindings` is on. Kept free of settings I/O so the key
  * paths stay importable anywhere; `main.tsx` feeds it. The native half, for the chords
@@ -5,29 +8,17 @@
 
 export const IS_MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform ?? "");
 
-/** `null` until the first settings read lands: a workbench booted on a guess reboots. */
-let pcKeybindings: boolean | null = IS_MAC ? null : false;
-const listeners = new Set<() => void>();
+/** Whether the PC keymap is on — `null` until the first settings read lands,
+ * since a workbench booted on a guess reboots. */
+export const pcKeymapAtom = Atom.make<boolean | null>(IS_MAC ? null : false).pipe(Atom.keepAlive);
 
 /** ⌘ is the shortcut modifier. */
 export function macKeymap(): boolean {
-  return IS_MAC && pcKeybindings !== true;
-}
-
-/** Whether the PC keymap is on, or `null` while still unknown. */
-export function pcKeymap(): boolean | null {
-  return pcKeybindings;
+  return IS_MAC && read(pcKeymapAtom) !== true;
 }
 
 export function setPcKeybindings(on: boolean): void {
-  if (!IS_MAC || on === pcKeybindings) return;
-  pcKeybindings = on;
-  for (const listener of listeners) listener();
-}
-
-export function subscribeKeymap(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  if (IS_MAC) write(pcKeymapAtom, on);
 }
 
 /** A field that owns its own editing keys. */

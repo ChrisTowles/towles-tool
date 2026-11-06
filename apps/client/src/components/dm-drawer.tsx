@@ -1,3 +1,5 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 import { Result } from "effect";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowSquareOutIcon, ChatCircleDotsIcon, CheckIcon } from "@phosphor-icons/react";
@@ -9,14 +11,8 @@ import { MessageBubble } from "@/components/slack/message-bubble";
 import { NewDivider } from "@/components/slack/new-divider";
 import { usePinToBottom } from "@/components/slack/use-pin-to-bottom";
 import { cn } from "@/lib/utils";
-import {
-  dmsNeedingAttention,
-  fmtAge,
-  storeDmDismiss,
-  useStoreSnapshot,
-  type DmItem,
-} from "@/lib/data";
-import { useNow } from "@/lib/now";
+import { dmsNeedingAttention, fmtAge, storeDmDismiss, type DmItem } from "@/lib/data";
+import { nowAtom } from "@/lib/now";
 import { openExternalUrl } from "@/lib/open-url";
 import type { PastedImage } from "@/lib/pasted-images";
 import { slackDmReact, slackDmSend, slackWriteError, useSlackDm } from "@/lib/slack";
@@ -24,7 +20,7 @@ import { isTauri } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { useSlackSeen } from "@/lib/use-slack-seen";
-import { useWorkspace } from "@/lib/workspace";
+import { openTab } from "@/lib/workspace";
 
 /** Unanswered this long → the age turns into a chip. */
 const WARN_MS = 5 * 60_000;
@@ -38,7 +34,7 @@ const RECENT_MESSAGES = 12;
  * screens, so no repo, task or tab switch hides it; it never takes focus
  * until clicked, so a terminal keeps its keystrokes. */
 export function DmDrawer() {
-  const { snapshot } = useStoreSnapshot();
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
   // A sent reply hides the drawer at once; the store's dismissal lands a beat later.
   const [answeredTs, setAnsweredTs] = useState(0);
   const pending = dmsNeedingAttention(snapshot).filter((d) => d.ts > answeredTs);
@@ -72,8 +68,7 @@ function DrawerBody({
   more: number;
   onAnswered: (ts: number) => void;
 }) {
-  const { openTab } = useWorkspace();
-  const now = useNow();
+  const now = useAtomValue(nowAtom);
   const { view, refresh } = useSlackDm();
   const [sending, setSending] = useState(false);
   const messages = (view?.messages ?? []).slice(-RECENT_MESSAGES);

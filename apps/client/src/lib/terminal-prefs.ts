@@ -1,5 +1,4 @@
-import { useCallback, type RefObject } from "react";
-import { persistAgentboardSetting, useLiveSetting, useLiveSettingRef } from "./settings";
+import { persistAgentboardSetting, readSetting, useSetting } from "./settings";
 
 /** Built-in default for `agentboard.copyOnSelect` — on, matching tt-config. */
 const DEFAULT_COPY_ON_SELECT = true;
@@ -17,31 +16,24 @@ export function clampTerminalFontSize(px: number): number {
   return Math.max(MIN_TERMINAL_FONT_SIZE, Math.min(MAX_TERMINAL_FONT_SIZE, Math.round(px)));
 }
 
-/** `agentboard.copyOnSelect` in a ref the terminal's render effect can read
- * live without re-subscribing. */
-export function useCopyOnSelect(): RefObject<boolean> {
-  return useLiveSettingRef((s) => s.agentboard?.copyOnSelect, DEFAULT_COPY_ON_SELECT);
-}
+/** `agentboard.copyOnSelect` as of now, for the terminal's mouse handler. */
+export const readCopyOnSelect = (): boolean =>
+  readSetting((s) => s.agentboard?.copyOnSelect, DEFAULT_COPY_ON_SELECT);
 
 /** Terminal font size as state, so the canvas render effect can key on it and
  * re-measure the cell grid on change; the setter clamps and persists. */
 export function useTerminalFontSize(): [number, (px: number) => void] {
   // Clamped in the selector too, not just on write: the file is hand-editable
   // and co-owned, so an out-of-range value can arrive from outside this app.
-  const [fontSize, setFontSize] = useLiveSetting(
+  const fontSize = useSetting(
     (s) =>
       s.agentboard?.terminalFontSize === undefined
         ? undefined
         : clampTerminalFontSize(s.agentboard.terminalFontSize),
     DEFAULT_TERMINAL_FONT_SIZE,
   );
-  const persist = useCallback(
-    (px: number) => {
-      const clamped = clampTerminalFontSize(px);
-      setFontSize(clamped);
-      void persistAgentboardSetting("terminalFontSize", clamped);
-    },
-    [setFontSize],
-  );
-  return [fontSize, persist];
+  return [fontSize, setTerminalFontSize];
 }
+
+const setTerminalFontSize = (px: number) =>
+  persistAgentboardSetting("terminalFontSize", clampTerminalFontSize(px));

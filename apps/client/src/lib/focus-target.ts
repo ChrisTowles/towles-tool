@@ -1,4 +1,7 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useRef } from "react";
+import { useAtomEffect } from "./atoms/react";
+import * as Atom from "effect/reactivity/Atom";
+import { appRegistry } from "./atoms/registry";
 import type { ScreenId } from "./screens";
 
 /** Deep-link focus: `openTab(screen)` lands on a screen but never on a row, so a
@@ -10,45 +13,21 @@ type FocusKind = "pr" | "todo" | "repo" | "issue";
 
 export type FocusTarget = { screen: ScreenId; kind: FocusKind; id: string };
 
-export class FocusTargetStore {
-  private target: FocusTarget | null = null;
-  private listeners = new Set<() => void>();
+/** The pending deep link, or null. Written by `openTabWithFocus`; taken once
+ * by the destination screen with {@link consumeFocusTarget}. */
+export const focusTargetAtom = Atom.make<FocusTarget | null>(null).pipe(Atom.keepAlive);
 
-  get = (): FocusTarget | null => this.target;
-
-  set(target: FocusTarget): void {
-    this.target = target;
-    this.emit();
-  }
-
-  /** A request for another screen is left in place for its real destination. */
-  consume(screen: ScreenId): FocusTarget | null {
-    if (this.target === null || this.target.screen !== screen) return null;
-    const consumed = this.target;
-    this.target = null;
-    this.emit();
-    return consumed;
-  }
-
-  clear(): void {
-    if (this.target === null) return;
-    this.target = null;
-    this.emit();
-  }
-
-  subscribe = (fn: () => void): (() => void) => {
-    this.listeners.add(fn);
-    return () => {
-      this.listeners.delete(fn);
-    };
-  };
-
-  private emit(): void {
-    for (const fn of [...this.listeners]) fn();
-  }
+/** Pure: the target `screen` takes, and what is left pending after it. A
+ * request for another screen is left in place for its real destination. */
+export function takeTarget(
+  pending: FocusTarget | null,
+  screen: ScreenId,
+): [taken: FocusTarget | null, left: FocusTarget | null] {
+  return pending !== null && pending.screen === screen ? [pending, null] : [null, pending];
 }
 
-export const focusTargetStore = new FocusTargetStore();
+const consumeFocusTarget = (screen: ScreenId): FocusTarget | null =>
+  appRegistry.modify(focusTargetAtom, (p) => takeTarget(p, screen));
 
 /** Literals, so Tailwind's scanner keeps them in the build. */
 const FLASH_CLASSES = ["ring-2", "ring-inset", "ring-warn"];
@@ -77,34 +56,18 @@ function flashRow(el: HTMLElement): void {
  * still-mounted background screen's identical row from matching. */
 export function useFocusTarget<T extends HTMLElement>(screen: ScreenId) {
   const containerRef = useRef<T>(null);
-  const focusTarget = useSyncExternalStore(
-    focusTargetStore.subscribe,
-    focusTargetStore.get,
-    focusTargetStore.get,
-  );
-
-  useEffect(() => {
-    if (!focusTarget || focusTarget.screen !== screen) return;
-    const target = focusTargetStore.consume(screen);
+  useAtomEffect(focusTargetAtom, (pending) => {
+    if (pending?.screen !== screen) return;
+    const target = consumeFocusTarget(screen);
     if (!target) return;
-
     let attempts = 0;
-    let timer = 0;
     const attempt = () => {
       const container = containerRef.current;
       const el = container ? findFocusRow(container, target.kind, target.id) : null;
-      if (el) {
-        flashRow(el);
-        return;
-      }
-      if (++attempts < MAX_ATTEMPTS) timer = window.setTimeout(attempt, RETRY_MS);
+      if (el) return flashRow(el);
+      if (++attempts < MAX_ATTEMPTS) window.setTimeout(attempt, RETRY_MS);
     };
     attempt();
-
-    return () => {
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [focusTarget, screen]);
-
+  });
   return containerRef;
 }

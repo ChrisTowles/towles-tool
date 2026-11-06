@@ -22,7 +22,7 @@ export function sessionLifecycle(a: {
   selectSession: (folderDir: string, sessionId: string) => void;
   removePane: (paneId: string) => void;
   setFocusedPaneId: Dispatch<SetStateAction<string | null>>;
-  setOpen: Dispatch<SetStateAction<string[]>>;
+  setOpen: Dispatch<SetStateAction<readonly string[]>>;
   setSelected: Dispatch<SetStateAction<Selected>>;
   setConfirmRemove: Dispatch<SetStateAction<RemoveTarget | null>>;
   setRenaming: Dispatch<SetStateAction<string | null>>;
