@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { useState } from "react";
 import { usePoll } from "@/lib/run";
@@ -9,7 +10,7 @@ import { formatMemory } from "@/components/status-bar";
 import { errorMessage, NotInTauri } from "@/lib/errors";
 import { taskExplorerSnapshot, type ProcessGroup, type ProcessRow } from "@/lib/task-explorer";
 import { cn } from "@/lib/utils";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
 /** Task Explorer — `tt-app` and one group per embedded terminal. Polls only
@@ -19,7 +20,7 @@ import { uiAction } from "@/lib/ui-action";
 const POLL_MS = 2500;
 
 export function TaskExplorerScreen() {
-  const { activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const [groups, setGroups] = useState<ProcessGroup[] | null>(null);
   const [loading, setLoading] = useState(false);
 

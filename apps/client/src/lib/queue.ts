@@ -1,7 +1,8 @@
 import { Effect, Result, Schema } from "effect";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import * as Atom from "effect/reactivity/Atom";
+import { feed, onEvent } from "./atoms/feed";
+import { write } from "./atoms/registry";
 import { fmtStateAge } from "./agentboard/session";
-import { subscribeThen } from "./subscribe-then";
 import { invoke } from "./tauri";
 import {
   TaskQueueSchema,
@@ -16,13 +17,17 @@ import {
 
 const EMPTY: TaskQueue = { next: null, items: [] };
 
-const TaskQueueContext = createContext<{ queue: TaskQueue; live: boolean } | null>(null);
+/** The queue and whether the backend has answered yet. Only the feed writes it. */
+export const taskQueueAtom = Atom.make<{ queue: TaskQueue; live: boolean }>({
+  queue: EMPTY,
+  live: false,
+}).pipe(Atom.keepAlive);
 
-export function TaskQueueProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState({ queue: EMPTY, live: false });
+export const queueAtom = Atom.make((get) => get(taskQueueAtom).queue).pipe(Atom.keepAlive);
 
-  useEffect(() => {
-    let accepted = false;
+feed("queue", () =>
+  Effect.gen(function* () {
+    const state = { accepted: false };
     const decode = Schema.decodeUnknownResult(TaskQueueSchema);
     const accept = (raw: unknown) => {
       const parsed = decode(raw);
@@ -30,33 +35,22 @@ export function TaskQueueProvider({ children }: { children: ReactNode }) {
         console.error("queue://changed: unexpected payload", parsed.failure);
         return;
       }
-      accepted = true;
-      setState({ queue: parsed.success, live: true });
+      state.accepted = true;
+      write(taskQueueAtom, { queue: parsed.success, live: true });
     };
+    yield* onEvent("queue://changed", accept);
     // `null` until the store has opened, and the app emits only on a change
     // after that — so keep asking until something lands.
-    const settled = () => accepted;
-    const catchUp = Effect.gen(function* () {
-      for (let attempt = 0; attempt < 30 && !settled(); attempt++) {
-        const initial = yield* Effect.result(invoke<unknown>("queue_get"));
-        if (Result.isSuccess(initial) && initial.success != null) {
-          accept(initial.success);
-          return;
-        }
-        yield* Effect.sleep(1000);
+    for (let attempt = 0; attempt < 30 && !state.accepted; attempt++) {
+      const initial = yield* Effect.result(invoke<unknown>("queue_get"));
+      if (Result.isSuccess(initial) && initial.success != null) {
+        accept(initial.success);
+        return;
       }
-    });
-    return subscribeThen({ "queue://changed": accept }, catchUp);
-  }, []);
-
-  return <TaskQueueContext.Provider value={state}>{children}</TaskQueueContext.Provider>;
-}
-
-export function useTaskQueue(): { queue: TaskQueue; live: boolean } {
-  const ctx = useContext(TaskQueueContext);
-  if (ctx === null) throw new Error("useTaskQueue must be used within a TaskQueueProvider");
-  return ctx;
-}
+      yield* Effect.sleep(1000);
+    }
+  }),
+);
 
 export function nextItem(queue: TaskQueue): QueueItem | undefined {
   return queue.items.find((i) => i.folderDir === queue.next);
@@ -177,18 +171,6 @@ export const LANES = [
   "no_shell",
 ] as const satisfies readonly Lane[];
 
-/** Stored folded lanes, unknown names dropped; `null` when nothing valid is stored,
- * so the caller's default applies. */
-export function parseFoldedLanes(raw: string | null): Set<Lane> | null {
-  try {
-    const v: unknown = raw ? JSON.parse(raw) : null;
-    if (!Array.isArray(v)) return null;
-    return new Set(LANES.filter((l) => v.includes(l)));
-  } catch {
-    return null;
-  }
-}
-
 /** The rail's rows top-down, folded lanes skipped — what the cursor and the
  * 1–9 jump digits walk. The backend already sorts by lane. */
 export function railRows(queue: TaskQueue, folded: ReadonlySet<Lane>): QueueItem[] {
@@ -215,10 +197,6 @@ export function filterQueue(
 }
 
 /** The row standing for a checkout, so picking it any other way still rings it. */
-export function rowForFolder(queue: TaskQueue, folderDir: string | null): QueueItem | undefined {
-  return folderDir === null ? undefined : queue.items.find((i) => i.folderDir === folderDir);
-}
-
 /** One step through `rows` from checkout `fromDir`; off the list lands on the first row. */
 export function stepRow(
   rows: readonly QueueItem[],

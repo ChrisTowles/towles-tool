@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { isAuthError, isScopeError } from "@/lib/slack";
 import { openExternalUrl } from "@/lib/open-url";
 import { uiAction } from "@/lib/ui-action";
-import { useWorkspace } from "@/lib/workspace";
+import { openSettingsTab } from "@/lib/workspace";
 
 /** api.slack.com app directory — where the app is created and tokens are issued. */
 const SLACK_APPS_URL = "https://api.slack.com/apps";
@@ -152,7 +152,6 @@ export function AppManifestDialog() {
 /** Full walkthrough shown when Slack isn't configured yet: create the app from a
  * manifest, install it, copy the tokens, and open Settings to finish. */
 export function SetupGuide() {
-  const { openSettingsTab } = useWorkspace();
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto w-full max-w-xl px-6 py-8">
@@ -225,7 +224,6 @@ export function SetupGuide() {
 
 /** Compact re-auth walkthrough shown when a configured token is rejected. */
 function ReauthNotice({ onRetry }: { onRetry: () => void }) {
-  const { openSettingsTab } = useWorkspace();
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
       <div className="max-w-md rounded-lg border border-kumo-hairline bg-kumo-base p-6">

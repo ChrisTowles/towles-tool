@@ -57,7 +57,6 @@ export function CheckoutLine({
   task,
   active,
   cursor,
-  now,
   deleting,
   deletingLabel,
   onAdoptWorktree,
@@ -82,7 +81,6 @@ export function CheckoutLine({
   active: boolean;
   /** Under the rail cursor — the line the arrows are steering. */
   cursor: boolean;
-  now: number;
   /** The caller already dims and disables the whole line. */
   deleting?: boolean;
   deletingLabel?: string;
@@ -220,7 +218,7 @@ export function CheckoutLine({
               {folderCreating(folder) && <CreatingBadge label={deletingLabel} />}
               {folderIsUnclaimed(folder) && <NoTaskBadge onAdopt={onAdoptWorktree} />}
               {settingUpSince !== undefined && !deleting && (
-                <SettingUpBadge since={settingUpSince} now={now} />
+                <SettingUpBadge since={settingUpSince} />
               )}
               {folder.hasPortDrift && <PortDriftBadge drift={folderPortDrift(folder)} />}
               <FolderLandedBadge folder={folder} pr={pr} />

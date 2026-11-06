@@ -16,7 +16,7 @@ const HEX = /#[0-9a-fA-F]{6}\b/;
 /** Hex that is not a design choice of this app: someone else's colors. */
 const HEX_ALLOWED: Record<string, string> = {
   "/src/lib/colors.ts": "the repo palette itself",
-  "/src/components/theme-provider.tsx": "swatches of the themes `index.css` defines",
+  "/src/lib/theme.ts": "swatches of the themes `index.css` defines",
   "/src/components/code-server-pane.tsx": "VS Code's own dark background, behind its iframe",
   "/src/components/terminal-view.tsx": "fallbacks before the terminal's computed style exists",
   "/src/lib/preview.ts": "annotation pens, drawn into the user's image",

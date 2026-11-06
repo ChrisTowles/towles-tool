@@ -42,3 +42,43 @@ function parseOpenTabs(rawOpenTabs: string | null): ScreenId[] {
   const openTabs = [...seen];
   return openTabs.length > 0 ? openTabs : [COLD_START_TAB];
 }
+
+export type Tabs = Readonly<{
+  openTabs: ScreenId[];
+  activeTab: ScreenId;
+  /** Most-recently-opened order; `openTabs` is first-visit order. */
+  recent: ScreenId[];
+}>;
+
+export type TabsMsg =
+  | { kind: "Open"; id: ScreenId }
+  | { kind: "Close"; id: ScreenId }
+  | { kind: "Step"; step: 1 | -1 };
+
+/** Pure: the only way the open tabs change. Returns `t` itself on a no-op. */
+export function updateTabs(t: Tabs, msg: TabsMsg): Tabs {
+  switch (msg.kind) {
+    case "Open": {
+      if (t.activeTab === msg.id && t.recent[0] === msg.id) return t;
+      return {
+        openTabs: t.openTabs.includes(msg.id) ? t.openTabs : [...t.openTabs, msg.id],
+        activeTab: msg.id,
+        recent: [msg.id, ...t.recent.filter((x) => x !== msg.id)],
+      };
+    }
+    case "Close": {
+      if (t.openTabs.length <= 1 || !t.openTabs.includes(msg.id)) return t;
+      const idx = t.openTabs.indexOf(msg.id);
+      const openTabs = t.openTabs.filter((s) => s !== msg.id);
+      const activeTab =
+        t.activeTab === msg.id ? openTabs[Math.min(idx, openTabs.length - 1)]! : t.activeTab;
+      return { ...t, openTabs, activeTab };
+    }
+    case "Step": {
+      const idx = t.openTabs.indexOf(t.activeTab);
+      if (idx === -1) return t;
+      const n = t.openTabs.length;
+      return updateTabs(t, { kind: "Open", id: t.openTabs[(idx + msg.step + n) % n]! });
+    }
+  }
+}

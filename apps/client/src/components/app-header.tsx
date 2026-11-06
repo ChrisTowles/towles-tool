@@ -1,3 +1,5 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 import {
   GearIcon,
   GitBranchIcon,
@@ -10,13 +12,21 @@ import { CollectorDot, NeedsYouChip, NextUpChip } from "@/components/header-stat
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
-import { fmtClock, fmtCountdown, fmtDate, useAppTask, useStoreSnapshot } from "@/lib/data";
+import { fmtClock, fmtCountdown, fmtDate, useAppTask } from "@/lib/data";
 import { identityColor } from "@/lib/identity-color";
-import { useNow } from "@/lib/now";
+import { nowAtom } from "@/lib/now";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
 import { shortcutHint } from "@/lib/shortcuts";
-import { useWorkspace } from "@/lib/workspace";
+import {
+  activeTabAtom,
+  openSettingsTab,
+  openTab,
+  setPaletteOpen,
+  sidebarCollapsedAtom,
+  toggleSidebar,
+  toggleZen,
+} from "@/lib/workspace";
 
 /** Strip the shared prefix so the badge reads "task-2", not the whole repo name. */
 function taskShortName(task: string): string {
@@ -85,9 +95,9 @@ function CheckoutKindChip() {
  * minutes), in the header grid's middle track so the sides truncate before
  * they reach it. */
 function ClockCluster() {
-  const { openTab, activeTab } = useWorkspace();
-  const { snapshot } = useStoreSnapshot();
-  const now = useNow();
+  const activeTab = useAtomValue(activeTabAtom);
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
+  const now = useAtomValue(nowAtom);
 
   const nextEvent = snapshot.events
     .filter((e) => e.startTs > now)
@@ -126,8 +136,8 @@ function ClockCluster() {
 }
 
 export function AppHeader() {
-  const { sidebarCollapsed, toggleSidebar, setPaletteOpen, openSettingsTab, toggleZen, activeTab } =
-    useWorkspace();
+  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom);
+  const activeTab = useAtomValue(activeTabAtom);
   const task = useAppTask();
   // Every control in this header has a shortcut twin, so each click is a
   // measured (and occasionally coached) miss — see `lib/shortcut-coach.ts`.

@@ -463,9 +463,6 @@ export function mockSnapshot(now: number = Date.now()): StoreSnapshot {
   };
 }
 
-/** Lives in `store-snapshot.tsx` (needs JSX); re-exported for its consumers. */
-export { useStoreSnapshot } from "./store-snapshot";
-
 /** `2:30 PM` — wall-clock time for an epoch-ms timestamp. */
 export function fmtClock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], {

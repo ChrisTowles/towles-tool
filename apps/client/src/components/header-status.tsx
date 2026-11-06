@@ -1,3 +1,5 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 // The header title bar's three status readouts. Reported, never actionable: a
 // row navigates, nothing here approves or replies.
 import { useState } from "react";
@@ -11,7 +13,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { useAgentboardState } from "@/lib/agentboard/state";
+import { agentboardAtom } from "@/lib/agentboard/state";
 import { buildAttentionFeed, type AttentionItem, type AttentionKind } from "@/lib/attention-feed";
 import {
   alwaysOnHealth,
@@ -19,18 +21,18 @@ import {
   COLLECTOR_STATE_LABEL,
   worstCollectorState,
 } from "@/lib/collector-health";
-import { fmtAge, useStoreSnapshot } from "@/lib/data";
-import { nextItem, useTaskQueue } from "@/lib/queue";
-import { useNow } from "@/lib/now";
+import { fmtAge } from "@/lib/data";
+import { nextItem, taskQueueAtom } from "@/lib/queue";
+import { nowAtom } from "@/lib/now";
 import { openExternalUrl } from "@/lib/open-url";
 import { PR_TONE } from "@/lib/pr-tone";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom, openTab, openTabWithFocus } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
 /** The queue's Next up — the one thing waiting on you — or nothing when it's empty. */
 export function NextUpChip() {
-  const { openTab, activeTab } = useWorkspace();
-  const { queue } = useTaskQueue();
+  const activeTab = useAtomValue(activeTabAtom);
+  const { queue } = useAtomValue(taskQueueAtom);
   const head = nextItem(queue);
   if (!head) return null;
   const label = head.why;
@@ -53,10 +55,10 @@ export function NextUpChip() {
 /** One feed backs both the count and the rows, so the badge can never disagree
  * with the list it opens. */
 export function NeedsYouChip() {
-  const { openTabWithFocus, activeTab } = useWorkspace();
-  const { snapshot } = useStoreSnapshot();
-  const agentState = useAgentboardState();
-  const now = useNow();
+  const activeTab = useAtomValue(activeTabAtom);
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
+  const agentState = useAtomValue(agentboardAtom);
+  const now = useAtomValue(nowAtom);
   const [feedOpen, setFeedOpen] = useState(false);
 
   const feed = buildAttentionFeed(snapshot, agentState);
@@ -108,8 +110,8 @@ export function NeedsYouChip() {
 /** Coloured from the worst *always-on* collector — calendar is off by default
  * and would otherwise pin the dot amber on every install that never enabled it. */
 export function CollectorDot() {
-  const { snapshot } = useStoreSnapshot();
-  const now = useNow();
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
+  const now = useAtomValue(nowAtom);
   const health = alwaysOnHealth(snapshot.runs, now);
   return (
     <Tooltip

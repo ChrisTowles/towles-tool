@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { useEffect, useState } from "react";
 import {
@@ -21,7 +22,7 @@ import { fire, invoke, ipcOr, runIpc } from "@/lib/tauri";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 import { DIFF_BLOCKS, diffBlocks, fmtDiffLines, fmtUsd } from "@/lib/format";
-import { useDirCost } from "@/lib/agentboard/cost";
+import { dirCostAtom } from "@/lib/agentboard/cost";
 
 /** Which branch every git stat here was measured against, and the one place to
  * retarget it. Click to edit, blank to auto-detect. */
@@ -459,7 +460,7 @@ export function CommittedChip({ stats, onOpen, labeled = false }: DiffChipProps)
 /** What this checkout's Claude sessions cost over the last 30 days, estimated
  * from their transcripts. A fact, so bare type like the counts beside it. */
 export function CostChip({ dir }: { dir: string }) {
-  const cost = useDirCost(dir);
+  const cost = useAtomValue(dirCostAtom(dir));
   if (!cost || cost.costUsd < 0.01) return null;
   return (
     <span

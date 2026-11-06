@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Effect, Result } from "effect";
 import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -48,7 +49,7 @@ import { invoke, runIpc } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom, openTab } from "@/lib/workspace";
 
 const LANE_TITLE: Record<Lane, string> = {
   on_you: "On you",
@@ -57,8 +58,6 @@ const LANE_TITLE: Record<Lane, string> = {
   parked: "Parked",
   no_shell: "Not open",
 };
-
-export const FOLDED_BY_DEFAULT: Lane[] = ["parked", "no_shell"];
 
 /** Soft by design — the queue is somewhere you go, not something that calls
  * you. A row changing lane fades out where it was and fades in where it went
@@ -130,7 +129,7 @@ async function unsnoozeItem(item: QueueItem) {
 
 /** `queue-next` from any screen, terminals included: Agent Board opens the head in place. */
 export function QueueNextShortcut() {
-  const { openTab, activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   useShortcuts(
     useMemo(
       () => ({
@@ -139,7 +138,7 @@ export function QueueNextShortcut() {
           requestAgentboardNav({ kind: "queue-next" });
         },
       }),
-      [openTab],
+      [],
     ),
     activeTab,
   );

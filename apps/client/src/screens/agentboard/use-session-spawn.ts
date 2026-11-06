@@ -1,5 +1,5 @@
 import { Result } from "effect";
-import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import type { StartClaudeTarget } from "@/lib/agentboard/actions";
 import { claudeCommand, type ClaudeLaunchOptions } from "@/lib/agentboard/claude-command";
 import { abSetSessionPurpose } from "@/lib/agentboard/ipc";
@@ -13,13 +13,13 @@ import { invoke, runIpc } from "@/lib/tauri";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 
-export type FocusTerminalRequest = { id: string; nonce: number };
+import type { FocusTerminalRequest } from "@/lib/board/model";
 
 /** Starting shells and Claude in them: new sessions, windows, dev servers, and
  * the typed-into-the-PTY launch path they all share. */
 export function useSessionSpawn(args: {
   folderOf: Map<string, FolderData>;
-  cwds: RefObject<Record<string, string>>;
+  cwds: { readonly current: Readonly<Record<string, string>> };
   collapsed: Record<string, boolean>;
   selectSession: (folderDir: string, sessionId: string) => void;
   setOverlay: (sessionId: string, overlay: Overlay) => void;
@@ -42,6 +42,9 @@ export function useSessionSpawn(args: {
   const [startClaudeTarget, setStartClaudeTarget] = useState<StartClaudeTarget | null>(null);
   const [startClaudePrompt, setStartClaudePrompt] = useState("");
 
+  const requestFocus = (id: string) =>
+    setFocusTerminalRequest((r) => ({ id, nonce: (r?.nonce ?? 0) + 1 }));
+
   /** Run `fn` against a session's PTY, guaranteeing its shell exists first. */
   async function withLiveSession(
     sessionId: string,
@@ -55,13 +58,16 @@ export function useSessionSpawn(args: {
     await fn();
   }
 
-  async function newSession(folderDir: string, launchClaude = false) {
+  // `focus: false` is for a shell started by walking the rail: the keyboard
+  // stays on the cursor, so the next j/k still steps.
+  async function newSession(folderDir: string, launchClaude = false, focus = true) {
     const added = await runIpc(
       invoke<SessionData>("ab_add_session", { dir: folderDir, name: null }),
     );
     if (Result.isFailure(added)) return;
     const rec = added.success;
     selectSession(folderDir, rec.id);
+    if (focus) requestFocus(rec.id);
     if (launchClaude) {
       setStartClaudeTarget({ folderDir, sessionId: rec.id, sessionName: rec.name, restart: false });
     }
@@ -86,7 +92,7 @@ export function useSessionSpawn(args: {
     );
     selectSession(repo.dir, rec.id);
     setFocusLevel("pane");
-    setFocusTerminalRequest((r) => ({ id: rec.id, nonce: (r?.nonce ?? 0) + 1 }));
+    requestFocus(rec.id);
   }
 
   // A window can't exist without panes, so "+ window" spawns a session too.
@@ -109,6 +115,7 @@ export function useSessionSpawn(args: {
     });
     // Mount + focus the session; `placePane` sees it already hosted here.
     selectSession(folderDir, sessionId);
+    requestFocus(sessionId);
   }
 
   async function launchClaudeIn(

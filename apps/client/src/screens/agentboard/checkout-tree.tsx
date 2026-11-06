@@ -65,10 +65,10 @@ export function CheckoutTree({
   showQuiet: boolean;
   onOpenRepoManager: () => void;
   idleDirs: Map<string, Set<string>>;
-  idleRevealed: Set<string>;
+  idleRevealed: ReadonlySet<string>;
   onToggleIdle: (repoKey: string) => void;
   unmanagedDirs: Map<string, Set<string>>;
-  unmanagedRevealed: Set<string>;
+  unmanagedRevealed: ReadonlySet<string>;
   onToggleUnmanaged: (repoKey: string) => void;
   quietDirs: Map<string, Set<string>>;
   taskCreation: TaskCreation;

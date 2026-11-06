@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 // One PTY session inline on its checkout's line. Status, needs-you and focus
 // stay on the chip; model, cache and context live in the pane header.
 import { memo, useState } from "react";
@@ -7,7 +8,7 @@ import { Glyph, HotkeyBadge, IconBtn } from "@/components/agentboard-bits/primit
 import { Dot } from "@/components/agentboard-bits/status-dots";
 import { Button, DropdownMenu } from "@cloudflare/kumo";
 import { cn } from "@/lib/utils";
-import { noteChip, useInbox } from "@/lib/inbox";
+import { noteChip, inboxAtom } from "@/lib/inbox";
 import type { SessionActions } from "@/lib/agentboard/actions";
 import {
   claudeTitleName,
@@ -63,7 +64,7 @@ export const SessionChip = memo(function SessionChip({
     .filter(Boolean)
     .join(" · ");
   const age = fmtWaitingAge(session.needsSinceMs, now);
-  const note = noteChip(useInbox(), session.id);
+  const note = noteChip(useAtomValue(inboxAtom), session.id);
   // JS state, not CSS `:hover` — WebKitGTK doesn't reliably update `:hover` on
   // real pointer movement.
   const [hovered, setHovered] = useState(false);

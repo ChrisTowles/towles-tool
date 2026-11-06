@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from "react";
+import * as Atom from "effect/reactivity/Atom";
+import { write } from "@/lib/atoms/registry";
 
 /** A checkout's branch diff, opened read-only beside whatever is on screen. */
 export type DiffViewTarget = { dir: string; label: string; baseBranch: string | null };
@@ -9,27 +10,10 @@ export type FilePatch = {
   truncated: boolean;
 };
 
-class DiffViewStore {
-  private target: DiffViewTarget | null = null;
-  private listeners = new Set<() => void>();
-  get = (): DiffViewTarget | null => this.target;
-  set(target: DiffViewTarget | null): void {
-    this.target = target;
-    for (const fn of this.listeners) fn();
-  }
-  subscribe = (fn: () => void): (() => void) => {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  };
-}
+export const diffViewAtom = Atom.make<DiffViewTarget | null>(null).pipe(Atom.keepAlive);
 
-const store = new DiffViewStore();
-
-export const openDiffView = (target: DiffViewTarget) => store.set(target);
-export const closeDiffView = () => store.set(null);
-export function useDiffView(): DiffViewTarget | null {
-  return useSyncExternalStore(store.subscribe, store.get);
-}
+export const openDiffView = (target: DiffViewTarget) => write(diffViewAtom, target);
+export const closeDiffView = () => write(diffViewAtom, null);
 
 type PatchLineKind = "add" | "del" | "ctx";
 

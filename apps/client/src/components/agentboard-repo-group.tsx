@@ -452,7 +452,6 @@ export function RepoGroup({
                     pr={prForFolder(prs, repo.originUrl, folder.branch)}
                     task={taskForFolder(tasks, folder.dir)}
                     cursor={cursorKey === folderNodeKey(repo.key, folder.dir)}
-                    now={now}
                     active={activeFolderDir === folder.dir}
                     deleting={deleting}
                     onAdoptWorktree={adoptWorktree(folder)}

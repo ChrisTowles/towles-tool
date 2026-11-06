@@ -1,25 +1,27 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 import { useMemo } from "react";
 import { RollupDots } from "@/components/agentboard-bits/status-dots";
 import { Button, Tooltip } from "@cloudflare/kumo";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useAgentboardSelector, useRepos } from "@/lib/agentboard/state";
+import { reposAtom, compactRecommendPercentAtom } from "@/lib/agentboard/state";
 import { agentRollup, rollupAlertColor, rollupAlertTextColor } from "@/lib/agentboard/status";
-import { dmsNeedingAttention, useStoreSnapshot } from "@/lib/data";
-import { useNow } from "@/lib/now";
+import { dmsNeedingAttention } from "@/lib/data";
+import { nowAtom } from "@/lib/now";
 import { NAV_SECTIONS, SCREENS } from "@/lib/screens";
 import { Kbd } from "@/components/ui/kbd";
 import { ShortcutBadge } from "@/components/hint";
 import { shortcutAria, shortcutHint, screenShortcutId } from "@/lib/shortcuts";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom, openTab } from "@/lib/workspace";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
 /** The shared clock, not `Date.now()`: a cache going cold emits no state event. */
 function useAgentRollup() {
-  const repos = useRepos();
-  const compactRecommendPercent = useAgentboardSelector((s) => s.compactRecommendPercent);
-  const now = useNow();
+  const repos = useAtomValue(reposAtom);
+  const compactRecommendPercent = useAtomValue(compactRecommendPercentAtom);
+  const now = useAtomValue(nowAtom);
   return useMemo(
     () => agentRollup(repos, now, compactRecommendPercent),
     [repos, now, compactRecommendPercent],
@@ -27,9 +29,9 @@ function useAgentRollup() {
 }
 
 export function AppSidebar() {
-  const { activeTab, openTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const rollup = useAgentRollup();
-  const { snapshot } = useStoreSnapshot();
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
   const slackUnread = dmsNeedingAttention(snapshot).length > 0;
 
   return (
@@ -105,9 +107,9 @@ export function AppSidebar() {
 /** The Agentboard rollup rides along as a corner badge, so collapsing the
  * sidebar never hides "something needs you". */
 export function AppSidebarIcons() {
-  const { activeTab, openTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const rollup = useAgentRollup();
-  const { snapshot } = useStoreSnapshot();
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
   const badgeColor = rollupAlertColor(rollup);
   const slackUnread = dmsNeedingAttention(snapshot).length > 0;
 

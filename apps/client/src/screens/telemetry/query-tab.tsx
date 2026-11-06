@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 import { Result } from "effect";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -31,7 +32,7 @@ import {
 } from "@/lib/telemetry";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom } from "@/lib/workspace";
 
 /** Query — SQL over the last fortnight of the event log (`tt_telemetry::query`):
  * the "next incident is a jq query" from docs/TELEMETRY.md, run in the app.
@@ -49,7 +50,7 @@ let remembered: { selectedId: string | null; result: QueryResult | null; error: 
 };
 
 export function QueryTab() {
-  const { activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const { settings, loaded, update, flush } = useUserSettings();
   const queries = settings?.savedQueries ?? [];
   const [selectedId, setSelectedId] = useState(remembered.selectedId);

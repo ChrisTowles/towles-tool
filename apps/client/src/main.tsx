@@ -2,9 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { MotionConfig } from "motion/react";
 import "./index.css";
-import { ThemeProvider } from "@/components/theme-provider";
+import "@/lib/theme";
 import { IS_MAC, installPcEditKeys, setPcKeybindings } from "@/lib/keymap";
-import { loadUserSettings, onSettingsChanged } from "@/lib/settings";
+import { RegistryContext } from "@effect/atom-react";
+import { appRegistry, startAppEffects } from "@/lib/atoms/registry";
+import { readSetting, userSettingsAtom } from "@/lib/settings";
 import { fire, invoke } from "@/lib/tauri";
 import { installConsoleCollector } from "@/lib/wdio-console";
 import { installCrashReporter } from "@/lib/crash-report";
@@ -26,19 +28,23 @@ installCrashReporter();
 // Mac only, before the first render: the keycaps, the native monitor and every
 // workbench's keymap all wait on this read.
 if (IS_MAC) {
-  onSettingsChanged(() => {
-    void loadUserSettings().then((s) => {
-      const on = s?.agentboard?.pcKeybindings ?? false;
-      setPcKeybindings(on);
-      fire(invoke("keymap_set_pc", { on }));
-    });
+  let pc: boolean | null = null;
+  appRegistry.subscribe(userSettingsAtom, () => {
+    const on = readSetting((s) => s.agentboard?.pcKeybindings, false);
+    if (on === pc) return;
+    pc = on;
+    setPcKeybindings(on);
+    fire(invoke("keymap_set_pc", { on }));
   });
   installPcEditKeys();
 }
 
+// Every backend feed (Tauri subscriptions, the settings file) starts once, here.
+startAppEffects();
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider defaultTheme="system" storageKey="tt-ui-theme">
+    <RegistryContext.Provider value={appRegistry}>
       {/* App-level motion policy, and deliberately only that: reducedMotion
           honors prefers-reduced-motion for every motion component at once, so
           no component hand-rolls motion-reduce classes. Per-animation tuning
@@ -54,6 +60,6 @@ createRoot(document.getElementById("root")!).render(
       <MotionConfig reducedMotion="user">
         <App />
       </MotionConfig>
-    </ThemeProvider>
+    </RegistryContext.Provider>
   </StrictMode>,
 );

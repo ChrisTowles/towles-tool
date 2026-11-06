@@ -3,7 +3,7 @@
  * remount drops the workbench session and re-pays the several-second boot. */
 
 import { Result } from "effect";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
 import { toast } from "@/lib/toast";
 import type { FilesOpenRequest } from "@/components/files-pane";
@@ -16,7 +16,8 @@ import {
   subscribeCodeServerInstall,
 } from "@/lib/code-server";
 import { errorMessage, NotInTauri } from "@/lib/errors";
-import { pcKeymap, subscribeKeymap } from "@/lib/keymap";
+import { pcKeymapAtom } from "@/lib/keymap";
+import { useAtomValue } from "@/lib/atoms/react";
 
 type Phase =
   | { at: "starting" }
@@ -49,7 +50,7 @@ export function CodeServerPane({
   // change would be a reload.
   const servedByUrl = useRef<FilesOpenRequest | undefined>(undefined);
   // The workbench picks its keymap as it boots, so a change reloads it.
-  const pcKeys = useSyncExternalStore(subscribeKeymap, pcKeymap);
+  const pcKeys = useAtomValue(pcKeymapAtom);
 
   useEffect(() => subscribeCodeServerInstall(setInstall), []);
 

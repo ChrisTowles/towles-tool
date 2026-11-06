@@ -1,3 +1,5 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 import { useState } from "react";
 import { FireIcon, KeyboardIcon, ShieldWarningIcon, StethoscopeIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@cloudflare/kumo";
@@ -21,12 +23,12 @@ import {
 } from "@/lib/keyboard-score";
 import { behindLabel, behindTooltip, useBuildBehind, type BuildBehind } from "@/lib/build-behind";
 import { useRulesFailing } from "@/lib/telemetry-rules";
-import { fmtAge, fmtCountdown, useStoreSnapshot } from "@/lib/data";
-import { useNow } from "@/lib/now";
+import { fmtAge, fmtCountdown } from "@/lib/data";
+import { nowAtom } from "@/lib/now";
 import { taskExplorerSnapshot } from "@/lib/task-explorer";
 import { cn } from "@/lib/utils";
 import { useAppVersion } from "@/lib/version";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom, openTab } from "@/lib/workspace";
 import { uiAction } from "@/lib/ui-action";
 
 type ResourceUsage = { cpuPercent: number; memoryBytes: number };
@@ -143,8 +145,8 @@ function CollectorHealthDot({ health, now }: { health: CollectorHealth; now: num
 /** Always on, so a focused user sees `gh` auth expiring before PRs quietly go
  * missing. Classification lives in the pure {@link collectorHealth}. */
 function CollectorHealthCluster() {
-  const { snapshot } = useStoreSnapshot();
-  const now = useNow();
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
+  const now = useAtomValue(nowAtom);
   const health = collectorHealth(snapshot.runs, now);
   return (
     <div className="flex items-center gap-1" title="Collector health">
@@ -158,7 +160,7 @@ function CollectorHealthCluster() {
 /** Deliberately the smallest possible readout, coaching detail kept in the
  * tooltip: a habit gauge that competes for attention defeats the app's point. */
 function KeyboardHabit({ score }: { score: KeyboardScore }) {
-  const { openTab, activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const { today, streak } = score;
   const tier = tierFor(today.share);
   const remaining = actionsToGoal(today, score.goalShare, score.goalMinActions);
@@ -218,7 +220,7 @@ function KeyboardHabit({ score }: { score: KeyboardScore }) {
  * a fact to read on the Rules tab, not an alarm to react to here. Hidden at
  * zero — a pill saying "0" is noise. */
 function RulesFailing({ count }: { count: number }) {
-  const { openTab, activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   if (count === 0) return null;
   return (
     <Tooltip
@@ -254,7 +256,7 @@ function BuildBehindChip({ behind }: { behind: BuildBehind }) {
 }
 
 export function StatusBar() {
-  const { openTab, activeTab } = useWorkspace();
+  const activeTab = useAtomValue(activeTabAtom);
   const usage = useResourceUsage();
   const claudeLimits = useClaudeUsageLimits();
   const keyboard = useKeyboardScore();

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useAtomValue } from "@/lib/atoms/react";
 import { CheckIcon, InfoIcon, WarningIcon } from "@phosphor-icons/react";
-import { HUD_NOTE_MS, noteIsFresh, useHudNote } from "@/lib/rail-hud";
+import { freshHudNoteAtom } from "@/lib/rail-hud";
 import { shortcutHint } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -22,16 +22,7 @@ export function RailHud({
   /** The text under the pointer or focus, and when it got there. */
   hovered: { text: string; at: number } | null;
 }) {
-  const note = useHudNote();
-  const [now, setNow] = useState(() => Date.now());
-  // Re-render at expiry, or a note outlives HUD_NOTE_MS whenever nothing else changes.
-  useEffect(() => {
-    if (!note) return;
-    setNow(Date.now());
-    const timer = setTimeout(() => setNow(Date.now()), HUD_NOTE_MS);
-    return () => clearTimeout(timer);
-  }, [note]);
-  const fresh = noteIsFresh(note, now) ? note : null;
+  const fresh = useAtomValue(freshHudNoteAtom);
   // A note newer than the hover wins: the control under a still pointer may
   // be the one the action just removed.
   const hover = hovered && !(fresh && fresh.at > hovered.at) ? hovered.text : null;

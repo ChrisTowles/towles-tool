@@ -1,6 +1,7 @@
 import { replaceEqualDeep } from "@/lib/replace-equal-deep";
-import { useSyncExternalStore } from "react";
-import { Result, Schema } from "effect";
+import { Option, Result, Schema } from "effect";
+import * as Atom from "effect/reactivity/Atom";
+import { write } from "@/lib/atoms/registry";
 import { list } from "@/lib/schemas/shape";
 import { startPoll, subscribe } from "@/lib/run";
 import { invoke, isTauri, runIpc } from "@/lib/tauri";
@@ -51,73 +52,30 @@ export function isListening(state: InboxState, session: string): boolean {
 export const inboxSend = (session: string, body: string, images: string[], feedback: boolean) =>
   runIpc(invoke<number>("inbox_send", { session, body, images, feedback }));
 
-class InboxStore {
-  private state: InboxState = EMPTY;
-  private listeners = new Set<() => void>();
-  private stop: (() => void) | null = null;
-
-  get = (): InboxState => this.state;
-
-  subscribe = (fn: () => void): (() => void) => {
-    this.listeners.add(fn);
-    if (this.listeners.size === 1) this.start();
-    return () => {
-      this.listeners.delete(fn);
-      if (this.listeners.size === 0) {
-        this.stop?.();
-        this.stop = null;
-      }
-    };
-  };
-
-  private async refresh(): Promise<void> {
+/** Live only while something reads it: the poll and the event listener are
+ * the atom's own, released with it. An unchanged poll wakes no reader. */
+export const inboxAtom: Atom.Atom<InboxState> = Atom.make((get) => {
+  if (!isTauri()) return EMPTY;
+  const refresh = async () => {
     const res = await runIpc(invoke<InboxState>("inbox_state", {}, { schema: InboxStateSchema }));
     if (Result.isFailure(res)) return;
-    // Every row reads this: an unchanged poll must wake none of them.
-    const next = replaceEqualDeep(this.state, res.success);
-    if (next === this.state) return;
-    this.state = next;
-    for (const fn of this.listeners) fn();
-  }
-
-  private start(): void {
-    if (!isTauri()) return;
-    const stopPoll = startPoll(() => this.refresh(), REFRESH_MS);
-    const stopEvents = subscribe("inbox://changed", () => void this.refresh());
-    this.stop = () => {
-      stopPoll();
-      stopEvents();
-    };
-  }
-}
-
-const store = new InboxStore();
-
-export function useInbox(): InboxState {
-  return useSyncExternalStore(store.subscribe, store.get);
-}
+    const prev = Option.getOrElse(get.self<InboxState>(), () => EMPTY);
+    const next = replaceEqualDeep(prev, res.success);
+    if (next !== prev) get.setSelf(next);
+  };
+  const stopPoll = startPoll(refresh, REFRESH_MS);
+  const stopEvents = subscribe("inbox://changed", () => void refresh());
+  get.addFinalizer(() => {
+    stopPoll();
+    stopEvents();
+  });
+  return EMPTY;
+});
 
 /** The note box, mounted once at the root; a row's menu or the shortcut opens it. */
 export type NoteTarget = { sessionId: string; label: string };
 
-class NoteDialogStore {
-  private target: NoteTarget | null = null;
-  private listeners = new Set<() => void>();
-  get = (): NoteTarget | null => this.target;
-  set(target: NoteTarget | null): void {
-    this.target = target;
-    for (const fn of this.listeners) fn();
-  }
-  subscribe = (fn: () => void): (() => void) => {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  };
-}
+export const noteDialogAtom = Atom.make<NoteTarget | null>(null).pipe(Atom.keepAlive);
 
-const dialog = new NoteDialogStore();
-
-export const openNoteDialog = (target: NoteTarget) => dialog.set(target);
-export const closeNoteDialog = () => dialog.set(null);
-export function useNoteDialog(): NoteTarget | null {
-  return useSyncExternalStore(dialog.subscribe, dialog.get);
-}
+export const openNoteDialog = (target: NoteTarget) => write(noteDialogAtom, target);
+export const closeNoteDialog = () => write(noteDialogAtom, null);

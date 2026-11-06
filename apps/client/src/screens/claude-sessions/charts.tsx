@@ -41,7 +41,7 @@ function cssFont(name: string): string {
 }
 
 /** Bumps whenever `<html>`'s class actually flips (light/dark), so chart color
- * reads never race the theme-provider's own effect that toggles the class. */
+ * reads never race lib/theme's own effect that toggles the class. */
 function useDomThemeVersion(): number {
   const [version, setVersion] = useState(0);
   useEffect(() => {

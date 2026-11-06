@@ -7,11 +7,6 @@ import { uiAction } from "@/lib/ui-action";
 import type { PaneRect } from "@/lib/agentboard/layout";
 import type { NewTaskSubmit } from "@/components/inline-new-task";
 
-/** Sentinel key in the persisted collapse map for "the whole rail is collapsed
- * to icons" — rides the same `ab_save_collapsed` store as the per-row keys
- * (`repo:<name>` / `<repoKey>::<dir>`), which it can never collide with. */
-export const RAIL_COLLAPSE_KEY = "__rail__";
-
 /** `onOpenChange` for a dialog whose only close-side effect is clearing
  * whatever state made it open — Base UI fires `false` on outside-click, Esc,
  * and the built-in close button alike, so this covers all three at once. */

@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
-import { toast, toastManager } from "@/lib/toast";
+import { useAtomValue } from "@/lib/atoms/react";
+import { useEffect } from "react";
+import { toastManager } from "@/lib/toast";
+import "@/lib/app-bridges";
+import { read } from "@/lib/atoms/registry";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar, AppSidebarIcons } from "@/components/app-sidebar";
 import { CommandPalette } from "@/components/command-palette";
@@ -13,81 +16,48 @@ import { ZenIndicator } from "@/components/zen-indicator";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider, Toasty } from "@cloudflare/kumo";
-import { AgentboardStateProvider, useAgentboardRead } from "@/lib/agentboard/state";
-import { subscribeEditorOpenFile } from "@/lib/editor-open";
-import { subscribePreviewShow } from "@/lib/preview-artifact";
-import { repeatDetail, repeatTitle, watchRepeatedErrors } from "@/lib/repeated-errors";
-import { uiAction } from "@/lib/ui-action";
-import { subscribeSummon } from "@/lib/summon";
-import { subscribeAutoArchived } from "@/lib/auto-archive";
-import { subscribeAutoClosed } from "@/lib/auto-close";
 import { DiffView } from "@/components/diff-view";
 import { NoteDialog } from "@/components/note-dialog";
-import { subscribeTaskStart } from "@/lib/task-start";
-import { NowProvider } from "@/lib/now";
-import { TaskQueueProvider } from "@/lib/queue";
 import { QueueNextShortcut } from "@/components/queue-rail";
-import { StoreSnapshotProvider } from "@/lib/store-snapshot";
 import { NAV_ORDER, SCREENS } from "@/lib/screens";
-import { useShortcutCoachSetting } from "@/lib/shortcut-coach";
 import { ShortcutHelpHost, useShortcuts, type ShortcutScope } from "@/lib/shortcuts";
-import { WorkspaceProvider, useWorkspace } from "@/lib/workspace";
+import {
+  activeTabAtom,
+  closeTab,
+  openSettingsTab,
+  openTab,
+  openTabsAtom,
+  paletteOpenAtom,
+  railViewAtom,
+  setPaletteOpen,
+  setZen,
+  stepTab,
+  sidebarCollapsedAtom,
+  toggleSidebar,
+  toggleZen,
+  zenAtom,
+} from "@/lib/workspace";
 import { SCREEN_COMPONENTS } from "@/screens";
 
 /** Global (always-active) bindings + the `?` help overlay. Screen-scoped
- * bindings live with their screens (e.g. Agentboard), gated on their tab. */
-function Shortcuts() {
-  // Keeps the shortcut coach's "should I nudge?" setting live for the click
-  // handlers that can't read it through a hook — see `lib/shortcut-coach.ts`.
-  useShortcutCoachSetting();
-  const {
-    setPaletteOpen,
-    toggleSidebar,
-    toggleZen,
-    paletteOpen,
-    activeTab,
-    openTabs,
-    openTab,
-    openSettingsTab,
-    closeTab,
-    railView,
-  } = useWorkspace();
+ * bindings live with their screens (e.g. Agentboard), gated on their tab.
+ * Handlers read atoms at call time, so the map never goes stale. */
+const GLOBAL_HANDLERS: Partial<Record<string, () => void>> = {
+  palette: () => setPaletteOpen(!read(paletteOpenAtom)),
+  settings: () => openSettingsTab(),
+  sidebar: toggleSidebar,
+  zen: toggleZen,
+  quicklog: () => window.dispatchEvent(new Event("quicklog:open")),
+  "close-tab": () => closeTab(read(activeTabAtom)),
+  "next-tab": () => stepTab(1),
+  "prev-tab": () => stepTab(-1),
+  ...Object.fromEntries(NAV_ORDER.slice(0, 9).map((id, i) => [`tab-${i + 1}`, () => openTab(id)])),
+};
 
-  useShortcuts(
-    useMemo(() => {
-      const handlers: Partial<Record<string, () => void>> = {
-        palette: () => setPaletteOpen(!paletteOpen),
-        settings: () => openSettingsTab(),
-        sidebar: toggleSidebar,
-        zen: toggleZen,
-        quicklog: () => window.dispatchEvent(new Event("quicklog:open")),
-        "close-tab": () => closeTab(activeTab),
-        "next-tab": () => {
-          const idx = openTabs.indexOf(activeTab);
-          if (idx !== -1) openTab(openTabs[(idx + 1) % openTabs.length]);
-        },
-        "prev-tab": () => {
-          const idx = openTabs.indexOf(activeTab);
-          if (idx !== -1) openTab(openTabs[(idx - 1 + openTabs.length) % openTabs.length]);
-        },
-      };
-      NAV_ORDER.slice(0, 9).forEach((id, i) => {
-        handlers[`tab-${i + 1}`] = () => openTab(id);
-      });
-      return handlers;
-    }, [
-      setPaletteOpen,
-      toggleSidebar,
-      toggleZen,
-      paletteOpen,
-      activeTab,
-      openTabs,
-      openTab,
-      openSettingsTab,
-      closeTab,
-    ]),
-    activeTab,
-  );
+function Shortcuts() {
+  const activeTab = useAtomValue(activeTabAtom);
+  const railView = useAtomValue(railViewAtom);
+  useShortcuts(GLOBAL_HANDLERS, activeTab);
 
   // No per-screen branching: a scope nothing registers against is inert.
   const activeScopes: ShortcutScope[] = [
@@ -98,86 +68,12 @@ function Shortcuts() {
   return <ShortcutHelpHost activeScopes={activeScopes} screen={activeTab} />;
 }
 
-/** Delivery for the MCP `task_start` tool, subscribed app-wide: Agentboard
- * mounts on first visit, so a listener there would miss every start on a fresh
- * launch. Opens Agentboard so the new pane is on screen. */
-function TaskStartBridge() {
-  const { openTab, activeTab } = useWorkspace();
-  const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
-  // Read repos at delivery time, not capture time — a start can land before the
-  // first agentboard snapshot has arrived.
-  const readState = useAgentboardRead();
-
-  // `openTab` via a ref for the same reason as `repos`: resubscribing the
-  // backend listener on every tab change would risk dropping an event.
-  const openTabRef = useRef(openTab);
-  openTabRef.current = openTab;
-
-  useEffect(
-    () =>
-      subscribeTaskStart(
-        () => readState().repos,
-        (payload) =>
-          toast.error(
-            `Couldn't start task ${payload.taskId} — ${payload.repoRoot} isn't tracked on Agentboard`,
-          ),
-        () => openTabRef.current("agentboard"),
-      ),
-    [readState],
-  );
-
-  useEffect(
-    () =>
-      watchRepeatedErrors((e) =>
-        toast.error(repeatTitle(e), {
-          description: repeatDetail(e),
-          actions: [
-            {
-              label: "Open Doctor",
-              onClick: () => {
-                uiAction("repeated_error.open_doctor", activeTabRef.current);
-                openTabRef.current("doctor");
-              },
-            },
-          ],
-        }),
-      ),
-    [],
-  );
-
-  useEffect(
-    () =>
-      subscribePreviewShow(
-        () => readState().repos,
-        () => openTabRef.current("agentboard"),
-      ),
-    [readState],
-  );
-  useEffect(
-    () =>
-      subscribeSummon(
-        () => readState().repos,
-        () => openTabRef.current("agentboard"),
-      ),
-    [readState],
-  );
-  useEffect(() => subscribeAutoClosed(), []);
-  useEffect(() => subscribeAutoArchived(), []);
-  useEffect(
-    () =>
-      subscribeEditorOpenFile(
-        () => readState().repos,
-        () => openTabRef.current("agentboard"),
-      ),
-    [readState],
-  );
-
-  return null;
-}
-
 function Workspace() {
-  const { openTabs, activeTab, sidebarCollapsed, zen, setZen, paletteOpen } = useWorkspace();
+  const openTabs = useAtomValue(openTabsAtom);
+  const activeTab = useAtomValue(activeTabAtom);
+  const sidebarCollapsed = useAtomValue(sidebarCollapsedAtom);
+  const zen = useAtomValue(zenAtom);
+  const paletteOpen = useAtomValue(paletteOpenAtom);
 
   // Escape exits zen — but only when nothing else is claiming Escape. An open
   // dialog/palette (Base UI's `role="dialog"` with `data-open`, plus the
@@ -193,7 +89,7 @@ function Workspace() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [zen, paletteOpen, setZen]);
+  }, [zen, paletteOpen]);
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -255,7 +151,6 @@ function Workspace() {
 
       {zen && <ZenIndicator onExit={() => setZen(false)} />}
       <Shortcuts />
-      <TaskStartBridge />
       <QueueNextShortcut />
       <CommandPalette />
       <QuickLog />
@@ -268,20 +163,10 @@ function Workspace() {
 
 export function App() {
   return (
-    <WorkspaceProvider>
-      <NowProvider>
-        <StoreSnapshotProvider>
-          <AgentboardStateProvider>
-            <TaskQueueProvider>
-              <TooltipProvider>
-                <Toasty toastManager={toastManager}>
-                  <Workspace />
-                </Toasty>
-              </TooltipProvider>
-            </TaskQueueProvider>
-          </AgentboardStateProvider>
-        </StoreSnapshotProvider>
-      </NowProvider>
-    </WorkspaceProvider>
+    <TooltipProvider>
+      <Toasty toastManager={toastManager}>
+        <Workspace />
+      </Toasty>
+    </TooltipProvider>
   );
 }

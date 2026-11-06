@@ -1,5 +1,5 @@
 import { Select } from "@cloudflare/kumo";
-import { COLOR_THEMES, type ColorTheme, type Theme } from "@/components/theme-provider";
+import { COLOR_THEMES, type ColorTheme, type Theme } from "@/lib/theme";
 import { uiAction } from "@/lib/ui-action";
 import { SettingRow, type FilterSection } from "./common";
 

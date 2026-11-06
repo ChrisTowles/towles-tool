@@ -1,3 +1,5 @@
+import { useAtomValue } from "@/lib/atoms/react";
+import { storeSnapshotAtom } from "@/lib/store-snapshot";
 import { Result } from "effect";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListChecksIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
@@ -6,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
 import { landingSummaryForDir, type TaskBlocker } from "@/lib/agentboard/landing";
 import { requestAgentboardNav } from "@/lib/agentboard/requests";
-import { useAgentboardState } from "@/lib/agentboard/state";
+import { agentboardAtom } from "@/lib/agentboard/state";
 import { BlockedDeleteDialog } from "@/components/task-blockers";
 import { LandedTodayDialog, WatchedIssues } from "@/components/board-github-bits";
 import { issueIndex, issueKey, landedToday, suggestedIssues } from "@/lib/board-github";
@@ -39,7 +41,6 @@ import {
   storeUpdateTask,
   TASK_STATUS_LABEL,
   TASK_STATUSES,
-  useStoreSnapshot,
   type IssueItem,
   type PrItem,
   type TaskIssueLink,
@@ -64,7 +65,7 @@ import { useFocusTarget } from "@/lib/focus-target";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { toast } from "@/lib/toast";
 import type { IpcError } from "@/lib/errors";
-import { useWorkspace } from "@/lib/workspace";
+import { activeTabAtom, openTab, openTabWithFocus } from "@/lib/workspace";
 import { Card } from "@/screens/board/card";
 import { LaneGlyph } from "@/screens/board/card-bits";
 
@@ -96,8 +97,8 @@ const ALL_TASKS_LANE = "__all_tasks__";
  * only creator. A card's column is never set by hand either: `backlog`/`doing`
  * follow whether an agent is live on the worktree, `done` follows closing. */
 export function BoardScreen() {
-  const { snapshot } = useStoreSnapshot();
-  const { activeTab, openTab, openTabWithFocus } = useWorkspace();
+  const { snapshot } = useAtomValue(storeSnapshotAtom);
+  const activeTab = useAtomValue(activeTabAtom);
   // Deep-link focus: a promoted-todo / board deep link scrolls the card here.
   const focusRef = useFocusTarget<HTMLDivElement>("board");
   const filterInputRef = useRef<HTMLInputElement>(null);
@@ -124,7 +125,7 @@ export function BoardScreen() {
   const [cursorTarget, setCursorTarget] = useState<CursorTarget | null>(null);
   const cursorScopeRef = useRef<HTMLDivElement>(null);
 
-  const agentState = useAgentboardState();
+  const agentState = useAtomValue(agentboardAtom);
 
   // Keyed the way lanes are: GitHub `owner/name`, bridged from each repo's
   // origin URL. From the rail's own snapshot — no second poll.
@@ -367,21 +368,15 @@ export function BoardScreen() {
 
   // `railKey` is resolved per card at render, so a card whose repo isn't on
   // the rail simply doesn't offer the jump.
-  const openOnAgentboard = useCallback(
-    (railKey: string) => {
-      openTabWithFocus({ screen: "agentboard", kind: "repo", id: railKey });
-    },
-    [openTabWithFocus],
-  );
+  const openOnAgentboard = useCallback((railKey: string) => {
+    openTabWithFocus({ screen: "agentboard", kind: "repo", id: railKey });
+  }, []);
 
-  const openSession = useCallback(
-    (folderDir: string, sessionId: string) => {
-      uiAction("board.open_agent_session", "board");
-      requestAgentboardNav({ kind: "session", folderDir, sessionId });
-      openTab("agentboard");
-    },
-    [openTab],
-  );
+  const openSession = useCallback((folderDir: string, sessionId: string) => {
+    uiAction("board.open_agent_session", "board");
+    requestAgentboardNav({ kind: "session", folderDir, sessionId });
+    openTab("agentboard");
+  }, []);
 
   const cursorGrid = useMemo<CursorGrid>(
     () => ({

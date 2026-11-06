@@ -1,3 +1,4 @@
+import { useAtomValue } from "@/lib/atoms/react";
 // The note box: words for an agent, read at its next step instead of typed into its
 // terminal. Mounted once at the root; a session row's menu or Mod+Shift+M opens it.
 import { Result } from "effect";
@@ -10,15 +11,15 @@ import {
   closeNoteDialog,
   inboxSend,
   isListening,
-  useInbox,
-  useNoteDialog,
+  inboxAtom,
+  noteDialogAtom,
 } from "@/lib/inbox";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 
 export function NoteDialog() {
-  const target = useNoteDialog();
-  const inbox = useInbox();
+  const target = useAtomValue(noteDialogAtom);
+  const inbox = useAtomValue(inboxAtom);
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   useEffect(() => setBody(""), [target?.sessionId]);

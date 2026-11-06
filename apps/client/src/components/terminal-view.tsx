@@ -30,13 +30,13 @@ import { resolveTermTheme } from "@/lib/term-theme";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   clampTerminalFontSize,
-  useCopyOnSelect,
+  readCopyOnSelect,
   useTerminalFontSize,
 } from "@/lib/terminal-prefs";
 import {
   matchesEditableOverride,
   matchesShortcut,
-  useShortcutsWorkInTerminal,
+  readShortcutsWorkInTerminal,
 } from "@/lib/shortcuts";
 import { notePaneKey } from "@/lib/agentboard/prompt-submit";
 import { openExternalUrl } from "@/lib/open-url";
@@ -123,8 +123,6 @@ export function TerminalView({
     if (!text) return;
     send("term_paste", { termId, text, force: true });
   };
-  const copyOnSelectRef = useCopyOnSelect();
-  const shortcutsWorkInTerminalRef = useShortcutsWorkInTerminal();
   // Ref'd so the key handler reads it live: re-running that effect would
   // restart the shell.
   const [fontSize, setTerminalFontSize] = useTerminalFontSize();
@@ -133,6 +131,9 @@ export function TerminalView({
   const setTerminalFontSizeRef = useRef(setTerminalFontSize);
   setTerminalFontSizeRef.current = setTerminalFontSize;
 
+  // Read at mount: only a terminal asked for takes the keyboard on arrival.
+  const focusRequestRef = useRef(focusRequest);
+  focusRequestRef.current = focusRequest;
   useEffect(() => {
     if (focusRequest !== undefined) inputRef.current?.focus({ preventScroll: true });
   }, [focusRequest]);
@@ -544,7 +545,7 @@ export function TerminalView({
       const onKeyDown = (e: KeyboardEvent) => {
         if (e.isComposing) return;
         // Board-wide actions bubble rather than become a control byte.
-        if (shortcutsWorkInTerminalRef.current && matchesEditableOverride(e)) {
+        if (readShortcutsWorkInTerminal() && matchesEditableOverride(e)) {
           swallowedKeys.add(e.code);
           return;
         }
@@ -861,7 +862,7 @@ export function TerminalView({
         pressCell = null;
         void pointer("release", e).then(() => {
           // `term_copy` writes nothing when the gesture left no selection.
-          if (copyOnSelectRef.current) void copySelection();
+          if (readCopyOnSelect()) void copySelection();
           if (owed) {
             sendMouse(e, "press", owed);
             sendMouse(e, "release", owed);
@@ -907,7 +908,7 @@ export function TerminalView({
         window.removeEventListener("mouseup", onMouseUp);
         setFocus(false);
       });
-      focusInput();
+      if (focusRequestRef.current !== undefined) focusInput();
     })();
 
     // Hidden panes collapse to 0×0 and grow back on window switches.
@@ -954,7 +955,7 @@ export function TerminalView({
       if (started) send("term_kill", { termId });
     };
     // termId/cwd identify the shell; changing them means a different terminal.
-  }, [termId, cwd, copyOnSelectRef, shortcutsWorkInTerminalRef, searchRef, setSearchOpen]);
+  }, [termId, cwd, searchRef, setSearchOpen]);
 
   return (
     <div ref={hostRef} className="relative size-full overflow-hidden bg-background p-1">

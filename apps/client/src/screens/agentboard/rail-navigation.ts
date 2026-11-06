@@ -1,3 +1,4 @@
+import type { FocusTerminalRequest } from "@/lib/board/model";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { cycleNotBusy } from "@/lib/agentboard/session";
 import type { AgWindow, FolderData, RepoData, Selected, SessionData } from "@/lib/agentboard/types";
@@ -10,7 +11,7 @@ import type { QueueItem } from "@/lib/schemas/queue";
 import { toast } from "@/lib/toast";
 import { uiAction } from "@/lib/ui-action";
 import { blurTerminal } from "./focus-dom";
-import type { RailSnapshot } from "./selection-actions";
+import type { RailSnapshot } from "@/lib/board/derive";
 
 type Direction = "up" | "down" | "left" | "right";
 
@@ -27,8 +28,8 @@ export function railNavigation(a: {
   windowsForFolder: AgWindow[];
   sessionById: Map<string, SessionData>;
   folderOf: Map<string, FolderData>;
-  cwds: RefObject<Record<string, string>>;
-  railRef: RefObject<RailSnapshot>;
+  cwds: { readonly current: Readonly<Record<string, string>> };
+  railRef: { readonly current: RailSnapshot };
   shownRepos: RepoData[];
   railQueue: RailSnapshot["railQueue"];
   railTree: RailNode[];
@@ -49,7 +50,7 @@ export function railNavigation(a: {
   setRailCursor: Dispatch<SetStateAction<RailNode | null>>;
   setFocusLevel: Dispatch<SetStateAction<FocusLevel>>;
   setFocusedPaneId: Dispatch<SetStateAction<string | null>>;
-  setFocusTerminalRequest: Dispatch<SetStateAction<{ id: string; nonce: number } | null>>;
+  setFocusTerminalRequest: Dispatch<SetStateAction<FocusTerminalRequest | null>>;
 }) {
   // ab-jump-*: board-wide, wrapping, through `selectSession` so a jump behaves
   // exactly like clicking the session.

@@ -1,12 +1,12 @@
 import { Result } from "effect";
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Dialog } from "@cloudflare/kumo";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { keyboardScore, latestKeyboardScore, type KeyboardScore } from "@/lib/keyboard-score";
 import { isInTerminal, isTextField, macKeymap } from "@/lib/keymap";
 import { uiAction } from "@/lib/ui-action";
 import { NAV_ORDER, SCREENS, type RailView, type ScreenId } from "@/lib/screens";
-import { useLiveSettingRef } from "./settings";
+import { readSetting } from "./settings";
 
 // Data-driven registry: one definition per binding drives matching, hints and the `?`
 // overlay. Bindings never fire from editable targets (inputs, `[data-term-host]`) unless
@@ -523,13 +523,9 @@ export function matchesEditableOverride(e: KeyboardEvent): boolean {
 
 export const DEFAULT_SHORTCUTS_WORK_IN_TERMINAL = true;
 
-/** A ref so keydown handlers read it live without re-subscribing. */
-export function useShortcutsWorkInTerminal(): RefObject<boolean> {
-  return useLiveSettingRef(
-    (s) => s.agentboard?.shortcutsWorkInTerminal,
-    DEFAULT_SHORTCUTS_WORK_IN_TERMINAL,
-  );
-}
+/** As of now, for a keydown handler. */
+export const readShortcutsWorkInTerminal = (): boolean =>
+  readSetting((s) => s.agentboard?.shortcutsWorkInTerminal, DEFAULT_SHORTCUTS_WORK_IN_TERMINAL);
 
 function matches(spec: KeySpec, e: KeyboardEvent): boolean {
   const mac = macKeymap();
@@ -612,7 +608,6 @@ export function useShortcuts(
   screen: ScreenId,
   enabled = true,
 ): void {
-  const workInTerminalRef = useShortcutsWorkInTerminal();
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -621,7 +616,7 @@ export function useShortcuts(
         const s = SHORTCUTS[id];
         if (!s) throw new Error(`Unknown shortcut id "${id}"`);
         if (!matches(s.spec, e)) continue;
-        const allowed = s.allowInEditable && workInTerminalRef.current;
+        const allowed = s.allowInEditable && readShortcutsWorkInTerminal();
         if (isEditableTarget(e) && !allowed) return;
         if (handler() === false) return;
         e.preventDefault();
@@ -631,7 +626,7 @@ export function useShortcuts(
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handlers, screen, enabled, workInTerminalRef]);
+  }, [handlers, screen, enabled]);
 }
 
 export function scopeTitle(scope: ShortcutScope): string {

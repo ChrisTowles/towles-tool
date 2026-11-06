@@ -9,6 +9,8 @@ import { Hint } from "@/components/hint";
 import type { PortDrift } from "@/lib/agentboard/types";
 import { cn } from "@/lib/utils";
 import { fmtElapsed } from "@/lib/format";
+import { useAtomValue } from "@/lib/atoms/react";
+import { nowSecondsAtom } from "@/lib/now";
 
 /** Violet is "a Claude session is live here" app-wide: pane headers, selection
  * chip and in-editor hint all use it, so it reads as one signal. */
@@ -190,7 +192,9 @@ export function NoTaskBadge({ onAdopt }: { onAdopt?: () => void }) {
 
 /** Setup (`TT_TASK_SETUP`) runs after `task_create` returns, so the pending row
  * is already gone; this says the task isn't finished being built. */
-export function SettingUpBadge({ since, now }: { since: number; now: number }) {
+export function SettingUpBadge({ since }: { since: number }) {
+  // `m:ss`, so it reads the seconds clock; it ticks only while a badge shows.
+  const now = useAtomValue(nowSecondsAtom);
   return (
     <Hint label="Running this task's setup step (TT_TASK_SETUP) — an install, so it can take a while">
       <span className="flex shrink-0 items-center gap-1 rounded-md border border-info/40 bg-info/10 px-1 font-mono text-micro text-info">

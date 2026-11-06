@@ -1,54 +1,48 @@
-import { useCallback } from "react";
 import {
+  patchSettingsLocal,
   persistAgentboardSetting,
-  useLiveSetting,
+  reloadSettings,
+  useSetting,
+  type AgentboardBlock,
   type RailFilter,
   type RailSort,
 } from "./settings";
-import { fire, invoke } from "./tauri";
+import { invoke, runIpc } from "./tauri";
 
 /** Everything, so a fresh install never wonders where a checkout went.
  * Mirrors `tt_config::DEFAULT_RAIL_FILTER`. */
-const DEFAULT_RAIL_FILTER: RailFilter = "all";
+export const DEFAULT_RAIL_FILTER: RailFilter = "all";
 
 /** Mirrors `tt_config::DEFAULT_RAIL_RECENT_HOURS`. */
-const DEFAULT_RAIL_RECENT_HOURS = 4;
+export const DEFAULT_RAIL_RECENT_HOURS = 4;
 
 /** The hour spans the rail's filter menu offers for `"recent"`. */
 export const RAIL_RECENT_HOUR_CHOICES = [2, 4, 8, 24, 48, 96, 24 * 7];
 
-/** The rail's filter and the span `"recent"` measures. One hook for both
- * keys because they are one control: the mode is meaningless without the
- * span, so the rail's menu shows and sets them together. */
+/** The rail's filter and the span `"recent"` measures: one control, so one hook. */
 export function useRailFilter(): {
   filter: RailFilter;
   recentHours: number;
   setFilter: (next: RailFilter) => void;
   setRecentHours: (next: number) => void;
 } {
-  const [filter, setFilterState] = useLiveSetting(
-    (s) => s.agentboard?.railFilter,
-    DEFAULT_RAIL_FILTER,
-  );
-  const [recentHours, setRecentHoursState] = useLiveSetting(
-    (s) => s.agentboard?.railRecentHours,
-    DEFAULT_RAIL_RECENT_HOURS,
-  );
-  const setFilter = useCallback(
-    (next: RailFilter) => {
-      setFilterState(next);
-      void persistAgentboardSetting("railFilter", next);
-    },
-    [setFilterState],
-  );
-  const setRecentHours = useCallback(
-    (next: number) => {
-      setRecentHoursState(next);
-      void persistAgentboardSetting("railRecentHours", next);
-    },
-    [setRecentHoursState],
-  );
-  return { filter, recentHours, setFilter, setRecentHours };
+  const filter = useSetting((s) => s.agentboard?.railFilter, DEFAULT_RAIL_FILTER);
+  const recentHours = useSetting((s) => s.agentboard?.railRecentHours, DEFAULT_RAIL_RECENT_HOURS);
+  return { filter, recentHours, setFilter: setRailFilter, setRecentHours: setRailRecentHours };
+}
+
+const setRailFilter = (next: RailFilter) => persistAgentboardSetting("railFilter", next);
+const setRailRecentHours = (next: number) => persistAgentboardSetting("railRecentHours", next);
+
+/** A key Rust writes: shown at once, written by `cmd`, then read back. */
+function rustOwned<K extends keyof AgentboardBlock>(
+  key: K,
+  value: AgentboardBlock[K],
+  cmd: string,
+  args: Record<string, unknown>,
+): void {
+  patchSettingsLocal((s) => ({ ...s, agentboard: { ...s.agentboard, [key]: value } }));
+  void runIpc(invoke(cmd, args)).then(reloadSettings);
 }
 
 /** Mirrors `tt_config::DEFAULT_RAIL_SORT`. */
@@ -58,60 +52,39 @@ const DEFAULT_RAIL_SORT: RailSort = "manual";
  * payload, so the setter goes through `ab_set_rail_sort` (which leaves the
  * other key alone) and Rust owns the write. */
 export function useRailSort(which: "repos" | "tasks"): [RailSort, (next: RailSort) => void] {
-  const [sort, setSortState] = useLiveSetting(
+  const sort = useSetting(
     (s) => (which === "repos" ? s.agentboard?.railRepoSort : s.agentboard?.railTaskSort),
     DEFAULT_RAIL_SORT,
   );
-  // Rust owns this write (see above) — not `persistAgentboardSetting`.
-  const setSort = useCallback(
-    (next: RailSort) => {
-      setSortState(next);
-      fire(invoke("ab_set_rail_sort", { [which]: next }));
-    },
-    [which, setSortState],
-  );
+  const setSort = (next: RailSort) =>
+    rustOwned(which === "repos" ? "railRepoSort" : "railTaskSort", next, "ab_set_rail_sort", {
+      [which]: next,
+    });
   return [sort, setSort];
 }
 
 /** Off: a hand-marked quiet checkout is hidden until you say otherwise. */
-const DEFAULT_SHOW_QUIET = false;
+export const DEFAULT_SHOW_QUIET = false;
 
 /** The one switch that brings quiet checkouts back — hence the rail header,
  * where it is found without knowing to look. Rust never reads it. */
 export function useShowQuiet(): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useLiveSetting((s) => s.agentboard?.showQuiet, DEFAULT_SHOW_QUIET);
-  const persist = useCallback(
-    (next: boolean) => {
-      setOn(next);
-      void persistAgentboardSetting("showQuiet", next);
-    },
-    [setOn],
-  );
-  return [on, persist];
+  const on = useSetting((s) => s.agentboard?.showQuiet, DEFAULT_SHOW_QUIET);
+  return [on, setShowQuiet];
 }
 
 /** Off, so only the main checkout and worktrees you asked for become rail
  * folders. Mirrors `tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES`. */
 const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
 
-/** Not a view filter the client can apply: it decides which checkouts the
- * *engine* discovers, so the setter goes through
- * `ab_set_show_unmanaged_worktrees` and Rust owns the write. Reads still come
- * off the settings file, so another window's change flows back on focus. */
+/** It decides which checkouts the *engine* discovers, so Rust owns the write
+ * (`ab_set_show_unmanaged_worktrees`). */
 export function useShowUnmanagedWorktrees(): [boolean, (on: boolean) => void] {
-  const [show, setShow] = useLiveSetting(
+  const show = useSetting(
     (s) => s.agentboard?.showUnmanagedWorktrees,
     DEFAULT_SHOW_UNMANAGED_WORKTREES,
   );
-  // Rust owns this write (see above) — not `persistAgentboardSetting`.
-  const persist = useCallback(
-    (on: boolean) => {
-      setShow(on);
-      fire(invoke("ab_set_show_unmanaged_worktrees", { show: on }));
-    },
-    [setShow],
-  );
-  return [show, persist];
+  return [show, setShowUnmanagedWorktrees];
 }
 
 export const DEFAULT_BROWSER_PANE = false;
@@ -119,13 +92,11 @@ export const DEFAULT_BROWSER_PANE = false;
 /** Whether checkouts offer the Chrome pane. Off means no entry point rather
  * than a disabled one. */
 export function useBrowserPane(): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useLiveSetting((s) => s.agentboard?.browserPane, DEFAULT_BROWSER_PANE);
-  const persist = useCallback(
-    (next: boolean) => {
-      setOn(next);
-      void persistAgentboardSetting("browserPane", next);
-    },
-    [setOn],
-  );
-  return [on, persist];
+  const on = useSetting((s) => s.agentboard?.browserPane, DEFAULT_BROWSER_PANE);
+  return [on, setBrowserPane];
 }
+
+const setShowQuiet = (next: boolean) => persistAgentboardSetting("showQuiet", next);
+const setBrowserPane = (next: boolean) => persistAgentboardSetting("browserPane", next);
+const setShowUnmanagedWorktrees = (show: boolean) =>
+  rustOwned("showUnmanagedWorktrees", show, "ab_set_show_unmanaged_worktrees", { show });

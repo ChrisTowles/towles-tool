@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   PromptImproverListSchema,
   SavedQueryListSchema,
   TelemetryRuleListSchema,
   UserSettingsSchema,
 } from "./schemas/settings";
-import { Result } from "effect";
+import { Effect, Result } from "effect";
+import * as Atom from "effect/reactivity/Atom";
+import { useAtomValue } from "./atoms/react";
+import { feed } from "./atoms/feed";
+import { read, write } from "./atoms/registry";
 import { invoke, runIpc } from "./tauri";
 import { slugify } from "./slug";
 import type { Filter, RuleKind } from "./telemetry";
@@ -331,9 +334,6 @@ export type SaveState = "idle" | "saving" | "saved" | "error";
 /** A half-finished path template must not reach the live scheduler. */
 const DEFER_MS = 500;
 
-/** Settings is a tab in the same window, so `"focus"` never fires. */
-const SETTINGS_SAVED_EVENT = "tt:settings-saved";
-
 /** `null` in browser dev or on a failed read; every consumer has a default. */
 export async function loadUserSettings(): Promise<UserSettings | null> {
   const result = await runIpc(
@@ -343,87 +343,12 @@ export async function loadUserSettings(): Promise<UserSettings | null> {
 }
 
 /** The full object, never a patch, so the TS CLI's unknown keys survive. */
-export async function saveUserSettings(settings: UserSettings): Promise<boolean> {
+async function saveUserSettings(settings: UserSettings): Promise<boolean> {
   const saved = await runIpc(invoke("settings_set", { settings }));
-  if (Result.isSuccess(saved)) window.dispatchEvent(new Event(SETTINGS_SAVED_EVENT));
   return Result.isSuccess(saved);
 }
 
 export type AgentboardBlock = NonNullable<UserSettings["agentboard"]>;
-
-/** "The file may have changed": an in-app save, or window focus. Fires `load`
- * once immediately. **The refresh policy lives here and only here.** */
-export function onSettingsChanged(load: () => void): () => void {
-  load();
-  window.addEventListener("focus", load);
-  window.addEventListener(SETTINGS_SAVED_EVENT, load);
-  return () => {
-    window.removeEventListener("focus", load);
-    window.removeEventListener(SETTINGS_SAVED_EVENT, load);
-  };
-}
-
-/** One value, live across {@link onSettingsChanged} signals. The setter is
- * **local** — write-through is the caller's job. */
-export function useLiveSetting<T>(
-  select: (s: UserSettings) => T | undefined,
-  fallback: T,
-): [T, (value: T) => void] {
-  const [value, setValue] = useState(fallback);
-  const selectRef = useRef(select);
-  selectRef.current = select;
-  useEffect(() => {
-    let alive = true;
-    const unsubscribe = onSettingsChanged(() => {
-      void loadUserSettings().then((s) => {
-        // `alive` discards a read that resolved after unmount.
-        if (alive && s) setValue(selectRef.current(s) ?? fallback);
-      });
-    });
-    return () => {
-      alive = false;
-      unsubscribe();
-    };
-  }, [fallback]);
-  return [value, setValue];
-}
-
-/** {@link useLiveSetting} into a ref, for an effect that must not re-subscribe. */
-/** Unset means on; each is read where it acts and where Settings shows it. */
-export const DEFAULT_AUTO_RESUME = true;
-export const DEFAULT_ADVANCE_AFTER_SUBMIT = true;
-
-export function useLiveSettingRef<T>(
-  select: (s: UserSettings) => T | undefined,
-  fallback: T,
-): RefObject<T> {
-  const ref = useRef(fallback);
-  const selectRef = useRef(select);
-  selectRef.current = select;
-  useEffect(() => {
-    let alive = true;
-    const unsubscribe = onSettingsChanged(() => {
-      void loadUserSettings().then((s) => {
-        if (alive && s) ref.current = selectRef.current(s) ?? fallback;
-      });
-    });
-    return () => {
-      alive = false;
-      unsubscribe();
-    };
-  }, [fallback]);
-  return ref;
-}
-
-/** The read is the point: a save must carry the whole object forward. */
-export async function persistAgentboardSetting<K extends keyof AgentboardBlock>(
-  key: K,
-  value: AgentboardBlock[K],
-): Promise<void> {
-  const s = await loadUserSettings();
-  if (!s) return;
-  await saveUserSettings({ ...s, agentboard: { ...s.agentboard, [key]: value } });
-}
 
 export type SettingsUpdater = (prev: UserSettings) => UserSettings;
 
@@ -471,6 +396,8 @@ export function createSettingsWriter({
   };
 
   return {
+    /** Edits queued but not yet written: replayed over any fresh read. */
+    pending: (): readonly SettingsUpdater[] => queued,
     queue(fn: SettingsUpdater, opts?: { defer?: boolean }) {
       queued.push(fn);
       if (!opts?.defer) {
@@ -484,50 +411,103 @@ export function createSettingsWriter({
   };
 }
 
-/** Load once, persist every edit — there is no explicit save. Pass `{ defer:
- * true }` for anything typed and `flush` on blur. */
-export function useUserSettings() {
-  const [settings, setSettings] = useState<UserSettings | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [saveState, setSaveState] = useState<SaveState>("idle");
-  const live = useRef(false);
-  const [writer] = useState(() =>
-    createSettingsWriter({
-      load: loadUserSettings,
-      save: saveUserSettings,
-      onState: setSaveState,
-    }),
-  );
+/** The one copy of the settings file in the app. `settings` is `null` until
+ * the first read lands (and stays `null` in browser dev); every reader has a
+ * default. An edit applies here at once and is written in the background. */
+export type SettingsValue = { settings: UserSettings | null; loaded: boolean };
 
-  useEffect(() => {
-    let alive = true;
-    void loadUserSettings().then((s) => {
-      if (!alive) return;
-      live.current = s !== null;
-      setSettings(s);
-      setLoaded(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+const settingsState = Atom.make<SettingsValue>({ settings: null, loaded: false }).pipe(
+  Atom.keepAlive,
+);
+export const userSettingsAtom: Atom.Atom<SettingsValue> = settingsState;
 
-  // Commit a pending debounce on unmount, or an edit navigated away from is lost.
-  useEffect(
-    () => () => {
-      void writer.flush();
-    },
-    [writer],
-  );
+const saveStateValue = Atom.make<SaveState>("idle").pipe(Atom.keepAlive);
+const saveStateAtom: Atom.Atom<SaveState> = saveStateValue;
 
-  const update = useCallback(
-    (fn: SettingsUpdater, opts?: { defer?: boolean }) => {
-      if (!live.current) return;
-      setSettings((prev) => (prev ? fn(prev) : prev));
-      writer.queue(fn, opts);
-    },
-    [writer],
-  );
+const writer = createSettingsWriter({
+  load: loadUserSettings,
+  save: async (next) => {
+    const ok = await saveUserSettings(next);
+    if (ok) void reloadSettings();
+    return ok;
+  },
+  onState: (state) => write(saveStateValue, state),
+});
 
-  return { settings, loaded, saveState, update, flush: writer.flush };
+/** Read the file again — on window focus, after a save, after a write Rust
+ * owns. Edits still queued replay over the read, so a reload never undoes one. */
+export async function reloadSettings(): Promise<void> {
+  const disk = await loadUserSettings();
+  const settings = disk && writer.pending().reduce((acc, fn) => fn(acc), disk);
+  write(settingsState, { settings, loaded: true });
 }
+
+/** "The file may have changed": the app opened, or the window took focus. **The
+ * refresh policy lives here and only here.** */
+feed("settings", () =>
+  Effect.gen(function* () {
+    yield* Effect.promise(reloadSettings);
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const onFocus = () => void reloadSettings();
+        window.addEventListener("focus", onFocus);
+        return onFocus;
+      }),
+      (onFocus) => Effect.sync(() => window.removeEventListener("focus", onFocus)),
+    );
+  }),
+);
+
+/** Apply `fn` to the held settings now; nothing is written. For a key whose
+ * write Rust owns (an IPC command), followed by that command. */
+export function patchSettingsLocal(fn: SettingsUpdater): void {
+  const cur = read(settingsState);
+  if (cur.settings) write(settingsState, { ...cur, settings: fn(cur.settings) });
+}
+
+/** Persist an edit: it applies to every reader at once, then replays against a
+ * fresh read of the file. Pass `{ defer: true }` for anything typed and
+ * {@link flushSettings} on blur. A no-op until the file has been read. */
+export function updateSettings(fn: SettingsUpdater, opts?: { defer?: boolean }): void {
+  if (read(settingsState).settings === null) return;
+  patchSettingsLocal(fn);
+  writer.queue(fn, opts);
+}
+
+const flushSettings = (): Promise<void> => writer.flush();
+
+export function persistAgentboardSetting<K extends keyof AgentboardBlock>(
+  key: K,
+  value: AgentboardBlock[K],
+): void {
+  updateSettings((s) => ({ ...s, agentboard: { ...s.agentboard, [key]: value } }));
+}
+
+const pick = <T>(v: SettingsValue, select: (s: UserSettings) => T | undefined, fallback: T): T =>
+  v.settings ? (select(v.settings) ?? fallback) : fallback;
+
+/** One setting, live. `select` must not build a new object or array per call. */
+export const useSetting = <T>(select: (s: UserSettings) => T | undefined, fallback: T): T =>
+  useAtomValue(settingsState, (v) => pick(v, select, fallback));
+
+/** One setting as of now, for a handler that reads it where it acts. */
+export const readSetting = <T>(select: (s: UserSettings) => T | undefined, fallback: T): T =>
+  pick(read(settingsState), select, fallback);
+
+/** Unset means on; each is read where it acts and where Settings shows it. */
+export const DEFAULT_AUTO_RESUME = true;
+export const DEFAULT_ADVANCE_AFTER_SUBMIT = true;
+
+/** The settings file for an editor of it (Settings, saved queries): the held
+ * copy, whether it has been read, the save state, and the two writers. */
+export function useUserSettings() {
+  const { settings, loaded } = useAtomValue(settingsState);
+  const saveState = useAtomValue(saveStateAtom);
+  return { settings, loaded, saveState, update: updateSettings, flush: flushSettings };
+}
+
+/** One setting as an atom, for a derived atom that depends on it. */
+export const settingAtom = <T>(
+  select: (s: UserSettings) => T | undefined,
+  fallback: T,
+): Atom.Atom<T> => Atom.make((get) => pick(get(settingsState), select, fallback));
