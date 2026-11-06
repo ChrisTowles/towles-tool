@@ -63,7 +63,6 @@ export function CheckoutLine({
   onAdoptWorktree,
   settingUpSince,
   onSelect,
-  onNewSession,
   onRemoveRepo,
   onDeleteWorktree,
   onDiscardWorktree,
@@ -71,7 +70,6 @@ export function CheckoutLine({
   onRecreateWorktree,
   onOpenFiles,
   onOpenPreview,
-  onOpenBrowser,
   children,
 }: {
   title: string;
@@ -93,7 +91,6 @@ export function CheckoutLine({
   /** Epoch ms; absent means nothing is installing. */
   settingUpSince?: number;
   onSelect: () => void;
-  onNewSession: () => void;
   onRemoveRepo?: () => void;
   /** Set only on worktree checkouts: untracking one makes no sense. */
   onDeleteWorktree?: () => void;
@@ -105,7 +102,6 @@ export function CheckoutLine({
   onRecreateWorktree?: () => void;
   onOpenFiles: () => void;
   onOpenPreview: () => void;
-  onOpenBrowser?: () => void;
   /** The session and view-pane chips. */
   children: ReactNode;
 }) {
@@ -277,10 +273,7 @@ export function CheckoutLine({
       {active && !renaming && !missing && (
         <LineActionBar
           folder={folder}
-          onOpenFiles={onOpenFiles}
           onOpenPreview={onOpenPreview}
-          onOpenBrowser={onOpenBrowser}
-          onNewSession={onNewSession}
           onRename={task ? startRename : undefined}
           onDeleteWorktree={onDeleteWorktree}
         />

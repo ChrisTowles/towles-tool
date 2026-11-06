@@ -1,12 +1,5 @@
 import { type ReactNode } from "react";
-import {
-  AppWindowIcon,
-  EyeIcon,
-  PencilSimpleIcon,
-  PlusIcon,
-  TrashIcon,
-  TreeStructureIcon,
-} from "@phosphor-icons/react";
+import { EyeIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { Kbd } from "@/components/ui/kbd";
 import type { FolderData } from "@/lib/agentboard/types";
 import { mouseAction } from "@/lib/shortcut-coach";
@@ -14,43 +7,23 @@ import { shortcutHint } from "@/lib/shortcuts";
 import { uiAction } from "@/lib/ui-action";
 import { cn } from "@/lib/utils";
 
-/** The selected checkout's verbs, worded, with their keys: the one place a
- * line's actions live, so hover never has to reveal one. */
+/** The selected checkout's line-only verbs, worded: hover never has to reveal
+ * one. Session, Files and Chrome live in the working-context header, not here. */
 export function LineActionBar({
   folder,
-  onOpenFiles,
   onOpenPreview,
-  onOpenBrowser,
-  onNewSession,
   onRename,
   onDeleteWorktree,
 }: {
   folder: FolderData;
-  onOpenFiles: () => void;
   onOpenPreview: () => void;
-  onOpenBrowser?: () => void;
-  onNewSession: () => void;
   /** Set only when the line has a task title to rename. */
   onRename?: () => void;
   onDeleteWorktree?: () => void;
 }) {
+  if (!folder.hasLaunchConfig && !onRename && !onDeleteWorktree) return null;
   return (
     <div className="flex flex-wrap items-center gap-1 pb-1.5 pl-4">
-      <BarButton
-        icon={<PlusIcon className="size-3" />}
-        label="Session"
-        hud="Start a new shell session in this checkout"
-        shortcut="ab-new-session"
-        onClick={onNewSession}
-      />
-      <BarButton
-        icon={<TreeStructureIcon className="size-3" />}
-        label="Files"
-        hud="Browse every file in this checkout"
-        shortcut="ab-toggle-files"
-        quietKey
-        onClick={onOpenFiles}
-      />
       {folder.hasLaunchConfig && (
         <BarButton
           icon={<EyeIcon className="size-3" />}
@@ -58,14 +31,6 @@ export function LineActionBar({
           hud="Preview this checkout's dev server"
           action="agentboard.line_bar_preview"
           onClick={onOpenPreview}
-        />
-      )}
-      {onOpenBrowser && (
-        <BarButton
-          icon={<AppWindowIcon className="size-3" />}
-          label="Chrome"
-          hud="Open a real Chrome in this window — sign-ins stick"
-          onClick={onOpenBrowser}
         />
       )}
       {onRename && (
@@ -101,7 +66,6 @@ function BarButton({
   shortcut,
   action,
   danger = false,
-  quietKey = false,
   onClick,
 }: {
   icon: ReactNode;
@@ -110,8 +74,6 @@ function BarButton({
   shortcut?: string;
   action?: string;
   danger?: boolean;
-  /** Name the key in the HUD only, to keep the bar on one row. */
-  quietKey?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -132,7 +94,7 @@ function BarButton({
     >
       {icon}
       {label}
-      {shortcut && !quietKey && <Kbd className="h-4 text-micro">{shortcutHint(shortcut)}</Kbd>}
+      {shortcut && <Kbd className="h-4 text-micro">{shortcutHint(shortcut)}</Kbd>}
     </button>
   );
 }
