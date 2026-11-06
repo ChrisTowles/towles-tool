@@ -2,9 +2,13 @@ import { Result } from "effect";
 /** What a repo's rail block *contains*: the repo in a left column, its
  * checkouts as lines beside it. How each line looks belongs to `CheckoutLine`,
  * `SessionChip` and `ViewPaneChip`. */
-import { useState } from "react";
+import { type CSSProperties, useState } from "react";
 import { toast } from "@/lib/toast";
-import { FolderPlusIcon, PlusIcon } from "@phosphor-icons/react";
+import { PlusIcon } from "@phosphor-icons/react";
+import { Tooltip } from "@cloudflare/kumo";
+import { ShortcutBadge } from "@/components/hint";
+import { mouseAction } from "@/lib/shortcut-coach";
+import { shortcutAria } from "@/lib/shortcuts";
 import { NeedsBadge } from "@/components/agentboard-bits/badges";
 import { IconBtn } from "@/components/agentboard-bits/primitives";
 import { RepoMenu } from "@/components/agentboard-bits/repo-menu";
@@ -20,7 +24,7 @@ import {
   type NewTaskSubmit,
   type TaskFormSeed,
 } from "@/components/inline-new-task";
-import { repoAccentStyles, repoIcon } from "@/lib/repo-identity";
+import { normalizeHex, repoAccentStyles, repoBright, repoIcon } from "@/lib/repo-identity";
 import { cn } from "@/lib/utils";
 import type { SessionActions } from "@/lib/agentboard/actions";
 import {
@@ -329,22 +333,52 @@ export function RepoGroup({
             cursorKey === repo.key && "ring-1 ring-inset ring-agent",
           )}
         >
-          <button
-            type="button"
-            onClick={() => onToggle(repo.key)}
-            className="flex min-w-0 max-w-full items-center gap-1.5"
-          >
-            <Chevron collapsed={repoCollapsed} />
-            <RepoIcon className="size-3.5 shrink-0" style={accent.iconStyle} />
-            {scopePrefix && (
-              <span className="shrink-0 font-mono text-xs text-muted-foreground/60 @[34rem]/repo:hidden">
-                {scopePrefix}
-              </span>
-            )}
-            <span style={accent.iconStyle} className="truncate text-sm font-semibold">
-              {repo.name}
-            </span>
-          </button>
+          <div className="flex min-w-0 max-w-full items-center gap-1">
+            <button
+              type="button"
+              aria-label={repoCollapsed ? `Unfold ${repo.name}` : `Fold ${repo.name}`}
+              onClick={() => onToggle(repo.key)}
+              className="flex shrink-0 items-center gap-1"
+            >
+              <Chevron collapsed={repoCollapsed} />
+              {scopePrefix && (
+                <span className="font-mono text-xs text-muted-foreground/60 @[34rem]/repo:hidden">
+                  {scopePrefix}
+                </span>
+              )}
+            </button>
+            {/* The name is the new-task button: the rail's most common act gets
+                its biggest, brightest target. */}
+            <Tooltip
+              side="bottom"
+              content={
+                <>
+                  New task in {repo.name}
+                  <ShortcutBadge id="ab-new-task" />
+                </>
+              }
+              render={
+                <button
+                  type="button"
+                  aria-label={`New task in ${repo.name}`}
+                  aria-keyshortcuts={shortcutAria("ab-new-task")}
+                  onClick={() => {
+                    mouseAction("ab-new-task", "agentboard");
+                    newTask();
+                  }}
+                  style={namePillStyle(repo.color)}
+                  className={cn(
+                    "flex min-w-0 items-center gap-1.5 rounded-md bg-agent px-2 py-0.5 text-white shadow-sm",
+                    "transition hover:brightness-115 active:brightness-95",
+                  )}
+                >
+                  <RepoIcon weight="bold" className="size-3.5 shrink-0" />
+                  <span className="truncate text-sm font-semibold">{repo.name}</span>
+                  <PlusIcon weight="bold" className="size-3 shrink-0 opacity-80" />
+                </button>
+              }
+            />
+          </div>
           <span className="ml-auto flex items-center gap-2 @[34rem]/repo:ml-5">
             {repoCollapsed && <CollapsedLive sessions={repo.folders.flatMap((f) => f.sessions)} />}
             {repo.needs > 0 && <NeedsBadge n={repo.needs} />}
@@ -357,15 +391,6 @@ export function RepoGroup({
               !repoHovered && "@[34rem]/repo:opacity-0 @[34rem]/repo:focus-within:opacity-100",
             )}
           >
-            <IconBtn
-              ghost
-              title="New task — goal, issues, branch"
-              shortcut="ab-new-task"
-              onClick={newTask}
-              className="hover:text-agent"
-            >
-              <FolderPlusIcon className="size-3.5" />
-            </IconBtn>
             <IconBtn
               ghost
               title="New shell in the root checkout"
@@ -500,4 +525,11 @@ export function RepoGroup({
 function formSeedKey(seed: TaskFormSeed | undefined): string {
   if (seed?.issue) return `issue:${seed.issue.repo}#${seed.issue.number}`;
   return seed?.taskId !== undefined ? `task:${seed.taskId}` : "new";
+}
+
+/** The repo's own hue, made bright, so each name pill keeps its identity; a repo
+ * with no color falls back to the class's `bg-agent`. */
+function namePillStyle(color: string | undefined): CSSProperties | undefined {
+  const hex = color ? normalizeHex(color) : null;
+  return hex ? { backgroundColor: repoBright(hex) } : undefined;
 }

@@ -5,6 +5,7 @@ import {
   isHexColor,
   normalizeHex,
   repoAccentStyles,
+  repoBright,
   repoIcon,
   REPO_ICONS,
   paletteColor,
@@ -103,5 +104,12 @@ describe("seriesColors", () => {
     const labels = Array.from({ length: 20 }, (_, i) => `r${i}`);
     const got = seriesColors(labels, repos);
     expect([...got.values()]).not.toContain(PALETTE[2]);
+  });
+});
+
+describe("repoBright", () => {
+  it("keeps the hue and pushes saturation", () => {
+    expect(repoBright("#5f7fa8")).toBe("hsl(214 60% 46%)");
+    expect(repoBright("#a85f5f")).toBe("hsl(0 60% 46%)");
   });
 });
