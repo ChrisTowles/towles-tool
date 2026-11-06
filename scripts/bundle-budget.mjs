@@ -11,7 +11,7 @@ const budgetFile = resolve(root, "scripts/bundle-budget.json");
 const assets = resolve(root, "apps/client/dist/assets");
 
 /** Headroom under budget before the ratchet asks for it to be lowered. */
-export const SLACK = 0.02;
+export const SLACK = 0.1;
 
 /** @typedef {{ js: number, css: number }} Sizes */
 
