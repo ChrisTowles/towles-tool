@@ -97,7 +97,7 @@ export const SessionChip = memo(function SessionChip({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={cn(
-          "relative flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm pr-1.5 text-xs",
+          "flex h-6 min-w-0 cursor-pointer items-center gap-1.5 rounded-sm pr-1.5 text-xs",
           hovered && !needs && "bg-kumo-tint",
           active && !needs && "bg-kumo-tint",
           cursor && "ring-1 ring-inset ring-agent",
@@ -128,8 +128,10 @@ export const SessionChip = memo(function SessionChip({
           />
         )}
         {age && <span className="shrink-0 font-mono text-mini text-warn">{age}</span>}
+        {/* In flow, not overlaid: the chip grows into the row's empty right side
+            instead of covering the label (one session per row). */}
         {hovered && (
-          <span className="absolute inset-y-0 right-0 z-10 flex items-center gap-0.5 rounded-r-sm bg-kumo-tint pl-1">
+          <span className="flex shrink-0 items-center gap-0.5">
             <ChipControls session={session} folderDir={folderDir} actions={actions} />
           </span>
         )}
