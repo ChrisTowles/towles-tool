@@ -176,22 +176,6 @@ export function repoAccentStyles(
   };
 }
 
-/** A repo color lifted — same hue, more saturated, at a lightness white text
- * reads on — for the one control that should jump out of the rail. */
-export function repoBright(hex: string): string {
-  const n = Number.parseInt(hex.slice(1), 16);
-  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
-  const max = Math.max(r, g, b);
-  const d = max - Math.min(r, g, b);
-  let h = 0;
-  if (d > 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-  }
-  return `hsl(${Math.round((h * 60 + 360) % 360)} 60% 46%)`;
-}
-
 /** A repo color as text: muted, so lifted toward the foreground to read on
  * either surface. */
 export function repoInk(hex: string): string {
