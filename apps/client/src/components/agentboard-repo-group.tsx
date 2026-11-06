@@ -434,7 +434,6 @@ export function RepoGroup({
                     deletingLabel={folderPhaseLabel(folder)}
                     settingUpSince={settingUpDirs?.get(folder.dir)}
                     onSelect={() => onSelectFolder(folder.dir)}
-                    onNewSession={() => onNewSession(folder.dir)}
                     onRemoveRepo={() => onRemoveRepo([folder.dir], folder.name)}
                     onDeleteWorktree={
                       folderRemovableTask(folder)
@@ -454,7 +453,6 @@ export function RepoGroup({
                     }
                     onOpenFiles={() => onOpenFiles(folder.dir)}
                     onOpenPreview={() => onOpenPreview(folder.dir)}
-                    onOpenBrowser={onOpenBrowser ? () => onOpenBrowser(folder.dir) : undefined}
                   >
                     {chips(folder)}
                   </CheckoutLine>
