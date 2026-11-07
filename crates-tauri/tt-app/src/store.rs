@@ -225,8 +225,25 @@ pub fn emit_snapshot(app: &AppHandle, state: &StoreState) {
     if let Ok(snapshot) = snapshot_of(state) {
         let _ = app.emit(SNAPSHOT_EVENT, snapshot);
     }
+    sync_rail_rows(app, state);
     // Every store write lands here, and tasks, PRs and snoozes all feed the queue.
     crate::queue::refresh(app);
+}
+
+/// Hand the engine the rail's rows at the write, not on the scan loop's next
+/// pass: that loop warms git serially, and one pathological branch holds it for
+/// minutes — long enough for a deleted task's row to invite a second delete.
+fn sync_rail_rows(app: &AppHandle, state: &StoreState) {
+    // Not yet managed during setup's first snapshot; the scan loop seeds it.
+    let Some(ab) = app.try_state::<crate::agentboard::Ab>() else {
+        return;
+    };
+    let Some(rows) = state.rail_worktrees() else {
+        return;
+    };
+    if ab.engine.lock().unwrap().set_task_worktrees(rows) {
+        ab.emit.notify_one();
+    }
 }
 
 /// The MCP HTTP transport needs this: its dispatcher writes through a *separate*
@@ -333,8 +350,6 @@ pub fn task_sync_branch(app: AppHandle, id: i64) -> Result<tt_store::BranchResyn
     })?;
     if resync.changed {
         emit_snapshot(&app, &state);
-        // The rail row's recorded branch comes from `rail_worktrees`, re-read by the scan.
-        app.state::<crate::agentboard::Ab>().scan.notify_one();
     }
     Ok(resync)
 }
@@ -459,8 +474,7 @@ pub fn store_task_set_worktree(
     })?;
     tracing::info!(task_id = id, branch = branch.as_deref().unwrap_or(""), "task.worktree_bound");
     emit_snapshot(&app, &state);
-    // The engine only learns of the binding by re-reading `rail_worktrees` in
-    // the scan loop — wake it so the row lands now, not a poll tick later.
+    // The row landed with the snapshot; this warms the new checkout's git stats.
     app.state::<crate::agentboard::Ab>().scan.notify_one();
     Ok(())
 }
