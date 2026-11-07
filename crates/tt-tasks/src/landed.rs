@@ -165,14 +165,10 @@ pub fn probe_work_state(
         return state;
     }
 
-    let landed_patches = repo.base_patch_ids(merge_base, base_id);
-    let is_landed = |patch: Option<tt_git::repo::PatchId>| {
-        patch.is_some_and(|patch| landed_patches.contains(&patch))
-    };
-
+    let landed = repo.base_patches(merge_base, base_id);
     let cherry_plus =
-        commits.iter().filter(|id| !is_landed(repo.patch_id_of_commit(**id))).count() as u64;
-    let tree_landed = is_landed(repo.cumulative_patch_id(merge_base, branch_id));
+        commits.iter().filter(|id| !repo.commit_landed_in(**id, &landed)).count() as u64;
+    let tree_landed = repo.cumulative_landed_in(merge_base, branch_id, &landed);
 
     state.landed =
         classify(ancestor, tip_equals_base, cherry_plus, total, tree_landed, upstream_gone);
@@ -184,7 +180,7 @@ pub fn probe_work_state(
     } else {
         let landed_at = commits[1..]
             .iter()
-            .position(|rev| is_landed(repo.cumulative_patch_id(merge_base, *rev)));
+            .position(|rev| repo.cumulative_landed_in(merge_base, *rev, &landed));
         // Both counts over-report, each where the other is exact: the prefix scan
         // misses a commit picked from mid-branch, per-commit identity misses a squash.
         (1 + landed_at.unwrap_or(commits.len() - 1) as u64).min(cherry_plus)

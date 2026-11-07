@@ -22,7 +22,7 @@ mod status;
 pub use diff::{Changes, CommitStat, DiffTotals, FileChange, UntrackedCap};
 
 pub use hunks::{FilePatch, Hunk, HunkLine, LineKind};
-pub use patch::PatchId;
+pub use patch::{BasePatches, PatchId};
 pub use status::{StatusEntry, StatusSummary};
 
 /// Myers because that is git's default, and these numbers sit beside the ones the

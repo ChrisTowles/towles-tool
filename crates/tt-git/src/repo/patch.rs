@@ -5,7 +5,8 @@
 //! the loose object so the poll didn't litter thousands of dead objects a day. In
 //! process a patch id is computed from trees that already exist, and thrown away.
 
-use std::collections::HashSet;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use super::{Repo, Result};
 
@@ -16,6 +17,28 @@ pub struct PatchId(gix::ObjectId);
 impl std::fmt::Display for PatchId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Which paths a change touches, hashed without reading a blob. Equal patch ids
+/// imply equal shapes, so content is diffed only where both sides share one: a
+/// tree diff costs milliseconds, the content diff behind a patch id can cost
+/// seconds — one 68k-file base commit cost 14 s to hash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct PatchShape(gix::ObjectId);
+
+/// What the base branch gained since a boundary, for "is this change already
+/// there?" — see [`Repo::base_patches`]. A base commit's patch id is computed
+/// the first time a change of its shape asks.
+#[derive(Debug, Default)]
+pub struct BasePatches {
+    by_shape: HashMap<PatchShape, Vec<gix::ObjectId>>,
+    ids: RefCell<HashMap<gix::ObjectId, Option<PatchId>>>,
+}
+
+impl BasePatches {
+    pub fn is_empty(&self) -> bool {
+        self.by_shape.is_empty()
     }
 }
 
@@ -30,10 +53,33 @@ impl Repo {
     /// for an unreadable commit; a root commit hashes as the addition of its
     /// whole tree.
     pub fn patch_id_of_commit(&self, id: gix::ObjectId) -> Option<PatchId> {
-        let commit = self.inner().find_object(id).ok()?.try_into_commit().ok()?;
-        let tree = commit.tree().ok()?;
-        let parent = commit.parent_ids().next().and_then(|p| self.tree_at(p.detach()));
-        self.patch_id_between(parent.as_ref(), &tree)
+        let (parent, tree) = self.commit_trees(id)?;
+        self.patch_between(parent.as_ref(), &tree)
+    }
+
+    /// Whether `base` already holds the change commit `id` made.
+    pub fn commit_landed_in(&self, id: gix::ObjectId, base: &BasePatches) -> bool {
+        if base.is_empty() {
+            return false;
+        }
+        self.commit_trees(id)
+            .is_some_and(|(parent, tree)| self.landed_between(parent.as_ref(), &tree, base))
+    }
+
+    /// Whether `base` already holds the cumulative change `from..to` — a squash.
+    pub fn cumulative_landed_in(
+        &self,
+        from: gix::ObjectId,
+        to: gix::ObjectId,
+        base: &BasePatches,
+    ) -> bool {
+        if base.is_empty() {
+            return false;
+        }
+        let (Some(old), Some(new)) = (self.tree_at(from), self.tree_at(to)) else {
+            return false;
+        };
+        self.landed_between(Some(&old), &new, base)
     }
 
     /// The patch id of the *cumulative* change between two revisions — what a
@@ -43,24 +89,24 @@ impl Repo {
     pub fn cumulative_patch_id(&self, from: gix::ObjectId, to: gix::ObjectId) -> Option<PatchId> {
         let old = self.tree_at(from)?;
         let new = self.tree_at(to)?;
-        self.patch_id_between(Some(&old), &new)
+        self.patch_between(Some(&old), &new)
     }
 
-    /// Patch ids of every commit the base branch gained since `boundary`, for
-    /// membership tests. See [`MAX_BASE_PATCHES`] for the bound and why
-    /// exceeding it is safe.
-    pub fn base_patch_ids(
-        &self,
-        boundary: gix::ObjectId,
-        base_tip: gix::ObjectId,
-    ) -> HashSet<PatchId> {
-        let mut out = HashSet::new();
+    /// Every commit the base branch gained since `boundary`, for membership
+    /// tests. See [`MAX_BASE_PATCHES`] for the bound and why exceeding it is safe.
+    pub fn base_patches(&self, boundary: gix::ObjectId, base_tip: gix::ObjectId) -> BasePatches {
+        let mut out = BasePatches::default();
         let Ok(commits) = self.rev_list(boundary, base_tip) else {
             return out;
         };
         for id in commits.into_iter().take(MAX_BASE_PATCHES) {
-            if let Some(patch) = self.patch_id_of_commit(id) {
-                out.insert(patch);
+            let Some((parent, tree)) = self.commit_trees(id) else {
+                continue;
+            };
+            if let Some(shape) =
+                self.changed_paths(parent.as_ref(), &tree).and_then(|p| shape_of(&p))
+            {
+                out.by_shape.entry(shape).or_default().push(id);
             }
         }
         out
@@ -78,53 +124,91 @@ impl Repo {
         let Some(boundary) = self.merge_base(base, branch) else {
             return Ok(Vec::new());
         };
-        let landed = self.base_patch_ids(boundary, base_id);
+        let landed = self.base_patches(boundary, base_id);
         let mine = self.rev_list(boundary, branch_id)?;
-        Ok(mine
-            .into_iter()
-            .map(|id| {
-                let is_landed =
-                    self.patch_id_of_commit(id).is_some_and(|patch| landed.contains(&patch));
-                (id, is_landed)
-            })
-            .collect())
+        Ok(mine.into_iter().map(|id| (id, self.commit_landed_in(id, &landed))).collect())
     }
 
-    fn patch_id_between(
+    /// The shape gates the content diff, so a change the base can't hold never
+    /// reads a blob.
+    fn landed_between(
         &self,
         old: Option<&gix::Tree<'_>>,
         new: &gix::Tree<'_>,
+        base: &BasePatches,
+    ) -> bool {
+        let Some(paths) = self.changed_paths(old, new) else {
+            return false;
+        };
+        let Some(candidates) = shape_of(&paths).and_then(|shape| base.by_shape.get(&shape)) else {
+            return false;
+        };
+        let Some(mine) = self.patch_of_paths(old, new, paths) else {
+            return false;
+        };
+        candidates.iter().any(|id| {
+            let theirs =
+                *base.ids.borrow_mut().entry(*id).or_insert_with(|| self.patch_id_of_commit(*id));
+            theirs == Some(mine)
+        })
+    }
+
+    fn patch_between(&self, old: Option<&gix::Tree<'_>>, new: &gix::Tree<'_>) -> Option<PatchId> {
+        let paths = self.changed_paths(old, new)?;
+        self.patch_of_paths(old, new, paths)
+    }
+
+    /// Every path the change touches, sorted. **Rename-blind**: rename tracking
+    /// over a commit deleting 68k files took 149 s to find none, against 24 ms
+    /// without — and both sides of every comparison hash the same way, so a
+    /// renamed file still matches as its deletion plus its addition.
+    fn changed_paths(
+        &self,
+        old: Option<&gix::Tree<'_>>,
+        new: &gix::Tree<'_>,
+    ) -> Option<Vec<String>> {
+        let opts = gix::diff::Options::default().with_rewrites(None);
+        let changes = self.inner().diff_tree_to_tree(old, Some(new), Some(opts)).ok()?;
+        let mut paths: Vec<String> = changes
+            .iter()
+            .map(|change| {
+                use gix::object::tree::diff::ChangeDetached as C;
+                match change {
+                    C::Addition { location, .. }
+                    | C::Deletion { location, .. }
+                    | C::Modification { location, .. }
+                    | C::Rewrite { location, .. } => location.to_string(),
+                }
+            })
+            .collect();
+        paths.sort();
+        Some(paths)
+    }
+
+    fn patch_of_paths(
+        &self,
+        old: Option<&gix::Tree<'_>>,
+        new: &gix::Tree<'_>,
+        paths: Vec<String>,
     ) -> Option<PatchId> {
-        let changes = self.inner().diff_tree_to_tree(old, Some(new), None).ok()?;
         let empty = self.inner().empty_tree();
         let old = old.unwrap_or(&empty);
-
-        let mut parts: Vec<(String, String, Vec<u8>)> = Vec::new();
-        for change in changes {
-            use gix::object::tree::diff::ChangeDetached as C;
-            let (path, source) = match &change {
-                C::Addition { location, .. }
-                | C::Deletion { location, .. }
-                | C::Modification { location, .. } => (location.to_string(), location.to_string()),
-                C::Rewrite { location, source_location, .. } => {
-                    (location.to_string(), source_location.to_string())
-                }
-            };
-            let before = super::diff::blob_at(old, &source);
-            let after = super::diff::blob_at(new, &path);
-            parts.push((path, source, hunk_bytes(before.as_deref(), after.as_deref())));
-        }
-        parts.sort();
-
         let mut hasher = gix::hash::hasher(gix::hash::Kind::Sha1);
-        for (path, source, body) in parts {
+        for path in paths {
+            let before = super::diff::blob_at(old, &path);
+            let after = super::diff::blob_at(new, &path);
             hasher.update(path.as_bytes());
             hasher.update(b"\0");
-            hasher.update(source.as_bytes());
-            hasher.update(b"\0");
-            hasher.update(&body);
+            hasher.update(&hunk_bytes(before.as_deref(), after.as_deref()));
         }
         hasher.try_finalize().ok().map(PatchId)
+    }
+
+    fn commit_trees(&self, id: gix::ObjectId) -> Option<(Option<gix::Tree<'_>>, gix::Tree<'_>)> {
+        let commit = self.inner().find_object(id).ok()?.try_into_commit().ok()?;
+        let tree = commit.tree().ok()?;
+        let parent = commit.parent_ids().next().and_then(|p| self.tree_at(p.detach()));
+        Some((parent, tree))
     }
 
     fn tree_at(&self, id: gix::ObjectId) -> Option<gix::Tree<'_>> {
@@ -164,6 +248,15 @@ fn hunk_bytes(before: Option<&[u8]>, after: Option<&[u8]>) -> Vec<u8> {
         }
     }
     out
+}
+
+fn shape_of(paths: &[String]) -> Option<PatchShape> {
+    let mut hasher = gix::hash::hasher(gix::hash::Kind::Sha1);
+    for path in paths {
+        hasher.update(path.as_bytes());
+        hasher.update(b"\0");
+    }
+    hasher.try_finalize().ok().map(PatchShape)
 }
 
 fn is_binary(content: &[u8]) -> bool {
@@ -276,6 +369,58 @@ mod tests {
             squash_commit,
             "the branch's cumulative diff is exactly what the squash commit holds"
         );
+    }
+
+    fn oid(hex: &str) -> gix::ObjectId {
+        gix::ObjectId::from_hex(hex.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn a_squash_is_landed_and_a_same_paths_rewrite_is_not() {
+        let repo = branched();
+        let boundary = oid(&repo.git(&["merge-base", "main", "feature"]));
+        let tip = oid(&repo.rev_parse("feature"));
+        repo.git(&["checkout", "--quiet", "main"]);
+        repo.git(&["merge", "--squash", "feature"]);
+        repo.git(&["commit", "--quiet", "-m", "squashed"]);
+        let squashed = oid(&repo.rev_parse("HEAD"));
+        // The same two paths with other content: the shape matches, the patch must not.
+        repo.git(&[
+            "checkout",
+            "--quiet",
+            "-b",
+            "lookalike",
+            &boundary.to_string(),
+        ]);
+        repo.commit_file("a.txt", "not alpha\n");
+        repo.commit_file("b.txt", "not beta\n");
+        let lookalike = oid(&repo.rev_parse("HEAD"));
+
+        let git = Repo::open(repo.path()).expect("open");
+        let base = git.base_patches(boundary, squashed);
+        assert!(git.cumulative_landed_in(boundary, tip, &base));
+        assert!(!git.cumulative_landed_in(boundary, lookalike, &base));
+        let nothing = git.base_patches(boundary, boundary);
+        assert!(nothing.is_empty());
+        assert!(!git.cumulative_landed_in(boundary, tip, &nothing));
+    }
+
+    #[test]
+    fn a_cherry_picked_rename_is_landed() {
+        let repo = TestRepo::new();
+        repo.commit_file("old.txt", "kept content\n");
+        repo.git(&["checkout", "--quiet", "-b", "feature"]);
+        repo.git(&["mv", "old.txt", "new.txt"]);
+        repo.git(&["commit", "--quiet", "-m", "rename"]);
+        let renamed = repo.rev_parse("HEAD");
+        repo.git(&["checkout", "--quiet", "main"]);
+        let boundary = oid(&repo.rev_parse("HEAD"));
+        repo.commit_file("unrelated.txt", "noise\n");
+        repo.git(&["cherry-pick", "--quiet", &renamed]);
+
+        let git = Repo::open(repo.path()).expect("open");
+        let base = git.base_patches(boundary, oid(&repo.rev_parse("HEAD")));
+        assert!(git.commit_landed_in(oid(&renamed), &base));
     }
 
     #[test]

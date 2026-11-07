@@ -74,9 +74,6 @@ pub struct GitInfo {
     /// See [`revision_fingerprint`] — while it matches, only the worktree is read.
     #[serde(skip)]
     pub revision_key: String,
-    /// The ref the diff ran against, so the fast path skips the merge-base.
-    #[serde(skip)]
-    pub diff_base: String,
 }
 
 const GIT_CACHE_TTL_MS: i64 = 60_000;
@@ -442,9 +439,14 @@ pub fn compute_git_info(
             base_branch_override,
         );
         if !key.is_empty() && key == prev.revision_key {
-            let diff_base =
-                if prev.diff_base.is_empty() { "HEAD" } else { prev.diff_base.as_str() };
-            let mut info = diff_stats(&repo, &prev.branch, prev.is_worktree, diff_base);
+            // `base..HEAD` is tree-to-tree, so an unmoved key proves it unmoved too —
+            // and on a branch with a huge commit it is the expensive half.
+            let committed = tt_git::repo::DiffTotals {
+                files_changed: prev.committed_files,
+                lines_added: prev.committed_added,
+                lines_removed: prev.committed_removed,
+            };
+            let mut info = diff_stats(&repo, &prev.branch, prev.is_worktree, committed);
             info.computed_at_ms = now_ms;
             info.head_commit_ms = prev.head_commit_ms;
             info.commits_ahead = prev.commits_ahead;
@@ -458,7 +460,6 @@ pub fn compute_git_info(
             info.probe_key = prev.probe_key.clone();
             info.git_dir = prev.git_dir.clone();
             info.compared_base = prev.compared_base.clone();
-            info.diff_base = prev.diff_base.clone();
             info.revision_key = key;
             // Kept fresh so a launch.json appearing doesn't wait a whole poll.
             info.task_base_branch = tt_tasks::read_task_base(std::path::Path::new(dir));
@@ -490,7 +491,8 @@ pub fn compute_git_info(
         is_worktree,
     } = structural_facts(dir, &repo, previous);
 
-    let mut info = diff_stats(&repo, &branch, is_worktree, &base);
+    let committed = repo.committed_totals_vs(&base).unwrap_or_default();
+    let mut info = diff_stats(&repo, &branch, is_worktree, committed);
     info.computed_at_ms = now_ms;
     info.head_commit_ms = repo.head_commit_unix().unwrap_or(0) * 1000;
     let (ahead, behind) = repo.ahead_behind(&compared_base, "HEAD");
@@ -533,7 +535,6 @@ pub fn compute_git_info(
     } else {
         info.commits_unlanded = 0;
     }
-    info.diff_base = base;
     info.revision_key = revision_fingerprint(
         dir,
         &info.git_dir,
@@ -547,9 +548,13 @@ pub fn compute_git_info(
 }
 
 /// The two diffs of [`GitInfo`], never summed; the caller fills the rest.
-fn diff_stats(repo: &tt_git::repo::Repo, branch: &str, is_worktree: bool, base: &str) -> GitInfo {
+fn diff_stats(
+    repo: &tt_git::repo::Repo,
+    branch: &str,
+    is_worktree: bool,
+    committed: tt_git::repo::DiffTotals,
+) -> GitInfo {
     let uncommitted = repo.changes_vs("HEAD").unwrap_or_default();
-    let committed = repo.committed_totals_vs(base).unwrap_or_default();
     let staged = repo.staged_changes().unwrap_or_default();
     let worktree_touched =
         repo.newest_mtime_unix(uncommitted.files.iter().map(|c| c.path.as_str())).unwrap_or(0);
