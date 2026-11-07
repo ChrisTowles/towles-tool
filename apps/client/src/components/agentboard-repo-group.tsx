@@ -368,7 +368,7 @@ export function RepoGroup({
                   }}
                   style={namePillStyle(repo.color)}
                   className={cn(
-                    "flex min-w-0 items-center gap-1.5 rounded-md bg-agent px-2 py-0.5 text-white shadow-sm",
+                    "flex min-w-0 items-center gap-1.5 rounded-md bg-agent px-2 py-0.5 text-ident-ink shadow-sm",
                     "transition hover:brightness-115 active:brightness-95",
                   )}
                 >

@@ -41,6 +41,7 @@
   --color-spark: var(--spark);
   --color-ident-a: var(--ident-a);
   --color-ident-b: var(--ident-b);
+  --color-ident-ink: var(--ident-ink);
   --color-window-1: var(--window-1);
   --color-window-2: var(--window-2);
   --color-window-3: var(--window-3);
@@ -143,6 +144,7 @@
   --spark: var(--color-fuchsia-500);
   --ident-a: var(--color-blue-600);
   --ident-b: var(--color-slate-600);
+  --ident-ink: var(--color-neutral-950);
   --window-1: var(--color-teal-500);
   --window-2: var(--color-fuchsia-500);
   --window-3: var(--color-lime-500);
