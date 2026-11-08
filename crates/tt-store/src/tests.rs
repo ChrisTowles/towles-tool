@@ -3,12 +3,16 @@ use crate::model::{MCP_CALL_RETAIN, MCP_CALL_SNAPSHOT_LIMIT, utc_key};
 use crate::schema::{MIN_SUPPORTED_VERSION, SCHEMA_VERSION};
 use chrono::{DateTime, FixedOffset};
 
-fn ci_run(repo: &str, workflow: &str, conclusion: &str, created_ms: i64) -> CiRun {
+fn ci_run(repo: &str, workflow: &str, conclusion: CiConclusion, created_ms: i64) -> CiRun {
     CiRun {
         repo: repo.to_string(),
         workflow: workflow.to_string(),
-        status: if conclusion.is_empty() { "in_progress" } else { "completed" }.to_string(),
-        conclusion: conclusion.to_string(),
+        status: if conclusion == CiConclusion::None {
+            CiStatus::InProgress
+        } else {
+            CiStatus::Completed
+        },
+        conclusion,
         created_ms,
         updated_ms: created_ms + 60_000,
         url: format!("https://github.com/{repo}/actions/runs/{created_ms}"),
@@ -27,9 +31,9 @@ fn ci_runs_read_back_one_row_per_workflow_in_order() {
     let s = Store::open_in_memory().unwrap();
     let written = s
         .upsert_ci_runs(&[
-            ci_run("o/r", "Nightly", "failure", 2_000),
-            ci_run("o/a", "CI", "success", 1_000),
-            ci_run("o/r", "CI", "", 3_000),
+            ci_run("o/r", "Nightly", CiConclusion::Failure, 2_000),
+            ci_run("o/a", "CI", CiConclusion::Success, 1_000),
+            ci_run("o/r", "CI", CiConclusion::None, 3_000),
         ])
         .unwrap();
     assert_eq!(written, 3);
@@ -37,43 +41,46 @@ fn ci_runs_read_back_one_row_per_workflow_in_order() {
     let keys: Vec<(&str, &str)> =
         runs.iter().map(|r| (r.repo.as_str(), r.workflow.as_str())).collect();
     assert_eq!(keys, [("o/a", "CI"), ("o/r", "CI"), ("o/r", "Nightly")]);
-    assert_eq!(runs[1].status, "in_progress");
-    assert_eq!(runs[2].conclusion, "failure");
+    assert_eq!(runs[1].status, CiStatus::InProgress);
+    assert_eq!(runs[2].conclusion, CiConclusion::Failure);
     assert_eq!(s.snapshot().unwrap().ci_runs, runs, "the snapshot carries the same rows");
 }
 
 #[test]
 fn ci_runs_upsert_takes_a_newer_run_and_ignores_an_older_one() {
     let s = Store::open_in_memory().unwrap();
-    s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "failure", 2_000)]).unwrap();
+    s.upsert_ci_runs(&[ci_run("o/r", "Nightly", CiConclusion::Failure, 2_000)]).unwrap();
 
-    let stale = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "success", 1_000)]).unwrap();
+    let stale =
+        s.upsert_ci_runs(&[ci_run("o/r", "Nightly", CiConclusion::Success, 1_000)]).unwrap();
     assert_eq!(stale, 0, "an older run never rolls the row back");
-    assert_eq!(s.ci_runs().unwrap()[0].conclusion, "failure");
+    assert_eq!(s.ci_runs().unwrap()[0].conclusion, CiConclusion::Failure);
 
-    let same = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "cancelled", 2_000)]).unwrap();
+    let same =
+        s.upsert_ci_runs(&[ci_run("o/r", "Nightly", CiConclusion::Cancelled, 2_000)]).unwrap();
     assert_eq!(same, 1, "the same run's changed verdict lands");
-    assert_eq!(s.ci_runs().unwrap()[0].conclusion, "cancelled");
+    assert_eq!(s.ci_runs().unwrap()[0].conclusion, CiConclusion::Cancelled);
 
-    let newer = s.upsert_ci_runs(&[ci_run("o/r", "Nightly", "success", 3_000)]).unwrap();
+    let newer =
+        s.upsert_ci_runs(&[ci_run("o/r", "Nightly", CiConclusion::Success, 3_000)]).unwrap();
     assert_eq!(newer, 1);
     let runs = s.ci_runs().unwrap();
     assert_eq!(runs.len(), 1, "one row per workflow, never a duplicate");
-    assert_eq!((runs[0].conclusion.as_str(), runs[0].created_ms), ("success", 3_000));
+    assert_eq!((runs[0].conclusion, runs[0].created_ms), (CiConclusion::Success, 3_000));
 }
 
 #[test]
 fn ci_runs_absent_workflow_survives_and_prune_drops_untracked_repos() {
     let s = Store::open_in_memory().unwrap();
     s.upsert_ci_runs(&[
-        ci_run("o/a", "Nightly", "failure", 1),
-        ci_run("o/a", "CI", "success", 1),
-        ci_run("o/gone", "CI", "success", 1),
+        ci_run("o/a", "Nightly", CiConclusion::Failure, 1),
+        ci_run("o/a", "CI", CiConclusion::Success, 1),
+        ci_run("o/gone", "CI", CiConclusion::Success, 1),
     ])
     .unwrap();
 
     // A sweep whose page held only o/a's CI: Nightly is not in it and must stay.
-    s.upsert_ci_runs(&[ci_run("o/a", "CI", "success", 2)]).unwrap();
+    s.upsert_ci_runs(&[ci_run("o/a", "CI", CiConclusion::Success, 2)]).unwrap();
     let pruned = s.prune_ci_runs_except(&["o/a".to_string()]).unwrap();
     assert_eq!(pruned, 1, "only the repo no longer tracked loses its rows");
     assert_eq!(
@@ -92,10 +99,10 @@ fn ci_runs_absent_workflow_survives_and_prune_drops_untracked_repos() {
 fn ci_runs_prune_absent_drops_only_old_missing_workflows_of_that_repo() {
     let s = Store::open_in_memory().unwrap();
     s.upsert_ci_runs(&[
-        ci_run("o/a", "CI", "success", 1),
-        ci_run("o/a", "Deleted", "failure", 1),
-        ci_run("o/a", "Weekly", "failure", 50),
-        ci_run("o/b", "Old", "failure", 1),
+        ci_run("o/a", "CI", CiConclusion::Success, 1),
+        ci_run("o/a", "Deleted", CiConclusion::Failure, 1),
+        ci_run("o/a", "Weekly", CiConclusion::Failure, 50),
+        ci_run("o/b", "Old", CiConclusion::Failure, 1),
     ])
     .unwrap();
 
@@ -235,15 +242,15 @@ fn issue(repo: &str, number: i64, updated: i64) -> IssueInput {
     }
 }
 
-fn pr(repo: &str, number: i64, state: &str) -> PrInput {
+fn pr(repo: &str, number: i64, state: PrState) -> PrInput {
     PrInput {
         repo: repo.to_string(),
         number,
         title: "t".to_string(),
         branch: "b".to_string(),
-        state: state.to_string(),
-        checks: "passing".to_string(),
-        review_state: String::new(),
+        state,
+        checks: ChecksState::Passing,
+        review_state: ReviewState::None,
         url: "https://x".to_string(),
         updated_ts: 1,
         base_branch: String::new(),
@@ -932,29 +939,29 @@ fn refresh_link_states_from_cache_and_missing_refs() {
     // PR half is answered with a row instead, and the link reads its state off.
     s.set_issue_link_state("o/r", 2, "closed", 60).unwrap();
     assert!(s.open_issue_refs_missing_from_cache().unwrap().is_empty());
-    s.upsert_prs(&[pr("o/r", 10, "closed")]).unwrap();
+    s.upsert_prs(&[pr("o/r", 10, PrState::Closed)]).unwrap();
     assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
     s.refresh_link_states_from_cache(60).unwrap();
     let got = s.get_task(t.id).unwrap().unwrap();
     assert_eq!(got.issues.iter().find(|l| l.number == 2).unwrap().state, "closed");
-    assert_eq!(got.prs[0].state, "closed");
+    assert_eq!(got.prs[0].state, PrState::Closed);
 }
 
 /// The rail's badge vanished because the open sweep purged the closed row.
 #[test]
 fn a_closed_pr_row_survives_the_open_sweep() {
     let s = Store::open_in_memory().unwrap();
-    s.upsert_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "closed")]).unwrap();
+    s.upsert_prs(&[pr("o/a", 1, PrState::Open), pr("o/a", 2, PrState::Closed)]).unwrap();
     s.replace_open_prs_for_repos(&["o/a".to_string()], &[]).unwrap();
     let rows = s.prs().unwrap();
     assert_eq!(rows.len(), 1);
-    assert_eq!((rows[0].number, rows[0].state.as_str()), (2, "closed"));
+    assert_eq!((rows[0].number, rows[0].state), (2, PrState::Closed));
 
     // …and reopening replaces that row rather than colliding with it.
-    s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 2, "open")]).unwrap();
+    s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 2, PrState::Open)]).unwrap();
     let rows = s.prs().unwrap();
     assert_eq!(rows.len(), 1);
-    assert_eq!((rows[0].number, rows[0].state.as_str()), (2, "open"));
+    assert_eq!((rows[0].number, rows[0].state), (2, PrState::Open));
 }
 
 /// The refetch loop: a targeted fetch's merged row fell outside the merged
@@ -965,9 +972,9 @@ fn a_targeted_merged_fetch_survives_every_sweep() {
     let t = s.add_task("t", "doing", None, None, 1).unwrap();
     s.attach_task_pr(t.id, "o/a", 5, "p5").unwrap();
     let repos = ["o/a".to_string()];
-    s.upsert_prs(&[pr("o/a", 5, "merged")]).unwrap();
+    s.upsert_prs(&[pr("o/a", 5, PrState::Merged)]).unwrap();
 
-    s.replace_merged_prs_for_repos(&repos, &[pr("o/a", 6, "merged")]).unwrap();
+    s.replace_merged_prs_for_repos(&repos, &[pr("o/a", 6, PrState::Merged)]).unwrap();
     s.replace_open_prs_for_repos(&repos, &[]).unwrap();
     s.replace_prs_for_repos(&repos, &[]).unwrap();
     s.replace_merged_prs(&[]).unwrap();
@@ -985,24 +992,24 @@ fn an_open_pr_that_closed_is_refreshed_once() {
     let t = s.add_task("t", "doing", None, None, 1).unwrap();
     s.attach_task_pr(t.id, "o/a", 5, "p5").unwrap();
     let repos = ["o/a".to_string()];
-    s.replace_open_prs_for_repos(&repos, &[pr("o/a", 5, "open")]).unwrap();
+    s.replace_open_prs_for_repos(&repos, &[pr("o/a", 5, PrState::Open)]).unwrap();
     assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
 
     s.replace_open_prs_for_repos(&repos, &[]).unwrap();
     assert_eq!(s.pr_refs_missing_from_cache().unwrap(), vec![("o/a".to_string(), 5)]);
 
-    s.upsert_prs(&[pr("o/a", 5, "merged")]).unwrap();
+    s.upsert_prs(&[pr("o/a", 5, PrState::Merged)]).unwrap();
     s.replace_open_prs_for_repos(&repos, &[]).unwrap();
     s.replace_merged_prs_for_repos(&repos, &[]).unwrap();
     assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
-    assert_eq!(s.prs().unwrap()[0].state, "merged");
+    assert_eq!(s.prs().unwrap()[0].state, PrState::Merged);
 }
 
 /// Unlinked terminal rows are still swept away; only linked ones are kept.
 #[test]
 fn unlinked_merged_rows_are_still_swept() {
     let s = Store::open_in_memory().unwrap();
-    s.upsert_prs(&[pr("o/a", 7, "merged")]).unwrap();
+    s.upsert_prs(&[pr("o/a", 7, PrState::Merged)]).unwrap();
     s.replace_merged_prs_for_repos(&["o/a".to_string()], &[]).unwrap();
     assert!(s.prs().unwrap().is_empty());
 }
@@ -1014,9 +1021,9 @@ fn auto_attach_worktree_prs_links_by_repo_and_branch() {
         number,
         title: "t".to_string(),
         branch: branch.to_string(),
-        state: "open".to_string(),
-        checks: "pending".to_string(),
-        review_state: String::new(),
+        state: PrState::Open,
+        checks: ChecksState::Pending,
+        review_state: ReviewState::None,
         url: format!("https://github.com/o/x/pull/{number}"),
         updated_ts: 1,
         base_branch: String::new(),
@@ -1061,9 +1068,9 @@ fn a_probed_pr_links_a_task_no_sweep_ever_saw() {
         number: 83,
         title: "t".to_string(),
         branch: "feat/y".to_string(),
-        state: "merged".to_string(),
-        checks: "passing".to_string(),
-        review_state: String::new(),
+        state: PrState::Merged,
+        checks: ChecksState::Passing,
+        review_state: ReviewState::None,
         url: "https://github.com/o/x/pull/83".to_string(),
         updated_ts: 1,
         base_branch: String::new(),
@@ -1074,7 +1081,7 @@ fn a_probed_pr_links_a_task_no_sweep_ever_saw() {
 
     let got = s.get_task(t.id).unwrap().unwrap();
     assert_eq!(got.prs[0].number, 83);
-    assert_eq!(got.prs[0].state, "merged");
+    assert_eq!(got.prs[0].state, PrState::Merged);
     // Linked now, so it never costs another `gh` call.
     assert!(s.unlinked_worktrees(i64::MAX, 8).unwrap().is_empty());
 }
@@ -1150,8 +1157,8 @@ fn unlinked_worktrees_skips_the_bound_the_archived_and_the_just_probed() {
 #[test]
 fn replace_prs_for_repos_preserves_other_repos_rows() {
     let s = Store::open_in_memory().unwrap();
-    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "open")]).unwrap();
-    s.replace_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, "open")]).unwrap();
+    s.replace_prs(&[pr("o/a", 1, PrState::Open), pr("o/b", 2, PrState::Open)]).unwrap();
+    s.replace_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, PrState::Open)]).unwrap();
     let prs = s.prs().unwrap();
     assert_eq!(prs.len(), 2);
     assert!(prs.iter().any(|p| p.repo == "o/b" && p.number == 2));
@@ -1161,76 +1168,76 @@ fn replace_prs_for_repos_preserves_other_repos_rows() {
 #[test]
 fn replace_open_prs_for_repos_preserves_merged_rows() {
     let s = Store::open_in_memory().unwrap();
-    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "merged")]).unwrap();
-    s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, "open")]).unwrap();
+    s.replace_prs(&[pr("o/a", 1, PrState::Open), pr("o/a", 2, PrState::Merged)]).unwrap();
+    s.replace_open_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 3, PrState::Open)]).unwrap();
     let prs = s.prs().unwrap();
     assert_eq!(prs.len(), 2);
-    assert!(prs.iter().any(|p| p.number == 2 && p.state == "merged"));
-    assert!(prs.iter().any(|p| p.number == 3 && p.state == "open"));
+    assert!(prs.iter().any(|p| p.number == 2 && p.state == PrState::Merged));
+    assert!(prs.iter().any(|p| p.number == 3 && p.state == PrState::Open));
     assert!(!prs.iter().any(|p| p.number == 1));
 }
 
 #[test]
 fn replace_merged_prs_for_repos_preserves_open_rows() {
     let s = Store::open_in_memory().unwrap();
-    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/a", 2, "merged")]).unwrap();
-    s.replace_merged_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 4, "merged")]).unwrap();
+    s.replace_prs(&[pr("o/a", 1, PrState::Open), pr("o/a", 2, PrState::Merged)]).unwrap();
+    s.replace_merged_prs_for_repos(&["o/a".to_string()], &[pr("o/a", 4, PrState::Merged)]).unwrap();
     let prs = s.prs().unwrap();
     assert_eq!(prs.len(), 2);
-    assert!(prs.iter().any(|p| p.number == 1 && p.state == "open"));
-    assert!(prs.iter().any(|p| p.number == 4 && p.state == "merged"));
+    assert!(prs.iter().any(|p| p.number == 1 && p.state == PrState::Open));
+    assert!(prs.iter().any(|p| p.number == 4 && p.state == PrState::Merged));
     assert!(!prs.iter().any(|p| p.number == 2));
 }
 
 #[test]
 fn replace_open_prs_and_replace_merged_prs_are_full_snapshots_scoped_by_state() {
     let s = Store::open_in_memory().unwrap();
-    s.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "merged")]).unwrap();
-    s.replace_open_prs(&[pr("o/a", 3, "open")]).unwrap();
+    s.replace_prs(&[pr("o/a", 1, PrState::Open), pr("o/b", 2, PrState::Merged)]).unwrap();
+    s.replace_open_prs(&[pr("o/a", 3, PrState::Open)]).unwrap();
     let prs = s.prs().unwrap();
     assert_eq!(prs.len(), 2);
-    assert!(prs.iter().any(|p| p.number == 3 && p.state == "open"));
-    assert!(prs.iter().any(|p| p.number == 2 && p.state == "merged"));
+    assert!(prs.iter().any(|p| p.number == 3 && p.state == PrState::Open));
+    assert!(prs.iter().any(|p| p.number == 2 && p.state == PrState::Merged));
 
-    s.replace_merged_prs(&[pr("o/b", 5, "merged")]).unwrap();
+    s.replace_merged_prs(&[pr("o/b", 5, PrState::Merged)]).unwrap();
     let prs = s.prs().unwrap();
     assert_eq!(prs.len(), 2);
-    assert!(prs.iter().any(|p| p.number == 3 && p.state == "open"));
-    assert!(prs.iter().any(|p| p.number == 5 && p.state == "merged"));
+    assert!(prs.iter().any(|p| p.number == 3 && p.state == PrState::Open));
+    assert!(prs.iter().any(|p| p.number == 5 && p.state == PrState::Merged));
 }
 
 #[test]
 fn replace_prs_round_trips_every_checks_state() {
-    let pr = |number: i64, checks: &str| PrInput {
+    let pr = |number: i64, checks: ChecksState| PrInput {
         repo: "o/r".to_string(),
         number,
         title: format!("pr {number}"),
         branch: format!("b{number}"),
-        state: "open".to_string(),
-        checks: checks.to_string(),
-        review_state: String::new(),
+        state: PrState::Open,
+        checks,
+        review_state: ReviewState::None,
         url: "https://x".to_string(),
         updated_ts: number,
         base_branch: String::new(),
     };
     let s = Store::open_in_memory().unwrap();
     s.replace_prs(&[
-        pr(1, "passing"),
-        pr(2, "failing"),
-        pr(3, "pending"),
-        pr(4, "none"),
+        pr(1, ChecksState::Passing),
+        pr(2, ChecksState::Failing),
+        pr(3, ChecksState::Pending),
+        pr(4, ChecksState::None),
     ])
     .unwrap();
-    let mut got: Vec<(i64, String)> =
+    let mut got: Vec<(i64, ChecksState)> =
         s.prs().unwrap().into_iter().map(|p| (p.number, p.checks)).collect();
-    got.sort();
+    got.sort_by_key(|(number, _)| *number);
     assert_eq!(
         got,
         vec![
-            (1, "passing".to_string()),
-            (2, "failing".to_string()),
-            (3, "pending".to_string()),
-            (4, "none".to_string()),
+            (1, ChecksState::Passing),
+            (2, ChecksState::Failing),
+            (3, ChecksState::Pending),
+            (4, ChecksState::None),
         ]
     );
 }
@@ -1392,9 +1399,9 @@ fn auto_attach_skips_archived_tasks_but_not_closed_ones() {
         number,
         title: "t".to_string(),
         branch: branch.to_string(),
-        state: "merged".to_string(),
-        checks: "none".to_string(),
-        review_state: String::new(),
+        state: PrState::Merged,
+        checks: ChecksState::None,
+        review_state: ReviewState::None,
         url: "https://x".to_string(),
         updated_ts: number,
         base_branch: String::new(),
@@ -1895,9 +1902,9 @@ fn dismiss_item_survives_replace_until_the_item_updates() {
         number: 42,
         title: "feat: treemap".to_string(),
         branch: "feat/treemap".to_string(),
-        state: "open".to_string(),
-        checks: "passing".to_string(),
-        review_state: "review_requested".to_string(),
+        state: PrState::Open,
+        checks: ChecksState::Passing,
+        review_state: ReviewState::Requested,
         url: "https://github.com/octo/widgets/pull/42".to_string(),
         updated_ts,
         base_branch: String::new(),
@@ -1940,9 +1947,9 @@ fn clear_dismissals_removes_every_kind() {
         number: 42,
         title: "feat: treemap".to_string(),
         branch: "feat/treemap".to_string(),
-        state: "open".to_string(),
-        checks: "passing".to_string(),
-        review_state: "review_requested".to_string(),
+        state: PrState::Open,
+        checks: ChecksState::Passing,
+        review_state: ReviewState::Requested,
         url: "https://github.com/octo/widgets/pull/42".to_string(),
         updated_ts: 100,
         base_branch: String::new(),
@@ -1984,9 +1991,9 @@ fn snapshot_serializes_camel_case() {
         number: 7,
         title: "Fix".to_string(),
         branch: "feat".to_string(),
-        state: "open".to_string(),
-        checks: "passing".to_string(),
-        review_state: "approved".to_string(),
+        state: PrState::Open,
+        checks: ChecksState::Passing,
+        review_state: ReviewState::Approved,
         url: "https://x".to_string(),
         updated_ts: 3,
         base_branch: String::new(),
@@ -2342,9 +2349,9 @@ fn replace_issues_and_prs_with_empty_clears_all_rows() {
         number: 2,
         title: "t".to_string(),
         branch: "b".to_string(),
-        state: "open".to_string(),
-        checks: "passing".to_string(),
-        review_state: String::new(),
+        state: PrState::Open,
+        checks: ChecksState::Passing,
+        review_state: ReviewState::None,
         url: "https://x".to_string(),
         updated_ts: 1,
         base_branch: String::new(),

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use tt_store::PrInput;
+use tt_store::{ChecksState, PrInput, PrState, ReviewState};
 
 use crate::gh;
 
@@ -136,12 +136,12 @@ pub(crate) fn map_pr_list(
                 number,
                 title: str_field(item, "title"),
                 branch: str_field(item, "headRefName"),
-                state: str_field(item, "state").to_ascii_lowercase(),
+                state: PrState::parse(&str_field(item, "state")),
                 checks: checks_status(
                     item.get("statusCheckRollup").unwrap_or(&serde_json::Value::Null),
                 ),
                 review_state: if review_requested {
-                    "review_requested".to_string()
+                    ReviewState::Requested
                 } else {
                     review_decision_state(
                         item.get("reviewDecision").and_then(|v| v.as_str()).unwrap_or_default(),
@@ -160,14 +160,14 @@ pub(crate) fn map_pr_list(
 /// Map GitHub's `reviewDecision` to a stored `review_state` for an authored PR.
 ///
 /// `reviewDecision` is `APPROVED`, `CHANGES_REQUESTED`, `REVIEW_REQUIRED`, or
-/// empty (no reviews required). Unknown/empty values map to `""` so an authored
-/// PR with no verdict stays indistinguishable from a quiet one, as before.
-fn review_decision_state(decision: &str) -> String {
-    match decision.to_ascii_uppercase().as_str() {
-        "APPROVED" => "approved".to_string(),
-        "CHANGES_REQUESTED" => "changes_requested".to_string(),
-        "REVIEW_REQUIRED" => "review_required".to_string(),
-        _ => String::new(),
+/// empty (no reviews required). Anything else maps to no verdict, so an authored
+/// PR with no verdict stays indistinguishable from a quiet one.
+fn review_decision_state(decision: &str) -> ReviewState {
+    match ReviewState::parse(decision) {
+        verdict @ (ReviewState::Approved
+        | ReviewState::ChangesRequested
+        | ReviewState::ReviewRequired) => verdict,
+        _ => ReviewState::None,
     }
 }
 
@@ -175,17 +175,17 @@ pub(crate) fn str_field(item: &serde_json::Value, key: &str) -> String {
     item.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string()
 }
 
-/// Summarize a `statusCheckRollup` array into `"passing" | "failing" | "pending" | "none"`.
+/// Summarize a `statusCheckRollup` array into a [`ChecksState`].
 ///
-/// Empty/absent rollup → `"none"`. Any failing conclusion wins → `"failing"`.
-/// Any missing/unrecognized (in-progress) conclusion → `"pending"`. Otherwise
-/// all checks are success-like → `"passing"`.
-pub(crate) fn checks_status(rollup: &serde_json::Value) -> String {
+/// Empty/absent rollup is `None`. Any failing conclusion wins. Any missing or
+/// unrecognized (in-progress) conclusion is `Pending`. Otherwise all checks are
+/// success-like and the rollup is `Passing`.
+pub(crate) fn checks_status(rollup: &serde_json::Value) -> ChecksState {
     let Some(checks) = rollup.as_array() else {
-        return "none".to_string();
+        return ChecksState::None;
     };
     if checks.is_empty() {
-        return "none".to_string();
+        return ChecksState::None;
     }
     let mut any_pending = false;
     for check in checks {
@@ -197,12 +197,12 @@ pub(crate) fn checks_status(rollup: &serde_json::Value) -> String {
         match verdict.map(str::to_ascii_uppercase).as_deref() {
             Some("SUCCESS") | Some("NEUTRAL") | Some("SKIPPED") => {}
             Some("FAILURE") | Some("ERROR") | Some("CANCELLED") | Some("TIMED_OUT") => {
-                return "failing".to_string();
+                return ChecksState::Failing;
             }
             _ => any_pending = true,
         }
     }
-    if any_pending { "pending".to_string() } else { "passing".to_string() }
+    if any_pending { ChecksState::Pending } else { ChecksState::Passing }
 }
 
 /// Parse an RFC 3339 / ISO-8601 timestamp to epoch milliseconds; 0 on failure.
@@ -217,25 +217,25 @@ mod tests {
 
     #[test]
     fn checks_status_covers_each_state() {
-        assert_eq!(checks_status(&json!([])), "none");
-        assert_eq!(checks_status(&serde_json::Value::Null), "none");
+        assert_eq!(checks_status(&json!([])), ChecksState::None);
+        assert_eq!(checks_status(&serde_json::Value::Null), ChecksState::None);
         assert_eq!(
             checks_status(&json!([{"conclusion": "SUCCESS"}, {"conclusion": "SKIPPED"}])),
-            "passing"
+            ChecksState::Passing
         );
         assert_eq!(
             checks_status(&json!([{"conclusion": "SUCCESS"}, {"conclusion": "FAILURE"}])),
-            "failing"
+            ChecksState::Failing
         );
         assert_eq!(
             checks_status(&json!([{"conclusion": "SUCCESS"}, {"status": "IN_PROGRESS"}])),
-            "pending"
+            ChecksState::Pending
         );
         assert_eq!(
             checks_status(&json!([{"status": "IN_PROGRESS"}, {"conclusion": "ERROR"}])),
-            "failing"
+            ChecksState::Failing
         );
-        assert_eq!(checks_status(&json!([{"state": "SUCCESS"}])), "passing");
+        assert_eq!(checks_status(&json!([{"state": "SUCCESS"}])), ChecksState::Passing);
     }
 
     #[test]
@@ -259,14 +259,14 @@ mod tests {
         assert_eq!(pr.title, "Fix the thing");
         assert_eq!(pr.branch, "feat/thing");
         assert_eq!(pr.base_branch, "release/2.0");
-        assert_eq!(pr.state, "open");
-        assert_eq!(pr.checks, "passing");
-        assert_eq!(pr.review_state, "");
+        assert_eq!(pr.state, PrState::Open);
+        assert_eq!(pr.checks, ChecksState::Passing);
+        assert_eq!(pr.review_state, ReviewState::None);
         assert_eq!(pr.url, "https://github.com/o/r/pull/42");
         assert_eq!(pr.updated_ts, 1704164645000);
 
         let review = map_pr_list(&list, "o/r", true);
-        assert_eq!(review[0].review_state, "review_requested");
+        assert_eq!(review[0].review_state, ReviewState::Requested);
     }
 
     #[test]
@@ -281,16 +281,16 @@ mod tests {
             "url": "https://github.com/o/r/pull/6",
             "updatedAt": "2024-01-02T03:04:05Z"
         }]);
-        assert_eq!(map_pr_list(&list, "o/r", false)[0].state, "merged");
+        assert_eq!(map_pr_list(&list, "o/r", false)[0].state, PrState::Merged);
     }
 
     #[test]
     fn review_decision_state_maps_each_verdict() {
-        assert_eq!(review_decision_state("APPROVED"), "approved");
-        assert_eq!(review_decision_state("CHANGES_REQUESTED"), "changes_requested");
-        assert_eq!(review_decision_state("REVIEW_REQUIRED"), "review_required");
-        assert_eq!(review_decision_state(""), "");
-        assert_eq!(review_decision_state("SOMETHING_ELSE"), "");
+        assert_eq!(review_decision_state("APPROVED"), ReviewState::Approved);
+        assert_eq!(review_decision_state("CHANGES_REQUESTED"), ReviewState::ChangesRequested);
+        assert_eq!(review_decision_state("REVIEW_REQUIRED"), ReviewState::ReviewRequired);
+        assert_eq!(review_decision_state(""), ReviewState::None);
+        assert_eq!(review_decision_state("SOMETHING_ELSE"), ReviewState::None);
     }
 
     #[test]
@@ -307,16 +307,22 @@ mod tests {
                 "updatedAt": "2024-01-02T03:04:05Z"
             }])
         };
-        assert_eq!(map_pr_list(&row("APPROVED"), "o/r", false)[0].review_state, "approved");
+        assert_eq!(
+            map_pr_list(&row("APPROVED"), "o/r", false)[0].review_state,
+            ReviewState::Approved
+        );
         assert_eq!(
             map_pr_list(&row("CHANGES_REQUESTED"), "o/r", false)[0].review_state,
-            "changes_requested"
+            ReviewState::ChangesRequested
         );
         assert_eq!(
             map_pr_list(&row("REVIEW_REQUIRED"), "o/r", false)[0].review_state,
-            "review_required"
+            ReviewState::ReviewRequired
         );
-        assert_eq!(map_pr_list(&row("APPROVED"), "o/r", true)[0].review_state, "review_requested");
+        assert_eq!(
+            map_pr_list(&row("APPROVED"), "o/r", true)[0].review_state,
+            ReviewState::Requested
+        );
     }
 
     #[test]

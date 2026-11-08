@@ -47,7 +47,7 @@ impl PullRequest {
     }
 
     pub fn is_open(&self) -> bool {
-        self.state.eq_ignore_ascii_case("open")
+        tt_store::PrState::parse(&self.state) == tt_store::PrState::Open
     }
 }
 

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use tt_store::CiRun;
+use tt_store::{CiConclusion, CiRun, CiStatus};
 
 use crate::gh;
 use crate::prs::{parse_iso_ms, str_field};
@@ -76,8 +76,8 @@ pub(crate) fn latest_per_workflow(
         let run = CiRun {
             repo: repo.to_string(),
             workflow: workflow.clone(),
-            status: str_field(item, "status").to_ascii_lowercase(),
-            conclusion: str_field(item, "conclusion").to_ascii_lowercase(),
+            status: CiStatus::parse(&str_field(item, "status")),
+            conclusion: CiConclusion::parse(&str_field(item, "conclusion")),
             created_ms: parse_iso_ms(&str_field(item, "createdAt")),
             updated_ms: parse_iso_ms(&str_field(item, "updatedAt")),
             url: str_field(item, "url"),
@@ -129,12 +129,16 @@ mod tests {
         ]);
         let runs = latest_per_workflow(&list, "o/r", "main");
         assert_eq!(runs.len(), 2);
-        assert_eq!((runs[0].workflow.as_str(), runs[0].status.as_str()), ("CI", "in_progress"));
-        assert_eq!(runs[0].conclusion, "", "an in-flight run has no conclusion yet");
+        assert_eq!((runs[0].workflow.as_str(), runs[0].status), ("CI", CiStatus::InProgress));
+        assert_eq!(
+            runs[0].conclusion,
+            CiConclusion::None,
+            "an in-flight run has no conclusion yet"
+        );
         assert_eq!(runs[0].created_ms, 1_791_010_800_000, "2026-10-03T07:00:00Z");
         assert_eq!(
-            (runs[1].workflow.as_str(), runs[1].conclusion.as_str()),
-            ("Nightly", "failure")
+            (runs[1].workflow.as_str(), runs[1].conclusion),
+            ("Nightly", CiConclusion::Failure)
         );
         assert_eq!(runs[1].repo, "o/r");
         assert_eq!(runs[1].event, "schedule");
@@ -145,7 +149,7 @@ mod tests {
         let list = json!([{ "status": "completed" }, run("CI", "2026-10-03T05:00:00Z", "completed", Some("SUCCESS"))]);
         let runs = latest_per_workflow(&list, "o/r", "main");
         assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].conclusion, "success", "GitHub casing is normalized");
+        assert_eq!(runs[0].conclusion, CiConclusion::Success, "GitHub casing is normalized");
         assert!(latest_per_workflow(&json!({ "message": "boom" }), "o/r", "main").is_empty());
     }
 

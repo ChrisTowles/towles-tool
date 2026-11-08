@@ -9,7 +9,8 @@ Modules: `schema` (DDL + migrations + `Store::open*`), `model` (the structs and
 pure helpers), `events` (calendar), `tasks` (board tasks + links + worktree
 binding), `github` (issue/PR caches, tracked-repo identities), `collect`
 (collector runs, DMs, MCP call log, the aggregate snapshot), `attention`
-(notification edge detection).
+(notification edge detection), `states` (the PR/checks/review/CI enums, parsed once at read;
+an unknown value reads as `Unknown`, inert, never an error).
 
 **`lib.rs` is ~60 lines of code and ~2,280 lines of tests.** The `Store` impl
 lives in the modules above, not there — don't go looking for it in the big file.

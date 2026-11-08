@@ -9,7 +9,9 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use tt_store::{CiRun, PrItem, QueueSnooze, TaskItem};
+use tt_store::{
+    ChecksState, CiConclusion, CiRun, CiStatus, PrItem, PrState, QueueSnooze, ReviewState, TaskItem,
+};
 
 use crate::bridge::StatePayload;
 use crate::types::{FolderData, NeedsYouReason, RepoData, SessionData};
@@ -41,7 +43,9 @@ impl WaitReason {
             Self::Review => "finished",
             Self::FixCi => "CI red",
             Self::AddressReview => "changes asked",
-            Self::Land if pr.is_some_and(|p| p.review_state == "approved") => "PR approved",
+            Self::Land if pr.is_some_and(|p| p.review_state == ReviewState::Approved) => {
+                "PR approved"
+            }
             Self::Land => "ready to land",
             Self::Cleanup => "landed",
         }
@@ -88,9 +92,9 @@ pub struct QueuePr {
     pub repo: String,
     pub number: i64,
     pub url: String,
-    pub state: String,
-    pub checks: String,
-    pub review_state: String,
+    pub state: PrState,
+    pub checks: ChecksState,
+    pub review_state: ReviewState,
 }
 
 /// One failing workflow run folded into an item.
@@ -99,7 +103,7 @@ pub struct QueuePr {
 pub struct QueueCi {
     pub workflow: String,
     pub url: String,
-    pub conclusion: String,
+    pub conclusion: CiConclusion,
     pub updated_ms: i64,
 }
 
@@ -156,7 +160,9 @@ impl QueueItem {
     pub fn landable(&self) -> bool {
         self.task_id.is_some()
             && self.pr.as_ref().is_some_and(|p| {
-                p.state == "open" && p.checks == "passing" && p.review_state == "approved"
+                p.state == PrState::Open
+                    && p.checks == ChecksState::Passing
+                    && p.review_state == ReviewState::Approved
             })
     }
 }
@@ -193,7 +199,7 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
     }
     let snoozes: HashMap<&str, &QueueSnooze> =
         inputs.snoozes.iter().map(|s| (s.key.as_str(), s)).collect();
-    let failing = failing_ci(inputs.ci_runs);
+    let lookup = Lookup::new(inputs.prs, inputs.ci_runs);
     let mut settles_at_ms: Option<i64> = None;
 
     let mut items: Vec<QueueItem> = inputs
@@ -203,15 +209,7 @@ pub fn build(inputs: QueueInputs<'_>) -> TaskQueue {
         .flat_map(|r| r.folders.iter().map(move |f| (r, f)))
         .map(|(repo, folder)| {
             let task = owners.get(folder.dir.as_str()).copied();
-            checkout_item(
-                repo,
-                folder,
-                task,
-                inputs.prs,
-                &failing,
-                inputs.now_ms,
-                &mut settles_at_ms,
-            )
+            checkout_item(repo, folder, task, &lookup, inputs.now_ms, &mut settles_at_ms)
         })
         .collect();
     let mut spent_snoozes = Vec::new();
@@ -232,21 +230,20 @@ fn checkout_item(
     repo: &RepoData,
     folder: &FolderData,
     task: Option<&TaskItem>,
-    prs: &[PrItem],
-    failing: &[&CiRun],
+    lookup: &Lookup<'_>,
     now_ms: i64,
     settles_at_ms: &mut Option<i64>,
 ) -> QueueItem {
     let mut item = base_item(task.map(|t| t.id), task.map(|t| t.rank), repo, folder);
     item.pr = match task {
-        Some(task) => task_pr(task, &item, prs),
+        Some(task) => lookup.task_pr(task, &item.repo, &item.branch),
         // A main checkout's branch is the base, which no PR heads.
-        None if folder.is_worktree => branch_pr(&item, prs),
+        None if folder.is_worktree => lookup.branch_pr(&item.repo, &item.branch),
         None => None,
     };
     // A main checkout owns no branch's CI.
     if folder.is_worktree {
-        item.ci = branch_ci(&item, failing);
+        item.ci = lookup.branch_ci(&item.repo, &item.branch);
     }
     let mut reasons = agent_reasons(folder, &mut item, now_ms, settles_at_ms);
     reasons.extend(pr_reasons(item.pr.as_ref()));
@@ -255,11 +252,14 @@ fn checkout_item(
         reasons.push((WaitReason::Cleanup, None));
     }
     settle(&mut item, reasons);
+    item.lane = derive_lane(
+        item.reason,
+        item.running_agents,
+        item.pr.as_ref().is_some_and(|p| p.state == PrState::Open) || holds_unlanded_work(folder),
+        item.session_id.is_some(),
+    );
     if item.since_ms.is_none() {
         item.since_ms = lane_since(folder, &item);
-    }
-    if matches!(item.lane, Lane::Idle | Lane::NoShell) && holds_unlanded_work(folder) {
-        item.lane = Lane::Parked;
     }
     item.said = said_for(folder, item.session_id.as_deref());
     item.title = match task {
@@ -374,20 +374,68 @@ fn session_said(s: &SessionData) -> Option<String> {
     s.purpose.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(str::to_string)
 }
 
-/// The task's linked PR, else the open PR on its branch.
-fn task_pr(task: &TaskItem, item: &QueueItem, prs: &[PrItem]) -> Option<QueuePr> {
-    let linked = task.prs.iter().rev().find_map(|link| {
-        prs.iter().find(|p| p.number == link.number && p.repo.eq_ignore_ascii_case(&link.repo))
-    });
-    linked.map(queue_pr).or_else(|| branch_pr(item, prs))
+/// The PR and CI caches keyed once per build, so each checkout is a lookup, not a scan.
+/// Repo names compare case-insensitively; the first row wins, as the caches are newest-first.
+struct Lookup<'a> {
+    open_by_branch: HashMap<(String, &'a str), &'a PrItem>,
+    by_number: HashMap<(String, i64), &'a PrItem>,
+    failing_by_branch: HashMap<(String, &'a str), Vec<&'a CiRun>>,
 }
 
-fn branch_pr(item: &QueueItem, prs: &[PrItem]) -> Option<QueuePr> {
-    prs.iter()
-        .find(|p| {
-            p.state == "open" && p.branch == item.branch && p.repo.eq_ignore_ascii_case(&item.repo)
-        })
-        .map(queue_pr)
+impl<'a> Lookup<'a> {
+    fn new(prs: &'a [PrItem], runs: &'a [CiRun]) -> Self {
+        let mut open_by_branch = HashMap::new();
+        let mut by_number = HashMap::new();
+        for p in prs {
+            let repo = p.repo.to_ascii_lowercase();
+            by_number.entry((repo.clone(), p.number)).or_insert(p);
+            if p.state == PrState::Open {
+                open_by_branch.entry((repo, p.branch.as_str())).or_insert(p);
+            }
+        }
+        let mut failing_by_branch: HashMap<_, Vec<&CiRun>> = HashMap::new();
+        for r in
+            runs.iter().filter(|r| r.status == CiStatus::Completed && r.conclusion.is_failure())
+        {
+            failing_by_branch
+                .entry((r.repo.to_ascii_lowercase(), r.branch.as_str()))
+                .or_default()
+                .push(r);
+        }
+        Self { open_by_branch, by_number, failing_by_branch }
+    }
+
+    /// The task's linked PR, else the open PR on its branch.
+    fn task_pr(&self, task: &TaskItem, repo: &str, branch: &str) -> Option<QueuePr> {
+        let linked = task.prs.iter().rev().find_map(|link| {
+            self.by_number.get(&(link.repo.to_ascii_lowercase(), link.number)).copied()
+        });
+        linked.map(queue_pr).or_else(|| self.branch_pr(repo, branch))
+    }
+
+    fn branch_pr(&self, repo: &str, branch: &str) -> Option<QueuePr> {
+        let key = (repo.to_ascii_lowercase(), branch);
+        self.open_by_branch.get(&key).copied().map(queue_pr)
+    }
+
+    /// The failing runs on the item's own branch of its repo.
+    fn branch_ci(&self, repo: &str, branch: &str) -> Vec<QueueCi> {
+        if branch.is_empty() {
+            return Vec::new();
+        }
+        let key = (repo.to_ascii_lowercase(), branch);
+        self.failing_by_branch
+            .get(&key)
+            .into_iter()
+            .flatten()
+            .map(|r| QueueCi {
+                workflow: r.workflow.clone(),
+                url: r.url.clone(),
+                conclusion: r.conclusion,
+                updated_ms: r.updated_ms,
+            })
+            .collect()
+    }
 }
 
 fn queue_pr(p: &PrItem) -> QueuePr {
@@ -395,37 +443,10 @@ fn queue_pr(p: &PrItem) -> QueuePr {
         repo: p.repo.clone(),
         number: p.number,
         url: p.url.clone(),
-        state: p.state.clone(),
-        checks: p.checks.clone(),
-        review_state: p.review_state.clone(),
+        state: p.state,
+        checks: p.checks,
+        review_state: p.review_state,
     }
-}
-
-/// A finished run that broke: the client's `ciTone` "failed".
-fn failing_ci(runs: &[CiRun]) -> Vec<&CiRun> {
-    runs.iter()
-        .filter(|r| {
-            r.status == "completed"
-                && matches!(r.conclusion.as_str(), "failure" | "timed_out" | "startup_failure")
-        })
-        .collect()
-}
-
-/// The failing runs on the item's own branch of its repo.
-fn branch_ci(item: &QueueItem, failing: &[&CiRun]) -> Vec<QueueCi> {
-    if item.branch.is_empty() {
-        return Vec::new();
-    }
-    failing
-        .iter()
-        .filter(|r| r.branch == item.branch && r.repo.eq_ignore_ascii_case(&item.repo))
-        .map(|r| QueueCi {
-            workflow: r.workflow.clone(),
-            url: r.url.clone(),
-            conclusion: r.conclusion.clone(),
-            updated_ms: r.updated_ms,
-        })
-        .collect()
 }
 
 fn ci_reasons(ci: &[QueueCi]) -> Vec<(WaitReason, Option<(i64, String)>)> {
@@ -433,18 +454,21 @@ fn ci_reasons(ci: &[QueueCi]) -> Vec<(WaitReason, Option<(i64, String)>)> {
 }
 
 fn pr_reasons(pr: Option<&QueuePr>) -> Vec<(WaitReason, Option<(i64, String)>)> {
-    let Some(pr) = pr.filter(|p| p.state == "open") else {
+    let Some(pr) = pr.filter(|p| p.state == PrState::Open) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    if pr.checks == "failing" {
+    if pr.checks == ChecksState::Failing {
         out.push((WaitReason::FixCi, None));
     }
-    if pr.review_state == "changes_requested" {
+    if pr.review_state == ReviewState::ChangesRequested {
         out.push((WaitReason::AddressReview, None));
     }
-    let green = matches!(pr.checks.as_str(), "passing" | "none");
-    if out.is_empty() && green && matches!(pr.review_state.as_str(), "approved" | "") {
+    let green = matches!(pr.checks, ChecksState::Passing | ChecksState::None);
+    if out.is_empty()
+        && green
+        && matches!(pr.review_state, ReviewState::Approved | ReviewState::None)
+    {
         out.push((WaitReason::Land, None));
     }
     out
@@ -460,40 +484,49 @@ fn holds_unlanded_work(folder: &FolderData) -> bool {
 
 /// Landed by git or by a merged PR, and nothing in the folder would be lost.
 fn holds_landed_work(folder: &FolderData, pr: Option<&QueuePr>) -> bool {
-    let landed = folder.landed.is_some() || pr.is_some_and(|p| p.state == "merged");
+    let landed = folder.landed.is_some() || pr.is_some_and(|p| p.state == PrState::Merged);
     folder.is_worktree && landed && !folder.dirty && folder.commits_unlanded == 0
 }
 
 /// Most severe reason wins; on a tie, the oldest wait — and its session is the one to open.
+/// A working agent outranks a wait it can carry on through, so that reason is dropped.
 fn settle(item: &mut QueueItem, mut reasons: Vec<(WaitReason, Option<(i64, String)>)>) {
     reasons.sort_by_key(|(r, s)| (*r, s.as_ref().map_or(i64::MAX, |s| s.0)));
     let mut seen = std::collections::HashSet::new();
     reasons.retain(|(r, _)| seen.insert(*r));
     let Some((primary, session)) = reasons.first().cloned() else {
-        item.lane = if item.running_agents > 0 {
-            Lane::Running
-        } else if item.pr.as_ref().is_some_and(|p| p.state == "open") {
-            Lane::Parked
-        } else if item.session_id.is_some() {
-            Lane::Idle
-        } else {
-            Lane::NoShell
-        };
         return;
     };
-    item.lane = Lane::OnYou;
-    item.reason = Some(primary);
-    item.why = Some(primary.phrase(item.pr.as_ref()).to_string());
-    item.also = reasons[1..].iter().map(|(r, _)| *r).collect();
     if let Some((since, id)) = session {
         item.since_ms = (since != i64::MAX).then_some(since);
         item.session_id = Some(id);
     }
     if item.running_agents > 0 && !primary.blocks_agent() && primary != WaitReason::Review {
-        item.lane = Lane::Running;
-        item.reason = None;
-        item.why = None;
-        item.also.clear();
+        return;
+    }
+    item.reason = Some(primary);
+    item.why = Some(primary.phrase(item.pr.as_ref()).to_string());
+    item.also = reasons[1..].iter().map(|(r, _)| *r).collect();
+}
+
+/// Where a settled row sits: waiting on you, working, parked on something outstanding (an open
+/// PR or work that would be lost), or at rest. Pure, so no lane is assigned and then demoted.
+fn derive_lane(
+    reason: Option<WaitReason>,
+    running_agents: u32,
+    parked: bool,
+    has_session: bool,
+) -> Lane {
+    if reason.is_some() {
+        Lane::OnYou
+    } else if running_agents > 0 {
+        Lane::Running
+    } else if parked {
+        Lane::Parked
+    } else if has_session {
+        Lane::Idle
+    } else {
+        Lane::NoShell
     }
 }
 
@@ -512,7 +545,7 @@ fn apply_snooze(
     if s.reason != reason.as_str() || s.until_ms.is_some_and(|u| u <= now_ms) {
         return None;
     }
-    if s.until_ci && item.pr.as_ref().is_none_or(|p| p.checks != "pending") {
+    if s.until_ci && item.pr.as_ref().is_none_or(|p| p.checks != ChecksState::Pending) {
         return Some(key);
     }
     item.lane = Lane::Parked;
@@ -595,15 +628,15 @@ mod tests {
         }
     }
 
-    fn pr(branch: &str, state: &str, checks: &str, review: &str) -> PrItem {
+    fn pr(branch: &str, state: PrState, checks: ChecksState, review: ReviewState) -> PrItem {
         PrItem {
             repo: "o/repo".to_string(),
             number: 7,
             title: "t".to_string(),
             branch: branch.to_string(),
-            state: state.to_string(),
-            checks: checks.to_string(),
-            review_state: review.to_string(),
+            state,
+            checks,
+            review_state: review,
             url: "u".to_string(),
             updated_ts: 0,
             dismissed_ts: 0,
@@ -611,12 +644,12 @@ mod tests {
         }
     }
 
-    fn ci(workflow: &str, branch: &str, conclusion: &str) -> CiRun {
+    fn ci(workflow: &str, branch: &str, conclusion: CiConclusion) -> CiRun {
         CiRun {
             repo: "o/repo".to_string(),
             workflow: workflow.to_string(),
-            status: "completed".to_string(),
-            conclusion: conclusion.to_string(),
+            status: CiStatus::Completed,
+            conclusion,
             created_ms: 1,
             updated_ms: 10,
             url: format!("u/{workflow}"),
@@ -706,7 +739,17 @@ mod tests {
             folder("/b", vec![]),
             folder("/c", vec![waiting("sc", 9)]),
         ]);
-        let q = run(&s, &st, &[pr("feat/b", "open", "failing", "")], 0);
+        let q = run(
+            &s,
+            &st,
+            &[pr(
+                "feat/b",
+                PrState::Open,
+                ChecksState::Failing,
+                ReviewState::None,
+            )],
+            0,
+        );
         use Lane::*;
         use WaitReason::*;
         assert_eq!(
@@ -734,7 +777,17 @@ mod tests {
             folder("/idle", vec![session("i", AgentStatus::Idle, None, 0)]),
             folder("/cold", vec![]),
         ]);
-        let q = run(&s, &st, &[pr("feat/park", "open", "pending", "")], 0);
+        let q = run(
+            &s,
+            &st,
+            &[pr(
+                "feat/park",
+                PrState::Open,
+                ChecksState::Pending,
+                ReviewState::None,
+            )],
+            0,
+        );
         use Lane::*;
         assert_eq!(
             summary(&q),
@@ -776,11 +829,11 @@ mod tests {
             folder("/rev", vec![]),
             folder("/busy", vec![session("s", AgentStatus::Busy, None, 0)]),
         ]);
-        let mut busy = pr("feat/busy", "open", "failing", "");
+        let mut busy = pr("feat/busy", PrState::Open, ChecksState::Failing, ReviewState::None);
         busy.number = 9;
         let prs = [
-            pr("feat/land", "open", "passing", "approved"),
-            pr("feat/rev", "open", "passing", "changes_requested"),
+            pr("feat/land", PrState::Open, ChecksState::Passing, ReviewState::Approved),
+            pr("feat/rev", PrState::Open, ChecksState::Passing, ReviewState::ChangesRequested),
             busy,
         ];
         let q = run(&s, &st, &prs, 0);
@@ -806,7 +859,17 @@ mod tests {
                 session("s2", AgentStatus::Error, Some(NeedsYouReason::Errored), 2),
             ],
         )]);
-        let q = run(&s, &st, &[pr("feat/a", "open", "failing", "")], 0);
+        let q = run(
+            &s,
+            &st,
+            &[pr(
+                "feat/a",
+                PrState::Open,
+                ChecksState::Failing,
+                ReviewState::None,
+            )],
+            0,
+        );
         let item = &q.items[0];
         assert_eq!(item.reason, Some(WaitReason::Unblock));
         assert_eq!(item.also, [WaitReason::Review, WaitReason::FixCi]);
@@ -896,12 +959,22 @@ mod tests {
         let st = state(vec![folder("/x", vec![waiting("s", 5)])]);
         let until = tt_store::SnoozeUntil { reason: "answer", until_ms: None, until_ci: true };
         s.snooze_queue_item(&snooze_key("/x"), until, 0).unwrap();
-        let pending = [pr("feat/x", "open", "pending", "")];
+        let pending = [pr(
+            "feat/x",
+            PrState::Open,
+            ChecksState::Pending,
+            ReviewState::None,
+        )];
         let q = run(&s, &st, &pending, 10_000);
         assert!(item(&q, "/x").snoozed_until_ci);
         assert_eq!(item(&q, "/x").lane, Lane::Parked);
         assert!(q.spent_snoozes.is_empty());
-        let done = [pr("feat/x", "open", "passing", "")];
+        let done = [pr(
+            "feat/x",
+            PrState::Open,
+            ChecksState::Passing,
+            ReviewState::None,
+        )];
         let q = run(&s, &st, &done, 10_000);
         assert_eq!(item(&q, "/x").lane, Lane::OnYou);
         assert_eq!(q.spent_snoozes, [snooze_key("/x")]);
@@ -915,9 +988,12 @@ mod tests {
             folder("/ok", vec![]),
             folder("/green", vec![]),
         ]);
-        let mut green = pr("feat/green", "open", "passing", "");
+        let mut green = pr("feat/green", PrState::Open, ChecksState::Passing, ReviewState::None);
         green.number = 9;
-        let prs = [pr("feat/ok", "open", "passing", "approved"), green];
+        let prs = [
+            pr("feat/ok", PrState::Open, ChecksState::Passing, ReviewState::Approved),
+            green,
+        ];
         let q = run(&s, &st, &prs, 10_000);
         let why = |d: &str| item(&q, d).why.clone();
         assert_eq!(why("/ask").as_deref(), Some("asking"));
@@ -942,7 +1018,7 @@ mod tests {
             (Lane::Running, Some(400))
         );
         assert_eq!((item(&q, "/idle").lane, item(&q, "/idle").since_ms), (Lane::Idle, Some(700)));
-        let runs = [ci("CI", "feat/busy", "failure")];
+        let runs = [ci("CI", "feat/busy", CiConclusion::Failure)];
         let st = state(vec![folder("/busy", vec![])]);
         assert_eq!(item(&run_ci(&s, &st, &[], &runs, 0), "/busy").since_ms, Some(10));
     }
@@ -951,7 +1027,7 @@ mod tests {
     fn a_snooze_on_red_ci_ends_when_its_reason_changes() {
         let (s, _) = store(&["x"]);
         let st = state(vec![folder("/x", vec![])]);
-        let runs = [ci("CI", "feat/x", "failure")];
+        let runs = [ci("CI", "feat/x", CiConclusion::Failure)];
         let x = "/x";
         snooze(&s, x, "answer", None);
         assert_eq!(item(&run_ci(&s, &st, &[], &runs, 0), x).lane, Lane::OnYou);
@@ -977,8 +1053,8 @@ mod tests {
             root,
         ]);
         let prs = [
-            pr("feat/loose", "open", "passing", "approved"),
-            pr("main", "open", "failing", ""),
+            pr("feat/loose", PrState::Open, ChecksState::Passing, ReviewState::Approved),
+            pr("main", PrState::Open, ChecksState::Failing, ReviewState::None),
         ];
         let q = run(&s, &st, &prs, 0);
         use Lane::*;
@@ -1001,16 +1077,19 @@ mod tests {
     fn a_task_or_pr_or_run_with_no_checkout_is_not_a_row() {
         let (s, _) = store(&["x", "gone"]);
         let st = state(vec![folder("/x", vec![])]);
-        let mut red = pr("other", "open", "failing", "");
+        let mut red = pr("other", PrState::Open, ChecksState::Failing, ReviewState::None);
         red.number = 2;
-        let q = run_ci(&s, &st, &[red], &[ci("Nightly", "main", "failure")], 0);
+        let q = run_ci(&s, &st, &[red], &[ci("Nightly", "main", CiConclusion::Failure)], 0);
         assert_eq!(summary(&q), [row("x", Lane::NoShell, None)]);
     }
 
     #[test]
     fn red_ci_folds_into_its_task_only() {
         let (s, _) = store(&["a"]);
-        let runs = [ci("CI", "feat/a", "failure"), ci("CI", "feat/b", "failure")];
+        let runs = [
+            ci("CI", "feat/a", CiConclusion::Failure),
+            ci("CI", "feat/b", CiConclusion::Failure),
+        ];
         let q = run_ci(&s, &state(vec![folder("/a", vec![])]), &[], &runs, 0);
         assert_eq!(summary(&q), [row("a", Lane::OnYou, Some(WaitReason::FixCi))]);
         assert_eq!(q.items[0].ci.len(), 1, "the task carries its own branch's run");
@@ -1057,5 +1136,34 @@ mod tests {
         assert_eq!(serde_json::to_value(WaitReason::FixCi).unwrap(), serde_json::json!("fix_ci"));
         assert_eq!(serde_json::to_value(Lane::Idle).unwrap(), serde_json::json!("idle"));
         assert_eq!(serde_json::to_value(Lane::NoShell).unwrap(), serde_json::json!("no_shell"));
+    }
+
+    fn pr_item(branch: &str, state: PrState) -> PrItem {
+        pr(branch, state, ChecksState::None, ReviewState::None)
+    }
+
+    #[test]
+    fn derive_lane_orders_waiting_over_working_over_parked_over_rest() {
+        let wait = Some(WaitReason::Land);
+        assert_eq!(derive_lane(wait, 0, true, true), Lane::OnYou);
+        assert_eq!(derive_lane(None, 2, true, true), Lane::Running);
+        assert_eq!(derive_lane(None, 0, true, true), Lane::Parked);
+        assert_eq!(derive_lane(None, 0, false, true), Lane::Idle);
+        assert_eq!(derive_lane(None, 0, false, false), Lane::NoShell);
+    }
+
+    #[test]
+    fn lookup_matches_repo_case_insensitively_and_prefers_the_first_open_pr() {
+        let mut newer = pr_item("feat/x", PrState::Open);
+        newer.number = 8;
+        newer.repo = "O/Repo".to_string();
+        let mut older = pr_item("feat/x", PrState::Open);
+        older.number = 3;
+        let mut merged = pr_item("feat/y", PrState::Merged);
+        merged.number = 4;
+        let prs = [newer, older, merged];
+        let lookup = Lookup::new(&prs, &[]);
+        assert_eq!(lookup.branch_pr("o/repo", "feat/x").map(|p| p.number), Some(8));
+        assert_eq!(lookup.branch_pr("o/repo", "feat/y"), None, "a merged PR heads no live branch");
     }
 }

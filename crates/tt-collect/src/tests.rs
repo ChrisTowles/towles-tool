@@ -202,7 +202,7 @@ fn rollup_moves_task_to_done_when_all_links_resolve() {
     assert_eq!(store.get_task(task.id).unwrap().unwrap().status, "backlog");
 
     // PR merges too (its targeted fetch writes the row) → all resolved → done.
-    store.upsert_prs(&[pr("o/r", 10, "merged")]).unwrap();
+    store.upsert_prs(&[pr("o/r", 10, tt_store::PrState::Merged)]).unwrap();
     store.refresh_link_states_from_cache(4).unwrap();
     assert_eq!(rollup_task_statuses(&store, 4).unwrap(), 1);
     assert_eq!(store.get_task(task.id).unwrap().unwrap().status, "done");
@@ -221,7 +221,7 @@ fn rollup_never_overturns_an_explicit_outcome() {
     let store = Store::open_in_memory().unwrap();
     let task = store.add_task("closed", "doing", None, None, 1).unwrap();
     store.attach_task_pr(task.id, "o/r", 10, "u").unwrap();
-    store.upsert_prs(&[pr("o/r", 10, "merged")]).unwrap();
+    store.upsert_prs(&[pr("o/r", 10, tt_store::PrState::Merged)]).unwrap();
     store.refresh_link_states_from_cache(2).unwrap();
     store.close_task(task.id, TaskOutcome::Abandoned, 3).unwrap();
 
@@ -449,15 +449,15 @@ fn issue_write(
     }
 }
 
-fn pr(repo: &str, number: i64, state: &str) -> tt_store::PrInput {
+fn pr(repo: &str, number: i64, state: tt_store::PrState) -> tt_store::PrInput {
     tt_store::PrInput {
         repo: repo.to_string(),
         number,
         title: format!("pr {number}"),
         branch: format!("branch-{number}"),
-        state: state.to_string(),
-        checks: "none".to_string(),
-        review_state: String::new(),
+        state,
+        checks: tt_store::ChecksState::None,
+        review_state: tt_store::ReviewState::None,
         url: format!("https://github.com/{repo}/pull/{number}"),
         updated_ts: 1,
         base_branch: "main".to_string(),
@@ -496,10 +496,18 @@ fn write_repo_issues_now_records_the_error_and_keeps_existing_rows_on_failure() 
 #[test]
 fn write_repo_prs_now_only_replaces_the_synced_repo() {
     let store = Store::open_in_memory().unwrap();
-    store.replace_prs(&[pr("o/a", 1, "open"), pr("o/b", 2, "open")]).unwrap();
+    store
+        .replace_prs(&[
+            pr("o/a", 1, tt_store::PrState::Open),
+            pr("o/b", 2, tt_store::PrState::Open),
+        ])
+        .unwrap();
 
-    let summary =
-        write_repo_prs_now(&store, Ok(("o/a".to_string(), vec![pr("o/a", 9, "open")])), 5);
+    let summary = write_repo_prs_now(
+        &store,
+        Ok(("o/a".to_string(), vec![pr("o/a", 9, tt_store::PrState::Open)])),
+        5,
+    );
 
     assert!(summary.ok);
     assert_eq!(summary.count, 1);
@@ -509,12 +517,17 @@ fn write_repo_prs_now_only_replaces_the_synced_repo() {
     assert!(!prs.iter().any(|p| p.number == 1), "synced repo's stale row is gone");
 }
 
-fn ci_run(repo: &str, workflow: &str, conclusion: &str, created_ms: i64) -> tt_store::CiRun {
+fn ci_run(
+    repo: &str,
+    workflow: &str,
+    conclusion: tt_store::CiConclusion,
+    created_ms: i64,
+) -> tt_store::CiRun {
     tt_store::CiRun {
         repo: repo.to_string(),
         workflow: workflow.to_string(),
-        status: "completed".to_string(),
-        conclusion: conclusion.to_string(),
+        status: tt_store::CiStatus::Completed,
+        conclusion,
         created_ms,
         updated_ms: created_ms,
         url: String::new(),
@@ -524,7 +537,7 @@ fn ci_run(repo: &str, workflow: &str, conclusion: &str, created_ms: i64) -> tt_s
     }
 }
 
-fn ci_conclusion(store: &Store, repo: &str, workflow: &str) -> Option<String> {
+fn ci_conclusion(store: &Store, repo: &str, workflow: &str) -> Option<tt_store::CiConclusion> {
     store
         .ci_runs()
         .unwrap()
@@ -538,14 +551,17 @@ fn ci_sweep_with_a_failed_repo_keeps_its_rows_and_an_absent_workflow() {
     let store = Store::open_in_memory().unwrap();
     store
         .upsert_ci_runs(&[
-            ci_run("o/a", "CI", "failure", 1),
-            ci_run("o/a", "Nightly", "failure", 1),
-            ci_run("o/b", "CI", "success", 1),
+            ci_run("o/a", "CI", tt_store::CiConclusion::Failure, 1),
+            ci_run("o/a", "Nightly", tt_store::CiConclusion::Failure, 1),
+            ci_run("o/b", "CI", tt_store::CiConclusion::Success, 1),
         ])
         .unwrap();
 
     let sweep = Sweep {
-        successes: vec![("o/a".to_string(), vec![ci_run("o/a", "CI", "success", 2)])],
+        successes: vec![(
+            "o/a".to_string(),
+            vec![ci_run("o/a", "CI", tt_store::CiConclusion::Success, 2)],
+        )],
         errors: vec!["o/b: gh exploded".to_string()],
         skipped: vec![],
     };
@@ -553,15 +569,15 @@ fn ci_sweep_with_a_failed_repo_keeps_its_rows_and_an_absent_workflow() {
 
     assert!(!summary.ok, "a failed repo still fails the run");
     assert_eq!(summary.count, 1);
-    assert_eq!(ci_conclusion(&store, "o/a", "CI").as_deref(), Some("success"));
+    assert_eq!(ci_conclusion(&store, "o/a", "CI"), Some(tt_store::CiConclusion::Success));
     assert_eq!(
-        ci_conclusion(&store, "o/a", "Nightly").as_deref(),
-        Some("failure"),
+        ci_conclusion(&store, "o/a", "Nightly"),
+        Some(tt_store::CiConclusion::Failure),
         "a workflow outside this page keeps its last known run"
     );
     assert_eq!(
-        ci_conclusion(&store, "o/b", "CI").as_deref(),
-        Some("success"),
+        ci_conclusion(&store, "o/b", "CI"),
+        Some(tt_store::CiConclusion::Success),
         "the failed repo's rows are intact"
     );
 }
@@ -571,15 +587,15 @@ fn clean_ci_sweep_prunes_only_repos_no_longer_tracked() {
     let store = Store::open_in_memory().unwrap();
     store
         .upsert_ci_runs(&[
-            ci_run("o/a", "Nightly", "failure", 1),
-            ci_run("o/gone", "CI", "success", 1),
+            ci_run("o/a", "Nightly", tt_store::CiConclusion::Failure, 1),
+            ci_run("o/gone", "CI", tt_store::CiConclusion::Success, 1),
         ])
         .unwrap();
 
     let sweep = Sweep {
         successes: vec![
             ("o/a".to_string(), vec![]),
-            ("o/b".to_string(), vec![ci_run("o/b", "CI", "success", 2)]),
+            ("o/b".to_string(), vec![ci_run("o/b", "CI", tt_store::CiConclusion::Success, 2)]),
         ],
         errors: vec![],
         skipped: vec![],
@@ -606,14 +622,17 @@ fn ci_sweep_ages_out_a_workflow_gone_from_a_fetched_repo() {
     let old = now - CI_ABSENT_KEEP_MS - 1;
     store
         .upsert_ci_runs(&[
-            ci_run("o/a", "Deleted", "failure", old),
-            ci_run("o/a", "Weekly", "failure", now - 1),
-            ci_run("o/b", "Gone", "failure", old),
+            ci_run("o/a", "Deleted", tt_store::CiConclusion::Failure, old),
+            ci_run("o/a", "Weekly", tt_store::CiConclusion::Failure, now - 1),
+            ci_run("o/b", "Gone", tt_store::CiConclusion::Failure, old),
         ])
         .unwrap();
 
     let sweep = Sweep {
-        successes: vec![("o/a".to_string(), vec![ci_run("o/a", "CI", "success", now)])],
+        successes: vec![(
+            "o/a".to_string(),
+            vec![ci_run("o/a", "CI", tt_store::CiConclusion::Success, now)],
+        )],
         errors: vec!["o/b: gh exploded".to_string()],
         skipped: vec![],
     };
@@ -635,9 +654,12 @@ fn ci_sweep_ages_out_a_workflow_gone_from_a_fetched_repo() {
 #[test]
 fn a_nudge_scoped_ci_sweep_leaves_other_repos_runs() {
     let store = Store::open_in_memory().unwrap();
-    store.upsert_ci_runs(&[ci_run("o/b", "CI", "failure", 1)]).unwrap();
+    store.upsert_ci_runs(&[ci_run("o/b", "CI", tt_store::CiConclusion::Failure, 1)]).unwrap();
     let sweep = Sweep {
-        successes: vec![("o/a".to_string(), vec![ci_run("o/a", "CI", "success", 5)])],
+        successes: vec![(
+            "o/a".to_string(),
+            vec![ci_run("o/a", "CI", tt_store::CiConclusion::Success, 5)],
+        )],
         errors: vec![],
         skipped: vec![],
     };
@@ -663,7 +685,7 @@ fn a_nudge_narrows_the_sweep_to_its_repo_and_forces_a_per_repo_write() {
 #[test]
 fn ci_sweep_with_no_tracked_repos_clears_the_rows() {
     let store = Store::open_in_memory().unwrap();
-    store.upsert_ci_runs(&[ci_run("o/a", "CI", "failure", 1)]).unwrap();
+    store.upsert_ci_runs(&[ci_run("o/a", "CI", tt_store::CiConclusion::Failure, 1)]).unwrap();
 
     let empty = Sweep { successes: vec![], errors: vec![], skipped: vec![] };
     let summary = finish_ci_sweep(&store, empty, false, 5);
@@ -676,7 +698,7 @@ fn ci_sweep_with_no_tracked_repos_clears_the_rows() {
 #[test]
 fn ci_sweep_where_every_fetch_failed_keeps_the_rows() {
     let store = Store::open_in_memory().unwrap();
-    store.upsert_ci_runs(&[ci_run("o/a", "CI", "failure", 1)]).unwrap();
+    store.upsert_ci_runs(&[ci_run("o/a", "CI", tt_store::CiConclusion::Failure, 1)]).unwrap();
 
     let failed =
         Sweep { successes: vec![], errors: vec!["o/a: rate limited".to_string()], skipped: vec![] };
@@ -690,7 +712,7 @@ fn ci_sweep_where_every_fetch_failed_keeps_the_rows() {
 fn collect_repo_now_records_a_failure_for_a_missing_dir_without_touching_other_rows() {
     let store = Store::open_in_memory().unwrap();
     store.replace_issues(&[issue("o/a", 1)]).unwrap();
-    store.replace_prs(&[pr("o/a", 1, "open")]).unwrap();
+    store.replace_prs(&[pr("o/a", 1, tt_store::PrState::Open)]).unwrap();
 
     let root = tempfile::tempdir().unwrap();
     let missing = root.path().join("gone");
