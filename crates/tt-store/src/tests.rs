@@ -1870,7 +1870,7 @@ fn dm_dismissal_holds_across_store_instances_sharing_the_ledger() {
 }
 
 #[test]
-fn dm_dismissal_ledger_never_lowers_and_survives_corruption() {
+fn dm_dismissal_ledger_never_lowers_and_reads_corruption_as_empty_but_never_overwrites_it() {
     let dir = tempfile::tempdir().unwrap();
     let s = Store::open(&dir.path().join("tt.db")).unwrap();
     s.upsert_dm(&dm_msg(200, false), 1).unwrap();
@@ -1880,11 +1880,12 @@ fn dm_dismissal_ledger_never_lowers_and_survives_corruption() {
     s.dismiss_dm("D123", 100).unwrap();
     assert_eq!(s.dms().unwrap()[0].dismissed_ts, 200);
 
-    // A mangled ledger reads as empty and self-heals on the next write.
-    std::fs::write(dir.path().join("dm-dismissals.json"), b"{ not json").unwrap();
+    // A mangled ledger reads as empty, but a write refuses rather than replace it.
+    let ledger = dir.path().join("dm-dismissals.json");
+    std::fs::write(&ledger, b"{ not json").unwrap();
     assert_eq!(s.dms().unwrap()[0].dismissed_ts, 0);
-    s.dismiss_dm("D123", 200).unwrap();
-    assert_eq!(s.dms().unwrap()[0].dismissed_ts, 200);
+    assert!(s.dismiss_dm("D123", 200).is_err());
+    assert_eq!(std::fs::read(&ledger).unwrap(), b"{ not json");
 }
 
 #[test]

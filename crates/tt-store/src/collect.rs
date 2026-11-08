@@ -10,24 +10,30 @@ use crate::model::*;
 use crate::{Error, Result, Store};
 
 /// The shared handled-DM ledger: `channel` → highest message ts marked handled.
-/// Missing or unreadable reads as empty; the next dismissal rewrites it whole.
+/// Missing or unreadable reads as empty for display; writes use [`load_ledger`].
 fn read_dm_dismissals(path: &Path) -> HashMap<String, i64> {
     std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
-/// Merge one dismissal into the ledger (keeping the max, so an out-of-order
-/// write can never lower it) and swap the file in atomically — concurrent
-/// instances each replace the whole file, never interleave bytes.
-fn record_dm_dismissal(path: &Path, channel: &str, ts: i64) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+/// The ledger for a read-modify-write: missing is empty, but an unparseable
+/// file is an error, so a write never replaces what it could not read.
+fn load_ledger(path: &Path) -> Result<HashMap<String, i64>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(HashMap::new()),
+        Err(e) => Err(e.into()),
     }
-    let mut ledger = read_dm_dismissals(path);
+}
+
+/// Merge one dismissal into the ledger (keeping the max, so an out-of-order
+/// write can never lower it). The cycle runs under a file lock and the swap is
+/// atomic, so concurrent instances neither lose each other's entries nor tear it.
+fn record_dm_dismissal(path: &Path, channel: &str, ts: i64) -> Result<()> {
+    let _guard = tt_config::lock(path)?;
+    let mut ledger = load_ledger(path)?;
     let entry = ledger.entry(channel.to_string()).or_insert(0);
     *entry = (*entry).max(ts);
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec(&ledger)?)?;
-    std::fs::rename(&tmp, path)?;
+    tt_config::write_atomic(path, &serde_json::to_vec(&ledger)?)?;
     Ok(())
 }
 

@@ -78,14 +78,67 @@ fn saves_are_owner_only() {
 }
 
 #[test]
-fn load_from_missing_creates_defaults() {
+fn load_from_missing_returns_defaults_without_writing() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("nested").join("towles-tool.settings.json");
 
-    assert!(!path.exists());
-    let loaded = load_from(&path).unwrap();
-    assert!(path.exists());
-    assert_eq!(loaded, UserSettings::default());
+    assert_eq!(load_from(&path).unwrap(), UserSettings::default());
+    assert!(!path.exists(), "load must never write");
+}
+
+#[test]
+fn ensure_default_seeds_once_and_keeps_an_existing_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("nested").join("towles-tool.settings.json");
+
+    ensure_default_at(&path).unwrap();
+    assert_eq!(load_from(&path).unwrap(), UserSettings::default());
+
+    std::fs::write(&path, r#"{"preferredEditor":"vim"}"#).unwrap();
+    ensure_default_at(&path).unwrap();
+    assert_eq!(load_from(&path).unwrap().preferred_editor, "vim");
+}
+
+#[test]
+fn save_merge_refuses_an_unparseable_file_and_leaves_it_alone() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("s.json");
+    std::fs::write(&path, r#"{"collectors":{"slack":{"token":"xoxp-"#).unwrap();
+
+    assert!(matches!(save_merge_to(&path, &UserSettings::default()), Err(Error::Json(_))));
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        r#"{"collectors":{"slack":{"token":"xoxp-"#
+    );
+}
+
+#[test]
+fn concurrent_save_merges_never_tear_the_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("s.json");
+    save_merge_to(&path, &UserSettings::default()).unwrap();
+
+    let handles: Vec<_> = (0..8)
+        .map(|i| {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                for n in 0..20 {
+                    let settings = UserSettings {
+                        preferred_editor: format!("e{i}-{n}"),
+                        ..Default::default()
+                    };
+                    save_merge_to(&path, &settings).unwrap();
+                    load_from(&path).unwrap();
+                }
+            })
+        })
+        .collect();
+    for h in handles {
+        h.join().unwrap();
+    }
+    load_from(&path).unwrap();
+    let leftovers = std::fs::read_dir(dir.path()).unwrap().count();
+    assert_eq!(leftovers, 2, "only the file and its lock remain");
 }
 
 #[test]
