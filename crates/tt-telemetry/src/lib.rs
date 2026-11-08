@@ -128,8 +128,7 @@ fn resource(service: &str) -> Map<String, Value> {
     attrs
 }
 
-/// Read without `tt_config::load`, which writes a default settings file when
-/// there is none — not a logger's business. Unreadable means the default.
+/// Unreadable means the default.
 fn configured_retain_days() -> usize {
     tt_config::config_path()
         .ok()

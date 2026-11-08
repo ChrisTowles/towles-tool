@@ -141,6 +141,9 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            if let Err(e) = tt_config::ensure_default() {
+                tracing::warn!("could not seed the default settings file: {e}");
+            }
             // Runtime so normal builds never reference the plugins' ACL.
             #[cfg(feature = "wdio")]
             app.handle().add_capability(include_str!("../wdio-capability.json"))?;

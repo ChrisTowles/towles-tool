@@ -16,11 +16,13 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 mod app_identity;
+mod atomic;
 mod collectors;
 mod paths;
 mod telemetry_views;
 
 pub use app_identity::*;
+pub use atomic::{FileLock, lock, write_atomic};
 pub use collectors::*;
 pub use paths::*;
 pub use telemetry_views::*;
@@ -593,37 +595,33 @@ pub fn load() -> Result<UserSettings> {
     load_from(&config_path()?)
 }
 
+/// Never writes: a missing file is the defaults, so a reader cannot race a
+/// writer or clobber a half-edited file. [`ensure_default`] seeds the file.
 pub fn load_from(path: &Path) -> Result<UserSettings> {
     if !path.exists() {
-        let settings = UserSettings::default();
-        save_to(path, &settings)?;
-        return Ok(settings);
+        return Ok(UserSettings::default());
     }
     let raw = std::fs::read_to_string(path)?;
     let settings = serde_json::from_str(&raw)?;
     Ok(settings)
 }
 
-/// Drops unmodeled keys already on disk; the shared settings file uses [`save_merge_to`].
-fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+/// Write the default settings file if there is none, so there is something to edit.
+pub fn ensure_default() -> Result<()> {
+    ensure_default_at(&config_path()?)
+}
+
+fn ensure_default_at(path: &Path) -> Result<()> {
+    let _guard = lock(path)?;
+    if !path.exists() {
+        save_to(path, &UserSettings::default())?;
     }
-    let json = serde_json::to_string_pretty(settings)?;
-    write_private(path, &json)?;
     Ok(())
 }
 
-/// 0600: the settings file holds live credentials, so it must not inherit the
-/// umask. Chmod after the write, not `OpenOptions::mode`, because this also
-/// rewrites existing files, whose mode `open` wouldn't touch.
-fn write_private(path: &Path, contents: &str) -> Result<()> {
-    std::fs::write(path, contents)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    }
+/// Drops unmodeled keys already on disk; the shared settings file uses [`save_merge_to`].
+fn save_to(path: &Path, settings: &UserSettings) -> Result<()> {
+    write_atomic(path, serde_json::to_string_pretty(settings)?.as_bytes())?;
     Ok(())
 }
 
@@ -634,17 +632,16 @@ pub fn save_merge(settings: &UserSettings) -> Result<()> {
 /// **Preserves keys this model doesn't capture** (the TS CLI's); known fields
 /// win. Every write to the shared file — [`save_to`] would drop the other's.
 fn save_merge_to(path: &Path, settings: &UserSettings) -> Result<()> {
+    let _guard = lock(path)?;
+    // An unparseable file is an error, never `{}`: rewriting it would wipe the
+    // tokens in it, and a half-written file is just what a racing writer leaves.
     let mut base = if path.exists() {
-        serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(path)?)
-            .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()))
+        serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(path)?)?
     } else {
         serde_json::Value::Object(serde_json::Map::new())
     };
     merge_json(&mut base, &serde_json::to_value(settings)?);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    write_private(path, &serde_json::to_string_pretty(&base)?)?;
+    write_atomic(path, serde_json::to_string_pretty(&base)?.as_bytes())?;
     Ok(())
 }
 
