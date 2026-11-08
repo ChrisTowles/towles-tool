@@ -519,9 +519,8 @@ pub fn ab_discover_repos(state: State<Ab>) -> Vec<RepoCandidate> {
         let mut engine = state.engine.lock().unwrap();
         (engine.repo_dirs(), engine.scan_roots())
     };
-    let home = dirs::home_dir();
     let roots: Vec<std::path::PathBuf> = if configured.is_empty() {
-        home.iter().map(|h| h.join("code")).collect()
+        tt_config::default_scan_roots()
     } else {
         configured.iter().map(|r| tt_config::expand_tilde(r)).collect()
     };

@@ -619,37 +619,26 @@ fn unchanged_revision_reuses_the_landing_answer_and_a_moved_head_invalidates_it(
 }
 
 #[test]
-fn resolve_git_dir_fs_reads_a_plain_checkouts_dot_git_directory() {
+fn structural_facts_tell_a_linked_worktree_from_a_main_checkout_by_git_not_path() {
     let root = tempfile::TempDir::new().unwrap();
-    std::fs::create_dir_all(root.path().join(".git")).unwrap();
-    assert_eq!(
-        resolve_git_dir_fs(root.path()),
-        Some(root.path().join(".git")),
-        "a plain checkout's gitdir is just its .git directory — no spawn needed"
-    );
-}
+    let main = root.path().join("worktrees").join("repo");
+    let task = root.path().join("task");
+    std::fs::create_dir_all(&main).unwrap();
+    init_repo(&main);
+    git(&main, &["worktree", "add", "-b", "task", task.to_str().unwrap()]);
 
-#[test]
-fn resolve_git_dir_fs_follows_the_gitdir_file_for_a_real_worktree() {
-    let root = tempfile::TempDir::new().unwrap();
-    let repo = root.path().join("main");
-    let worktree = root.path().join("task");
-    std::fs::create_dir_all(&repo).unwrap();
-    init_repo(&repo);
-    git(&repo, &["worktree", "add", "-b", "task", worktree.to_str().unwrap()]);
+    let facts = |dir: &std::path::Path| {
+        let repo = tt_git::repo::open(dir).unwrap();
+        structural_facts(dir.to_str().unwrap(), &repo, None)
+    };
+    let in_main = facts(&main);
+    assert!(!in_main.is_worktree, "a main checkout under `/worktrees/` is not linked");
+    assert_eq!(std::path::Path::new(&in_main.git_dir), main.join(".git"));
 
-    let resolved = resolve_git_dir_fs(&worktree).expect("real worktree must resolve");
-    // What `rev-parse --git-dir` answers, reached with zero spawns.
-    let spawned = tt_git::testing::git(&worktree, &["rev-parse", "--git-dir"]);
-    assert_eq!(resolved, std::path::PathBuf::from(spawned));
-    assert!(resolved.to_string_lossy().contains("/worktrees/task"));
-    assert!(resolved.join("HEAD").is_file(), "the resolved gitdir must have its own HEAD");
-}
-
-#[test]
-fn resolve_git_dir_fs_is_none_for_a_non_repo_directory() {
-    let root = tempfile::TempDir::new().unwrap();
-    assert_eq!(resolve_git_dir_fs(root.path()), None);
+    let in_task = facts(&task);
+    assert!(in_task.is_worktree);
+    assert!(in_task.git_dir.contains("/worktrees/task"));
+    assert!(std::path::Path::new(&in_task.git_dir).join("HEAD").is_file());
 }
 
 #[test]

@@ -67,7 +67,7 @@ pub struct GitInfo {
     pub probe_key: String,
     #[serde(skip)]
     pub structural_key: String,
-    /// This checkout's own gitdir (see [`resolve_git_dir_fs`]) — where *this*
+    /// This checkout's own gitdir (see [`tt_git::repo::Repo::git_dir`]) — where *this*
     /// checkout's `HEAD`/`index` live. `control_watch_files` watches off it.
     #[serde(skip)]
     pub git_dir: String,
@@ -246,10 +246,8 @@ fn structural_facts(
     repo: &tt_git::repo::Repo,
     previous: Option<&GitInfo>,
 ) -> Structural {
-    let git_dir = resolve_git_dir_fs(std::path::Path::new(dir));
-    let is_worktree =
-        git_dir.as_deref().is_some_and(|g| g.to_string_lossy().contains("/worktrees/"));
-    let git_dir = git_dir.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+    let is_worktree = repo.is_linked_worktree();
+    let git_dir = repo.git_dir().to_string_lossy().into_owned();
 
     let reuse = previous.filter(|prev| !prev.common_dir.is_empty()).and_then(|prev| {
         let key = structural_fingerprint(&prev.common_dir);
@@ -303,20 +301,6 @@ fn structural_only(
         has_launch_config: crate::launch::has_launch_file(std::path::Path::new(dir)),
         ..Default::default()
     }
-}
-
-/// Resolved the way `git` itself does — `.git` is a directory for the main worktree, a
-/// file containing `gitdir: <path>` for a linked one.
-fn resolve_git_dir_fs(dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let dot_git = dir.join(".git");
-    let meta = std::fs::symlink_metadata(&dot_git).ok()?;
-    if meta.is_dir() {
-        return Some(dot_git);
-    }
-    let contents = std::fs::read_to_string(&dot_git).ok()?;
-    let raw = contents.strip_prefix("gitdir:")?.trim();
-    let path = std::path::PathBuf::from(raw);
-    Some(if path.is_absolute() { path } else { dir.join(path) })
 }
 
 /// The `.git` files whose change invalidates ahead/behind/landed and *staged* dirty

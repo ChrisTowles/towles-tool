@@ -66,6 +66,11 @@ pub(crate) fn expand_tilde_with(raw: &str, home: Option<&Path>) -> PathBuf {
     }
 }
 
+/// Where the repo scan looks when `scanRoots` is unset: `~/code`, or nothing without a home dir.
+pub fn default_scan_roots() -> Vec<PathBuf> {
+    dirs::home_dir().map(|h| h.join("code")).into_iter().collect()
+}
+
 pub(crate) fn home_dir_string() -> String {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).to_string_lossy().to_string()
 }
