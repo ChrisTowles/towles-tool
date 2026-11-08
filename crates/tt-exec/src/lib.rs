@@ -100,8 +100,9 @@ fn display_cmd(cmd: &str, args: &[&str]) -> String {
 /// Every process this crate spawns goes through here, which makes the event log
 /// a complete record of what the tool shelled out to with no per-call-site
 /// instrumentation. Only argv is recorded, never stdin or captured output:
-/// stdin carries things like PR bodies, stdout is unbounded, and argv holds no
-/// credentials — tokens travel via settings and env, not flags.
+/// stdin carries things like PR bodies and the `claude` prompt, stdout is
+/// unbounded, and argv holds no credentials — tokens travel via settings and
+/// env, not flags. [`logged_args`] masks the one flag operand that is bulky.
 fn spawn_span(
     cmd: &str,
     args: &[&str],
@@ -111,13 +112,25 @@ fn spawn_span(
     tracing::debug_span!(
         "process.spawn",
         "process.executable.name" = cmd,
-        "process.command_args" = args.join(" "),
+        "process.command_args" = logged_args(args),
         "process.working_directory" = dir.map(|d| d.display().to_string()).unwrap_or_default(),
         timeout_ms = timeout.map(|t| t.as_millis() as u64),
         exit_code = tracing::field::Empty,
         outcome = tracing::field::Empty,
         stdin_bytes = tracing::field::Empty,
     )
+}
+
+/// argv as recorded in the span: the operand of `--json-schema` is replaced,
+/// since a schema is bulky and can embed user-derived field names or enums.
+fn logged_args(args: &[&str]) -> String {
+    let mut out = Vec::with_capacity(args.len());
+    let mut mask_next = false;
+    for arg in args {
+        out.push(if std::mem::take(&mut mask_next) { "<redacted>" } else { arg });
+        mask_next = *arg == "--json-schema";
+    }
+    out.join(" ")
 }
 
 /// Close out a span for a process that ran to completion.
@@ -209,6 +222,19 @@ pub fn run_with_timeout(cmd: &str, args: &[&str], timeout: Duration) -> Result<O
     run_with_timeout_in(cmd, args, None, &[], None, timeout)
 }
 
+/// For a child whose input is user content: `stdin` is piped in rather than passed as an
+/// argument, so it never reaches the spawn span (only its byte count does) or `ps`. The
+/// environment is inherited, unlike [`run_sealed`].
+pub fn run_with_stdin(
+    cmd: &str,
+    args: &[&str],
+    dir: Option<&std::path::Path>,
+    stdin: &str,
+    timeout: Duration,
+) -> Result<Output> {
+    run_with_timeout_in(cmd, args, dir, &[], Some(Stdin { text: stdin, clear_env: false }), timeout)
+}
+
 /// For a child that must not inherit this process's environment or carry its input in
 /// argv: the env is cleared down to `keep_env` (copied from ours), and `stdin` is piped
 /// in rather than passed as an argument, so it never reaches the spawn span or `ps`.
@@ -223,12 +249,20 @@ pub fn run_sealed(
     let env: Vec<(String, String)> =
         keep_env.iter().filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v))).collect();
     let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    run_with_timeout_in(cmd, args, Some(dir), &env, Some(Sealed { stdin }), timeout)
+    run_with_timeout_in(
+        cmd,
+        args,
+        Some(dir),
+        &env,
+        Some(Stdin { text: stdin, clear_env: true }),
+        timeout,
+    )
 }
 
-/// [`run_sealed`]'s difference from the plain path: cleared env, piped stdin.
-struct Sealed<'a> {
-    stdin: &'a str,
+/// Input piped to the child, and whether its env is cleared down to the caller's list.
+struct Stdin<'a> {
+    text: &'a str,
+    clear_env: bool,
 }
 
 /// [`run_with_timeout`], but with the child's working directory set to `dir`.
@@ -258,7 +292,7 @@ fn run_with_timeout_in(
     args: &[&str],
     dir: Option<&std::path::Path>,
     env: &[(&str, &str)],
-    sealed: Option<Sealed<'_>>,
+    stdin: Option<Stdin<'_>>,
     timeout: Duration,
 ) -> Result<Output> {
     use std::io::{Read, Write};
@@ -269,8 +303,11 @@ fn run_with_timeout_in(
     let _entered = span.enter();
 
     let mut command = Command::new(cmd);
-    if sealed.is_some() {
-        command.env_clear().stdin(Stdio::piped());
+    if let Some(stdin) = &stdin {
+        if stdin.clear_env {
+            command.env_clear();
+        }
+        command.stdin(Stdio::piped());
     }
     command.args(args).envs(env.iter().copied()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if let Some(dir) = dir {
@@ -278,9 +315,9 @@ fn run_with_timeout_in(
     }
     let mut child =
         command.spawn().map_err(|source| spawn_error(&span, "spawn_failed", cmd, source))?;
-    if let Some(sealed) = sealed {
-        span.record("stdin_bytes", sealed.stdin.len());
-        let input = sealed.stdin.to_string();
+    if let Some(stdin) = stdin {
+        span.record("stdin_bytes", stdin.text.len());
+        let input = stdin.text.to_string();
         if let Some(mut pipe) = child.stdin.take() {
             // Its own thread: a large input must not block on a child that isn't reading yet.
             std::thread::spawn(move || {
@@ -347,6 +384,26 @@ mod tests {
         .unwrap();
         let home = std::env::var("HOME").unwrap();
         assert_eq!(out.stdout, format!("hello||{home}"));
+    }
+
+    #[test]
+    fn json_schema_operand_is_masked_in_the_logged_args() {
+        let logged = logged_args(&["-p", "--json-schema", "{\"secret\":1}", "--model", "m"]);
+        assert_eq!(logged, "-p --json-schema <redacted> --model m");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn with_stdin_pipes_input_and_keeps_the_env() {
+        let out = run_with_stdin(
+            "sh",
+            &["-c", "cat; printf '|%s' \"$HOME\""],
+            None,
+            "hi",
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(out.stdout, format!("hi|{}", std::env::var("HOME").unwrap()));
     }
 
     #[test]

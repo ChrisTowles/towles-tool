@@ -1,6 +1,7 @@
 //! One-shot structured-output calls to the `claude` CLI: every caller wanting a
 //! machine-readable answer goes through here, via
-//! `claude -p <prompt> --output-format json --json-schema <schema>`.
+//! `claude -p --output-format json --json-schema <schema>` with the prompt on
+//! stdin, so user content never lands in argv or the `process.spawn` span.
 //!
 //! The envelope also carries `is_error`: a credit balance, expired MCP auth or rate
 //! limit are *claude-side* failures with a message the user can act on, and must not
@@ -115,12 +116,9 @@ impl<'a> Ask<'a> {
 
     /// Deserializes the envelope's validated `structured_output` into `T`.
     pub fn run<T: DeserializeOwned>(&self) -> Result<Answered<T>> {
-        let args = claude_args(self.prompt, self.schema, self.model, self.no_mcp, self.bare);
-        let out = match self.cwd {
-            Some(dir) => crate::run_in_dir_with_timeout("claude", &args, dir, self.timeout),
-            None => crate::run_with_timeout("claude", &args, self.timeout),
-        }
-        .map_err(|e| Error::Exec(e.to_string()))?;
+        let args = claude_args(self.schema, self.model, self.no_mcp, self.bare);
+        let out = crate::run_with_stdin("claude", &args, self.cwd, self.prompt, self.timeout)
+            .map_err(|e| Error::Exec(e.to_string()))?;
         if !out.ok() {
             let stderr = out.stderr.trim();
             return Err(Error::Failed(if stderr.is_empty() {
@@ -135,22 +133,15 @@ impl<'a> Ask<'a> {
 
 /// The argv that makes the answer's shape the CLI's problem. Split out so a
 /// test can assert the flags themselves — asserting against a caller's schema
-/// constant alone would still pass with `--json-schema` dropped.
+/// constant alone would still pass with `--json-schema` dropped. It takes no
+/// prompt: `-p` with no operand reads the prompt from stdin.
 pub fn claude_args<'a>(
-    prompt: &'a str,
     schema: &'a str,
     model: Option<&'a str>,
     no_mcp: bool,
     bare: bool,
 ) -> Vec<&'a str> {
-    let mut args = vec![
-        "-p",
-        prompt,
-        "--output-format",
-        "json",
-        "--json-schema",
-        schema,
-    ];
+    let mut args = vec!["-p", "--output-format", "json", "--json-schema", schema];
     if let Some(model) = model {
         args.extend(["--model", model]);
     }
@@ -232,31 +223,78 @@ mod tests {
 
     #[test]
     fn the_call_makes_the_cli_enforce_the_schema() {
-        let args = claude_args("the prompt", "{\"type\":\"object\"}", None, false, false);
-        assert_eq!(args[0..2], ["-p", "the prompt"]);
-        assert_eq!(args[2..4], ["--output-format", "json"]);
-        assert_eq!(args[4..6], ["--json-schema", "{\"type\":\"object\"}"]);
-        assert_eq!(args.len(), 6, "no model pin or MCP opt-out unless asked for");
+        let args = claude_args("{\"type\":\"object\"}", None, false, false);
+        assert_eq!(args[0], "-p");
+        assert_eq!(args[1..3], ["--output-format", "json"]);
+        assert_eq!(args[3..5], ["--json-schema", "{\"type\":\"object\"}"]);
+        assert_eq!(args.len(), 5, "no model pin or MCP opt-out unless asked for");
+    }
+
+    #[test]
+    fn the_prompt_is_never_in_argv() {
+        // The prompt is not a parameter of `claude_args`, so it cannot reach the span; the
+        // flag that makes `-p` read stdin is the operand-less `-p`.
+        let args = claude_args("{}", None, true, true);
+        assert_eq!(args[0], "-p");
+        assert!(args[1].starts_with("--"), "-p must take no operand: {args:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_prompt_travels_on_stdin_not_in_the_recorded_args() {
+        use std::sync::{Arc, Mutex};
+        use tracing_subscriber::layer::SubscriberExt;
+
+        struct Grab(Arc<Mutex<String>>);
+        impl<S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>
+            tracing_subscriber::Layer<S> for Grab
+        {
+            fn on_new_span(
+                &self,
+                attrs: &tracing::span::Attributes<'_>,
+                _: &tracing::span::Id,
+                _: tracing_subscriber::layer::Context<'_, S>,
+            ) {
+                struct V<'a>(&'a mut String);
+                impl tracing::field::Visit for V<'_> {
+                    fn record_debug(&mut self, f: &tracing::field::Field, v: &dyn std::fmt::Debug) {
+                        self.0.push_str(&format!("{}={v:?};", f.name()));
+                    }
+                }
+                attrs.record(&mut V(&mut self.0.lock().unwrap()));
+            }
+        }
+
+        let seen = Arc::new(Mutex::new(String::new()));
+        let subscriber = tracing_subscriber::registry().with(Grab(seen.clone()));
+        let prompt = "meeting with Dana about the layoffs";
+        let out = tracing::subscriber::with_default(subscriber, || {
+            crate::run_with_stdin("cat", &[], None, prompt, Duration::from_secs(5)).unwrap()
+        });
+        assert_eq!(out.stdout, prompt);
+        let recorded = seen.lock().unwrap();
+        assert!(recorded.contains("process.command_args"), "{recorded}");
+        assert!(!recorded.contains("layoffs"), "prompt leaked into the span: {recorded}");
     }
 
     #[test]
     fn a_pinned_model_is_appended() {
-        let args = claude_args("p", "{}", Some("sonnet"), false, false);
-        assert_eq!(args[6..8], ["--model", "sonnet"]);
+        let args = claude_args("{}", Some("sonnet"), false, false);
+        assert_eq!(args[5..7], ["--model", "sonnet"]);
     }
 
     #[test]
     fn no_mcp_loads_no_servers() {
-        let args = claude_args("p", "{}", None, true, false);
-        assert_eq!(args[6], "--strict-mcp-config");
-        assert_eq!(args[7..9], ["--mcp-config", r#"{"mcpServers":{}}"#]);
+        let args = claude_args("{}", None, true, false);
+        assert_eq!(args[5], "--strict-mcp-config");
+        assert_eq!(args[6..8], ["--mcp-config", r#"{"mcpServers":{}}"#]);
     }
 
     #[test]
     fn bare_drops_tools_settings_and_the_transcript() {
-        let args = claude_args("p", "{}", None, true, true);
+        let args = claude_args("{}", None, true, true);
         assert_eq!(
-            args[9..],
+            args[8..],
             [
                 "--tools",
                 "",

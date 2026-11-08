@@ -18,7 +18,7 @@ checkout that produced it. `TT_TELEMETRY=0` disables the disk sink.
 **Every subprocess is logged**, in one of two shapes depending on its
 lifecycle. Run-to-completion spawns (`gh`, `git`, `claude` — everything
 going through `tt-exec`'s three run paths) open a `process.spawn` span
-carrying `process.executable.name`, `process.command_args`,
+carrying `process.executable.name`, `process.command_args` (argv only: never stdin, and the `--json-schema` operand is masked),
 `process.working_directory`, `duration_ms`, `exit_code`, and `outcome`
 (`ok`/`non_zero_exit`/`timed_out`/`spawn_failed`). Spawns that outlive the
 call and have no exit code to wait for — the PTY behind every terminal,
