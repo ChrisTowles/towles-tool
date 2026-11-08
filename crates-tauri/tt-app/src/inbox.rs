@@ -84,41 +84,47 @@ pub fn inbox_state(state: tauri::State<StoreState>) -> Result<InboxState, String
 /// A user gesture: the note box's Send, or the annotate dialog's. Refuses a session whose mod
 /// is not listening rather than queue a note nothing will read.
 #[tauri::command]
-pub fn inbox_send(
+pub async fn inbox_send(
     app: AppHandle,
-    state: tauri::State<StoreState>,
+    state: tauri::State<'_, StoreState>,
     session: String,
     body: String,
     images: Option<Vec<String>>,
     feedback: Option<bool>,
 ) -> Result<i64, String> {
-    let images = images.unwrap_or_default();
-    let source = if feedback == Some(true) { NoteSource::Feedback } else { NoteSource::Note };
-    let source_name = if feedback == Some(true) { "feedback" } else { "note" };
-    let body = body.trim();
-    let now = now_ms();
-    let result = if body.is_empty() && images.is_empty() {
-        Err("the note is empty".to_string())
-    } else if body.chars().count() > BODY_MAX_CHARS {
-        Err(format!("notes are capped at {BODY_MAX_CHARS} characters"))
-    } else if !listening_at(now).contains(&session) {
-        Err("this session isn't running the tt mod, so nothing would read the note".to_string())
-    } else {
-        with_store(&state, |store| {
-            store.add_note(&session, body, source, &images, now).map_err(|e| e.to_string())
+    state
+        .run_blocking(move |state| {
+            let images = images.unwrap_or_default();
+            let source =
+                if feedback == Some(true) { NoteSource::Feedback } else { NoteSource::Note };
+            let source_name = if feedback == Some(true) { "feedback" } else { "note" };
+            let body = body.trim();
+            let now = now_ms();
+            let result = if body.is_empty() && images.is_empty() {
+                Err("the note is empty".to_string())
+            } else if body.chars().count() > BODY_MAX_CHARS {
+                Err(format!("notes are capped at {BODY_MAX_CHARS} characters"))
+            } else if !listening_at(now).contains(&session) {
+                Err("this session isn't running the tt mod, so nothing would read the note"
+                    .to_string())
+            } else {
+                with_store(state, |store| {
+                    store.add_note(&session, body, source, &images, now).map_err(|e| e.to_string())
+                })
+            };
+            let outcome = if result.is_ok() { "ok" } else { "err" };
+            tracing::info!(
+                session = %session,
+                source = source_name,
+                len_chars = body.chars().count(),
+                images = images.len(),
+                outcome,
+                "inbox.note_sent"
+            );
+            if result.is_ok() {
+                let _ = app.emit(INBOX_EVENT, ());
+            }
+            result
         })
-    };
-    let outcome = if result.is_ok() { "ok" } else { "err" };
-    tracing::info!(
-        session = %session,
-        source = source_name,
-        len_chars = body.chars().count(),
-        images = images.len(),
-        outcome,
-        "inbox.note_sent"
-    );
-    if result.is_ok() {
-        let _ = app.emit(INBOX_EVENT, ());
-    }
-    result
+        .await
 }

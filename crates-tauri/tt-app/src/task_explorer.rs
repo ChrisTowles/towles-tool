@@ -8,17 +8,27 @@
 //! equivalent, so there it falls back to a parent-child tree walk from the shell pid —
 //! less exact, but never pulling in unrelated processes the way a login-session id would.
 //!
-//! The status bar polls this every 5 s on the main thread, so on Linux it reads
-//! `/proc/<pid>/stat` directly (see `procfs`) rather than through sysinfo.
+//! Linux reads `/proc/<pid>/stat` directly (see `procfs`) rather than through sysinfo, and
+//! the 5 s status-bar poll runs on a blocking worker, answered from cache within [`SAMPLE_TTL`].
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tauri::State;
 
 use crate::terminal::TermState;
 
+/// Several windows polling at once share one `/proc` sweep.
+const SAMPLE_TTL: Duration = Duration::from_millis(1500);
+
 #[derive(Default)]
-pub struct ExplorerState(Mutex<sampler::Sampler>);
+struct Explorer {
+    sampler: sampler::Sampler,
+    cached: Option<(Instant, Vec<ProcessGroup>)>,
+}
+
+#[derive(Default, Clone)]
+pub struct ExplorerState(Arc<Mutex<Explorer>>);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,30 +59,43 @@ struct Sample {
 }
 
 #[tauri::command]
-pub fn task_explorer_snapshot(
+pub async fn task_explorer_snapshot(
     explorer: State<'_, ExplorerState>,
     term_state: State<'_, TermState>,
-) -> Vec<ProcessGroup> {
-    let Ok(mut sampler) = explorer.0.lock() else {
-        return Vec::new();
-    };
+) -> Result<Vec<ProcessGroup>, String> {
+    let explorer = explorer.inner().clone();
     let shells = term_state.shell_pid_labels();
-    let shell_pids: Vec<u32> = shells.iter().map(|(_, pid, _)| *pid).collect();
-    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f32;
-    let sample = sampler.sample(std::process::id(), &shell_pids, cores);
+    crate::store::run_blocking(move || Ok(explorer.snapshot(shells))).await
+}
 
-    let mut groups = Vec::new();
-    if let Some(row) = sample.app {
-        groups.push(group(None, "tt-app".to_string(), vec![row]));
-    }
-    for ((term_id, _, label), mut rows) in shells.into_iter().zip(sample.shells) {
-        if rows.is_empty() {
-            continue;
+impl ExplorerState {
+    fn snapshot(&self, shells: Vec<(String, u32, String)>) -> Vec<ProcessGroup> {
+        let Ok(mut guard) = self.0.lock() else {
+            return Vec::new();
+        };
+        if let Some((at, groups)) = &guard.cached
+            && at.elapsed() < SAMPLE_TTL
+        {
+            return groups.clone();
         }
-        rows.sort_by_key(|r| r.pid);
-        groups.push(group(Some(term_id), label, rows));
+        let shell_pids: Vec<u32> = shells.iter().map(|(_, pid, _)| *pid).collect();
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) as f32;
+        let sample = guard.sampler.sample(std::process::id(), &shell_pids, cores);
+
+        let mut groups = Vec::new();
+        if let Some(row) = sample.app {
+            groups.push(group(None, "tt-app".to_string(), vec![row]));
+        }
+        for ((term_id, _, label), mut rows) in shells.into_iter().zip(sample.shells) {
+            if rows.is_empty() {
+                continue;
+            }
+            rows.sort_by_key(|r| r.pid);
+            groups.push(group(Some(term_id), label, rows));
+        }
+        guard.cached = Some((Instant::now(), groups.clone()));
+        groups
     }
-    groups
 }
 
 fn group(term_id: Option<String>, label: String, rows: Vec<ProcessRow>) -> ProcessGroup {

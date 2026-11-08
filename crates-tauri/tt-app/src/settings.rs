@@ -50,8 +50,14 @@ pub fn settings_default_saved_queries() -> Vec<tt_config::SavedQuery> {
 }
 
 #[tauri::command]
-pub fn settings_set(settings: UserSettings, signal: State<SettingsSignal>) -> Result<(), String> {
-    tt_config::save_merge(&settings).map_err(|e| format!("failed to save settings: {e}"))?;
+pub async fn settings_set(
+    settings: UserSettings,
+    signal: State<'_, SettingsSignal>,
+) -> Result<(), String> {
+    crate::store::run_blocking(move || {
+        tt_config::save_merge(&settings).map_err(|e| format!("failed to save settings: {e}"))
+    })
+    .await?;
     tracing::info!("settings.saved");
     signal.scheduler.notify_one();
     signal.slack_socket.notify_one();
