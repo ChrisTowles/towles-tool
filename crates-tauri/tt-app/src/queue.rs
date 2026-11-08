@@ -2,7 +2,7 @@
 //! stamped payload plus the store, broadcast only when it changed.
 
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tt_agentboard::StatePayload;
@@ -16,8 +16,11 @@ pub const AUTO_CLOSED_EVENT: &str = "task://auto-closed";
 
 #[derive(Default)]
 pub struct QueueState {
-    payload: Mutex<Option<StatePayload>>,
+    payload: Mutex<Option<Arc<StatePayload>>>,
     last: Mutex<Option<TaskQueue>>,
+    /// The settle time a timer is already waiting for, so a tick that rebuilds the
+    /// same queue doesn't stack a second timer on it.
+    pending_settle: Mutex<Option<i64>>,
     /// Tasks auto-close has tried this run — one attempt each, so a refusal never loops.
     auto_tried: Mutex<HashSet<i64>>,
 }
@@ -35,7 +38,7 @@ fn build(app: &AppHandle, payload: &StatePayload) -> Option<TaskQueue> {
 }
 
 /// Called from the emit loop with each stamped payload; emits on change.
-pub fn observe(app: &AppHandle, payload: &StatePayload) {
+pub fn observe(app: &AppHandle, payload: &Arc<StatePayload>) {
     let state = app.state::<QueueState>();
     *state.payload.lock().unwrap() = Some(payload.clone());
     publish(app, &state, payload);
@@ -60,11 +63,19 @@ fn publish(app: &AppHandle, state: &QueueState, payload: &StatePayload) {
     };
     drop_spent_snoozes(app, &queue.spent_snoozes);
     auto_close(app, state, &queue);
-    if let Some(at) = queue.settles_at_ms {
+    if let Some(at) = queue.settles_at_ms
+        && state.pending_settle.lock().unwrap().replace(at) != Some(at)
+    {
         let app = app.clone();
         let wait = u64::try_from(at - now_ms()).unwrap_or(0);
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+            let state = app.state::<QueueState>();
+            let mut pending = state.pending_settle.lock().unwrap();
+            if *pending == Some(at) {
+                *pending = None;
+            }
+            drop(pending);
             refresh(&app);
         });
     }

@@ -128,9 +128,10 @@ impl Engine {
 
     /// Replace the PR rows, re-probing each folder whose base they move: a merge
     /// into a branch other than the task's own base lands the work right here.
-    pub fn set_prs(&mut self, prs: Vec<tt_store::PrItem>) {
+    /// Returns whether the rows differ from the last set.
+    pub fn set_prs(&mut self, prs: Vec<tt_store::PrItem>) -> bool {
         if prs == self.prs {
-            return;
+            return false;
         }
         let dirs = self.git_dirs();
         let before: Vec<_> = dirs.iter().map(|d| self.effective_base(d)).collect();
@@ -140,5 +141,6 @@ impl Engine {
                 self.invalidate_git(dir, GitInvalidation::PrBase);
             }
         }
+        true
     }
 }

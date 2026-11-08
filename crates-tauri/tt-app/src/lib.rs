@@ -50,6 +50,14 @@ use tokio::sync::Notify;
 use agentboard::{Ab, Engine, STATE_EVENT, now_ms};
 use tt_agentboard::fs_notify::{MultiFileNotifier, ScopedDirNotifier};
 
+/// The scan tick, which is also the cadence a quiet PTY's status can be re-read at.
+const SCAN_INTERVAL_MS: i64 = 2_000;
+/// How long after a PTY's last output the emit loop keeps being woken every scan:
+/// the working window plus one tick to observe it closing, plus a tick of slack.
+const EMIT_SETTLE_MS: i64 = tt_agentboard::pty_status::OUTPUT_ACTIVE_MS + 2 * SCAN_INTERVAL_MS;
+/// The longest a quiet board goes without a rebuild, for state no signal reports.
+const EMIT_HEARTBEAT_MS: i64 = 10_000;
+
 /// The checkout this binary was built from, baked in from `CARGO_MANIFEST_DIR`
 /// so several tasks' windows tell apart with no runtime cwd/env plumbing.
 pub(crate) fn task_label() -> String {
@@ -283,21 +291,33 @@ pub fn run() {
                             continue;
                         }
                         let rebuild_handle = handle.clone();
-                        let Ok(payload) = tauri::async_runtime::spawn_blocking(move || {
-                            agentboard::stamped_payload(&rebuild_handle)
-                        })
-                        .await
+                        // Rebuild, digest, and the store and queue work all run
+                        // on the blocking pool: SQLite under the store mutex has
+                        // no business on a runtime worker.
+                        let Ok((payload, digest)) =
+                            tauri::async_runtime::spawn_blocking(move || {
+                                let h = rebuild_handle;
+                                let mut payload = agentboard::stamped_payload(&h);
+                                let digest = tt_agentboard::emit_gate::Digest::of(&mut payload);
+                                let payload = Arc::new(payload);
+                                // The only path that moves a Board card. Every
+                                // rebuild, not just on a changed payload: the
+                                // signal is agent liveness, which the gate's
+                                // dedup would swallow.
+                                let store_state = h.state::<store::StoreState>();
+                                if store_state
+                                    .sync_worktree_task_statuses(&payload, store::now_ms())
+                                    > 0
+                                {
+                                    store::emit_snapshot_from_app(&h);
+                                }
+                                queue::observe(&h, &payload);
+                                (payload, digest)
+                            })
+                            .await
                         else {
                             continue;
                         };
-                        // The only path that moves a Board card. Every tick, not
-                        // just on a changed payload: the signal is agent
-                        // liveness, which this loop's dedup would swallow.
-                        let store_state = handle.state::<store::StoreState>();
-                        if store_state.sync_worktree_task_statuses(&payload, store::now_ms()) > 0 {
-                            store::emit_snapshot_from_app(&handle);
-                        }
-                        queue::observe(&handle, &payload);
                         let now = store::now_ms();
                         if now - auto_archived_at >= agentboard::AUTO_ARCHIVE_EVERY_MS {
                             auto_archived_at = now;
@@ -311,7 +331,7 @@ pub fn run() {
                             }
                         }
 
-                        if gate.should_emit(&payload, store::now_ms()) {
+                        if gate.should_emit(digest, store::now_ms()) {
                             // An agent's turn ending is the only notice that a
                             // checkout's *working tree* moved — an edit it never
                             // staged touched no watched `.git` file, so without
@@ -331,7 +351,7 @@ pub fn run() {
                             }
                             let edges = needs_watch.observe(&payload);
                             agentboard::notify_needs_you(&handle, &edges);
-                            let _ = handle.emit(STATE_EVENT, &payload);
+                            let _ = handle.emit(STATE_EVENT, &*payload);
                         }
                     }
                 });
@@ -351,8 +371,10 @@ pub fn run() {
                 let git_meter = git_meter.clone();
                 let store_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    let mut interval = tokio::time::interval(Duration::from_millis(2000));
+                    let mut interval =
+                        tokio::time::interval(Duration::from_millis(SCAN_INTERVAL_MS as u64));
                     let mut git_watched: HashSet<PathBuf> = HashSet::new();
+                    let mut last_notified_ms = 0;
                     loop {
                         tokio::select! {
                             _ = interval.tick() => {}
@@ -378,8 +400,10 @@ pub fn run() {
                         })
                         .await
                         .unwrap_or_default();
+                        // What this pass moved; the emit loop is only woken for it.
+                        let mut changed = false;
                         if let Some(snapshot) = snapshot {
-                            engine.lock().unwrap().set_agent_snapshot(snapshot);
+                            changed |= engine.lock().unwrap().set_agent_snapshot(snapshot);
                         }
                         let warm_engine = engine.clone();
                         let stale = tauri::async_runtime::spawn_blocking(move || {
@@ -419,7 +443,7 @@ pub fn run() {
                             // scheduling `now`, a batch outrunning the TTL
                             // births every entry stale and recomputes forever.
                             let warmed_at = now_ms();
-                            engine.lock().unwrap().warm_git_cache(warmed, warmed_at);
+                            changed |= engine.lock().unwrap().warm_git_cache(warmed, warmed_at);
                         }
                         // Reconcile rows before pushing them, so a worktree
                         // discovered this tick is a row on this tick — as diffs,
@@ -436,6 +460,7 @@ pub fn run() {
                                     (Vec::new(), Vec::new())
                                 }
                             };
+                            changed |= !found.is_empty() || !vanished.is_empty();
                             state.reconcile_detected_worktrees(&found, &vanished, now);
                         }
                         let prs = store_state.as_ref().and_then(|s| s.prs());
@@ -443,12 +468,14 @@ pub fn run() {
                         let mut job = {
                             let mut e = engine.lock().unwrap();
                             if let Some(rows) = rows {
-                                e.set_task_worktrees(rows);
+                                changed |= e.set_task_worktrees(rows);
                             }
                             if let Some(prs) = prs {
-                                e.set_prs(prs);
+                                changed |= e.set_prs(prs);
                             }
-                            e.begin_agent_scan()
+                            let job = e.begin_agent_scan();
+                            changed |= e.take_repos_changed();
+                            job
                         };
                         // Journal reads unlocked: a first sight or rotation
                         // streams a whole journal.
@@ -458,7 +485,7 @@ pub fn run() {
                         })
                         .await;
                         if let Ok(job) = job {
-                            engine.lock().unwrap().finish_agent_scan(job);
+                            changed |= engine.lock().unwrap().finish_agent_scan(job);
                         }
                         // Narrow the accelerant to what's actually polled —
                         // a no-op unless the tracked set moved.
@@ -497,7 +524,19 @@ pub fn run() {
                                 "git.recompute_window"
                             );
                         }
-                        emit.notify_one();
+                        // Quiet ticks leave the emit loop asleep. Still rebuilt
+                        // while a PTY's output ages out of "working", which is
+                        // the clock moving a status with nothing else changed,
+                        // and on a heartbeat for what no signal covers (a
+                        // `.env` edited under a live shell).
+                        let now = now_ms();
+                        let settling = store_handle
+                            .try_state::<terminal::TermState>()
+                            .is_some_and(|t| t.output_within(now, EMIT_SETTLE_MS));
+                        if changed || settling || now - last_notified_ms >= EMIT_HEARTBEAT_MS {
+                            last_notified_ms = now;
+                            emit.notify_one();
+                        }
                     }
                 });
             }

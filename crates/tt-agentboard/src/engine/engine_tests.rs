@@ -816,3 +816,32 @@ fn auto_archive_takes_an_idle_repo_and_a_restore_buys_a_fresh_window() {
     let restored = e.compute_payload(now + hour);
     assert_eq!(restored.repos[0].folders[0].worked_at_ms, now, "the restore counts as work");
 }
+
+#[test]
+fn set_agent_snapshot_reports_change_only_on_a_real_difference() {
+    let (_tmp, mut e) = engine();
+    let snapshot = || AgentSnapshot {
+        live_threads: HashSet::from(["t1".to_string()]),
+        tt_session_by_thread: HashMap::new(),
+        unlisted: Vec::new(),
+    };
+    assert!(e.set_agent_snapshot(snapshot()));
+    assert!(!e.set_agent_snapshot(snapshot()));
+    assert!(e.set_agent_snapshot(AgentSnapshot::default()));
+}
+
+#[test]
+fn set_prs_reports_change_only_on_a_real_difference() {
+    let (_tmp, mut e) = engine();
+    assert!(!e.set_prs(Vec::new()));
+    assert!(!e.set_task_worktrees(Vec::new()));
+}
+
+#[test]
+fn repos_changed_is_taken_once() {
+    let (_tmp, mut e) = engine();
+    assert!(e.add_repo("/repo/a"));
+    e.begin_agent_scan();
+    let first = e.take_repos_changed();
+    assert!(!e.take_repos_changed(), "the flag clears when taken (first read was {first})");
+}
