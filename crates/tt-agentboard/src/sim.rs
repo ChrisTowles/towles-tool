@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use tt_store::PrItem;
+use tt_store::{ChecksState, PrItem, PrState, ReviewState};
 
 use crate::bridge::{SinceStamps, StatePayload, needs_reason, recompute_needs};
 use crate::queue::{Lane, QueueInputs, TaskQueue};
@@ -278,9 +278,9 @@ fn prs(scenario: &Scenario) -> Vec<PrItem> {
                 number: pr.number,
                 title: c.branch.clone(),
                 branch: c.branch.clone(),
-                state: pr.state.clone(),
-                checks: pr.checks.clone(),
-                review_state: pr.review_state.clone(),
+                state: PrState::parse(&pr.state),
+                checks: ChecksState::parse(&pr.checks),
+                review_state: ReviewState::parse(&pr.review_state),
                 url: format!("https://github.com/sim/{}/pull/{}", c.repo, pr.number),
                 updated_ts: 0,
                 dismissed_ts: 0,

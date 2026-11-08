@@ -171,7 +171,10 @@ pub fn rollup_task_statuses(store: &Store, now_ms: i64) -> tt_store::Result<usiz
             continue;
         }
         let resolved = task.issues.iter().all(|l| l.state == "closed")
-            && task.prs.iter().all(|l| l.state == "merged" || l.state == "closed");
+            && task
+                .prs
+                .iter()
+                .all(|l| matches!(l.state, tt_store::PrState::Merged | tt_store::PrState::Closed));
         let target = match (resolved, task.status.as_str()) {
             (true, status) if status != "done" => Some("done"),
             (false, "done") => Some("backlog"),

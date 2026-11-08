@@ -7,6 +7,8 @@ use chrono::{DateTime, FixedOffset};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::{ChecksState, CiConclusion, CiStatus, PrState, ReviewState};
+
 /// UTC, fixed width, matching the generated columns' `strftime` shape exactly: they compare
 /// under SQLite's `BINARY` collation, so a mismatch silently returns wrong rows (tested).
 pub(crate) const UTC_KEY_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.3fZ";
@@ -261,7 +263,7 @@ pub struct TaskItem {
 impl TaskItem {
     /// Strictly `merged`, never `closed`: an unmerged-closed PR is evidence of abandonment.
     pub fn inferred_outcome(&self) -> TaskOutcome {
-        if self.status == "done" || self.prs.iter().any(|pr| pr.state == "merged") {
+        if self.status == "done" || self.prs.iter().any(|pr| pr.state == PrState::Merged) {
             TaskOutcome::Done
         } else {
             TaskOutcome::Abandoned
@@ -333,8 +335,8 @@ pub struct TaskPrLink {
     pub repo: String,
     pub number: i64,
     pub url: String,
-    pub state: String,
-    pub checks: String,
+    pub state: PrState,
+    pub checks: ChecksState,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -360,9 +362,9 @@ pub struct PrItem {
     pub number: i64,
     pub title: String,
     pub branch: String,
-    pub state: String,
-    pub checks: String,
-    pub review_state: String,
+    pub state: PrState,
+    pub checks: ChecksState,
+    pub review_state: ReviewState,
     pub url: String,
     pub updated_ts: i64,
     pub dismissed_ts: i64,
@@ -442,8 +444,8 @@ pub struct Snapshot {
 pub struct CiRun {
     pub repo: String,
     pub workflow: String,
-    pub status: String,
-    pub conclusion: String,
+    pub status: CiStatus,
+    pub conclusion: CiConclusion,
     pub created_ms: i64,
     pub updated_ms: i64,
     pub url: String,
@@ -535,9 +537,9 @@ pub struct PrInput {
     pub number: i64,
     pub title: String,
     pub branch: String,
-    pub state: String,
-    pub checks: String,
-    pub review_state: String,
+    pub state: PrState,
+    pub checks: ChecksState,
+    pub review_state: ReviewState,
     pub url: String,
     pub updated_ts: i64,
     pub base_branch: String,

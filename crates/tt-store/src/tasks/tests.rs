@@ -1,4 +1,5 @@
 use super::*;
+use crate::{ChecksState, PrState, ReviewState};
 
 fn store() -> Store {
     Store::open_in_memory().unwrap()
@@ -14,15 +15,15 @@ fn bound(s: &Store, text: &str, created_ms: i64, branch: &str, dir: &str) -> i64
     id
 }
 
-fn pr_input(number: i64, branch: &str, state: &str) -> PrInput {
+fn pr_input(number: i64, branch: &str, state: PrState) -> PrInput {
     PrInput {
         repo: "o/x".to_string(),
         number,
         title: "t".to_string(),
         branch: branch.to_string(),
-        state: state.to_string(),
-        checks: "passing".to_string(),
-        review_state: String::new(),
+        state,
+        checks: ChecksState::Passing,
+        review_state: ReviewState::None,
         url: format!("https://github.com/o/x/pull/{number}"),
         updated_ts: 1,
         base_branch: String::new(),
@@ -157,15 +158,15 @@ fn link_states_copy_from_the_collector_snapshot_and_skip_absent_refs() {
         updated_ts: 1,
     }])
     .unwrap();
-    s.upsert_prs(&[pr_input(3, "feat/z", "merged")]).unwrap();
+    s.upsert_prs(&[pr_input(3, "feat/z", PrState::Merged)]).unwrap();
 
     assert_eq!(s.refresh_link_states_from_cache(77).unwrap(), 2);
 
     let got = s.task_by_id(id).unwrap();
     assert_eq!(got.issues[0].state, "closed");
     assert_ne!(got.issues[1].state, "closed", "ref 2 is not in the snapshot");
-    assert_eq!((got.prs[0].state.as_str(), got.prs[0].checks.as_str()), ("merged", "passing"));
-    assert_ne!(got.prs[1].state, "merged");
+    assert_eq!((got.prs[0].state, got.prs[0].checks), (PrState::Merged, ChecksState::Passing));
+    assert_ne!(got.prs[1].state, PrState::Merged);
 }
 
 #[test]
@@ -181,7 +182,7 @@ fn refs_missing_from_the_snapshot_are_listed_in_order() {
     assert_eq!(s.open_issue_refs_missing_from_cache().unwrap(), [("o/x".to_string(), 1)]);
     assert_eq!(s.pr_refs_missing_from_cache().unwrap(), [("o/x".to_string(), 9)]);
 
-    s.upsert_prs(&[pr_input(9, "feat/z", "open")]).unwrap();
+    s.upsert_prs(&[pr_input(9, "feat/z", PrState::Open)]).unwrap();
     assert!(s.pr_refs_missing_from_cache().unwrap().is_empty());
 }
 
@@ -223,8 +224,8 @@ fn auto_attach_is_idempotent_and_matches_repo_and_branch_together() {
     let s = store();
     let id = bound(&s, "t", 1, "feat/a", "/w/a");
     s.upsert_prs(&[
-        pr_input(1, "feat/a", "open"),
-        pr_input(2, "feat/other", "open"),
+        pr_input(1, "feat/a", PrState::Open),
+        pr_input(2, "feat/other", PrState::Open),
     ])
     .unwrap();
 

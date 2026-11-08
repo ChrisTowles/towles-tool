@@ -7,17 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{CalEvent, CollectRun, PrItem};
-
-/// The `review_state` the PRs collector writes for your requested review.
-const REVIEW_REQUESTED: &str = "review_requested";
-
-/// The `checks` value written when at least one CI check has a failing conclusion.
-const CHECKS_FAILING: &str = "failing";
-
-/// The only `state` either PR watch acts on: the cache also carries merged and
-/// closed rows, whose last red run is history rather than something to fix.
-const STATE_OPEN: &str = "open";
+use crate::{CalEvent, ChecksState, CollectRun, PrItem, PrState, ReviewState};
 
 /// The next meeting just started — its countdown reached zero.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,7 +94,7 @@ impl ReviewRequestedWatch {
         let mut current = HashSet::with_capacity(self.prev.len());
 
         for pr in prs {
-            if pr.state != STATE_OPEN || pr.review_state != REVIEW_REQUESTED {
+            if pr.state != PrState::Open || pr.review_state != ReviewState::Requested {
                 continue;
             }
             let key = format!("{}#{}", pr.repo, pr.number);
@@ -155,10 +145,11 @@ impl ChecksFailedWatch {
         let mut current = HashSet::with_capacity(self.prev.len());
 
         for pr in prs {
-            // Only your authored PRs: a review-requested row isn't your CI to fix.
-            if pr.state != STATE_OPEN
-                || pr.review_state == REVIEW_REQUESTED
-                || pr.checks != CHECKS_FAILING
+            // Only your authored, open PRs: a review-requested row isn't your CI to fix, and a
+            // merged or closed row's last red run is history.
+            if pr.state != PrState::Open
+                || pr.review_state == ReviewState::Requested
+                || pr.checks != ChecksState::Failing
             {
                 continue;
             }
@@ -310,15 +301,15 @@ mod tests {
         }
     }
 
-    fn pr(repo: &str, number: i64, review_state: &str) -> PrItem {
+    fn pr(repo: &str, number: i64, review_state: ReviewState) -> PrItem {
         PrItem {
             repo: repo.to_string(),
             number,
             title: format!("PR {number}"),
             branch: "feat/x".to_string(),
-            state: "open".to_string(),
-            checks: "passing".to_string(),
-            review_state: review_state.to_string(),
+            state: PrState::Open,
+            checks: ChecksState::Passing,
+            review_state,
             url: format!("https://github.com/{repo}/pull/{number}"),
             updated_ts: 0,
             dismissed_ts: 0,
@@ -386,7 +377,7 @@ mod tests {
     #[test]
     fn review_first_observation_primes_without_firing() {
         let mut w = ReviewRequestedWatch::new();
-        let prs = vec![pr("me/repo", 1, REVIEW_REQUESTED)];
+        let prs = vec![pr("me/repo", 1, ReviewState::Requested)];
         // Already requested at launch: a level, not a flip.
         assert!(w.observe(&prs).is_empty());
         assert!(w.observe(&prs).is_empty());
@@ -395,23 +386,23 @@ mod tests {
     #[test]
     fn review_flip_into_requested_fires_once() {
         let mut w = ReviewRequestedWatch::new();
-        w.observe(&[pr("me/repo", 1, "approved")]);
+        w.observe(&[pr("me/repo", 1, ReviewState::Approved)]);
 
-        let edges = w.observe(&[pr("me/repo", 1, REVIEW_REQUESTED)]);
+        let edges = w.observe(&[pr("me/repo", 1, ReviewState::Requested)]);
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].repo, "me/repo");
         assert_eq!(edges[0].number, 1);
 
-        assert!(w.observe(&[pr("me/repo", 1, REVIEW_REQUESTED)]).is_empty());
+        assert!(w.observe(&[pr("me/repo", 1, ReviewState::Requested)]).is_empty());
     }
 
     #[test]
     fn review_refires_after_leaving_and_reentering() {
         let mut w = ReviewRequestedWatch::new();
-        w.observe(&[pr("me/repo", 1, "approved")]);
-        assert_eq!(w.observe(&[pr("me/repo", 1, REVIEW_REQUESTED)]).len(), 1);
-        assert!(w.observe(&[pr("me/repo", 1, "approved")]).is_empty());
-        assert_eq!(w.observe(&[pr("me/repo", 1, REVIEW_REQUESTED)]).len(), 1);
+        w.observe(&[pr("me/repo", 1, ReviewState::Approved)]);
+        assert_eq!(w.observe(&[pr("me/repo", 1, ReviewState::Requested)]).len(), 1);
+        assert!(w.observe(&[pr("me/repo", 1, ReviewState::Approved)]).is_empty());
+        assert_eq!(w.observe(&[pr("me/repo", 1, ReviewState::Requested)]).len(), 1);
     }
 
     #[test]
@@ -419,9 +410,9 @@ mod tests {
         let mut w = ReviewRequestedWatch::new();
         w.observe(&[]); // prime empty
         let edges = w.observe(&[
-            pr("me/repo", 1, "approved"),
-            pr("me/repo", 2, ""),
-            pr("me/repo", 3, REVIEW_REQUESTED),
+            pr("me/repo", 1, ReviewState::Approved),
+            pr("me/repo", 2, ReviewState::None),
+            pr("me/repo", 3, ReviewState::Requested),
         ]);
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].number, 3);
@@ -432,25 +423,25 @@ mod tests {
         // Every row is replaced each tick; a refreshed title must not re-fire.
         let mut w = ReviewRequestedWatch::new();
         w.observe(&[]);
-        assert_eq!(w.observe(&[pr("me/repo", 7, REVIEW_REQUESTED)]).len(), 1);
+        assert_eq!(w.observe(&[pr("me/repo", 7, ReviewState::Requested)]).len(), 1);
 
-        let mut refreshed = pr("me/repo", 7, REVIEW_REQUESTED);
+        let mut refreshed = pr("me/repo", 7, ReviewState::Requested);
         refreshed.title = "PR 7 (updated)".to_string();
         refreshed.updated_ts = 5000;
         assert!(w.observe(&[refreshed]).is_empty());
     }
 
     /// An authored PR (empty `review_state`) with the given checks state.
-    fn pr_checks(repo: &str, number: i64, checks: &str) -> PrItem {
-        let mut p = pr(repo, number, "");
-        p.checks = checks.to_string();
+    fn pr_checks(repo: &str, number: i64, checks: ChecksState) -> PrItem {
+        let mut p = pr(repo, number, ReviewState::None);
+        p.checks = checks;
         p
     }
 
     #[test]
     fn checks_first_observation_primes_without_firing() {
         let mut w = ChecksFailedWatch::new();
-        let prs = vec![pr_checks("me/repo", 1, CHECKS_FAILING)];
+        let prs = vec![pr_checks("me/repo", 1, ChecksState::Failing)];
         // Already red at launch: a level, not a flip.
         assert!(w.observe(&prs).is_empty());
         assert!(w.observe(&prs).is_empty());
@@ -459,32 +450,32 @@ mod tests {
     #[test]
     fn checks_flip_into_failing_fires_once() {
         let mut w = ChecksFailedWatch::new();
-        w.observe(&[pr_checks("me/repo", 1, "passing")]);
+        w.observe(&[pr_checks("me/repo", 1, ChecksState::Passing)]);
 
-        let edges = w.observe(&[pr_checks("me/repo", 1, CHECKS_FAILING)]);
+        let edges = w.observe(&[pr_checks("me/repo", 1, ChecksState::Failing)]);
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].repo, "me/repo");
         assert_eq!(edges[0].number, 1);
 
-        assert!(w.observe(&[pr_checks("me/repo", 1, CHECKS_FAILING)]).is_empty());
+        assert!(w.observe(&[pr_checks("me/repo", 1, ChecksState::Failing)]).is_empty());
     }
 
     /// The cache carries settled PRs so the rail can badge one — a closed PR's
     /// last red run is not a new thing to act on.
     #[test]
     fn a_settled_pr_never_fires_either_watch() {
-        let settled = |state: &str| {
-            let mut red = pr_checks("me/repo", 1, CHECKS_FAILING);
-            let mut wanted = pr("me/repo", 2, REVIEW_REQUESTED);
-            red.state = state.to_string();
-            wanted.state = state.to_string();
+        let settled = |state: PrState| {
+            let mut red = pr_checks("me/repo", 1, ChecksState::Failing);
+            let mut wanted = pr("me/repo", 2, ReviewState::Requested);
+            red.state = state;
+            wanted.state = state;
             vec![red, wanted]
         };
-        for state in ["closed", "merged"] {
+        for state in [PrState::Closed, PrState::Merged] {
             let mut checks = ChecksFailedWatch::new();
             let mut review = ReviewRequestedWatch::new();
-            checks.observe(&[pr_checks("me/repo", 1, "passing")]);
-            review.observe(&[pr("me/repo", 2, "approved")]);
+            checks.observe(&[pr_checks("me/repo", 1, ChecksState::Passing)]);
+            review.observe(&[pr("me/repo", 2, ReviewState::Approved)]);
             assert!(checks.observe(&settled(state)).is_empty(), "{state} checks");
             assert!(review.observe(&settled(state)).is_empty(), "{state} review");
         }
@@ -493,10 +484,10 @@ mod tests {
     #[test]
     fn checks_refires_after_recover_then_fail_again() {
         let mut w = ChecksFailedWatch::new();
-        w.observe(&[pr_checks("me/repo", 1, "passing")]);
-        assert_eq!(w.observe(&[pr_checks("me/repo", 1, CHECKS_FAILING)]).len(), 1);
-        assert!(w.observe(&[pr_checks("me/repo", 1, "passing")]).is_empty());
-        assert_eq!(w.observe(&[pr_checks("me/repo", 1, CHECKS_FAILING)]).len(), 1);
+        w.observe(&[pr_checks("me/repo", 1, ChecksState::Passing)]);
+        assert_eq!(w.observe(&[pr_checks("me/repo", 1, ChecksState::Failing)]).len(), 1);
+        assert!(w.observe(&[pr_checks("me/repo", 1, ChecksState::Passing)]).is_empty());
+        assert_eq!(w.observe(&[pr_checks("me/repo", 1, ChecksState::Failing)]).len(), 1);
     }
 
     #[test]
@@ -504,10 +495,10 @@ mod tests {
         let mut w = ChecksFailedWatch::new();
         w.observe(&[]); // prime empty
         let edges = w.observe(&[
-            pr_checks("me/repo", 1, "passing"),
-            pr_checks("me/repo", 2, "pending"),
-            pr_checks("me/repo", 3, "none"),
-            pr_checks("me/repo", 4, CHECKS_FAILING),
+            pr_checks("me/repo", 1, ChecksState::Passing),
+            pr_checks("me/repo", 2, ChecksState::Pending),
+            pr_checks("me/repo", 3, ChecksState::None),
+            pr_checks("me/repo", 4, ChecksState::Failing),
         ]);
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].number, 4);
@@ -518,8 +509,8 @@ mod tests {
         // Someone else's failing PR is not your CI to fix.
         let mut w = ChecksFailedWatch::new();
         w.observe(&[]); // prime empty
-        let mut others = pr("me/repo", 9, REVIEW_REQUESTED);
-        others.checks = CHECKS_FAILING.to_string();
+        let mut others = pr("me/repo", 9, ReviewState::Requested);
+        others.checks = ChecksState::Failing;
         assert!(w.observe(&[others]).is_empty());
     }
 
@@ -528,9 +519,9 @@ mod tests {
         // Every row is replaced each tick; a refreshed title must not re-fire.
         let mut w = ChecksFailedWatch::new();
         w.observe(&[]);
-        assert_eq!(w.observe(&[pr_checks("me/repo", 7, CHECKS_FAILING)]).len(), 1);
+        assert_eq!(w.observe(&[pr_checks("me/repo", 7, ChecksState::Failing)]).len(), 1);
 
-        let mut refreshed = pr_checks("me/repo", 7, CHECKS_FAILING);
+        let mut refreshed = pr_checks("me/repo", 7, ChecksState::Failing);
         refreshed.title = "PR 7 (updated)".to_string();
         refreshed.updated_ts = 5000;
         assert!(w.observe(&[refreshed]).is_empty());
@@ -832,9 +823,9 @@ mod tests {
         let mut w = ReviewRequestedWatch::new();
         w.observe(&[]); // prime empty
         let mut edges = w.observe(&[
-            pr("me/repo", 1, REVIEW_REQUESTED),
-            pr("me/repo", 2, "approved"),
-            pr("you/repo", 5, REVIEW_REQUESTED),
+            pr("me/repo", 1, ReviewState::Requested),
+            pr("me/repo", 2, ReviewState::Approved),
+            pr("you/repo", 5, ReviewState::Requested),
         ]);
         edges.sort_by_key(|e| e.number);
         assert_eq!(edges.len(), 2);
@@ -846,7 +837,7 @@ mod tests {
     fn review_edge_carries_title_and_url() {
         let mut w = ReviewRequestedWatch::new();
         w.observe(&[]);
-        let mut p = pr("me/repo", 42, REVIEW_REQUESTED);
+        let mut p = pr("me/repo", 42, ReviewState::Requested);
         p.title = "Fix the thing".to_string();
         p.url = "https://github.com/me/repo/pull/42".to_string();
         let edges = w.observe(&[p]);
@@ -862,15 +853,15 @@ mod tests {
         let mut w = ReviewRequestedWatch::new();
         w.observe(&[]);
         let edges = w.observe(&[
-            pr("me/repo", 1, REVIEW_REQUESTED),
-            pr("you/repo", 1, REVIEW_REQUESTED),
+            pr("me/repo", 1, ReviewState::Requested),
+            pr("you/repo", 1, ReviewState::Requested),
         ]);
         assert_eq!(edges.len(), 2);
         // Holding steady next snapshot: neither repeats.
         assert!(
             w.observe(&[
-                pr("me/repo", 1, REVIEW_REQUESTED),
-                pr("you/repo", 1, REVIEW_REQUESTED),
+                pr("me/repo", 1, ReviewState::Requested),
+                pr("you/repo", 1, ReviewState::Requested),
             ])
             .is_empty()
         );
