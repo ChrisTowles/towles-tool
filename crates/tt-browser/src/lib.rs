@@ -13,7 +13,7 @@ pub mod frames;
 pub mod launch;
 
 pub use cdp::{CdpConn, CdpEvent};
-pub use frames::{BrowserFrame, Poller, handle_screencast_event};
+pub use frames::{BrowserFrame, handle_screencast_event};
 pub use launch::{ChromeChild, ChromeConfig, find_chrome};
 
 #[derive(Debug, thiserror::Error)]
