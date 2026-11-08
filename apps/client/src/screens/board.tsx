@@ -64,6 +64,17 @@ import {
 import { useFocusTarget } from "@/lib/focus-target";
 import { shortcutHint, useShortcuts } from "@/lib/shortcuts";
 import { toast } from "@/lib/toast";
+import {
+  applyTaskOverrides,
+  taskOverridesAtom,
+  updateTaskOverrides,
+  withClose,
+  withDeleted,
+  withEdit,
+  withoutClose,
+  withoutDeleted,
+  withoutEdit,
+} from "@/lib/task-overrides";
 import type { IpcError } from "@/lib/errors";
 import { activeTabAtom, openTab, openTabWithFocus } from "@/lib/workspace";
 import { Card } from "@/screens/board/card";
@@ -74,19 +85,19 @@ import { LaneGlyph } from "@/screens/board/card-bits";
 async function commit(
   mutation: Promise<Result.Result<unknown, IpcError>>,
   what: string,
+  revert?: () => void,
 ): Promise<void> {
   const done = await mutation;
-  if (Result.isFailure(done)) toast.error(`Couldn't ${what} — ${done.failure.message}`);
+  if (Result.isFailure(done)) {
+    revert?.();
+    toast.error(`Couldn't ${what} — ${done.failure.message}`);
+  }
 }
 
 /** The board's keys step aside for an open menu or dialog, which owns the keyboard. */
 function overlayOpen(): boolean {
   return document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"]') !== null;
 }
-
-/** Optimistic edits (text/notes) applied over a snapshot todo until it
- * re-arrives. */
-type TaskEdit = { text?: string; notes?: string | undefined };
 
 /** The synthetic lane key when swimlane grouping is toggled off — one unnamed
  * lane holding every card. Never a real repo key (`taskRepoKey` returns
@@ -103,12 +114,9 @@ export function BoardScreen() {
   const focusRef = useFocusTarget<HTMLDivElement>("board");
   const filterInputRef = useRef<HTMLInputElement>(null);
 
-  const [editOverrides, setEditOverrides] = useState<Record<number, TaskEdit>>({});
-  const [deletedIds, setDeletedIds] = useState<Set<number>>(() => new Set());
-  // Optimistic close: the outcome shown on a card whose worktree teardown is
-  // still running (a close can take a minute of git work), until the snapshot
-  // re-arrives with the recorded one.
-  const [closeOverrides, setCloseOverrides] = useState<Record<number, TaskOutcome>>({});
+  // Optimistic edits, closes and purges, painted over the snapshot until a
+  // newer one carries a change to the same task (settled in store-snapshot).
+  const overrides = useAtomValue(taskOverridesAtom);
   const [showArchived, setShowArchived] = useState(false);
   // A refused close, held for the dialog that reports it. No name is stored: a
   // refusal deleted nothing, so the dialog reads current text from `merged`.
@@ -172,15 +180,10 @@ export function BoardScreen() {
 
   const merged = useMemo(
     () =>
-      snapshot.tasks
-        .filter((t) => !deletedIds.has(t.id))
-        .filter((t) => showArchived || t.archivedAt === undefined)
-        .map((t) => ({
-          ...t,
-          ...editOverrides[t.id],
-          outcome: closeOverrides[t.id] ?? t.outcome,
-        })),
-    [snapshot.tasks, editOverrides, deletedIds, closeOverrides, showArchived],
+      applyTaskOverrides(snapshot.tasks, overrides).filter(
+        (t) => showArchived || t.archivedAt === undefined,
+      ),
+    [snapshot.tasks, overrides, showArchived],
   );
 
   const visible = useMemo(
@@ -298,8 +301,10 @@ export function BoardScreen() {
     const trimmed = text.trim();
     const current = merged.find((t) => t.id === id);
     if (!current || !trimmed || trimmed === current.text) return;
-    setEditOverrides((prev) => ({ ...prev, [id]: { ...prev[id], text: trimmed } }));
-    void commit(storeUpdateTask(id, trimmed, current.notes), "rename that todo");
+    updateTaskOverrides((o) => withEdit(o, current, { text: trimmed }));
+    void commit(storeUpdateTask(id, trimmed, current.notes), "rename that todo", () =>
+      updateTaskOverrides((o) => withoutEdit(o, id)),
+    );
   }
 
   function setNotes(id: number, notes: string) {
@@ -307,8 +312,10 @@ export function BoardScreen() {
     if (!current) return;
     // Empty/whitespace-only notes clear the field back to unset.
     const value = notes.trim() === "" ? undefined : notes;
-    setEditOverrides((prev) => ({ ...prev, [id]: { ...prev[id], notes: value } }));
-    void commit(storeUpdateTask(id, current.text, value), "save those notes");
+    updateTaskOverrides((o) => withEdit(o, current, { notes: value }));
+    void commit(storeUpdateTask(id, current.text, value), "save those notes", () =>
+      updateTaskOverrides((o) => withoutEdit(o, id)),
+    );
   }
 
   /** Close paints the outcome optimistically (the git teardown can take a
@@ -322,22 +329,12 @@ export function BoardScreen() {
       purge = false,
     }: { force?: boolean; outcome?: TaskOutcome; purge?: boolean } = {},
   ) {
-    if (purge) setDeletedIds((prev) => new Set(prev).add(id));
-    else if (outcome) setCloseOverrides((prev) => ({ ...prev, [id]: outcome }));
+    const task = snapshot.tasks.find((t) => t.id === id);
+    if (purge) updateTaskOverrides((o) => withDeleted(o, id));
+    else if (outcome && task) updateTaskOverrides((o) => withClose(o, task, outcome));
     const done = await taskDelete({ id }, { force, outcome, purge });
-    const revert = () => {
-      setDeletedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-      setCloseOverrides((prev) => {
-        if (!(id in prev)) return prev;
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
-    };
+    const revert = () =>
+      updateTaskOverrides((o) => (purge ? withoutDeleted(o, id) : withoutClose(o, id)));
     Result.match(done, {
       onSuccess: (result) => {
         if (result.status === "blocked") {

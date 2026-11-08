@@ -4,6 +4,7 @@ import { Effect } from "effect";
 import * as Atom from "effect/reactivity/Atom";
 import { feed, onEvent } from "./atoms/feed";
 import { read, write } from "./atoms/registry";
+import { settleTaskOverrides, updateTaskOverrides } from "./task-overrides";
 import { replaceEqualDeep } from "./replace-equal-deep";
 import { invoke, isTauri } from "./tauri";
 import {
@@ -29,6 +30,8 @@ const apply = (next: StoreSnapshot, live: boolean) => {
   const prev = read(state);
   const snapshot = replaceEqualDeep(prev.snapshot, next);
   if (snapshot !== prev.snapshot || live !== prev.live) write(state, { snapshot, live });
+  // A snapshot is the newer word on every task it carries.
+  updateTaskOverrides((o) => settleTaskOverrides(o, snapshot.tasks));
 };
 
 feed("store-snapshot", () =>
