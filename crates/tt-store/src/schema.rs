@@ -275,8 +275,53 @@ impl Store {
     }
 
     /// Create tables and record the schema version. Idempotent.
+    ///
+    /// A db already at [`SCHEMA_VERSION`] returns before any write, so the common
+    /// open (every `tt` call, every app path) costs two reads. Otherwise the whole
+    /// migration runs in one `BEGIN IMMEDIATE`, which makes a second process opening
+    /// the same old db wait out the first rather than race its check-then-`ADD COLUMN`
+    /// steps into "duplicate column name". The version is re-read under the lock
+    /// because the process we waited on will usually have finished the job.
     fn migrate(&self) -> Result<()> {
         self.ensure_schema_current()?;
+        if self.stored_version()? == Some(SCHEMA_VERSION) {
+            return Ok(());
+        }
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        self.ensure_schema_current()?;
+        if self.stored_version()? == Some(SCHEMA_VERSION) {
+            return Ok(());
+        }
+        self.apply_migrations()?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The `schema_version` recorded in `meta`; `None` for a brand-new db.
+    fn stored_version(&self) -> Result<Option<i64>> {
+        let has_meta: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if has_meta.is_none() {
+            return Ok(None);
+        }
+        let found: Option<String> = self
+            .conn
+            .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
+            .optional()?;
+        Ok(found.and_then(|v| v.parse().ok()))
+    }
+
+    /// The migration body; the caller holds the write transaction.
+    fn apply_migrations(&self) -> Result<()> {
         self.conn.execute_batch(SCHEMA_V1)?;
         self.conn.execute_batch(SCHEMA_TASK_LINKS_V7)?;
         // Additive `ADD COLUMN` migrations, oldest first; a new one goes at the end.
@@ -463,8 +508,7 @@ impl Store {
         if !has_position {
             return Ok(());
         }
-        let tx = self.conn.unchecked_transaction()?;
-        tx.execute_batch(&format!(
+        self.conn.execute_batch(&format!(
             "ALTER TABLE tasks RENAME COLUMN position TO rank;
              UPDATE tasks SET rank = (
                SELECT n * {gap} FROM (
@@ -475,7 +519,6 @@ impl Store {
                WHERE r.id = tasks.id);",
             gap = crate::model::RANK_GAP
         ))?;
-        tx.commit()?;
         Ok(())
     }
 

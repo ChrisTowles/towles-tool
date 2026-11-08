@@ -30,7 +30,7 @@ range queries silently return wrong rows rather than fail.
 
 ## Migrations
 
-One `Store::migrate`, run on every open, idempotent — `SCHEMA_V1`'s
+One `Store::migrate`, run on every open, idempotent — but a db already at `SCHEMA_VERSION` returns before any write, and a real migration runs inside one `BEGIN IMMEDIATE` (so no step may open its own transaction) — `SCHEMA_V1`'s
 `IF NOT EXISTS` batch, then a run of additive `ALTER TABLE ADD COLUMN` steps
 that check the current table shape. **A new column goes at the end of that run,
 never folded into `SCHEMA_V1`**: `CREATE TABLE IF NOT EXISTS` is a no-op on an
