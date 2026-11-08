@@ -1,4 +1,4 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { RemoveTarget } from "@/lib/agentboard/actions";
 import { liveSessions } from "@/lib/agentboard/session";
 import type { RepoData, Selected, SessionData, WindowsPayload } from "@/lib/agentboard/types";
@@ -17,7 +17,6 @@ export function sessionLifecycle(a: {
   selected: Selected;
   activePanes: readonly string[];
   sessionById: Map<string, SessionData>;
-  expectedKills: RefObject<Set<string>>;
   labelFor: (s: SessionData) => string;
   selectSession: (folderDir: string, sessionId: string) => void;
   removePane: (paneId: string) => void;
@@ -75,8 +74,7 @@ export function sessionLifecycle(a: {
     a.setOpen((prev) => prev.filter((id) => id !== sessionId));
     a.setSelected((cur) => (cur?.sessionId === sessionId ? null : cur));
     closePane(sessionId);
-    const expected = a.expectedKills.current.delete(sessionId);
-    if (expected || !exitIsCrash(exit.code, exit.signal)) return;
+    if (!exitIsCrash(exit.code, exit.signal)) return;
     const s = a.sessionById.get(sessionId);
     toast.error(`${s ? a.labelFor(s) : "shell"} ${exitLabel(exit.code, exit.signal)}`);
   }

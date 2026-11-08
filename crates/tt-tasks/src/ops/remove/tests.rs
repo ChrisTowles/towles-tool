@@ -335,7 +335,7 @@ fn clean(sr: &TaskRoot, dry_run: bool) -> CleanReport {
         ports_dir: Some(ports_dir(sr)),
         host_data: HostData::At(host_data_dir(sr)),
     };
-    clean_tasks(&opts, |_| None).unwrap()
+    clean_tasks(&opts, |_| None, remove_for_clean).unwrap()
 }
 
 fn names<T>(items: &[T], name: impl Fn(&T) -> &str) -> Vec<String> {
@@ -385,6 +385,35 @@ fn clean_removes_only_finished_tasks_and_deletes_their_branch() {
     assert!(sr.task_dir("feat-dirty").is_dir());
     let branches = git(&sr.checkout, &["branch", "--list", "feat/*"]);
     assert!(!branches.contains("merged") && branches.contains("active"), "{branches}");
+}
+
+/// The removal is the caller's: only finished tasks reach it, and its verdict is the report's.
+#[test]
+fn clean_hands_finished_tasks_to_the_injected_removal() {
+    let (_tmp, sr) = mixed_fleet();
+    let opts = CleanOpts {
+        root: Some(sr.checkout.clone()),
+        dry_run: false,
+        scope_parents: Vec::new(),
+        ports_dir: Some(ports_dir(&sr)),
+        host_data: HostData::At(host_data_dir(&sr)),
+    };
+    let mut asked = Vec::new();
+    let report = clean_tasks(
+        &opts,
+        |_| None,
+        |rm, dir| {
+            asked.push((rm.name.clone(), dir.to_path_buf()));
+            CleanRemoval::Kept(vec!["the app said no".to_string()])
+        },
+    )
+    .unwrap();
+
+    assert_eq!(asked, [("feat-merged".to_string(), sr.task_dir("feat-merged"))]);
+    assert!(report.removed.is_empty());
+    let kept = report.kept.iter().find(|k| k.name == "feat-merged").unwrap();
+    assert_eq!(kept.why, ["the app said no"]);
+    assert!(sr.task_dir("feat-merged").is_dir());
 }
 
 #[test]
@@ -462,11 +491,11 @@ fn clean_sweeps_state_dirs_of_removed_checkouts_of_this_repo_only() {
         host_data: HostData::At(host_data_dir(&sr)),
     };
 
-    let report = clean_tasks(&opts, |dir| {
+    let scope_of = |dir: &Path| {
         let name = dir.file_name()?.to_str()?;
         Some(if name == "repo" { name.to_string() } else { format!("repo-{name}") })
-    })
-    .unwrap();
+    };
+    let report = clean_tasks(&opts, scope_of, remove_for_clean).unwrap();
 
     assert_eq!(report.swept_state_dirs, [scope_parent.join("repo-feat-gone")]);
     assert!(scope_parent.join("repo-feat-live").is_dir());
@@ -531,7 +560,7 @@ fn clean_sweeps_host_residue_of_gone_tasks_but_never_live_or_base() {
     };
     let scope_of = |dir: &Path| Some(dir.file_name()?.to_str()?.to_string());
 
-    let dry = clean_tasks(&opts(true), scope_of).unwrap();
+    let dry = clean_tasks(&opts(true), scope_of, remove_for_clean).unwrap();
     let ids: Vec<&str> = dry.swept_host_residue.iter().map(|r| r.identifier.as_str()).collect();
     assert_eq!(
         ids,
@@ -545,7 +574,7 @@ fn clean_sweeps_host_residue_of_gone_tasks_but_never_live_or_base() {
     assert_eq!(gone_entry.paths, [gone.webkit_data.clone(), gone.launcher.clone()]);
     assert_eq!(gone_entry.bytes, 5 + 1, "webkit file + launcher; the icon was already gone");
 
-    let report = clean_tasks(&opts(false), scope_of).unwrap();
+    let report = clean_tasks(&opts(false), scope_of, remove_for_clean).unwrap();
     assert_eq!(report.swept_host_residue.len(), 2);
     for swept in [&gone, &gone_old] {
         assert!(swept.all().iter().all(|p| !p.exists()), "{swept:?}");
@@ -568,7 +597,7 @@ fn clean_skips_host_residue_for_a_repo_without_the_app() {
         host_data: HostData::At(data),
     };
 
-    let report = clean_tasks(&opts, |_| None).unwrap();
+    let report = clean_tasks(&opts, |_| None, remove_for_clean).unwrap();
 
     assert!(report.swept_host_residue.is_empty());
     assert!(gone.webkit_data.exists());

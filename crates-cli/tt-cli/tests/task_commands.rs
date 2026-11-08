@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{Tt, canonical_temp, data_home, tt_in};
+use common::{FakeApp, Tt, canonical_temp, data_home, tt_in};
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use std::path::{Path, PathBuf};
@@ -220,6 +220,60 @@ fn rm_runs_the_declared_teardown_before_removing_the_worktree() {
     tt().args(["task", "rm", "feat-teardown", "--root", &root_s]).assert().success();
     assert!(!task.exists());
     assert!(marker.is_file(), "TT_TASK_TEARDOWN must run before the worktree is removed");
+}
+
+/// A running app owns the task's terminals, so `rm` hands it the delete by worktree path
+/// and touches nothing itself — the worktree still being here proves it.
+#[test]
+fn rm_goes_through_a_running_app() {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkout = make_checkout(tmp.path());
+    let root_s = checkout.to_string_lossy().to_string();
+    new_task(&root_s, "feat/via-app").assert().success();
+    let task = task_dir(&checkout, "feat-via-app");
+
+    let app = FakeApp::start_answering(
+        r#"{"jsonrpc":"2.0","id":1,"result":{"content":[],"structuredContent":{"status":"deleted","text":"feat-via-app","messages":["closed 1 session"]}}}"#,
+    );
+    tt().env("TT_MCP_PORT", app.port.to_string())
+        .args([
+            "task",
+            "rm",
+            "feat-via-app",
+            "--outcome",
+            "abandoned",
+            "--root",
+            &root_s,
+        ])
+        .assert()
+        .success()
+        .stdout(contains("closed 1 session"));
+    let (_, body) = app.request();
+    assert_eq!(body["params"]["name"], "task_delete");
+    let args = &body["params"]["arguments"];
+    assert_eq!(args["dir"], task.to_string_lossy().as_ref());
+    assert_eq!(args["force"], false);
+    assert_eq!(args["outcome"], "abandoned");
+    assert!(task.is_dir(), "the app removes it, not the CLI");
+}
+
+#[test]
+fn rm_reports_the_apps_refusal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let checkout = make_checkout(tmp.path());
+    let root_s = checkout.to_string_lossy().to_string();
+    new_task(&root_s, "feat/refused").assert().success();
+
+    let app = FakeApp::start_answering(
+        r#"{"jsonrpc":"2.0","id":1,"result":{"content":[],"structuredContent":{"status":"refused","text":"feat-refused","messages":[],"blockers":[{"kind":"dirtyTree","message":"2 uncommitted files","remedy":"commit them","losesWork":true}]}}}"#,
+    );
+    tt().env("TT_MCP_PORT", app.port.to_string())
+        .args(["task", "rm", "feat-refused", "--root", &root_s])
+        .assert()
+        .failure()
+        .stderr(contains("2 uncommitted files").and(contains("commit them")));
+    app.request();
+    assert!(task_dir(&checkout, "feat-refused").is_dir());
 }
 
 /// The claim lock's regression test: without it, all three renders scan siblings

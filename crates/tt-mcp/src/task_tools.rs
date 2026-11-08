@@ -157,10 +157,23 @@ impl Dispatcher {
 
 impl Dispatcher {
     pub(crate) fn task_delete(&mut self, args: &Value) -> Result<Value, String> {
-        let id = args
-            .get("id")
-            .and_then(Value::as_i64)
-            .ok_or_else(|| "missing required argument: id".to_string())?;
+        let target = match (args.get("id"), args.get("dir")) {
+            (Some(id), None) => {
+                DeleteTarget::Board(id.as_i64().ok_or_else(|| "id must be an integer".to_string())?)
+            }
+            (None, Some(dir)) => {
+                let dir = dir.as_str().map(str::trim).unwrap_or_default();
+                if !Path::new(dir).is_absolute() {
+                    return Err(format!("dir must be an absolute path, got {dir:?}"));
+                }
+                DeleteTarget::Worktree(dir.to_string())
+            }
+            _ => return Err("pass exactly one of id or dir".to_string()),
+        };
+        let named = match &target {
+            DeleteTarget::Board(id) => json!({ "id": id }),
+            DeleteTarget::Worktree(dir) => json!({ "dir": dir }),
+        };
         let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
         let outcome = match args.get("outcome").and_then(Value::as_str) {
             None => None,
@@ -175,18 +188,21 @@ impl Dispatcher {
             .ok_or_else(|| "task_delete is unavailable: no task host is attached".to_string())?;
 
         // The host resolves the row to delete it anyway, so it names the task and diagnoses unknown ids.
-        match host.delete_task(id, force, outcome)? {
+        let mut result = match host.delete_task(target, force, outcome)? {
             TaskDeletion::Deleted { name, messages } => {
-                Ok(json!({ "status": "deleted", "id": id, "text": name, "messages": messages }))
+                json!({ "status": "deleted", "text": name, "messages": messages })
             }
-            TaskDeletion::Refused { name, blockers, messages } => Ok(json!({
+            TaskDeletion::Refused { name, blockers, messages } => json!({
                 "status": "refused",
-                "id": id,
                 "text": name,
                 "blockers": blockers,
                 "messages": messages,
-            })),
+            }),
+        };
+        for (key, value) in named.as_object().into_iter().flatten() {
+            result[key] = value.clone();
         }
+        Ok(result)
     }
 
     /// `/done` as one call, so finishing a task is code rather than an agent's reading of a
@@ -233,7 +249,8 @@ impl Dispatcher {
 
         self.store.set_task_summary(id, summary, now_ms).map_err(|e| e.to_string())?;
         let host = self.task_host.as_ref().expect("checked above, before the task was resolved");
-        let deletion = host.delete_task(id, false, Some(tt_store::TaskOutcome::Done))?;
+        let deletion =
+            host.delete_task(DeleteTarget::Board(id), false, Some(tt_store::TaskOutcome::Done))?;
         Ok(match deletion {
             TaskDeletion::Deleted { name, messages: more } => {
                 messages.extend(more);

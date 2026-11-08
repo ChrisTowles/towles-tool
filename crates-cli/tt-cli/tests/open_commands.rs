@@ -7,9 +7,7 @@
 
 mod common;
 
-use common::{Tt, cli_cmd};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
+use common::{FakeApp, Tt, cli_cmd, dead_port};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -19,59 +17,6 @@ fn repo() -> TempDir {
     let dir = TempDir::new().unwrap();
     tt_git::testing::git(dir.path(), &["init", "--quiet"]);
     dir
-}
-
-/// One request served by a fake app, returned as `(headers, body)`. Answers a
-/// successful `file_open` result so the CLI exits 0.
-struct FakeApp {
-    port: u16,
-    handle: std::thread::JoinHandle<(String, String)>,
-}
-
-impl FakeApp {
-    fn start() -> FakeApp {
-        Self::start_answering(
-            r#"{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}]}}"#,
-        )
-    }
-
-    /// A fake app whose single reply is `body` — for the refusal shapes.
-    fn start_answering(body: &'static str) -> FakeApp {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let handle = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut head = String::new();
-            let mut len = 0usize;
-            loop {
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                if line == "\r\n" || line.is_empty() {
-                    break;
-                }
-                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
-                    len = v.trim().parse().unwrap_or(0);
-                }
-                head.push_str(&line);
-            }
-            let mut payload = vec![0u8; len];
-            reader.read_exact(&mut payload).unwrap();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).unwrap();
-            stream.flush().unwrap();
-            (head, String::from_utf8_lossy(&payload).into_owned())
-        });
-        FakeApp { port, handle }
-    }
-
-    fn request(self) -> (String, serde_json::Value) {
-        let (head, body) = self.handle.join().unwrap();
-        (head.to_ascii_lowercase(), serde_json::from_str(&body).unwrap())
-    }
 }
 
 /// `tt open` pointed at `app`, with `TT_SESSION_ID` set unless `session` is None.
@@ -180,11 +125,7 @@ fn no_app_serving_fails_with_the_port() {
     let dir = repo();
     let file = dir.path().join("notes.txt");
     std::fs::write(&file, "hi").unwrap();
-    // A port nothing is listening on: bound and dropped, so it's free and known.
-    let port = {
-        let l = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        l.local_addr().unwrap().port()
-    };
+    let port = dead_port();
 
     cli_cmd(Path::new("/nonexistent-config"))
         .env("TT_MCP_PORT", port.to_string())

@@ -52,10 +52,8 @@ export function useWorktreeDelete(args: {
   repos: RepoData[];
   prs: PrItem[];
   tasks: TaskItem[];
-  expectedKills: React.RefObject<Set<string>>;
-  onSessionRemoved: (sessionId: string) => void;
 }): WorktreeDelete {
-  const { repos, prs, tasks, expectedKills, onSessionRemoved } = args;
+  const { repos, prs, tasks } = args;
 
   const [confirmDeleteWt, setConfirmDeleteWt] = useState<RemoveTarget | null>(null);
   const [deleteWtTask, setDeleteWtTask] = useState<TaskItem | null>(null);
@@ -161,16 +159,10 @@ export function useWorktreeDelete(args: {
     const dir = target.dirs[0];
     const flow = deleteFlowOf(dir);
     setDeletingDirs((prev) => new Set(prev).add(dir));
-    // Claim these deaths first — Rust kills the PTYs while the panes are mounted,
-    // so exits arrive as crashes. Unused claims are handed back below.
-    for (const id of target.sessionIds) expectedKills.current.add(id);
     const removed = await taskDelete({ dir }, { force, outcome });
     // Cancelled or forced past while the call ran: a stale result must not
     // resurrect the dialog, but the `deletingDirs` release below still must run.
     const current = deleteFlowOf(dir) === flow;
-    if (Result.isFailure(removed) || removed.success.status === "blocked") {
-      for (const id of target.sessionIds) expectedKills.current.delete(id);
-    }
     Result.match(removed, {
       onSuccess: (verdict) => {
         if (verdict.status === "blocked") {
@@ -194,7 +186,6 @@ export function useWorktreeDelete(args: {
         }
         endDeleteFlow(dir);
         recordBlockers(dir, null);
-        for (const id of target.sessionIds) onSessionRemoved(id);
         for (const message of verdict.messages) toast(message);
         const done = target.dirMissing
           ? `Closed ${verdict.name || target.label}`

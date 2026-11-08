@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod mcp_call;
 mod ui;
 
 use clap::Parser;

@@ -67,7 +67,8 @@ summary and runs the same host delete with `outcome: done`.
 **`task_start`, `task_delete` and `task_done` are the tools that cannot work from the
 dispatcher alone**, and both enter through the injected `TaskHost`; a
 dispatcher without one refuses rather than half-doing the job. `task_delete`
-kills the task's panes and removes its worktree (the row itself is
+takes a board `id` or a worktree `dir` (an id means nothing outside the
+store that minted it), kills the task's panes and removes its worktree (the row itself is
 *closed* with an optional `outcome` arg, not deleted — see the
 task-removal bullet in Worktree tasks) via `tt-app`'s
 `task::delete_task_blocking`. `task_start` is the inverse — it mints a
@@ -186,6 +187,9 @@ file link and Claude Code's IDE `openFile` already take (`editor://open-file`
 One asymmetry with `preview_file` is deliberate: **here the path fallback is
 a good guess**, because a file someone asked to read names its checkout,
 which is what lets `tt open` work from a terminal with no `TT_SESSION_ID`.
-It is also **the one MCP tool the CLI dials** — `tt open` is a client of
-this endpoint (see the `tt-cli` bullet), so the per-checkout port lives in
-`tt_mcp::port` where both ends read it rather than in the transport.
+`tt open` is a client of this endpoint (see the `tt-cli` bullet), and so are
+`tt task rm` and `tt task clean`, which hand `task_delete` each worktree by `dir` whenever an app
+answers, so the app kills that task's terminals and closes its panes, which a
+removal run from the CLI can't do; with no app up it removes locally. The
+per-checkout port lives in `tt_mcp::port` where both ends read it rather than
+in the transport.

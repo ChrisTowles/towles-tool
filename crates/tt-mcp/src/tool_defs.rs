@@ -67,11 +67,11 @@ pub fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "id": { "type": "integer", "description": "The task's id (from task_list or task_status)." },
+                    "id": { "type": "integer", "description": "The task's id (from task_list or task_status). Pass this or dir." },
+                    "dir": { "type": "string", "description": "Absolute path of a task worktree, for one with no board row or a row in another store. Pass this or id." },
                     "outcome": { "type": "string", "enum": ["done", "abandoned"], "description": "How the task ended, recorded on its closed row. Omitted: inferred from the task's own evidence — done if its branch landed or a linked PR merged, else abandoned." },
                     "force": { "type": "boolean", "description": "Skip the guards and delete the worktree anyway, discarding uncommitted changes and unreachable commits for good. Default false." },
                 },
-                "required": ["id"],
             },
         },
         {

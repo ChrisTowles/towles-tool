@@ -73,7 +73,6 @@ import {
   boardField,
   cwdsRef,
   jumpNonce,
-  expectedKills,
   foldedLanesAtom,
   lastTaskRepoAtom,
   selectedIdRef,
@@ -280,12 +279,6 @@ export function AgentBoardScreen() {
     repos,
     prs: snapshot.prs,
     tasks: snapshot.tasks,
-    expectedKills,
-    onSessionRemoved: (id) => {
-      setOpen((prev) => prev.filter((x) => x !== id));
-      setSelected((cur) => (cur?.sessionId === id ? null : cur));
-      removePane(id);
-    },
   });
   const { requestDeleteWorktree, discardWorktree, blockedByDir } = worktreeDelete;
 
@@ -371,7 +364,6 @@ export function AgentBoardScreen() {
     selected,
     activePanes: activeWin?.panes ?? [],
     sessionById,
-    expectedKills,
     labelFor,
     selectSession,
     removePane,

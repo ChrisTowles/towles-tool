@@ -16,6 +16,7 @@ use tt_tasks::envfile;
 use tt_tasks::ops::{self, CleanOpts, CreateOpts, RemoveOpts, TaskRoot};
 
 use crate::cli::TaskCommands;
+use crate::mcp_call::{self, CallError};
 use crate::ui;
 
 pub fn run(command: TaskCommands) -> i32 {
@@ -625,6 +626,15 @@ fn cmd_rm(
 ) -> Result<(), String> {
     let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
     let dir = sr.task_dir(name);
+    // Through the app when one is up: it kills the task's terminals and tells its window,
+    // which a removal from here can't. A missing dir stays local, to be reported as a typo.
+    if dir.is_dir() {
+        match rm_through_app(name, &dir, force, outcome) {
+            Err(CallError::NoApp(_)) => {}
+            Ok(()) => return Ok(()),
+            Err(CallError::Failed(message)) => return Err(message),
+        }
+    }
     let opts = RemoveOpts {
         root: root.map(Path::to_path_buf),
         name: name.to_string(),
@@ -644,7 +654,83 @@ fn cmd_rm(
             Ok(())
         }
         task_removal::Outcome::Blocked { name, blocked, messages } => {
+            let blocked: Vec<_> = blocked
+                .iter()
+                .map(|b| Blocked {
+                    message: b.to_string(),
+                    remedy: b.remedy(),
+                    loses_work: b.loses_work(),
+                })
+                .collect();
             Err(refusal(&name, &blocked, &messages))
+        }
+    }
+}
+
+/// Removal can stop containers and walk a large tree, so this outwaits it.
+const RM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// What a running app made of a delete.
+enum AppDeletion {
+    Deleted(Vec<String>),
+    Refused {
+        blocked: Vec<Blocked>,
+        messages: Vec<String>,
+    },
+}
+
+/// `task_delete` by worktree path on the app at `port` — the same guarded sequence, run
+/// where the task's terminals live.
+fn delete_through_app(
+    port: u16,
+    dir: &Path,
+    force: bool,
+    outcome: Option<&str>,
+) -> Result<AppDeletion, CallError> {
+    let mut args = serde_json::json!({ "dir": dir.to_string_lossy(), "force": force });
+    if let Some(outcome) = outcome {
+        args["outcome"] = serde_json::json!(outcome);
+    }
+    let result = mcp_call::call_tool(port, "task_delete", args, None, RM_TIMEOUT)?;
+    let messages: Vec<String> = result["messages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.as_str().map(str::to_string))
+        .collect();
+    if result["status"] != "refused" {
+        return Ok(AppDeletion::Deleted(messages));
+    }
+    let blocked = result["blockers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|b| Blocked {
+            message: b["message"].as_str().unwrap_or("blocked").to_string(),
+            remedy: b["remedy"].as_str().unwrap_or_default().to_string(),
+            loses_work: b["losesWork"].as_bool().unwrap_or(true),
+        })
+        .collect();
+    Ok(AppDeletion::Refused { blocked, messages })
+}
+
+fn rm_through_app(
+    name: &str,
+    dir: &Path,
+    force: bool,
+    outcome: Option<&str>,
+) -> Result<(), CallError> {
+    let port = tt_mcp::port::for_this_checkout();
+    match delete_through_app(port, dir, force, outcome)? {
+        AppDeletion::Deleted(messages) => {
+            for message in messages {
+                ui::warning(&message);
+            }
+            ui::success(&format!("removed {name} through the app (ports released with its .env)"));
+            Ok(())
+        }
+        AppDeletion::Refused { blocked, messages } => {
+            Err(CallError::Failed(refusal(name, &blocked, &messages)))
         }
     }
 }
@@ -714,20 +800,27 @@ fn record_unbound_task(
     store.task_by_id(task.id).map_err(err)
 }
 
+/// A removal guard's refusal, from this process's guard or the app's.
+struct Blocked {
+    message: String,
+    remedy: String,
+    loses_work: bool,
+}
+
 /// Render a guard refusal for the terminal: each reason with its remedy, since a reason
 /// alone is a dead end rather than a decision. Sole owner of this text — `Blocked`
 /// carries typed reasons so each shell formats its own. `messages` are caveats from
 /// before the verdict — chiefly a failed `fetch --prune`, since a refusal judged against
 /// stale `origin/*` refs otherwise reads exactly like a real one.
-fn refusal(name: &str, blocked: &[tt_tasks::RmBlocked], messages: &[String]) -> String {
+fn refusal(name: &str, blocked: &[Blocked], messages: &[String]) -> String {
     let mut out = format!("refused to remove {name}:");
     for note in messages {
         out.push_str(&format!("\n  note: {note}"));
     }
     for reason in blocked {
-        out.push_str(&format!("\n  {reason}\n    → {}", reason.remedy()));
+        out.push_str(&format!("\n  {}\n    → {}", reason.message, reason.remedy));
     }
-    let loses_work = blocked.iter().any(tt_tasks::RmBlocked::loses_work);
+    let loses_work = blocked.iter().any(|b| b.loses_work);
     out.push_str(&format!(
         "\n  Re-run with --force to remove anyway{}.",
         if loses_work { " — this discards the work above for good" } else { "" }
@@ -744,15 +837,39 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         ports_dir: None,
         host_data: tt_config::host_data_dir().into(),
     };
-    let report =
-        ops::clean_tasks(&opts, tt_config::task_scope_from_dir).map_err(|e| e.to_string())?;
+    // Each finished task goes through a running app, as `rm` does; the first dial that
+    // finds none switches the rest of the sweep to local removal.
+    let port = tt_mcp::port::for_this_checkout();
+    let mut app_up = true;
+    let mut via_app = std::collections::HashSet::new();
+    let remove = |rm: &RemoveOpts, dir: &Path| {
+        if app_up {
+            match delete_through_app(port, dir, false, None) {
+                Ok(AppDeletion::Deleted(messages)) => {
+                    via_app.insert(dir.to_path_buf());
+                    return ops::CleanRemoval::Removed { messages };
+                }
+                Ok(AppDeletion::Refused { blocked, .. }) => {
+                    return ops::CleanRemoval::Kept(
+                        blocked.into_iter().map(|b| b.message).collect(),
+                    );
+                }
+                Err(CallError::Failed(message)) => return ops::CleanRemoval::Kept(vec![message]),
+                Err(CallError::NoApp(_)) => app_up = false,
+            }
+        }
+        ops::remove_for_clean(rm, dir)
+    };
+    let report = ops::clean_tasks(&opts, tt_config::task_scope_from_dir, remove)
+        .map_err(|e| e.to_string())?;
 
     // Drop each removed task's now-dangling repos.json entry so collectors don't keep
-    // retrying a gone dir. Collected, not printed: `ui::warning` shares stdout with
-    // `--json`'s document (the hazard fixed in `cmd_new`).
+    // retrying a gone dir — the app already did for the ones it removed. Collected, not
+    // printed: `ui::warning` shares stdout with `--json`'s document (the hazard fixed in
+    // `cmd_new`).
     let mut warnings = report.warnings.clone();
     if !dry_run {
-        for task in &report.removed {
+        for task in report.removed.iter().filter(|t| !via_app.contains(&t.dir)) {
             for note in after_removal(&task.checkout, &task.dir) {
                 warnings.push(format!("{}: {note}", task.name));
             }

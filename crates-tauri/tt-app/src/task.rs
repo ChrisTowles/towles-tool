@@ -6,7 +6,7 @@
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use tt_agentboard::types::RowPhase;
 use tt_tasks::guards::RmBlocked;
@@ -639,9 +639,16 @@ impl tt_agentboard::task_removal::RemovalHooks for AppRemovalHooks<'_> {
         engine.drop_git_cache(self.dir);
         // …and the *owner's* entry, whose cached `linked_worktree_dirs` names the
         // gone directory until the TTL would otherwise let a recompute through.
-        if let Some(owner) = owner {
-            engine.invalidate_git(&owner, tt_agentboard::GitInvalidation::WorktreeRemoved);
+        if let Some(owner) = &owner {
+            engine.invalidate_git(owner, tt_agentboard::GitInvalidation::WorktreeRemoved);
         }
+        drop(engine);
+        let closed = crate::agentboard::CheckoutClosed {
+            dir: self.dir.to_string(),
+            owner,
+            session_ids: closed_ids,
+        };
+        let _ = self.app.emit(crate::agentboard::CHECKOUT_CLOSED_EVENT, closed);
         notes
     }
 }

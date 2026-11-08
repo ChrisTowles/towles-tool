@@ -1,11 +1,19 @@
 use super::*;
 
+/// What `task_delete` removes: a board row, or a worktree by path. `tt task rm` names the
+/// path, since a board id means nothing outside the store that minted it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeleteTarget {
+    Board(i64),
+    Worktree(String),
+}
+
 /// The app-side half of `task_delete`; with no host the tool refuses rather than half-delete.
 pub trait TaskHost: Send {
-    /// Close task `id` and delete everything bound to it; `force` skips the guards.
+    /// Delete `target` and everything bound to it, closing its row; `force` skips the guards.
     fn delete_task(
         &self,
-        id: i64,
+        target: DeleteTarget,
         force: bool,
         outcome: Option<tt_store::TaskOutcome>,
     ) -> Result<TaskDeletion, String>;

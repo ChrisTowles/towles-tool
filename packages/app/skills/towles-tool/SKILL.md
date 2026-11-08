@@ -53,8 +53,8 @@ tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports
 tt task env <name>         # (Re)render a checkout's .env (or `primary`) — idempotent, keeps claims
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)
 tt task sync [<name>]      # Record the branch a task's worktree is on now (default: cwd's task); a worktree with no Board row gets one
-tt task rm <name>          # Guarded removal; deletes the branch too when its work landed (or it has none), and the task app build's WebKit data + launcher + icon
-tt task clean              # Remove every merged/gone task, delete landed branches no worktree holds, sweep what gone tasks' app builds left on disk
+tt task rm <name>          # Guarded removal; deletes the branch too when its work landed (or it has none), and the task app build's WebKit data + launcher + icon. Runs through the app when one is up, so the task's terminals and panes close with it
+tt task clean              # Remove every merged/gone task (through the app when one is up, like rm), delete landed branches no worktree holds, sweep what gone tasks' app builds left on disk
 tt task nudge <prs|issues|slack:dm>  # Refresh that collector now instead of on the app's next poll
 ```
 
