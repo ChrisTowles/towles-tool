@@ -1,25 +1,28 @@
 //! Minimal CDP client over one sync WebSocket, thread-per-connection.
 //!
-//! The socket thread owns the tungstenite stream outright: outgoing text
-//! arrives over an mpsc channel and reads run under a short TcpStream read
-//! timeout, so one loop serves both directions without splitting the socket.
+//! Two threads share one TCP socket and both block, so an idle connection
+//! costs no wakeups: the reader thread owns the handshaken tungstenite stream
+//! and blocks in `read`; the writer thread owns a second tungstenite handle
+//! over a cloned `TcpStream` and blocks on an mpsc channel of outgoing text.
+//! Callers never wait on a poll tick. Dropping the connection shuts the
+//! socket down, which unblocks the reader.
 //! Flat-mode sessions (`Target.attachToTarget { flatten: true }`) mean every
 //! message carries an optional `sessionId` and one connection drives the
 //! browser target plus every page target.
 
 use std::collections::HashMap;
-use std::net::TcpStream;
+use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tungstenite::protocol::Role;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
 use crate::BrowserError;
 
-const READ_TICK: Duration = Duration::from_millis(5);
 const CALL_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone)]
@@ -36,6 +39,7 @@ pub struct CdpConn {
     pending: Pending,
     next_id: AtomicU64,
     alive: Arc<AtomicBool>,
+    stream: TcpStream,
 }
 
 impl CdpConn {
@@ -47,24 +51,37 @@ impl CdpConn {
     ) -> Result<Self, BrowserError> {
         let (mut ws, _) =
             tungstenite::connect(ws_url).map_err(|e| BrowserError::Cdp(e.to_string()))?;
-        if let MaybeTlsStream::Plain(stream) = ws.get_ref() {
-            stream.set_read_timeout(Some(READ_TICK))?;
-        }
+        let MaybeTlsStream::Plain(tcp) = ws.get_ref() else {
+            return Err(BrowserError::Cdp("devtools endpoint must be plain ws".into()));
+        };
+        let stream = tcp.try_clone()?;
+        let mut writer = WebSocket::from_raw_socket(tcp.try_clone()?, Role::Client, None);
         let (out, out_rx) = mpsc::channel::<String>();
         let pending: Pending = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
         {
+            let stream = stream.try_clone()?;
+            std::thread::spawn(move || {
+                while let Ok(text) = out_rx.recv() {
+                    if writer.send(Message::Text(text.into())).is_err() {
+                        break;
+                    }
+                }
+                let _ = stream.shutdown(Shutdown::Both);
+            });
+        }
+        {
             let pending = Arc::clone(&pending);
             let alive = Arc::clone(&alive);
             std::thread::spawn(move || {
-                socket_loop(&mut ws, &out_rx, &pending, &on_event);
+                read_loop(&mut ws, &pending, &on_event);
                 alive.store(false, Ordering::SeqCst);
                 for (_, tx) in pending.lock().unwrap().drain() {
                     let _ = tx.send(Err("connection closed".into()));
                 }
             });
         }
-        Ok(Self { out, pending, next_id: AtomicU64::new(0), alive })
+        Ok(Self { out, pending, next_id: AtomicU64::new(0), alive, stream })
     }
 
     pub fn is_alive(&self) -> bool {
@@ -116,44 +133,24 @@ fn build_message(id: u64, session_id: Option<&str>, method: &str, params: Value)
     msg.to_string()
 }
 
-fn socket_loop(
+fn read_loop(
     ws: &mut WebSocket<MaybeTlsStream<TcpStream>>,
-    out_rx: &mpsc::Receiver<String>,
     pending: &Pending,
     on_event: &(impl Fn(CdpEvent) + Send + 'static),
 ) {
     loop {
-        while let Ok(text) = out_rx.try_recv() {
-            if ws.send(Message::Text(text.into())).is_err() && flush_blocking(ws).is_err() {
-                return;
-            }
-        }
         match ws.read() {
             Ok(Message::Text(text)) => dispatch(&text, pending, on_event),
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e))
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
             Err(_) => return,
         }
     }
 }
 
-fn flush_blocking(ws: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> Result<(), ()> {
-    for _ in 0..1000 {
-        match ws.flush() {
-            Ok(()) => return Ok(()),
-            Err(tungstenite::Error::Io(e))
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
-            Err(_) => return Err(()),
-        }
+impl Drop for CdpConn {
+    fn drop(&mut self) {
+        let _ = self.stream.shutdown(Shutdown::Both);
     }
-    Err(())
 }
 
 fn dispatch(text: &str, pending: &Pending, on_event: &impl Fn(CdpEvent)) {
@@ -231,5 +228,44 @@ mod tests {
         pending.lock().unwrap().insert(9, tx);
         dispatch(r#"{"id":9,"error":{"message":"no such frame"}}"#, &pending, &|_| {});
         assert_eq!(rx.recv().unwrap().unwrap_err(), "no such frame");
+    }
+
+    /// Loopback server that answers each request with `{"id", "result": {"echo": method}}`.
+    fn echo_server() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let (tcp, _) = listener.accept().unwrap();
+            let mut ws = tungstenite::accept(tcp).unwrap();
+            while let Ok(Message::Text(text)) = ws.read() {
+                let req: Value = serde_json::from_str(&text).unwrap();
+                if req["method"] == "Test.hangUp" {
+                    return;
+                }
+                let reply = json!({ "id": req["id"], "result": { "echo": req["method"] } });
+                ws.send(Message::Text(reply.to_string().into())).unwrap();
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn calls_round_trip_without_a_poll_tick() {
+        let conn = CdpConn::connect(&echo_server(), |_| {}).unwrap();
+        let started = std::time::Instant::now();
+        for i in 0..20 {
+            let method = format!("Test.m{i}");
+            let result = conn.call(None, &method, json!({})).unwrap();
+            assert_eq!(result["echo"], method);
+        }
+        assert!(started.elapsed() < Duration::from_millis(500));
+    }
+
+    #[test]
+    fn peer_close_fails_pending_calls_and_marks_dead() {
+        let conn = CdpConn::connect(&echo_server(), |_| {}).unwrap();
+        let err = conn.call(None, "Test.hangUp", json!({})).unwrap_err();
+        assert!(matches!(err, BrowserError::Cdp(ref m) if m.contains("connection closed")));
+        assert!(!conn.is_alive());
     }
 }
