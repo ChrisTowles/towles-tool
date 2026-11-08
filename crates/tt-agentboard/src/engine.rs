@@ -166,11 +166,13 @@ pub struct Engine {
     last_tracked: HashMap<String, i64>,
     /// The host's live PTY ids, pushed in by [`Self::set_live_sessions`].
     live_sessions: HashSet<String>,
+    /// Set when `repos.json` is re-read; cleared by [`Self::take_repos_changed`].
+    repos_changed: bool,
 }
 
 /// What a payload rebuild needs from the system rather than engine state.
 /// Collected outside the lock: it reads `/proc` and transcripts.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct AgentSnapshot {
     live_threads: HashSet<String>,
     tt_session_by_thread: HashMap<String, String>,
@@ -314,6 +316,7 @@ impl Engine {
             prior_run,
             last_tracked: HashMap::new(),
             live_sessions: HashSet::new(),
+            repos_changed: false,
         }
     }
 
@@ -335,6 +338,7 @@ impl Engine {
             self.archived_paths = tracked.archived;
             // Caching a corrupt file's stat would stop the next tick re-reading.
             self.repos_stat = stat;
+            self.repos_changed = true;
         }
     }
 
@@ -349,11 +353,14 @@ impl Engine {
         }
     }
 
-    pub fn finish_agent_scan(&mut self, job: AgentScanJob) {
+    /// Whether the scan produced any journal event, i.e. moved a session's status.
+    pub fn finish_agent_scan(&mut self, job: AgentScanJob) -> bool {
         self.watcher = job.watcher;
+        let moved = !job.events.is_empty();
         for event in job.events {
             self.tracker.apply_event(event);
         }
+        moved
     }
 
     /// Every row the rail should show, in rail order. **Rows come from records,
@@ -491,8 +498,17 @@ impl Engine {
         out
     }
 
-    pub fn set_agent_snapshot(&mut self, snapshot: AgentSnapshot) {
+    /// Whether the snapshot differs from the last one.
+    pub fn set_agent_snapshot(&mut self, snapshot: AgentSnapshot) -> bool {
+        let changed = snapshot != self.agent_snapshot;
         self.agent_snapshot = snapshot;
+        changed
+    }
+
+    /// Whether `repos.json` was re-read since the last call. The host's scan uses
+    /// it to know the rail's repo list may have moved.
+    pub fn take_repos_changed(&mut self) -> bool {
+        std::mem::take(&mut self.repos_changed)
     }
 
     pub fn compute_payload(&mut self, now: i64) -> StatePayload {
@@ -690,6 +706,7 @@ impl Engine {
             prior_run: HashSet::new(),
             last_tracked: HashMap::new(),
             live_sessions: HashSet::new(),
+            repos_changed: false,
         }
     }
 }

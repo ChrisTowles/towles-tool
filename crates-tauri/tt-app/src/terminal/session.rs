@@ -278,6 +278,16 @@ impl TermState {
             .collect()
     }
 
+    /// Whether any PTY wrote output within `window_ms`. A shown status is a
+    /// function of the clock as well as the stamps (output stops counting as work
+    /// 1.5s after it ends), so the emitter must keep rebuilding until this clears.
+    pub fn output_within(&self, now_ms: i64, window_ms: i64) -> bool {
+        self.sessions.lock().unwrap().values().any(|s| {
+            PtyActivity::read(&s.activity.last_output_ms)
+                .is_some_and(|at| now_ms.saturating_sub(at) < window_ms)
+        })
+    }
+
     pub fn live_ids(&self) -> HashSet<String> {
         self.sessions.lock().unwrap().keys().cloned().collect()
     }
