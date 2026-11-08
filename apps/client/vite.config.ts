@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
+import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig, type Plugin } from "vite";
 import { resolveDevPort } from "../../scripts/task-port.mjs";
 
@@ -136,6 +137,16 @@ export default defineConfig(({ command }) => ({
     react(command === "serve" ? { babel: { plugins: [componentNamePlugin] } } : undefined),
     tailwindcss(),
     writeOnlyChanged(),
+    // `ANALYZE=1 bun run build` writes a treemap + per-chunk sizes to dist-stats/.
+    ...(process.env.ANALYZE
+      ? [
+          visualizer({
+            filename: "dist-stats/stats.html",
+            template: "treemap",
+            gzipSize: true,
+          }),
+        ]
+      : []),
   ],
   // writeOnlyChanged prunes instead; emptying first would rewrite every file.
   build: { emptyOutDir: false },

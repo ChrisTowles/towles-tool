@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-// echarts is ~1MB, so it's dynamically imported at chart-mount time (see
-// useEChart) rather than pulled into the initial bundle. The type-only import
-// keeps `echarts.ECharts` available without emitting a runtime dependency.
-import type * as echarts from "echarts";
+import type { ECharts } from "echarts/core";
 import type { LedgerDay } from "@/lib/claude-sessions";
 import { NEUTRAL, paletteAt } from "@/lib/colors";
 import { fmtTokens, fmtUsd } from "@/lib/format";
@@ -53,20 +50,20 @@ function useDomThemeVersion(): number {
 }
 
 /** Shared echarts lifecycle: init, first-layout resize, theme re-render. */
-export function useEChart(render: (chart: echarts.ECharts) => void, deps: unknown[]) {
+export function useEChart(render: (chart: ECharts) => void, deps: unknown[]) {
   const ref = useRef<HTMLDivElement>(null);
   const themeVersion = useDomThemeVersion();
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    let chart: echarts.ECharts | undefined;
+    let chart: ECharts | undefined;
     let observer: ResizeObserver | undefined;
     let cancelled = false;
     const onResize = () => chart?.resize();
-    // echarts is code-split; init once it lands, unless the effect already
-    // cleaned up (fast tab switch / dep change) while the import was in flight.
-    void import("echarts").then((echarts) => {
+    // echarts/core with only the registered charts is code-split (see echarts-core.ts);
+    // init once it lands, unless the effect already cleaned up while it was in flight.
+    void import("./echarts-core").then((echarts) => {
       if (cancelled || !ref.current) return;
       // A hidden or pre-layout mount is 0×0, and echarts.init() at 0×0 warns
       // and draws nothing — defer init to the ResizeObserver's first real

@@ -1,23 +1,24 @@
-import type { ComponentType } from "react";
+import { lazy, type ComponentType } from "react";
 import type { ScreenId } from "@/lib/screens";
-import { BoardScreen } from "@/screens/board";
-import { ClaudeSessionsScreen } from "@/screens/claude-sessions";
 import { AgentBoardScreen } from "@/screens/agentboard";
-import { DoctorScreen } from "@/screens/doctor";
-import { McpScreen } from "@/screens/mcp";
-import { SettingsScreen } from "@/screens/settings";
-import { SlackScreen } from "@/screens/slack";
-import { TaskExplorerScreen } from "@/screens/task-explorer";
-import { TelemetryScreen } from "@/screens/telemetry";
 
+// Every screen but the landing one loads on first visit; `App` mounts each in a
+// Suspense boundary and keeps it mounted afterwards, so this changes only when
+// the code arrives, not the keep-mounted behavior.
 export const SCREEN_COMPONENTS: Record<ScreenId, ComponentType> = {
   agentboard: AgentBoardScreen,
-  board: BoardScreen,
-  slack: SlackScreen,
-  doctor: DoctorScreen,
-  "claude-sessions": ClaudeSessionsScreen,
-  mcp: McpScreen,
-  telemetry: TelemetryScreen,
-  "task-explorer": TaskExplorerScreen,
-  settings: SettingsScreen,
+  board: lazy(() => import("@/screens/board").then((m) => ({ default: m.BoardScreen }))),
+  slack: lazy(() => import("@/screens/slack").then((m) => ({ default: m.SlackScreen }))),
+  doctor: lazy(() => import("@/screens/doctor").then((m) => ({ default: m.DoctorScreen }))),
+  "claude-sessions": lazy(() =>
+    import("@/screens/claude-sessions").then((m) => ({ default: m.ClaudeSessionsScreen })),
+  ),
+  mcp: lazy(() => import("@/screens/mcp").then((m) => ({ default: m.McpScreen }))),
+  telemetry: lazy(() =>
+    import("@/screens/telemetry").then((m) => ({ default: m.TelemetryScreen })),
+  ),
+  "task-explorer": lazy(() =>
+    import("@/screens/task-explorer").then((m) => ({ default: m.TaskExplorerScreen })),
+  ),
+  settings: lazy(() => import("@/screens/settings").then((m) => ({ default: m.SettingsScreen }))),
 };
