@@ -314,17 +314,18 @@ pub async fn browser_close(host: State<'_, BrowserHost>, pane_id: String) -> Res
         let session = routes.iter().find(|(_, r)| r.pane_id == pane_id).map(|(s, _)| s.clone());
         session.and_then(|s| routes.remove(&s).map(|r| (s, r.target_id)))
     };
-    let mut instance = host.instance.lock().unwrap();
-    let Some(inst) = instance.as_mut() else {
-        return Ok(());
+    let last = {
+        let mut instance = host.instance.lock().unwrap();
+        let Some(inst) = instance.as_ref() else {
+            return Ok(());
+        };
+        if let Some((_, target_id)) = removed {
+            inst.conn.send(None, "Target.closeTarget", json!({ "targetId": target_id }));
+        }
+        if host.routes.lock().unwrap().is_empty() { instance.take() } else { None }
     };
-    if let Some((_, target_id)) = removed {
-        inst.conn.send(None, "Target.closeTarget", json!({ "targetId": target_id }));
-    }
-    if host.routes.lock().unwrap().is_empty() {
-        host.generation.fetch_add(1, Ordering::SeqCst);
-        inst.shutdown_graceful();
-        *instance = None;
+    if let Some(inst) = last {
+        retire_instance(&host, inst);
         tracing::info!(outcome = "last_pane_shutdown", "browser.pane_closed");
     } else {
         tracing::info!(outcome = "closed", "browser.pane_closed");
@@ -349,18 +350,22 @@ pub async fn browser_popout(
         routes.values().find(|r| r.pane_id == pane_id).ok_or("unknown pane")?.url.clone()
     };
     host.routes.lock().unwrap().clear();
-    host.generation.fetch_add(1, Ordering::SeqCst);
-    {
-        let mut instance = host.instance.lock().unwrap();
-        if let Some(inst) = instance.as_mut() {
-            inst.shutdown_graceful();
-        }
-        *instance = None;
+    let old = host.instance.lock().unwrap().take();
+    if let Some(inst) = old {
+        retire_instance(&host, inst);
     }
     launch_instance(&app, &host, false, Some(url.clone()))?;
     emit_state(&app, bare_state(pane_id, "poppedOut", url));
     tracing::info!(outcome = "popped_out", "browser.popout");
     Ok(())
+}
+
+/// Shut down an instance already taken out of the host. The caller must not
+/// hold the instance mutex: the graceful close can take 5s, and the GTK-thread
+/// input path locks that mutex.
+fn retire_instance(host: &BrowserHost, mut inst: Instance) {
+    host.generation.fetch_add(1, Ordering::SeqCst);
+    inst.shutdown_graceful();
 }
 
 fn pane_session(host: &BrowserHost, pane_id: &str) -> Result<(Arc<CdpConn>, String), String> {
@@ -401,13 +406,9 @@ fn ensure_instance(
     // Wrong mode (a popped-out headful being folded back in) or a dead
     // instance: close it out, then start fresh. Dropping the old Instance
     // releases its profile lock before the relaunch reacquires it.
-    {
-        let mut instance = host.instance.lock().unwrap();
-        if let Some(inst) = instance.as_mut() {
-            host.generation.fetch_add(1, Ordering::SeqCst);
-            inst.shutdown_graceful();
-        }
-        *instance = None;
+    let old = host.instance.lock().unwrap().take();
+    if let Some(inst) = old {
+        retire_instance(host, inst);
     }
     launch_instance(app, host, headless, None)
 }
