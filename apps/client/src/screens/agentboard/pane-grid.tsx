@@ -1,9 +1,9 @@
+import { lazy, Suspense } from "react";
 import { AgentboardStandby, Centered } from "@/components/agentboard-standby";
 import { ColdCacheOverlay, PaneHeader } from "@/components/agentboard-pane";
 import { JumpRecallCard } from "@/components/agentboard-jump-recall";
 import { BrowserPane } from "@/components/browser-pane";
 import { FolderFilesPane, type FilesOpenRequest } from "@/components/files-pane";
-import { PreviewPane } from "@/components/preview-pane";
 import { TerminalView } from "@/components/terminal-view";
 import type { SessionActions } from "@/lib/agentboard/actions";
 import { ownerRepoFromOrigin } from "@/lib/agentboard/folder";
@@ -23,6 +23,12 @@ import type { TermExit } from "@/lib/term-protocol";
 import { cn } from "@/lib/utils";
 import { paneStyle } from "./helpers";
 import type { ColumnDrag } from "./use-column-drag";
+
+// The preview pane carries the markdown stack (react-markdown, remark, rehype);
+// load it when a preview pane first opens, not with the board.
+const PreviewPane = lazy(() =>
+  import("@/components/preview-pane").then((m) => ({ default: m.PreviewPane })),
+);
 
 /** The pane area: one flat pool of mounted terminals (never remounted — a remount would respawn
  * the shell) plus the files/preview/browser/tombstone panes, all absolutely positioned into
@@ -226,12 +232,14 @@ export function PaneGrid(props: {
         const dir = previewPaneDir(id) ?? "";
         return paneBox(
           id,
-          <PreviewPane
-            folder={folderByDir.get(dir)}
-            focused={focusedPaneId === id}
-            file={previewRequests[dir]}
-            onClose={() => onRemovePane(id)}
-          />,
+          <Suspense fallback={null}>
+            <PreviewPane
+              folder={folderByDir.get(dir)}
+              focused={focusedPaneId === id}
+              file={previewRequests[dir]}
+              onClose={() => onRemovePane(id)}
+            />
+          </Suspense>,
         );
       })}
       {/* Chrome panes: a real headless Chrome streamed onto a canvas — the

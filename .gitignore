@@ -4,6 +4,7 @@
 node_modules/
 dist/
 /apps/client/dist
+/apps/client/dist-stats
 /e2e/screenshots
 # tauri-build regenerates these from the compiled plugin set, so they flip-flop
 # between wdio and non-wdio builds if tracked

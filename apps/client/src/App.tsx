@@ -1,5 +1,5 @@
 import { useAtomValue } from "@/lib/atoms/react";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { toastManager } from "@/lib/toast";
 import "@/lib/app-bridges";
 import { read } from "@/lib/atoms/registry";
@@ -127,14 +127,18 @@ function Workspace() {
                   return SCREENS[id].fullBleed ? (
                     <div key={id} hidden={hidden} className="h-full">
                       <ErrorBoundary label={SCREENS[id].title}>
-                        <Screen />
+                        <Suspense fallback={null}>
+                          <Screen />
+                        </Suspense>
                       </ErrorBoundary>
                     </div>
                   ) : (
                     <ScrollArea key={id} hidden={hidden} className="h-full">
                       <div className="mx-auto max-w-3xl p-6">
                         <ErrorBoundary label={SCREENS[id].title}>
-                          <Screen />
+                          <Suspense fallback={null}>
+                            <Screen />
+                          </Suspense>
                         </ErrorBoundary>
                       </div>
                     </ScrollArea>
