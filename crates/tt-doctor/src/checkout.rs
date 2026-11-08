@@ -256,7 +256,8 @@ fn check_code_server() -> CheckoutCheck {
 
 /// `code-server --version` prints `4.137.0 <sha> with Code 1.137.0`.
 fn code_server_version(binary: &Path) -> Option<String> {
-    let out = tt_exec::run(&binary.to_string_lossy(), &["--version"]).ok().filter(|o| o.ok())?;
+    let out = super::probe(&binary.to_string_lossy(), &["--version"], super::PROBE_TIMEOUT)
+        .ok_output()?;
     super::extract_version(&out.stdout)
 }
 

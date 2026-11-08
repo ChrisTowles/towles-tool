@@ -8,6 +8,9 @@
 mod checkout;
 pub mod disk;
 
+use std::thread;
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 pub use checkout::CheckoutCheck;
@@ -120,29 +123,95 @@ pub struct DoctorReport {
     pub checkout: Vec<CheckoutCheck>,
 }
 
-/// Spawns a handful of `--version`/auth subprocesses, so run it off any latency-sensitive
-/// thread. `bound_mcp_port` is the port this process serves MCP on, `None` when it isn't.
-pub fn run_report(bound_mcp_port: Option<u16>) -> DoctorReport {
-    let mut tools: Vec<CheckResult> =
-        TOOLS.iter().map(|(name, arg, optional)| check_tool(name, arg, *optional)).collect();
-    tools.push(check_zig());
-    if cfg!(target_os = "linux") {
-        tools.push(check_webkit());
-    }
-    let plugins = check_claude_plugins();
-    let agentboard = check_agentboard();
-    let stale_tasks = check_stale_tasks();
-    let port_health = check_port_health();
-    let checkout = checkout::check_checkout(bound_mcp_port);
+/// `--version` and `pkg-config` probes answer instantly or not at all.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+/// `gh auth status` reaches the network.
+const GH_AUTH_TIMEOUT: Duration = Duration::from_secs(10);
+/// `claude plugin list` and `claude mcp list` start servers and connect to them.
+const CLAUDE_TIMEOUT: Duration = Duration::from_secs(20);
 
-    let result = DoctorRunResult {
-        timestamp: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
-        tools,
-        gh_auth: check_gh_auth(),
-        plugins: plugins.iter().map(|p| NameOk { name: p.name.clone(), ok: p.ok }).collect(),
-        agentboard: agentboard.iter().map(|a| NameOk { name: a.name.clone(), ok: a.ok }).collect(),
-    };
-    DoctorReport { result, plugins, agentboard, stale_tasks, port_health, checkout }
+/// What a bounded subprocess probe came to: it answered, or never did.
+enum Probe {
+    Ran(tt_exec::Output),
+    TimedOut,
+    Unavailable,
+}
+
+impl Probe {
+    /// The output of a probe that ran and exited 0.
+    fn ok_output(self) -> Option<tt_exec::Output> {
+        match self {
+            Probe::Ran(out) if out.ok() => Some(out),
+            _ => None,
+        }
+    }
+}
+
+/// Every doctor subprocess goes through here so none can hang the Doctor screen.
+fn probe(cmd: &str, args: &[&str], timeout: Duration) -> Probe {
+    match tt_exec::run_with_timeout(cmd, args, timeout) {
+        Ok(out) => Probe::Ran(out),
+        Err(tt_exec::Error::Timeout { .. }) => Probe::TimedOut,
+        Err(_) => Probe::Unavailable,
+    }
+}
+
+fn timed_out_warning(timeout: Duration) -> String {
+    format!("timed out after {}s", timeout.as_secs())
+}
+
+/// Runs the checks on scoped threads, since each is dominated by waiting on a
+/// subprocess, so the report takes as long as the slowest probe rather than the
+/// sum. Still blocking: run it off any latency-sensitive thread. `bound_mcp_port`
+/// is the port this process serves MCP on, `None` when it isn't.
+pub fn run_report(bound_mcp_port: Option<u16>) -> DoctorReport {
+    thread::scope(|s| {
+        let tool_rows: Vec<_> = TOOLS
+            .iter()
+            .map(|(name, arg, optional)| {
+                s.spawn(move || check_tool(name, arg, *optional, PROBE_TIMEOUT))
+            })
+            .collect();
+        let zig = s.spawn(check_zig);
+        let webkit = cfg!(target_os = "linux").then(|| s.spawn(check_webkit));
+        let gh_auth = s.spawn(check_gh_auth);
+        let plugins = s.spawn(check_claude_plugins);
+        let mcp = s.spawn(check_tt_mcp_registered);
+        let stale_tasks = s.spawn(check_stale_tasks);
+        let port_health = s.spawn(check_port_health);
+        let checkout = s.spawn(move || checkout::check_checkout(bound_mcp_port));
+
+        let mut tools: Vec<CheckResult> = tool_rows.into_iter().map(join).collect();
+        tools.push(join(zig));
+        tools.extend(webkit.map(join));
+        let plugins = join(plugins);
+        let mut agentboard = check_agentboard();
+        agentboard.push(join(mcp));
+
+        let result = DoctorRunResult {
+            timestamp: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+            tools,
+            gh_auth: join(gh_auth),
+            plugins: plugins.iter().map(|p| NameOk { name: p.name.clone(), ok: p.ok }).collect(),
+            agentboard: agentboard
+                .iter()
+                .map(|a| NameOk { name: a.name.clone(), ok: a.ok })
+                .collect(),
+        };
+        DoctorReport {
+            result,
+            plugins,
+            agentboard,
+            stale_tasks: join(stale_tasks),
+            port_health: join(port_health),
+            checkout: join(checkout),
+        }
+    })
+}
+
+/// A panicking check is a bug, not a result: re-raise it on the caller.
+fn join<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
+    handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
 /// The "State on disk" panel's data, resolved from the real dirs — the one place
@@ -244,9 +313,9 @@ fn classify_stale_task(
     })
 }
 
-fn check_tool(name: &str, version_arg: &str, optional: bool) -> CheckResult {
-    match tt_exec::run(name, &[version_arg]) {
-        Ok(output) if output.ok() => {
+fn check_tool(name: &str, version_arg: &str, optional: bool, timeout: Duration) -> CheckResult {
+    match probe(name, &[version_arg], timeout) {
+        Probe::Ran(output) if output.ok() => {
             let combined = format!("{}{}", output.stdout, output.stderr);
             CheckResult {
                 name: name.to_string(),
@@ -255,6 +324,12 @@ fn check_tool(name: &str, version_arg: &str, optional: bool) -> CheckResult {
                 warning: None,
             }
         }
+        Probe::TimedOut => CheckResult {
+            name: name.to_string(),
+            version: None,
+            ok: optional,
+            warning: Some(timed_out_warning(timeout)),
+        },
         _ => CheckResult {
             name: name.to_string(),
             version: None,
@@ -305,12 +380,12 @@ pub(crate) fn extract_version(text: &str) -> Option<String> {
 /// A normal tool row, but with real version gating: unlike [`check_tool`], a
 /// wrong minor is a failure. `zig version` prints just the version, no prefix.
 fn check_zig() -> CheckResult {
-    match tt_exec::run("zig", &["version"]) {
-        Ok(output) if output.ok() => {
+    match probe("zig", &["version"], PROBE_TIMEOUT).ok_output() {
+        Some(output) => {
             let combined = format!("{}{}", output.stdout, output.stderr);
             zig_result(extract_version(&combined))
         }
-        _ => zig_result(None),
+        None => zig_result(None),
     }
 }
 
@@ -333,9 +408,8 @@ fn zig_version_satisfies(version: &str) -> bool {
 /// tt-app links WebKitGTK 4.1; `pkg-config` is how a build finds it, so it is
 /// the probe that predicts whether `cargo build` will.
 fn check_webkit() -> CheckResult {
-    let version = tt_exec::run("pkg-config", &["--modversion", "webkit2gtk-4.1"])
-        .ok()
-        .filter(|out| out.ok())
+    let version = probe("pkg-config", &["--modversion", "webkit2gtk-4.1"], PROBE_TIMEOUT)
+        .ok_output()
         .and_then(|out| extract_version(&out.stdout));
     webkit_result(version)
 }
@@ -367,7 +441,7 @@ fn tt_mcp_registered(list_output: &str) -> bool {
 }
 
 fn check_gh_auth() -> bool {
-    matches!(tt_exec::run("gh", &["auth", "status"]), Ok(out) if out.ok())
+    probe("gh", &["auth", "status"], GH_AUTH_TIMEOUT).ok_output().is_some()
 }
 
 struct RequiredPlugin {
@@ -396,12 +470,13 @@ fn check_claude_plugins() -> Vec<PluginCheck> {
         id: String,
     }
 
-    let installed_ids: Vec<String> = match tt_exec::run("claude", &["plugin", "list", "--json"]) {
-        Ok(out) if out.ok() => serde_json::from_str::<Vec<Entry>>(&out.stdout)
-            .map(|plugins| plugins.into_iter().map(|p| p.id).collect())
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    };
+    let installed_ids: Vec<String> =
+        match probe("claude", &["plugin", "list", "--json"], CLAUDE_TIMEOUT).ok_output() {
+            Some(out) => serde_json::from_str::<Vec<Entry>>(&out.stdout)
+                .map(|plugins| plugins.into_iter().map(|p| p.id).collect())
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
 
     REQUIRED_PLUGINS
         .iter()
@@ -465,7 +540,6 @@ fn check_agentboard() -> Vec<AgentBoardCheck> {
     });
 
     results.push(check_settings_parse());
-    results.push(check_tt_mcp_registered());
 
     results
 }
@@ -517,16 +591,21 @@ fn check_settings_parse() -> AgentBoardCheck {
 /// The `towles-tool-app` plugin registers it; a missing registration is a
 /// warning with the fix, not a hard failure.
 fn check_tt_mcp_registered() -> AgentBoardCheck {
-    let registered = match tt_exec::run("claude", &["mcp", "list"]) {
-        Ok(out) if out.ok() => tt_mcp_registered(&out.stdout),
-        _ => false,
-    };
+    let listed = probe("claude", &["mcp", "list"], CLAUDE_TIMEOUT);
+    let timed_out = matches!(listed, Probe::TimedOut);
+    let registered = listed.ok_output().is_some_and(|out| tt_mcp_registered(&out.stdout));
 
     AgentBoardCheck {
         name: "towles-tool MCP".to_string(),
         value: if registered { "registered" } else { "not registered" }.to_string(),
         ok: registered,
-        warning: (!registered).then(|| "not registered with Claude Code".to_string()),
+        warning: (!registered).then(|| {
+            if timed_out {
+                format!("`claude mcp list` {}", timed_out_warning(CLAUDE_TIMEOUT))
+            } else {
+                "not registered with Claude Code".to_string()
+            }
+        }),
         hint: (!registered)
             .then(|| format!("Enable the towles-tool-app plugin: {APP_PLUGIN_INSTALL_CMD}")),
     }
@@ -583,13 +662,32 @@ mod tests {
 
     #[test]
     fn optional_tool_missing_is_ok_with_warning() {
-        let check = check_tool("definitely-not-a-real-binary-xyz", "--version", true);
+        let check =
+            check_tool("definitely-not-a-real-binary-xyz", "--version", true, PROBE_TIMEOUT);
         assert!(check.ok);
         assert_eq!(check.warning.as_deref(), Some("optional, not installed"));
 
-        let required = check_tool("definitely-not-a-real-binary-xyz", "--version", false);
+        let required =
+            check_tool("definitely-not-a-real-binary-xyz", "--version", false, PROBE_TIMEOUT);
         assert!(!required.ok);
         assert!(required.warning.is_none());
+    }
+
+    #[test]
+    fn a_hung_tool_reports_a_timeout_instead_of_blocking() {
+        let started = std::time::Instant::now();
+        let check = check_tool("sleep", "5", false, Duration::from_millis(200));
+        assert!(started.elapsed() < Duration::from_secs(4));
+        assert!(!check.ok);
+        assert!(check.warning.unwrap_or_default().starts_with("timed out after"));
+    }
+
+    #[test]
+    fn probe_tells_a_hang_from_a_missing_binary() {
+        let hung = probe("sleep", &["5"], Duration::from_millis(100));
+        assert!(matches!(hung, Probe::TimedOut));
+        let missing = probe("definitely-not-a-real-binary-xyz", &[], PROBE_TIMEOUT);
+        assert!(matches!(missing, Probe::Unavailable));
     }
 
     #[test]
