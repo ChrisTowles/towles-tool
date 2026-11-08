@@ -514,7 +514,7 @@ fn build_repo_candidates(existing: &[String], roots: &[std::path::PathBuf]) -> V
 
 /// Scan roots come from `scanRoots` in repos.json, defaulting to `~/code`.
 #[tauri::command]
-pub fn ab_discover_repos(state: State<Ab>) -> Vec<RepoCandidate> {
+pub async fn ab_discover_repos(state: State<'_, Ab>) -> Result<Vec<RepoCandidate>, String> {
     let (existing, configured): (Vec<String>, Vec<String>) = {
         let mut engine = state.engine.lock().unwrap();
         (engine.repo_dirs(), engine.scan_roots())
@@ -524,7 +524,7 @@ pub fn ab_discover_repos(state: State<Ab>) -> Vec<RepoCandidate> {
     } else {
         configured.iter().map(|r| tt_config::expand_tilde(r)).collect()
     };
-    build_repo_candidates(&existing, &roots)
+    crate::store::run_blocking(move || Ok(build_repo_candidates(&existing, &roots))).await
 }
 
 #[cfg(test)]

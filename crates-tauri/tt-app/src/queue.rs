@@ -195,50 +195,62 @@ fn after_write(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub fn queue_move(
+pub async fn queue_move(
     app: AppHandle,
-    store: State<StoreState>,
+    store: State<'_, StoreState>,
     id: i64,
     to: RankMove,
 ) -> Result<(), String> {
-    let result = store.with(|s| s.move_task(id, to).map_err(|e| e.to_string()));
-    tracing::info!(task_id = id, to = ?to, ok = result.is_ok(), "task.rank_set");
-    result?;
-    after_write(&app);
-    Ok(())
+    store
+        .run_blocking(move |store| {
+            let result = store.with(|s| s.move_task(id, to).map_err(|e| e.to_string()));
+            tracing::info!(task_id = id, to = ?to, ok = result.is_ok(), "task.rank_set");
+            result?;
+            after_write(&app);
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
-pub fn queue_snooze(
+pub async fn queue_snooze(
     app: AppHandle,
-    store: State<StoreState>,
+    store: State<'_, StoreState>,
     folder_dir: String,
     reason: String,
     until_ms: Option<i64>,
     until_ci: bool,
 ) -> Result<(), String> {
-    let key = snooze_key(&folder_dir);
-    let until = SnoozeUntil { reason: &reason, until_ms, until_ci };
-    let result =
-        store.with(|s| s.snooze_queue_item(&key, until, now_ms()).map_err(|e| e.to_string()));
-    tracing::info!(reason, until_ms, until_ci, ok = result.is_ok(), "queue.snoozed");
-    result?;
-    after_write(&app);
-    Ok(())
+    store
+        .run_blocking(move |store| {
+            let key = snooze_key(&folder_dir);
+            let until = SnoozeUntil { reason: &reason, until_ms, until_ci };
+            let result = store
+                .with(|s| s.snooze_queue_item(&key, until, now_ms()).map_err(|e| e.to_string()));
+            tracing::info!(reason, until_ms, until_ci, ok = result.is_ok(), "queue.snoozed");
+            result?;
+            after_write(&app);
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
-pub fn queue_unsnooze(
+pub async fn queue_unsnooze(
     app: AppHandle,
-    store: State<StoreState>,
+    store: State<'_, StoreState>,
     folder_dir: String,
 ) -> Result<(), String> {
-    let key = snooze_key(&folder_dir);
-    let result = store.with(|s| s.unsnooze_queue_item(&key).map_err(|e| e.to_string()));
-    tracing::info!(ok = result.is_ok(), "queue.unsnoozed");
-    result?;
-    after_write(&app);
-    Ok(())
+    store
+        .run_blocking(move |store| {
+            let key = snooze_key(&folder_dir);
+            let result = store.with(|s| s.unsnooze_queue_item(&key).map_err(|e| e.to_string()));
+            tracing::info!(ok = result.is_ok(), "queue.unsnoozed");
+            result?;
+            after_write(&app);
+            Ok(())
+        })
+        .await
 }
 
 /// How one row of a batch landing ended.

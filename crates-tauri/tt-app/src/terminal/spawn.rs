@@ -313,11 +313,18 @@ pub(super) fn notify_agentboard(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub fn term_kill(app: AppHandle, term_id: String) {
+pub async fn term_kill(app: AppHandle, term_id: String) -> Result<(), String> {
     // So "which pane did the user close, and when" is a log query, not a repro.
     tracing::info!(%term_id, "terminal.killed");
-    app.state::<TermState>().kill(&term_id);
+    // Out of the map before anything blocks, so a respawn under this id is safe.
+    let reap = app.state::<TermState>().detach(&term_id);
+    crate::store::run_blocking(move || {
+        reap();
+        Ok(())
+    })
+    .await?;
     notify_agentboard(&app);
+    Ok(())
 }
 
 pub fn on_window_destroyed(app: &AppHandle, label: &str) {

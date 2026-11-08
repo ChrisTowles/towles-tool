@@ -169,6 +169,25 @@ impl StoreState {
     pub fn with<T>(&self, f: impl FnOnce(&Store) -> Result<T, String>) -> Result<T, String> {
         with_store(self, f)
     }
+
+    /// For a command that touches the database or disk: on Linux a sync command runs
+    /// inline on the GTK main thread, so that work belongs on a blocking worker.
+    pub async fn run_blocking<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&StoreState) -> Result<T, String> + Send + 'static,
+    ) -> Result<T, String> {
+        let this = self.clone();
+        run_blocking(move || f(&this)).await
+    }
+}
+
+/// The one place a blocking worker's join error becomes a command error.
+pub async fn run_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("blocking task failed: {e}"))?
 }
 
 /// Guards against overlapping manual "refresh now" runs, which shell `gh`/Slack
@@ -355,157 +374,197 @@ pub fn task_sync_branch(app: AppHandle, id: i64) -> Result<tt_store::BranchResyn
 }
 
 #[tauri::command]
-pub fn store_snapshot(state: State<StoreState>) -> Result<Snapshot, String> {
-    snapshot_of(&state)
+pub async fn store_snapshot(state: State<'_, StoreState>) -> Result<Snapshot, String> {
+    state.run_blocking(snapshot_of).await
 }
 
 /// `status` picks the landing column: quick-add uses `backlog`, the new-task
 /// flow puts worktree-backed tasks straight into `doing`.
 #[tauri::command]
-pub fn store_add_task(
+pub async fn store_add_task(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     text: String,
     status: Option<String>,
     goal: Option<String>,
 ) -> Result<i64, String> {
-    let status = status.unwrap_or_else(|| "backlog".to_string());
-    let task = with_store(&state, |store| {
-        store
-            .add_task(&text, &status, None, goal.as_deref(), now_ms())
-            .map_err(|e| format!("add_task failed: {e}"))
-    })?;
-    tracing::info!(task_id = task.id, %status, "task.created");
-    emit_snapshot(&app, &state);
-    Ok(task.id)
+    state
+        .run_blocking(move |state| {
+            let status = status.unwrap_or_else(|| "backlog".to_string());
+            let task = with_store(state, |store| {
+                store
+                    .add_task(&text, &status, None, goal.as_deref(), now_ms())
+                    .map_err(|e| format!("add_task failed: {e}"))
+            })?;
+            tracing::info!(task_id = task.id, %status, "task.created");
+            emit_snapshot(&app, state);
+            Ok(task.id)
+        })
+        .await
 }
 
 #[tauri::command]
-pub fn store_attach_task_issue(
+pub async fn store_attach_task_issue(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
     repo: String,
     number: i64,
     url: String,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store
-            .attach_task_issue(id, &repo, number, &url)
-            .map_err(|e| format!("attach_task_issue failed: {e}"))
-    })?;
-    tracing::info!(task_id = id, %repo, number, "task.issue_attached");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store
+                    .attach_task_issue(id, &repo, number, &url)
+                    .map_err(|e| format!("attach_task_issue failed: {e}"))
+            })?;
+            tracing::info!(task_id = id, %repo, number, "task.issue_attached");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
-pub fn store_detach_task_issue(
+pub async fn store_detach_task_issue(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
     repo: String,
     number: i64,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store
-            .detach_task_issue(id, &repo, number)
-            .map_err(|e| format!("detach_task_issue failed: {e}"))
-    })?;
-    tracing::info!(task_id = id, %repo, number, "task.issue_detached");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store
+                    .detach_task_issue(id, &repo, number)
+                    .map_err(|e| format!("detach_task_issue failed: {e}"))
+            })?;
+            tracing::info!(task_id = id, %repo, number, "task.issue_detached");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 /// PRs from the task's own branch attach automatically on collect; this is the
 /// manual path for cross-repo or extra PRs.
 #[tauri::command]
-pub fn store_attach_task_pr(
+pub async fn store_attach_task_pr(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
     repo: String,
     number: i64,
     url: String,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store
-            .attach_task_pr(id, &repo, number, &url)
-            .map_err(|e| format!("attach_task_pr failed: {e}"))
-    })?;
-    tracing::info!(task_id = id, %repo, number, "task.pr_attached");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store
+                    .attach_task_pr(id, &repo, number, &url)
+                    .map_err(|e| format!("attach_task_pr failed: {e}"))
+            })?;
+            tracing::info!(task_id = id, %repo, number, "task.pr_attached");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
-pub fn store_detach_task_pr(
+pub async fn store_detach_task_pr(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
     repo: String,
     number: i64,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store.detach_task_pr(id, &repo, number).map_err(|e| format!("detach_task_pr failed: {e}"))
-    })?;
-    tracing::info!(task_id = id, %repo, number, "task.pr_detached");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store
+                    .detach_task_pr(id, &repo, number)
+                    .map_err(|e| format!("detach_task_pr failed: {e}"))
+            })?;
+            tracing::info!(task_id = id, %repo, number, "task.pr_detached");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 /// The new-task flow calls this at submit with the repo alone (`branch`/`dir`
 /// `None`) so the task has a Board swimlane immediately, then again once
 /// `task_create` resolves. `repo` as `owner/name` enables PR auto-attach.
 #[tauri::command]
-pub fn store_task_set_worktree(
+pub async fn store_task_set_worktree(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
     repo_root: String,
     repo: Option<String>,
     branch: Option<String>,
     dir: Option<String>,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store
-            .set_task_worktree(id, &repo_root, repo.as_deref(), branch.as_deref(), dir.as_deref())
-            .map_err(|e| format!("set_task_worktree failed: {e}"))
-    })?;
-    tracing::info!(task_id = id, branch = branch.as_deref().unwrap_or(""), "task.worktree_bound");
-    emit_snapshot(&app, &state);
-    // The row landed with the snapshot; this warms the new checkout's git stats.
-    app.state::<crate::agentboard::Ab>().scan.notify_one();
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store
+                    .set_task_worktree(
+                        id,
+                        &repo_root,
+                        repo.as_deref(),
+                        branch.as_deref(),
+                        dir.as_deref(),
+                    )
+                    .map_err(|e| format!("set_task_worktree failed: {e}"))
+            })?;
+            tracing::info!(
+                task_id = id,
+                branch = branch.as_deref().unwrap_or(""),
+                "task.worktree_bound"
+            );
+            emit_snapshot(&app, state);
+            // The row landed with the snapshot; this warms the new checkout's git stats.
+            app.state::<crate::agentboard::Ab>().scan.notify_one();
+            Ok(())
+        })
+        .await
 }
 
 /// Syncs GitHub when this crosses the `done` boundary (see
 /// [`spawn_gh_status_sync`]). Used by the "Move to" menu.
 #[tauri::command]
-pub fn store_set_task_status(
+pub async fn store_set_task_status(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
     status: String,
 ) -> Result<(), String> {
-    let before = with_store(&state, |store| {
-        let before = store.get_task(id).map_err(|e| format!("get_task failed: {e}"))?;
-        store
-            .set_task_status(id, &status, now_ms())
-            .map_err(|e| format!("set_task_status failed: {e}"))?;
-        Ok(before)
-    })?;
-    tracing::info!(
-        task_id = id,
-        from = before.as_ref().map(|b| b.status.as_str()).unwrap_or(""),
-        to = %status,
-        "task.status_set"
-    );
-    emit_snapshot(&app, &state);
-    if let Some(before) = before {
-        spawn_gh_status_sync(&before.status, &status, &before.issues);
-    }
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            let before = with_store(state, |store| {
+                let before = store.get_task(id).map_err(|e| format!("get_task failed: {e}"))?;
+                store
+                    .set_task_status(id, &status, now_ms())
+                    .map_err(|e| format!("set_task_status failed: {e}"))?;
+                Ok(before)
+            })?;
+            tracing::info!(
+                task_id = id,
+                from = before.as_ref().map(|b| b.status.as_str()).unwrap_or(""),
+                to = %status,
+                "task.status_set"
+            );
+            emit_snapshot(&app, state);
+            if let Some(before) = before {
+                spawn_gh_status_sync(&before.status, &status, &before.issues);
+            }
+            Ok(())
+        })
+        .await
 }
 
 /// Fire-and-forget close/reopen of a task's linked issues; a failed gh call
@@ -553,101 +612,131 @@ fn run_gh_issue_state_change(repo: &str, number: i64, verb: &str) -> Result<(), 
 
 /// A full replace of both fields — `null` clears notes.
 #[tauri::command]
-pub fn store_update_task(
+pub async fn store_update_task(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
     text: String,
     notes: Option<String>,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store
-            .update_task(id, &text, notes.as_deref())
-            .map(|_| ())
-            .map_err(|e| format!("update_task failed: {e}"))
-    })?;
-    tracing::info!(task_id = id, "task.updated");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store
+                    .update_task(id, &text, notes.as_deref())
+                    .map(|_| ())
+                    .map_err(|e| format!("update_task failed: {e}"))
+            })?;
+            tracing::info!(task_id = id, "task.updated");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 /// The "Archive done" button — rows are hidden, never deleted. A deliberate
 /// manual action, so it ignores [`tt_store::ARCHIVE_AFTER_MS`]: that grace
 /// period exists only for the unattended collector-side sweep.
 #[tauri::command]
-pub fn store_archive_done(app: AppHandle, state: State<StoreState>) -> Result<usize, String> {
-    let now = now_ms();
-    let archived = with_store(&state, |store| {
-        store
-            .archive_closed_tasks(now + 1, now)
-            .map_err(|e| format!("archive_closed_tasks failed: {e}"))
-    })?;
-    tracing::info!(count = archived, "task.done_archived");
-    emit_snapshot(&app, &state);
-    Ok(archived)
+pub async fn store_archive_done(
+    app: AppHandle,
+    state: State<'_, StoreState>,
+) -> Result<usize, String> {
+    state
+        .run_blocking(move |state| {
+            let now = now_ms();
+            let archived = with_store(state, |store| {
+                store
+                    .archive_closed_tasks(now + 1, now)
+                    .map_err(|e| format!("archive_closed_tasks failed: {e}"))
+            })?;
+            tracing::info!(count = archived, "task.done_archived");
+            emit_snapshot(&app, state);
+            Ok(archived)
+        })
+        .await
 }
 
 /// The card's "Restore" action.
 #[tauri::command]
-pub fn store_unarchive_task(
+pub async fn store_unarchive_task(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     id: i64,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store.unarchive_task(id).map_err(|e| format!("unarchive_task failed: {e}"))
-    })?;
-    tracing::info!(task_id = id, "task.unarchived");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store.unarchive_task(id).map_err(|e| format!("unarchive_task failed: {e}"))
+            })?;
+            tracing::info!(task_id = id, "task.unarchived");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 /// Mark the watched DM's message at `ts` handled (banner dismissal), then re-emit.
 #[tauri::command]
-pub fn store_dm_dismiss(
+pub async fn store_dm_dismiss(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     channel: String,
     ts: i64,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store.dismiss_dm(&channel, ts).map_err(|e| format!("dismiss_dm failed: {e}"))
-    })?;
-    tracing::info!(%channel, "dm.dismissed");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store.dismiss_dm(&channel, ts).map_err(|e| format!("dismiss_dm failed: {e}"))
+            })?;
+            tracing::info!(%channel, "dm.dismissed");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 /// `kind` is `"issue"` or `"pr"`. The item drops out of the attention feed until
 /// the collector observes an `updatedTs` newer than the one passed in.
 #[tauri::command]
-pub fn store_item_dismiss(
+pub async fn store_item_dismiss(
     app: AppHandle,
-    state: State<StoreState>,
+    state: State<'_, StoreState>,
     kind: String,
     repo: String,
     number: i64,
     updated_ts: i64,
 ) -> Result<(), String> {
-    with_store(&state, |store| {
-        store
-            .dismiss_item(&kind, &repo, number, updated_ts)
-            .map_err(|e| format!("dismiss_item failed: {e}"))
-    })?;
-    tracing::info!(%kind, %repo, number, "item.dismissed");
-    emit_snapshot(&app, &state);
-    Ok(())
+    state
+        .run_blocking(move |state| {
+            with_store(state, |store| {
+                store
+                    .dismiss_item(&kind, &repo, number, updated_ts)
+                    .map_err(|e| format!("dismiss_item failed: {e}"))
+            })?;
+            tracing::info!(%kind, %repo, number, "item.dismissed");
+            emit_snapshot(&app, state);
+            Ok(())
+        })
+        .await
 }
 
 /// Clear every dismissed issue/PR at once — the "clear all dismissals" action.
 #[tauri::command]
-pub fn store_dismissals_clear(app: AppHandle, state: State<StoreState>) -> Result<usize, String> {
-    let count = with_store(&state, |store| {
-        store.clear_dismissals().map_err(|e| format!("clear_dismissals failed: {e}"))
-    })?;
-    tracing::info!(count, "items.dismissals_cleared");
-    emit_snapshot(&app, &state);
-    Ok(count)
+pub async fn store_dismissals_clear(
+    app: AppHandle,
+    state: State<'_, StoreState>,
+) -> Result<usize, String> {
+    state
+        .run_blocking(move |state| {
+            let count = with_store(state, |store| {
+                store.clear_dismissals().map_err(|e| format!("clear_dismissals failed: {e}"))
+            })?;
+            tracing::info!(count, "items.dismissals_cleared");
+            emit_snapshot(&app, state);
+            Ok(count)
+        })
+        .await
 }
 
 /// Promote a local todo into a real GitHub issue in `repo` (owner/name), then

@@ -374,9 +374,18 @@ impl TermState {
     /// After the lock is released. `pub(crate)` so task removal can clear a
     /// folder's PTYs before its worktree goes.
     pub(crate) fn kill(&self, term_id: &str) {
+        self.detach(term_id)();
+    }
+
+    /// Removes the session from the map *now*, so a replacement registered under
+    /// the same id can never be reaped by a late kill; the returned closure does the
+    /// blocking half (kill, process-table sweep, wait) wherever the caller runs it.
+    pub(crate) fn detach(&self, term_id: &str) -> impl FnOnce() + Send + 'static {
         let session = self.sessions.lock().unwrap().remove(term_id);
-        if let Some(session) = session {
-            reap(session);
+        move || {
+            if let Some(session) = session {
+                reap(session);
+            }
         }
     }
 

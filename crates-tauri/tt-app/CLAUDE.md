@@ -13,6 +13,10 @@ invariants a single read won't surface: it is the largest crate in the repo
   held across a git chain freezes every `ab_*` command, not just the caller. Git
   reads being in-process (`tt_git::repo`, gitoxide) makes them ~10–100× faster
   but not free — a status walk over a large tree is still real work.
+- **A command that does disk, git, SQLite or `/proc` work is `async` and runs it
+  through `StoreState::run_blocking` (or `store::run_blocking` with no store).**
+  Sync commands run inline on the GTK main thread on Linux. `term_kill` detaches
+  the session from the map before it hands the reap to the worker.
 - **Git freshness has three rules, each with a bug behind it, and the reasoning
   is in [docs/GIT-FRESHNESS.md](../../docs/GIT-FRESHNESS.md) — read it before
   touching the warm loop or either watcher.** Stamp a cache entry with the time

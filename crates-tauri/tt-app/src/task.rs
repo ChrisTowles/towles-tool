@@ -80,9 +80,12 @@ pub struct TaskCreated {
 
 /// Default branch first; [`ops::BaseBranch`] has the name-vs-label split.
 #[tauri::command]
-pub fn task_base_branches(root: String) -> Result<Vec<ops::BaseBranch>, String> {
-    let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
-    ops::checkout_branches(&sr.checkout).map_err(|e| e.to_string())
+pub async fn task_base_branches(root: String) -> Result<Vec<ops::BaseBranch>, String> {
+    crate::store::run_blocking(move || {
+        let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
+        ops::checkout_branches(&sr.checkout).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 #[derive(Serialize, Clone)]
@@ -98,16 +101,19 @@ pub struct BranchCheck {
 
 /// Read-only — safe on every (debounced) keystroke.
 #[tauri::command]
-pub fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, String> {
-    let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
-    let check = ops::check_branch(&sr, branch.trim());
-    Ok(BranchCheck {
-        name: check.name,
-        dir: check.dir,
-        taken: check.taken,
-        branch_exists: check.branch_exists,
-        error: check.error,
+pub async fn task_check_branch(root: String, branch: String) -> Result<BranchCheck, String> {
+    crate::store::run_blocking(move || {
+        let sr = ops::discover_root(Some(&PathBuf::from(root))).map_err(|e| e.to_string())?;
+        let check = ops::check_branch(&sr, branch.trim());
+        Ok(BranchCheck {
+            name: check.name,
+            dir: check.dir,
+            taken: check.taken,
+            branch_exists: check.branch_exists,
+            error: check.error,
+        })
     })
+    .await
 }
 
 /// A **prompt improver** button: ask `claude -p` (cwd = `dir` for real repo
@@ -321,12 +327,18 @@ pub async fn task_write_pasted_images(
 
 /// The task templates the new-task form offers for this repo, in settings order.
 #[tauri::command]
-pub fn task_templates(name: String, dir: String) -> Result<Vec<tt_config::TaskTemplate>, String> {
-    let settings = tt_config::load().map_err(|e| format!("failed to load settings: {e}"))?;
-    Ok(tt_tasks::presets::for_repo(&settings.task_templates, &name, &dir)
-        .into_iter()
-        .cloned()
-        .collect())
+pub async fn task_templates(
+    name: String,
+    dir: String,
+) -> Result<Vec<tt_config::TaskTemplate>, String> {
+    crate::store::run_blocking(move || {
+        let settings = tt_config::load().map_err(|e| format!("failed to load settings: {e}"))?;
+        Ok(tt_tasks::presets::for_repo(&settings.task_templates, &name, &dir)
+            .into_iter()
+            .cloned()
+            .collect())
+    })
+    .await
 }
 
 /// A setup run's answer: the retry-able warning, and where its full output went.
