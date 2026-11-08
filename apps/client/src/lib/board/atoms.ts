@@ -102,10 +102,6 @@ export function setFoldedLanes(u: Update<ReadonlySet<Lane>>): void {
     );
 }
 
-/** Shells a removal is about to kill: their exit is expected, not a crash.
- * Process bookkeeping, never rendered — so a plain set, not state. */
-export const expectedKills: { current: Set<string> } = { current: new Set() };
-
 /** The selected session id and the checkout on screen, as live views. */
 export const selectedIdRef: { readonly current: string | null } = {
   get current() {

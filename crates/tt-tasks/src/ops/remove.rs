@@ -571,15 +571,34 @@ pub struct CleanReport {
     pub warnings: Vec<String>,
 }
 
+/// How `clean` fared removing one finished task: gone, or kept for the reasons given.
+pub enum CleanRemoval {
+    Removed { messages: Vec<String> },
+    Kept(Vec<String>),
+}
+
+/// [`clean_tasks`]' removal when nothing else owns the task: [`remove_task`] in-process.
+pub fn remove_for_clean(rm: &RemoveOpts, _dir: &Path) -> CleanRemoval {
+    match remove_task(rm, &mut |_| {}) {
+        Ok(RemoveOutcome::Removed(r)) => CleanRemoval::Removed { messages: r.messages },
+        Ok(RemoveOutcome::Blocked { blocked, .. }) => {
+            CleanRemoval::Kept(blocked.iter().map(ToString::to_string).collect())
+        }
+        Err(e) => CleanRemoval::Kept(vec![e.to_string()]),
+    }
+}
+
 /// Remove every *finished* task — its branch is a strict ancestor of the
 /// checkout's branch (classic merge) or its upstream is gone after
 /// `fetch --prune` (squash/rebase merge) — via the same guarded
 /// [`remove_task`], never forced, deleting the branch from the hub. Then sweep
 /// `scope_parents` for state dirs whose checkout no longer exists; `scope_of`
-/// is injected so the scope rule has exactly one owner.
+/// is injected so the scope rule has exactly one owner, and `remove` so a
+/// running app can do the removal where the task's terminals live.
 pub fn clean_tasks(
     opts: &CleanOpts,
     scope_of: impl Fn(&Path) -> Option<String>,
+    mut remove: impl FnMut(&RemoveOpts, &Path) -> CleanRemoval,
 ) -> Result<CleanReport> {
     let sr = discover_root(opts.root.as_deref())?;
     let mut warnings = Vec::new();
@@ -685,21 +704,18 @@ pub fn clean_tasks(
             ports_dir: opts.ports_dir.clone(),
             host_data: opts.host_data.clone(),
         };
-        match remove_task(&rm, &mut |_| {}) {
-            Ok(RemoveOutcome::Removed(r)) => {
+        match remove(&rm, &dir) {
+            CleanRemoval::Removed { messages } => {
                 removed.push(FinishedTask {
                     name,
                     branch,
                     reason: reason.clone(),
-                    messages: r.messages,
-                    dir: r.dir,
-                    checkout: r.checkout,
+                    messages,
+                    dir,
+                    checkout: sr.checkout.clone(),
                 });
             }
-            Ok(RemoveOutcome::Blocked { blocked, .. }) => {
-                keep(name, branch, blocked.iter().map(ToString::to_string).collect())
-            }
-            Err(e) => keep(name, branch, vec![e.to_string()]),
+            CleanRemoval::Kept(why) => keep(name, branch, why),
         }
     }
 

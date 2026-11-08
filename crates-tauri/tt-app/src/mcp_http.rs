@@ -273,19 +273,21 @@ struct AppTaskHost {
 impl tt_mcp::TaskHost for AppTaskHost {
     fn delete_task(
         &self,
-        id: i64,
+        target: tt_mcp::DeleteTarget,
         force: bool,
         outcome: Option<tt_store::TaskOutcome>,
     ) -> Result<tt_mcp::TaskDeletion, String> {
         use crate::task::{DeleteTarget, TaskDeleteOutcome};
 
-        match crate::task::delete_task_blocking(
-            &self.app,
-            DeleteTarget::Board(id),
-            force,
-            outcome,
-            false,
-        )? {
+        let label = match &target {
+            tt_mcp::DeleteTarget::Board(id) => format!("task {id}"),
+            tt_mcp::DeleteTarget::Worktree(dir) => dir.clone(),
+        };
+        let target = match target {
+            tt_mcp::DeleteTarget::Board(id) => DeleteTarget::Board(id),
+            tt_mcp::DeleteTarget::Worktree(dir) => DeleteTarget::Worktree(dir),
+        };
+        match crate::task::delete_task_blocking(&self.app, target, force, outcome, false)? {
             TaskDeleteOutcome::Deleted { name, messages } => {
                 Ok(tt_mcp::TaskDeletion::Deleted { name, messages })
             }
@@ -295,7 +297,7 @@ impl tt_mcp::TaskHost for AppTaskHost {
                 let blockers = serde_json::to_value(&blockers)
                     .ok()
                     .and_then(|value| value.as_array().cloned())
-                    .ok_or_else(|| format!("could not encode blockers for task {id}"))?;
+                    .ok_or_else(|| format!("could not encode blockers for {label}"))?;
                 Ok(tt_mcp::TaskDeletion::Refused { name, blockers, messages })
             }
         }

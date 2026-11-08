@@ -1,6 +1,8 @@
 // The ways Agent Board arrives at a checkout or session. Each is ONE transition
 // on the UI record, so a click lands as one write and `normalize` sees the
 // finished state, never a half-moved one.
+import { Result, Schema } from "effect";
+import { feed, onEvent } from "@/lib/atoms/feed";
 import { read } from "@/lib/atoms/registry";
 import { fire, invoke } from "@/lib/tauri";
 import { dispatchBoard } from "./atoms";
@@ -61,6 +63,48 @@ export const toSession =
     termAttention: withoutKey(ui.termAttention, sessionId),
   });
 
+/** Pure: a checkout removed, by this screen or anyone else. Its sessions are
+ * unmounted (a mounted id would keep its window alive), and if it was on screen
+ * the view lands on its repo's main checkout, else the standby screen. */
+const checkoutClosed =
+  (dir: string, owner: string | null, sessionIds: readonly string[]): BoardTransition =>
+  (ui) => {
+    const gone = new Set(sessionIds);
+    const next: BoardUi = {
+      ...ui,
+      open: ui.open.filter((id) => !gone.has(id)),
+      cwds: Object.fromEntries(Object.entries(ui.cwds).filter(([id]) => !gone.has(id))),
+      selected: ui.selected && gone.has(ui.selected.sessionId) ? null : ui.selected,
+      focusedPaneId: ui.focusedPaneId && gone.has(ui.focusedPaneId) ? null : ui.focusedPaneId,
+    };
+    if (ui.activeFolderDir !== dir) return next;
+    return owner ? toFolder(owner)(next) : { ...next, activeFolderDir: null, focusLevel: "rail" };
+  };
+
+const decodeCheckoutClosed = Schema.decodeUnknownResult(
+  Schema.Struct({
+    dir: Schema.String,
+    owner: Schema.NullOr(Schema.String),
+    sessionIds: Schema.Array(Schema.String),
+  }),
+);
+
+// A killed PTY reports no exit, so the removal says which panes went with it.
+feed("checkout-closed", () =>
+  onEvent("agentboard://checkout-closed", (p) => {
+    const c = decodeCheckoutClosed(p);
+    if (Result.isFailure(c)) {
+      console.error("agentboard://checkout-closed: unexpected payload", c.failure);
+      return;
+    }
+    closeCheckout(c.success.dir, c.success.owner, c.success.sessionIds);
+  }),
+);
+
+function closeCheckout(dir: string, owner: string | null, sessionIds: readonly string[]): void {
+  dispatchBoard(checkoutClosed(dir, owner, sessionIds));
+}
+
 function selectFolder(folderDir: string): void {
   dispatchBoard(toFolder(folderDir));
   ackFolder(folderDir);
@@ -78,4 +122,4 @@ function selectSession(folderDir: string, sessionId: string): void {
   ackFolder(folderDir);
 }
 
-export const SELECTION = { ackFolder, selectFolder, mountSession, selectSession };
+export const SELECTION = { ackFolder, closeCheckout, selectFolder, mountSession, selectSession };

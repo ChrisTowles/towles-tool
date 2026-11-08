@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
 use assert_cmd::Command;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpListener;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -49,7 +51,8 @@ pub fn tt_in(home: &Path) -> Tt {
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("XDG_STATE_HOME", home.join(".local").join("state"))
         .env("XDG_CACHE_HOME", home.join(".cache"))
-        .env(tt_config::STATE_SCOPE_ENV, "");
+        .env(tt_config::STATE_SCOPE_ENV, "")
+        .env(tt_mcp::port::MCP_PORT_ENV, dead_port().to_string());
     Tt { cmd, _home: None }
 }
 
@@ -100,4 +103,67 @@ pub fn write_journal_settings(config_dir: &Path, base_folder: &Path, template_di
     });
     let path = config_dir.join(format!("{}.settings.json", tt_config::TOOL_NAME));
     std::fs::write(path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+}
+
+/// A port nothing listens on, so a command that dials the app finds none — never the
+/// developer's running instance, which `tt task rm` would otherwise delete through.
+pub fn dead_port() -> u16 {
+    static PORT: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+    *PORT.get_or_init(|| {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        listener.local_addr().unwrap().port()
+    })
+}
+
+/// The app's MCP endpoint, faked: one request served, returned as `(headers, body)`.
+pub struct FakeApp {
+    pub port: u16,
+    handle: std::thread::JoinHandle<(String, String)>,
+}
+
+impl FakeApp {
+    pub fn start() -> FakeApp {
+        Self::start_answering(
+            r#"{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{}"}]}}"#,
+        )
+    }
+
+    /// A fake app whose single reply is `body` — for the refusal shapes.
+    pub fn start_answering(body: impl Into<String>) -> FakeApp {
+        let body = body.into();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut head = String::new();
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap_or(0);
+                }
+                head.push_str(&line);
+            }
+            let mut payload = vec![0u8; len];
+            reader.read_exact(&mut payload).unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            stream.flush().unwrap();
+            (head, String::from_utf8_lossy(&payload).into_owned())
+        });
+        FakeApp { port, handle }
+    }
+
+    pub fn request(self) -> (String, serde_json::Value) {
+        let (head, body) = self.handle.join().unwrap();
+        (head.to_ascii_lowercase(), serde_json::from_str(&body).unwrap())
+    }
 }

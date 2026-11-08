@@ -45,7 +45,9 @@ enum DeleteStatus {
 #[schemars(rename_all = "camelCase")]
 struct TaskDeleted {
     status: DeleteStatus,
-    id: i64,
+    /// Whichever of `id`/`dir` the call named.
+    id: Option<i64>,
+    dir: Option<String>,
     text: String,
     /// Present only on a refusal; each names what blocks the delete and whether forcing
     /// past it loses work (`losesWork`).

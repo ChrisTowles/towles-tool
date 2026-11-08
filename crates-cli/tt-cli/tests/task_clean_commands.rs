@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::{Tt, canonical_temp, data_home, tt_in};
+use common::{FakeApp, Tt, canonical_temp, data_home, tt_in};
 use std::path::{Path, PathBuf};
 
 fn git(dir: &Path, args: &[&str]) {
@@ -298,6 +298,40 @@ fn clean_dry_run_touches_nothing() {
         report["sweptStateDirs"].as_array().unwrap().iter().map(|p| p.as_str().unwrap()).collect();
     assert_eq!(swept.len(), 1, "reports the orphan scope: {swept:?}");
     assert!(swept[0].ends_with("demo-gone"));
+}
+
+/// A running app owns finished tasks' terminals too, so `clean` hands each one to it by
+/// path and leaves the removal — and the worktree, here — to the app.
+#[test]
+fn clean_removes_finished_tasks_through_a_running_app() {
+    let (_guard, tmp) = canonical_temp();
+    let home = tmp.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+
+    new_task(&home, &root_s, "feat/done");
+    let task = task_dir(&checkout, "feat-done");
+    commit_file(&task, "done.txt");
+    git(&checkout, &["merge", "--no-ff", "feat/done", "-m", "merge done"]);
+
+    let app = FakeApp::start_answering(
+        r#"{"jsonrpc":"2.0","id":1,"result":{"content":[],"structuredContent":{"status":"deleted","text":"feat-done","messages":["closed 1 session"]}}}"#,
+    );
+    let out = tt(&home)
+        .env("TT_MCP_PORT", app.port.to_string())
+        .args(["task", "clean", "--json", "--root", &root_s])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "clean failed: {}", String::from_utf8_lossy(&out.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["removed"][0]["name"], "feat-done");
+    assert_eq!(report["removed"][0]["messages"][0], "closed 1 session");
+
+    let (_, body) = app.request();
+    assert_eq!(body["params"]["name"], "task_delete");
+    assert_eq!(body["params"]["arguments"]["dir"], task.to_string_lossy().as_ref());
+    assert!(task.is_dir(), "the app removes it, not the CLI");
 }
 
 /// Plant the app's WebKit dir, launcher and icon for `identifier` under the sandbox's

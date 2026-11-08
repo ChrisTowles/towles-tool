@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { appRegistry } from "@/lib/atoms/registry";
+import { dispatchBoard, readBoard } from "./atoms";
 import { INITIAL_BOARD_UI, normalize } from "./model";
-import { mounted, toFolder, toSession, withoutKey } from "./selection";
+import { mounted, SELECTION, toFolder, toSession, withoutKey } from "./selection";
 
 describe("withoutKey", () => {
   it("returns the same object when the key is absent", () => {
@@ -58,5 +60,39 @@ describe("toFolder", () => {
   it("keeps the selection when the checkout is the same", () => {
     const inA = toSession("/a", "s1")(INITIAL_BOARD_UI);
     expect(normalize(toFolder("/a")(inA)).selected).toEqual({ folderDir: "/a", sessionId: "s1" });
+  });
+});
+
+describe("closeCheckout", () => {
+  const wt = "/r/.claude/worktrees/t";
+  afterEach(() => appRegistry.reset());
+  const onScreen = () => {
+    dispatchBoard(mounted("/r", "s0"));
+    dispatchBoard(toSession(wt, "s1"));
+  };
+
+  it("unmounts its sessions and lands on the repo's main checkout", () => {
+    onScreen();
+    SELECTION.closeCheckout(wt, "/r", ["s1"]);
+    const ui = readBoard();
+    expect(normalize(ui)).toBe(ui);
+    expect(ui.open).toEqual(["s0"]);
+    expect(ui.cwds).toEqual({ s0: "/r" });
+    expect(ui.selected).toBeNull();
+    expect(ui.focusedPaneId).toBeNull();
+    expect(ui.activeFolderDir).toBe("/r");
+  });
+
+  it("goes to standby with no owner", () => {
+    onScreen();
+    SELECTION.closeCheckout(wt, null, []);
+    expect(readBoard().activeFolderDir).toBeNull();
+  });
+
+  it("leaves another checkout on screen alone", () => {
+    onScreen();
+    SELECTION.closeCheckout("/other", "/o", []);
+    expect(readBoard().activeFolderDir).toBe(wt);
+    expect(readBoard().selected).toEqual({ folderDir: wt, sessionId: "s1" });
   });
 });

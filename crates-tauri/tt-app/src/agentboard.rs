@@ -16,6 +16,18 @@ pub use tt_agentboard::engine::{Engine, now_ms};
 
 pub const STATE_EVENT: &str = "agentboard://state";
 pub const AUTO_ARCHIVED_EVENT: &str = "agentboard://auto-archived";
+pub const CHECKOUT_CLOSED_EVENT: &str = "agentboard://checkout-closed";
+
+/// A removed checkout, told to the client whoever removed it: a killed PTY reports
+/// no exit, so without this an MCP-driven delete leaves its panes mounted.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutClosed {
+    pub dir: String,
+    /// The repo's main checkout, where a client looking at `dir` lands.
+    pub owner: Option<String>,
+    pub session_ids: Vec<String>,
+}
 
 /// How often the emit loop asks whether anything has gone quiet long enough to
 /// archive: the window is hours at the shortest, and the ask reads the settings file.

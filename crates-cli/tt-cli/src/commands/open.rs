@@ -10,6 +10,7 @@
 //!   appear in; failing at the CLI names the problem instead of surfacing as a
 //!   toast in a window that may not be on screen.
 
+use crate::mcp_call::{self, CallError};
 use crate::ui;
 use std::path::Path;
 use std::time::Duration;
@@ -48,9 +49,6 @@ pub fn run(path: &Path, line: Option<u32>) -> i32 {
     }
 }
 
-/// POST one `tools/call` for `file_open` and flatten the answer to `Ok`/message.
-/// Hand-rolled rather than an MCP client: 2026-07-28 has no handshake, so one request
-/// carrying its `_meta` and mirrored headers is the whole exchange.
 fn call_file_open(
     port: u16,
     path: &str,
@@ -61,59 +59,10 @@ fn call_file_open(
     if let Some(line) = line {
         arguments["line"] = serde_json::json!(line);
     }
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {
-            "name": "file_open",
-            "arguments": arguments,
-            "_meta": {
-                tt_mcp::META_PROTOCOL_VERSION: tt_mcp::PROTOCOL_VERSION,
-                tt_mcp::META_CLIENT_INFO: { "name": "tt", "version": env!("CARGO_PKG_VERSION") },
-                tt_mcp::META_CLIENT_CAPABILITIES: {},
-            },
-        },
-    });
-
-    let agent = ureq::AgentBuilder::new().timeout(CALL_TIMEOUT).build();
-    let mut request = agent
-        .post(&format!("http://127.0.0.1:{port}/mcp"))
-        .set("Content-Type", "application/json")
-        .set("Accept", "application/json, text/event-stream")
-        .set(tt_mcp::PROTOCOL_VERSION_HEADER, tt_mcp::PROTOCOL_VERSION)
-        .set(tt_mcp::METHOD_HEADER, "tools/call")
-        .set(tt_mcp::NAME_HEADER, "file_open");
-    if let Some(session) = session {
-        request = request.set("X-TT-Session", session);
+    match mcp_call::call_tool(port, "file_open", arguments, session, CALL_TIMEOUT) {
+        Ok(_) => Ok(()),
+        Err(CallError::NoApp(e) | CallError::Failed(e)) => Err(e),
     }
-
-    let response = match request.send_json(body) {
-        Ok(response) => response,
-        Err(ureq::Error::Status(status, _)) => {
-            return Err(format!("the app refused the request (HTTP {status}) on port {port}"));
-        }
-        Err(ureq::Error::Transport(e)) => {
-            return Err(format!(
-                "no towles-tool app is serving on 127.0.0.1:{port} — open the app for this \
-                 checkout ({e})"
-            ));
-        }
-    };
-    let answer: serde_json::Value =
-        response.into_json().map_err(|e| format!("unreadable answer from the app: {e}"))?;
-
-    if let Some(message) = answer.pointer("/error/message").and_then(|m| m.as_str()) {
-        return Err(message.to_string());
-    }
-    if answer.pointer("/result/isError").and_then(serde_json::Value::as_bool) == Some(true) {
-        let detail = answer
-            .pointer("/result/content/0/text")
-            .and_then(|t| t.as_str())
-            .unwrap_or("the app refused to open it");
-        return Err(detail.to_string());
-    }
-    Ok(())
 }
 
 /// Split a `<path>:<line>` operand, the spelling every compiler, grep and stack

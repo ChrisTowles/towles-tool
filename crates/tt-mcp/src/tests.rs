@@ -1137,7 +1137,8 @@ fn task_create_accepts_a_status() {
 
 /// Each `(id, force, outcome)` a fake host was called with; the real host tears down worktrees,
 /// which has no place in a unit test of the tool's shape.
-type HostCalls = std::sync::Arc<std::sync::Mutex<Vec<(i64, bool, Option<tt_store::TaskOutcome>)>>>;
+type HostCalls =
+    std::sync::Arc<std::sync::Mutex<Vec<(DeleteTarget, bool, Option<tt_store::TaskOutcome>)>>>;
 
 /// Each start request the host was handed — only the fields a test asserts on.
 type StartCalls =
@@ -1152,11 +1153,11 @@ struct FakeHost {
 impl TaskHost for FakeHost {
     fn delete_task(
         &self,
-        id: i64,
+        target: DeleteTarget,
         force: bool,
         outcome: Option<tt_store::TaskOutcome>,
     ) -> Result<TaskDeletion, String> {
-        self.calls.lock().unwrap().push((id, force, outcome));
+        self.calls.lock().unwrap().push((target, force, outcome));
         self.answer.lock().unwrap().take().expect("one delete per test")
     }
 
@@ -1340,7 +1341,10 @@ fn task_delete_passes_the_id_force_and_outcome_through_and_names_what_it_deleted
     // The name comes from the host, which resolved the row anyway.
     assert_eq!(result["text"], "open task");
     assert_eq!(result["messages"][0], "removed the worktree");
-    assert_eq!(*calls.lock().unwrap(), vec![(1, true, Some(tt_store::TaskOutcome::Abandoned))]);
+    assert_eq!(
+        *calls.lock().unwrap(),
+        vec![(DeleteTarget::Board(1), true, Some(tt_store::TaskOutcome::Abandoned))]
+    );
 }
 
 /// A bad outcome is rejected before the host acts; an omitted one reaches it as `None`.
@@ -1354,7 +1358,7 @@ fn task_delete_validates_the_outcome_and_defaults_it_to_inference() {
 
     let result = call_tool(&mut dispatcher, "task_delete", json!({ "id": 1 }));
     assert_eq!(result["status"], "deleted");
-    assert_eq!(*calls.lock().unwrap(), vec![(1, false, None)]);
+    assert_eq!(*calls.lock().unwrap(), vec![(DeleteTarget::Board(1), false, None)]);
 }
 
 // task_done
@@ -1392,7 +1396,10 @@ fn task_done_finds_a_closed_task_from_below_its_worktree_and_deletes_it_as_done(
     );
     assert_eq!(result["status"], "deleted");
     assert_eq!(result["messages"], json!(["removed"]));
-    assert_eq!(*calls.lock().unwrap(), vec![(id, false, Some(tt_store::TaskOutcome::Done))]);
+    assert_eq!(
+        *calls.lock().unwrap(),
+        vec![(DeleteTarget::Board(id), false, Some(tt_store::TaskOutcome::Done))]
+    );
     let row = dispatcher.store.task_by_id(id).unwrap();
     assert_eq!(row.summary.as_deref(), Some("shipped #1"), "summary lands before the delete");
 }
@@ -1456,16 +1463,32 @@ fn task_delete_reports_a_refusal_as_a_normal_result() {
     assert_eq!(result["blockers"][0]["kind"], "dirtyTree");
     assert_eq!(result["blockers"][0]["losesWork"], true);
     // Force defaults off — a refusal must be reachable without asking for one.
-    assert_eq!(*calls.lock().unwrap(), vec![(1, false, None)]);
+    assert_eq!(*calls.lock().unwrap(), vec![(DeleteTarget::Board(1), false, None)]);
 }
 
 #[test]
-fn task_delete_requires_an_id() {
+fn task_delete_takes_exactly_one_of_id_or_dir() {
     let (mut dispatcher, calls) = with_host(deleted("open task", vec![]));
-    let message = call_tool_err(&mut dispatcher, "task_delete", json!({}));
-    assert!(message.contains("missing required argument: id"), "{message}");
+    for args in [json!({}), json!({ "id": 1, "dir": "/w/x" })] {
+        let message = call_tool_err(&mut dispatcher, "task_delete", args);
+        assert!(message.contains("exactly one of id or dir"), "{message}");
+    }
+    let message = call_tool_err(&mut dispatcher, "task_delete", json!({ "dir": "w/x" }));
+    assert!(message.contains("absolute"), "{message}");
     // Rejected before the host could touch anything.
     assert!(calls.lock().unwrap().is_empty());
+}
+
+/// `tt task rm` names the worktree: a board id means nothing outside the store that minted it.
+#[test]
+fn task_delete_by_dir_hands_the_host_the_worktree_and_echoes_it() {
+    let (mut dispatcher, calls) = with_host(deleted("feat-x", vec![]));
+    let result = call_tool(&mut dispatcher, "task_delete", json!({ "dir": "/w/feat-x" }));
+    assert_eq!(result["status"], "deleted");
+    assert_eq!(result["dir"], "/w/feat-x");
+    assert!(result.get("id").is_none());
+    let target = DeleteTarget::Worktree("/w/feat-x".to_string());
+    assert_eq!(*calls.lock().unwrap(), vec![(target, false, None)]);
 }
 
 /// An unknown id is the host's answer: it resolves the row anyway.
@@ -1474,7 +1497,7 @@ fn task_delete_surfaces_the_hosts_unknown_id_error() {
     let (mut dispatcher, calls) = with_host(Err("no board task #9999".to_string()));
     let message = call_tool_err(&mut dispatcher, "task_delete", json!({ "id": 9999 }));
     assert!(message.contains("no board task #9999"), "{message}");
-    assert_eq!(*calls.lock().unwrap(), vec![(9999, false, None)]);
+    assert_eq!(*calls.lock().unwrap(), vec![(DeleteTarget::Board(9999), false, None)]);
 }
 
 #[test]

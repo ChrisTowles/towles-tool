@@ -21,7 +21,6 @@ function args(over: Partial<Args> = {}): Args {
     selected: null,
     activePanes: [],
     sessionById: new Map(),
-    expectedKills: { current: new Set() },
     labelFor: (s) => s.name,
     selectSession: mockFn(),
     removePane: mockFn(),
@@ -110,13 +109,11 @@ describe("closePane", () => {
 });
 
 describe("handleExit", () => {
-  it("drops the pane and stays quiet for a kill the app asked for", async () => {
+  it("drops the pane and stays quiet for a clean exit", async () => {
     const { toast } = await import("@/lib/toast");
-    const expectedKills = { current: new Set(["s1"]) };
-    const a = args({ expectedKills });
-    sessionLifecycle(a).handleExit("s1", { code: 137, signal: null } as never);
+    const a = args();
+    sessionLifecycle(a).handleExit("s1", { code: 0, signal: null } as never);
     expect(a.removePane).toHaveBeenCalledWith("s1");
-    expect(expectedKills.current.has("s1")).toBe(false);
     expect(toast.error).not.toHaveBeenCalled();
   });
 });
