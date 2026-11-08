@@ -276,7 +276,8 @@ fn reopening_drops_the_retired_slack_agent_tables() {
     Connection::open(&path)
         .unwrap()
         .execute_batch(
-            "CREATE TABLE agent_turns (id INTEGER); CREATE TABLE agent_sessions (agent TEXT);",
+            "CREATE TABLE agent_turns (id INTEGER); CREATE TABLE agent_sessions (agent TEXT);
+             UPDATE meta SET value = '29' WHERE key = 'schema_version';",
         )
         .unwrap();
     let s = Store::open(&path).unwrap();
@@ -322,6 +323,45 @@ fn db_at_version(version: i64) -> (tempfile::TempDir, std::path::PathBuf) {
     ))
     .unwrap();
     (dir, path)
+}
+
+#[test]
+fn reopening_a_current_db_performs_no_migration_write() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    drop(Store::open(&path).unwrap());
+    let second = Store::open(&path).unwrap();
+    assert_eq!(second.conn.total_changes(), 0, "a current-version open must not write");
+}
+
+#[test]
+fn an_older_db_still_migrates_and_is_stamped_current() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("tt.db");
+    drop(Store::open(&path).unwrap());
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "ALTER TABLE issues DROP COLUMN assignees;
+             UPDATE meta SET value = '27' WHERE key = 'schema_version';",
+        )
+        .unwrap();
+    }
+    let store = Store::open(&path).unwrap();
+    let has_col: i64 = store
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('issues') WHERE name = 'assignees'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(has_col, 1);
+    let v: String = store
+        .conn
+        .query_row("SELECT value FROM meta WHERE key = 'schema_version'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(v, SCHEMA_VERSION.to_string());
 }
 
 #[test]
@@ -1438,6 +1478,7 @@ fn migrate_drops_retired_collector_rows_v6() {
                 )
                 .unwrap();
         }
+        s.conn.execute("UPDATE meta SET value = '16' WHERE key = 'schema_version'", []).unwrap();
     }
 
     let s = Store::open(&path).unwrap();
