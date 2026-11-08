@@ -54,7 +54,7 @@ fn main() {
 }
 
 fn default_telemetry() -> Option<PathBuf> {
-    let dir = dirs::data_dir()?.join("towles-tool/tasks/towles-tool/telemetry");
+    let dir = tt_config::telemetry_dir().ok()?;
     dir.exists().then_some(dir)
 }
 

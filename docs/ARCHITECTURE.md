@@ -37,9 +37,10 @@ the CLI and the app can consume it.
   [gitoxide](https://github.com/GitoxideLabs/gitoxide) layer behind a per-folder
   cache of open repositories. Nothing outside it parses `git` output, because
   nothing outside it runs `git`: the Agentboard poll alone was ~100k subprocesses
-  a day. **Two operations still shell out** because gitoxide has no equivalent —
-  linked-worktree add/remove/prune, and `fetch`. A third git subprocess anywhere
-  else is a regression; extend `tt_git::repo`, and read its module docs first.
+  a day. **Three kinds of operation still shell out** — linked-worktree
+  add/remove/prune and `merge --ff-only`, which gitoxide cannot do, plus the
+  network-bound `fetch` and `init`/`clone` (`provision`). A fourth git subprocess
+  anywhere else is a regression; extend `tt_git::repo`, and read its module docs first.
 - `tt-claude-sessions` — session-JSONL token accounting, the ledger
   scan/search path, ranked waste insights, per-session drill-down, and
   `next_prompt`: the prompts typed after similar turns, as the context of the

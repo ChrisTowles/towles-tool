@@ -1,4 +1,4 @@
-//! Branch-name generation.
+//! Branch-name generation and validation.
 
 /// Lowercase, trim, anything outside `[0-9a-zA-Z_-]` to `-`, collapse runs,
 /// strip trailing `-`. The character class is ASCII-only, matching the TS
@@ -21,6 +21,17 @@ pub fn slug(text: &str) -> String {
     out
 }
 
+/// Whether `branch` is a legal `refs/heads/<branch>`, plus a leading `-`, which is a legal
+/// ref but reads as an option to every command taking a branch. The `Err` is the reason.
+pub fn validate(branch: &str) -> Result<(), String> {
+    if branch.starts_with('-') {
+        return Err("a branch name may not begin with '-'".to_string());
+    }
+    gix::validate::reference::name(format!("refs/heads/{branch}").as_str().into())
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -31,5 +42,18 @@ mod tests {
         assert_eq!(slug("  Update docs ---"), "update-docs");
         assert_eq!(slug("Fix für Übersetzung"), "fix-f-r-bersetzung");
         assert_eq!(slug("snake_case_title"), "snake_case_title");
+    }
+
+    #[test]
+    fn validate_accepts_legal_refs() {
+        assert!(validate("feat/hello-world").is_ok());
+        assert!(validate("standalone").is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_illegal_refs_and_a_leading_dash() {
+        assert!(validate("feat/hello world").is_err());
+        assert!(validate("bad..name").is_err());
+        assert!(validate("-leading-dash").is_err());
     }
 }

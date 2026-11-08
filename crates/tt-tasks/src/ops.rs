@@ -136,34 +136,14 @@ fn dir_names(dir: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The *main* checkout for `dir`: a worktree's `.git` file points at `<main>/.git/worktrees/<wt>`.
-/// A submodule's `gitdir` is not a worktree pointer — it is its own repo with its own tasks.
+/// The *main* checkout for `dir`: a linked worktree hops to the checkout it was added from.
+/// A submodule is its own repo with its own tasks, and anything gitoxide cannot open stays put.
 fn main_checkout(dir: &Path) -> PathBuf {
-    let dotgit = dir.join(".git");
-    if dotgit.is_dir() {
-        return dir.to_path_buf();
-    }
-    let Some(gitdir) = fs::read_to_string(&dotgit)
+    tt_git::repo::open(dir)
         .ok()
-        .and_then(|text| text.strip_prefix("gitdir:").map(|p| p.trim().to_string()))
-    else {
-        return dir.to_path_buf();
-    };
-    let gitdir =
-        if Path::new(&gitdir).is_absolute() { PathBuf::from(gitdir) } else { dir.join(gitdir) };
-    for ancestor in gitdir.ancestors() {
-        if ancestor.file_name().is_some_and(|n| n == ".git")
-            && gitdir
-                .strip_prefix(ancestor)
-                .ok()
-                .and_then(|rest| rest.components().next())
-                .is_some_and(|c| c.as_os_str() == "worktrees")
-            && let Some(main) = ancestor.parent()
-        {
-            return main.to_path_buf();
-        }
-    }
-    dir.to_path_buf()
+        .filter(|repo| repo.is_linked_worktree())
+        .and_then(|repo| repo.main_workdir())
+        .unwrap_or_else(|| dir.to_path_buf())
 }
 
 /// Walk up to the nearest `.git`, then hop from a linked worktree to its main checkout.
@@ -419,17 +399,10 @@ pub fn checkout_branches(checkout: &Path) -> Result<Vec<BaseBranch>> {
     Ok(branches)
 }
 
-/// Validate via `gix-validate` as `refs/heads/<branch>`, plus a leading `-`, which is a legal
-/// ref but reads as an option to every command taking a branch.
+/// Validate as `refs/heads/<branch>` via [`tt_git::branch_name::validate`].
 pub fn validate_branch_name(branch: &str) -> Result<()> {
-    let reject =
-        |detail: String| OpsError::InvalidBranchName { branch: branch.to_string(), detail };
-    if branch.starts_with('-') {
-        return Err(reject("a branch name may not begin with '-'".to_string()));
-    }
-    gix::validate::reference::name(format!("refs/heads/{branch}").as_str().into())
-        .map(|_| ())
-        .map_err(|e| reject(e.to_string()))
+    tt_git::branch_name::validate(branch)
+        .map_err(|detail| OpsError::InvalidBranchName { branch: branch.to_string(), detail })
 }
 
 /// Is `branch` already a local ref in `checkout`?
@@ -728,6 +701,26 @@ mod tests {
         assert!(validate_branch_name("-leading-dash").is_err());
     }
 
+    /// A real repo at `repo` with a linked worktree at `worktree`: the main-checkout hop
+    /// asks gitoxide, which a hand-written `.git` file would not satisfy.
+    fn real_worktree(repo: &Path, worktree: &Path) {
+        fs::create_dir_all(repo).unwrap();
+        tt_git::testing::git(repo, &["init", "--quiet", "-b", "main"]);
+        tt_git::testing::git(repo, &["commit", "--quiet", "--allow-empty", "-m", "init"]);
+        fs::create_dir_all(worktree.parent().unwrap()).unwrap();
+        tt_git::testing::git(
+            repo,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "task",
+                worktree.to_str().unwrap(),
+            ],
+        );
+    }
+
     /// Minimal task root under a tempdir: `<tmp>/repo/.git`.
     fn temp_task_root() -> (tempfile::TempDir, TaskRoot) {
         let tmp = tempfile::tempdir().unwrap();
@@ -755,13 +748,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("blog");
         let task = repo.join(".claude").join("worktrees").join("thing");
-        fs::create_dir_all(repo.join(".git").join("worktrees").join("thing")).unwrap();
-        fs::create_dir_all(&task).unwrap();
-        fs::write(
-            task.join(".git"),
-            format!("gitdir: {}\n", repo.join(".git/worktrees/thing").display()),
-        )
-        .unwrap();
+        real_worktree(&repo, &task);
 
         let sr = discover_root(Some(&task)).unwrap();
         assert_eq!(sr.checkout, repo);
@@ -775,13 +762,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("blog");
         let stray = tmp.path().join("elsewhere").join("thing");
-        fs::create_dir_all(repo.join(".git").join("worktrees").join("thing")).unwrap();
-        fs::create_dir_all(&stray).unwrap();
-        fs::write(
-            stray.join(".git"),
-            format!("gitdir: {}\n", repo.join(".git/worktrees/thing").display()),
-        )
-        .unwrap();
+        real_worktree(&repo, &stray);
 
         let sr = discover_root(Some(&stray)).unwrap();
         assert_eq!(sr.checkout, repo);
@@ -792,13 +773,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo = tmp.path().join("blog");
         let task = repo.join(".claude").join("worktrees").join("feat-thing");
-        fs::create_dir_all(repo.join(".git").join("worktrees").join("feat-thing")).unwrap();
-        fs::create_dir_all(&task).unwrap();
-        fs::write(
-            task.join(".git"),
-            format!("gitdir: {}\n", repo.join(".git/worktrees/feat-thing").display()),
-        )
-        .unwrap();
+        real_worktree(&repo, &task);
 
         let (checkout, name) = resolve_task_dir(&task).unwrap();
         assert_eq!(checkout, repo);

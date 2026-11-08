@@ -4,10 +4,11 @@
 //! parse and ref-store load thrown away microseconds later. The same answers come
 //! back 10–100× faster from a cached [`Repo`] (`rev-parse HEAD`: 0.75ms vs 0.01ms).
 //!
-//! Three operations still shell out, none an oversight: **worktree
+//! Four operations still shell out, none an oversight: **worktree
 //! add/remove/prune** (gitoxide's worktree API is read-only), **`merge
-//! --ff-only`** (it updates the working tree, which gitoxide cannot), and
-//! **`fetch`** (network-bound, so in-process buys nothing measurable).
+//! --ff-only`** (it updates the working tree, which gitoxide cannot),
+//! **`fetch`** (network-bound, so in-process buys nothing measurable), and
+//! **`init`/`clone`** in [`crate::provision`] (one-shot, and `clone` is network-bound).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -179,6 +180,23 @@ impl Repo {
     /// one.
     pub fn git_dir(&self) -> PathBuf {
         self.repo.git_dir().to_path_buf()
+    }
+
+    /// A linked worktree (`git worktree add`), as opposed to a main checkout. Asked of
+    /// gitoxide, not read off the path: a main checkout may live under any directory name.
+    pub fn is_linked_worktree(&self) -> bool {
+        self.repo.kind() == gix::repository::Kind::LinkedWorkTree
+    }
+
+    /// The main checkout's working directory: for a linked worktree the one it was
+    /// added from, otherwise this checkout. `None` for a bare repository, or when a
+    /// linked worktree's main repository is gone.
+    pub fn main_workdir(&self) -> Option<PathBuf> {
+        if self.is_linked_worktree() {
+            self.repo.main_repo().ok()?.workdir().map(Path::to_path_buf)
+        } else {
+            self.repo.workdir().map(Path::to_path_buf)
+        }
     }
 
     /// Identical across every linked worktree of one repo and nowhere else — the
@@ -410,6 +428,28 @@ mod tests {
         let git = Repo::open(repo.path()).expect("open");
         assert!(git.has_rev("main"));
         assert!(!git.has_rev("origin/nope"));
+    }
+
+    #[test]
+    fn a_main_checkout_under_a_worktrees_directory_is_not_a_linked_worktree() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let main = tmp.path().join("worktrees").join("repo");
+        std::fs::create_dir_all(&main).expect("mkdir");
+        crate::testing::git(&main, &["init", "--quiet", "-b", "main"]);
+        let git = Repo::open(&main).expect("open");
+        assert!(git.git_dir().to_string_lossy().contains("/worktrees/"));
+        assert!(!git.is_linked_worktree(), "the path says nothing about linkedness");
+        assert_eq!(git.main_workdir().as_deref(), Some(main.as_path()));
+    }
+
+    #[test]
+    fn a_linked_worktree_is_linked_and_names_its_main_checkout() {
+        let repo = TestRepo::new();
+        let linked = repo.add_worktree("task-c", "feature-c");
+        let git = Repo::open(&linked).expect("open linked");
+        assert!(git.is_linked_worktree());
+        assert_eq!(git.main_workdir().map(|d| canonical(&d)), Some(canonical(repo.path())),);
+        assert!(!Repo::open(repo.path()).expect("open main").is_linked_worktree());
     }
 
     #[test]

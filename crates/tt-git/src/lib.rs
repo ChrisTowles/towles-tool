@@ -7,7 +7,7 @@
 //! - [`cli`] — the typed `git` subprocess operations (fetch, worktree writes).
 //! - [`repo`] — in-process git (cache, refs, graph walks, status, diffs, patch identity).
 //! - [`provision`] — `git init` / `git clone` a new repo onto disk.
-//! - [`branch_name`] — branch-name slugging.
+//! - [`branch_name`] — branch-name slugging and validation.
 //! - [`remote`] — remote URL to `owner/name` slug.
 
 pub mod branch_name;
