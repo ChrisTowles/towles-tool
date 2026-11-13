@@ -209,6 +209,7 @@ fn record(repo_root: &str, dir: &str, kind: tt_store::TaskKind) -> tt_store::Rai
         repo_root: repo_root.to_string(),
         dir: dir.to_string(),
         branch: Some("feat/thing".to_string()),
+        rank: 1024,
         created_at: 1000,
     }
 }
@@ -511,6 +512,7 @@ fn a_repo_with_a_task_worktree_keeps_the_active_cadence() {
         repo_root: "/repo/hosting".into(),
         dir: "/repo/hosting/.claude/worktrees/feat-x".into(),
         branch: Some("feat-x".into()),
+        rank: 1024,
         created_at: now,
     }]);
 
@@ -677,34 +679,11 @@ fn tracking_home_as_a_repo_replaces_the_home_row() {
 }
 
 #[test]
-fn set_collapsed_and_set_folder_quiet_report_only_real_changes() {
+fn set_collapsed_reports_only_real_changes() {
     let (_tmp, mut e) = engine();
     assert!(e.set_collapsed("row-1", true));
     assert!(!e.set_collapsed("row-1", true));
     assert!(e.set_collapsed("row-1", false));
-
-    let one = [String::from("/repo/x")];
-    assert!(e.set_folder_quiet(&one, true));
-    assert!(!e.set_folder_quiet(&one, true));
-    assert!(e.set_folder_quiet(&one, false));
-}
-
-/// Marking a repo means the root checkout *and* its worktrees: changed if any
-/// member is, so a half-marked repo still reports and persists the rest.
-#[test]
-fn set_folder_quiet_marks_every_dir_it_is_given() {
-    let (_tmp, mut e) = engine();
-    let root = String::from("/repo");
-    let worktree = String::from("/repo/.claude/worktrees/task");
-
-    assert!(e.set_folder_quiet(std::slice::from_ref(&root), true));
-    assert!(e.set_folder_quiet(&[root.clone(), worktree.clone()], true));
-    assert!(e.folder_meta.quiet_for(&root));
-    assert!(e.folder_meta.quiet_for(&worktree));
-
-    assert!(e.set_folder_quiet(&[root.clone(), worktree.clone()], false));
-    assert!(!e.folder_meta.quiet_for(&root));
-    assert!(!e.folder_meta.quiet_for(&worktree));
 }
 
 #[test]

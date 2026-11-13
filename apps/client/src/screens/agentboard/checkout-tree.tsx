@@ -21,7 +21,9 @@ type SharedGroupProps = Omit<
   | "unmanagedDirs"
   | "unmanagedRevealed"
   | "onToggleUnmanaged"
-  | "quietDirs"
+  | "parkedDirs"
+  | "parkedRevealed"
+  | "onToggleParked"
   | "onNewRootShell"
   | "onNewTask"
   | "onRecreateWorktree"
@@ -39,8 +41,6 @@ export function CheckoutTree({
   shownRepos,
   query,
   onClearQuery,
-  quietCount,
-  showQuiet,
   onOpenRepoManager,
   idleDirs,
   idleRevealed,
@@ -48,7 +48,9 @@ export function CheckoutTree({
   unmanagedDirs,
   unmanagedRevealed,
   onToggleUnmanaged,
-  quietDirs,
+  parkedDirs,
+  parkedRevealed,
+  onToggleParked,
   taskCreation,
   onNewRootShell,
   onNewTask,
@@ -61,8 +63,6 @@ export function CheckoutTree({
   shownRepos: RepoData[];
   query: string;
   onClearQuery: () => void;
-  quietCount: number;
-  showQuiet: boolean;
   onOpenRepoManager: () => void;
   idleDirs: Map<string, Set<string>>;
   idleRevealed: ReadonlySet<string>;
@@ -70,7 +70,9 @@ export function CheckoutTree({
   unmanagedDirs: Map<string, Set<string>>;
   unmanagedRevealed: ReadonlySet<string>;
   onToggleUnmanaged: (repoKey: string) => void;
-  quietDirs: Map<string, Set<string>>;
+  parkedDirs: Map<string, Set<string>>;
+  parkedRevealed: ReadonlySet<string>;
+  onToggleParked: (repoKey: string) => void;
   taskCreation: TaskCreation;
   onNewRootShell: (repo: RepoData) => void;
   onNewTask: (target: NewTaskRepo) => void;
@@ -110,12 +112,6 @@ export function CheckoutTree({
           <Button size="sm" variant="outline" onClick={onClearQuery}>
             Clear filter
           </Button>
-          {quietCount > 0 && !showQuiet && (
-            <p className="text-xs text-muted-foreground/70">
-              {quietCount} quiet checkout{quietCount === 1 ? " is" : "s are"} hidden — the ▤ button
-              above searches them too once shown.
-            </p>
-          )}
         </div>
       )}
       {/* initial={false} so the rail drawing itself on launch
@@ -132,7 +128,9 @@ export function CheckoutTree({
               unmanagedDirs={unmanagedDirs.get(repo.key)}
               unmanagedRevealed={unmanagedRevealed.has(repo.key)}
               onToggleUnmanaged={() => onToggleUnmanaged(repo.key)}
-              quietDirs={quietDirs.get(repo.key)}
+              parkedDirs={parkedDirs.get(repo.key)}
+              parkedRevealed={parkedRevealed.has(repo.key)}
+              onToggleParked={() => onToggleParked(repo.key)}
               onNewRootShell={() => onNewRootShell(repo)}
               onNewTask={onNewTask}
               onRecreateWorktree={(folder) => onRecreateWorktree(repo, folder)}

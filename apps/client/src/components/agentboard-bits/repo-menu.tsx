@@ -4,10 +4,12 @@ import {
   ArchiveIcon,
   ArrowClockwiseIcon,
   ArrowSquareOutIcon,
+  ArrowUUpLeftIcon,
   DotsThreeVerticalIcon,
-  EyeIcon,
-  EyeSlashIcon,
   FolderPlusIcon,
+  HourglassIcon,
+  PauseCircleIcon,
+  ProhibitIcon,
   LinkIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -16,11 +18,12 @@ import { Hint } from "@/components/hint";
 import { toast } from "@/lib/toast";
 import { abSyncRepo } from "@/lib/agentboard/ipc";
 import { openInExternalEditor } from "@/lib/external-editor";
-import { useShowQuiet } from "@/lib/rail-prefs";
 import { mouseAction } from "@/lib/shortcut-coach";
 import { shortcutHint } from "@/lib/shortcuts";
-import { invoke, runIpc } from "@/lib/tauri";
+import { PARK_LABEL, savePark, saveUnpark } from "@/lib/agentboard/park";
+import type { QueuePark } from "@/lib/schemas/queue";
 import { uiAction } from "@/lib/ui-action";
+import { ParkDialog } from "./park-dialog";
 import { AttachIssueDialog } from "./pr-issue-chips";
 
 /** The one place every secondary action for a checkout lives, shared verbatim by
@@ -30,9 +33,9 @@ export function RepoMenu({
   onRemove,
   onArchive,
   dir,
-  quietDirs,
   isWorktree,
-  quiet,
+  park,
+  taskTitle,
   onNewTask,
   onDeleteWorktree,
   deleteLabel,
@@ -45,13 +48,12 @@ export function RepoMenu({
   /** Set only on a repo header: archive covers the whole repo, never one checkout. */
   onArchive?: () => void;
   dir: string;
-  /** What "Mark quiet" covers when that isn't just `dir`: a *repo* header means
-   * every checkout under it, or the worktrees stay and the mark looks ignored. */
-  quietDirs?: string[];
   /** No "Remove from rail": auto-discovered, they reappear next poll. */
   isWorktree?: boolean;
-  /** Whether *everything* `quietDirs` covers is already marked. */
-  quiet: boolean;
+  /** The task's park, when `taskId` is set; null when it is in the list. */
+  park?: QueuePark | null;
+  /** Names the task in "Park…". */
+  taskTitle?: string;
   /** Set only on a task-convention repo. */
   onNewTask?: () => void;
   /** Set only on worktree checkouts. */
@@ -66,7 +68,7 @@ export function RepoMenu({
   ghost?: boolean;
 }) {
   const [attachOpen, setAttachOpen] = useState(false);
-  const [showQuiet] = useShowQuiet();
+  const [parkOpen, setParkOpen] = useState(false);
 
   async function syncNow() {
     Result.match(await abSyncRepo(dir), {
@@ -78,26 +80,6 @@ export function RepoMenu({
       },
       onFailure: (e) => toast.error(e.message),
     });
-  }
-
-  // Marking takes the row off the rail there and then, so the toast says where
-  // it went — unless the header's toggle is showing quiet checkouts, in which
-  // case it hasn't gone anywhere and saying so would be a lie.
-  async function toggleQuiet() {
-    const next = !quiet;
-    uiAction("agentboard.quiet_mark", "agentboard", next ? "mark" : "unmark");
-    const result = await runIpc(
-      invoke<void>("ab_set_folder_quiet", {
-        dirs: quietDirs ?? [dir],
-        quiet: next,
-      }),
-    );
-    if (Result.isFailure(result)) {
-      toast.error(`Couldn't update — ${result.failure.message}`);
-      return;
-    }
-    if (!next) toast.success("No longer quiet");
-    else toast.success(showQuiet ? "Marked quiet" : "Marked quiet — hidden from the rail");
   }
 
   return (
@@ -185,13 +167,58 @@ export function RepoMenu({
               Attach issue…
             </DropdownMenu.Item>
           )}
-          <DropdownMenu.Item
-            onClick={() => void toggleQuiet()}
-            className="whitespace-nowrap"
-            icon={quiet ? <EyeIcon className="size-3.5" /> : <EyeSlashIcon className="size-3.5" />}
-          >
-            {quiet ? "Unmark quiet" : "Mark quiet"}
-          </DropdownMenu.Item>
+          {taskId != null && park && (
+            <DropdownMenu.Item
+              onClick={() => {
+                mouseAction("ab-park-task", "agentboard");
+                void saveUnpark(taskId);
+              }}
+              className="whitespace-nowrap"
+              icon={<ArrowUUpLeftIcon className="size-3.5" />}
+            >
+              Unpark
+              <span className="ml-auto text-xs text-kumo-subtle">
+                {shortcutHint("ab-park-task")}
+              </span>
+            </DropdownMenu.Item>
+          )}
+          {taskId != null && !park && (
+            <>
+              <DropdownMenu.Item
+                onClick={() => {
+                  mouseAction("ab-park-task", "agentboard");
+                  void savePark(taskId, "later");
+                }}
+                className="whitespace-nowrap"
+                icon={<HourglassIcon className="size-3.5" />}
+              >
+                {PARK_LABEL.later.verb}
+                <span className="ml-auto text-xs text-kumo-subtle">
+                  {shortcutHint("ab-park-task")}
+                </span>
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                onClick={() => {
+                  uiAction("task.park_menu", "agentboard", "blocked");
+                  void savePark(taskId, "blocked");
+                }}
+                className="whitespace-nowrap"
+                icon={<ProhibitIcon className="size-3.5" />}
+              >
+                {PARK_LABEL.blocked.verb}
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                onClick={() => {
+                  uiAction("task.park_menu", "agentboard", "dialog");
+                  setParkOpen(true);
+                }}
+                className="whitespace-nowrap"
+                icon={<PauseCircleIcon className="size-3.5" />}
+              >
+                Park…
+              </DropdownMenu.Item>
+            </>
+          )}
           {/* Same glyph the rail's Archived list wears, so "where did it go"
               and "bring it back" read as one feature. */}
           {onArchive && (
@@ -215,6 +242,14 @@ export function RepoMenu({
           )}
         </DropdownMenu.Content>
       </DropdownMenu>
+      {taskId != null && (
+        <ParkDialog
+          open={parkOpen}
+          onOpenChange={setParkOpen}
+          taskId={taskId}
+          title={taskTitle ?? ""}
+        />
+      )}
       {taskId != null && (
         <AttachIssueDialog
           open={attachOpen}

@@ -8,6 +8,10 @@ use rusqlite::{OptionalExtension, params};
 use crate::model::*;
 use crate::{Error, Result, Store};
 
+/// The `SET` list that ends a park.
+const PARK_CLEAR: &str = "park_kind = NULL, park_note = NULL, park_until_ms = NULL, \
+     park_at = NULL, park_on_reason = NULL";
+
 impl Store {
     /// Add a task at the bottom of the queue.
     pub fn add_task(
@@ -97,17 +101,21 @@ impl Store {
         let tx = self.conn.unchecked_transaction()?;
         let affected = if outcome == "done" {
             tx.execute(
-                "UPDATE tasks SET status = 'done',
+                &format!(
+                    "UPDATE tasks SET status = 'done',
                         completed_at = COALESCE(completed_at, ?2),
-                        outcome = ?3, worktree_dir = NULL
-                 WHERE id = ?1",
+                        outcome = ?3, worktree_dir = NULL, {PARK_CLEAR}
+                     WHERE id = ?1"
+                ),
                 params![id, now_ms, outcome],
             )?
         } else {
             tx.execute(
-                "UPDATE tasks SET completed_at = COALESCE(completed_at, ?2),
-                        outcome = ?3, worktree_dir = NULL
-                 WHERE id = ?1",
+                &format!(
+                    "UPDATE tasks SET completed_at = COALESCE(completed_at, ?2),
+                        outcome = ?3, worktree_dir = NULL, {PARK_CLEAR}
+                     WHERE id = ?1"
+                ),
                 params![id, now_ms, outcome],
             )?
         };
@@ -405,20 +413,53 @@ impl Store {
         Ok(updated)
     }
 
+    /// Set a task aside without closing it; a second park replaces the first.
+    pub fn park_task(&self, id: i64, input: ParkInput, now_ms: i64) -> Result<TaskItem> {
+        let affected = self.conn.execute(
+            "UPDATE tasks SET park_kind = ?2, park_note = ?3, park_until_ms = ?4,
+                    park_at = ?5, park_on_reason = ?6
+             WHERE id = ?1",
+            params![
+                id,
+                input.kind.as_str(),
+                input.note.filter(|n| !n.trim().is_empty()),
+                input.until_ms,
+                now_ms,
+                input.on_reason
+            ],
+        )?;
+        if affected == 0 {
+            return Err(Error::TaskNotFound(id));
+        }
+        self.task_by_id(id)
+    }
+
+    /// Put a parked task back in the list. Whether it was parked.
+    pub fn unpark_task(&self, id: i64) -> Result<bool> {
+        self.require_task(id)?;
+        let changed = self.conn.execute(
+            &format!("UPDATE tasks SET {PARK_CLEAR} WHERE id = ?1 AND park_kind IS NOT NULL"),
+            params![id],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// Every worktree the rail should show, both kinds. A *record* query, not a
     /// filesystem one, so the rail shows a task before its dir exists and while
-    /// removal runs. Sorted by `created_at`, the one ordering nothing perturbs.
+    /// removal runs. Sorted by `rank`, the manual order the queue shares.
     pub fn rail_worktrees(&self) -> Result<Vec<RailWorktree>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, kind, status, worktree_repo_root, worktree_dir, worktree_branch, created_at
+            "SELECT id, kind, status, worktree_repo_root, worktree_dir, worktree_branch, created_at,
+                    rank
              FROM tasks
              WHERE worktree_dir IS NOT NULL AND worktree_dir != ''
                AND worktree_repo_root IS NOT NULL AND worktree_repo_root != ''
                AND archived_at IS NULL
-             ORDER BY created_at ASC, id ASC",
+             ORDER BY rank ASC, created_at ASC, id ASC",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(RailWorktree {
+                rank: r.get(7)?,
                 task_id: r.get(0)?,
                 kind: TaskKind::parse(&r.get::<_, String>(1)?),
                 status: r.get(2)?,
@@ -512,11 +553,14 @@ impl Store {
             .or_else(|| Path::new(dir).file_name().map(|n| n.to_string_lossy().to_string()))
             .unwrap_or_else(|| dir.to_string());
         self.conn.execute(
-            "INSERT INTO tasks (kind, text, status, rank, created_at,
+            &format!(
+                "INSERT INTO tasks (kind, text, status, rank, created_at,
                                 worktree_repo_root, worktree_branch, worktree_dir)
-             SELECT 'detected', ?1, 'backlog', 0, ?2, ?3, ?4, ?5
+             SELECT 'detected', ?1, 'backlog',
+                    (SELECT COALESCE(MAX(rank), 0) + {RANK_GAP} FROM tasks), ?2, ?3, ?4, ?5
              WHERE NOT EXISTS (SELECT 1 FROM tasks
-                               WHERE worktree_dir = ?5 AND archived_at IS NULL)",
+                               WHERE worktree_dir = ?5 AND archived_at IS NULL)"
+            ),
             params![text, now_ms, repo_root, branch, dir],
         )?;
         Ok(())
@@ -579,6 +623,17 @@ impl Store {
         let summary: Option<String> = r.get(14)?;
         let summary_at: Option<i64> = r.get(15)?;
         let kind = TaskKind::parse(&r.get::<_, String>(16)?);
+        let park_kind: Option<String> = r.get(17)?;
+        let park = match park_kind.as_deref().and_then(ParkKind::parse) {
+            Some(kind) => Some(TaskPark {
+                kind,
+                note: r.get(18)?,
+                until_ms: r.get(19)?,
+                at_ms: r.get::<_, Option<i64>>(20)?.unwrap_or(0),
+                on_reason: r.get(21)?,
+            }),
+            None => None,
+        };
         // Keyed on `repo_root` alone: a repo-bound task with no worktree yet still
         // has a binding, and dropping it hides its repo from the Board's swimlanes.
         let worktree = worktree_repo_root.map(|repo_root| TaskWorktree {
@@ -607,6 +662,7 @@ impl Store {
             closed: false,
             display_outcome: None,
             has_worktree: false,
+            park,
         }
         .with_derived_fields())
     }

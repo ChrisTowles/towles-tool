@@ -63,16 +63,6 @@ export function useRailSort(which: "repos" | "tasks"): [RailSort, (next: RailSor
   return [sort, setSort];
 }
 
-/** Off: a hand-marked quiet checkout is hidden until you say otherwise. */
-export const DEFAULT_SHOW_QUIET = false;
-
-/** The one switch that brings quiet checkouts back — hence the rail header,
- * where it is found without knowing to look. Rust never reads it. */
-export function useShowQuiet(): [boolean, (on: boolean) => void] {
-  const on = useSetting((s) => s.agentboard?.showQuiet, DEFAULT_SHOW_QUIET);
-  return [on, setShowQuiet];
-}
-
 /** Off, so only the main checkout and worktrees you asked for become rail
  * folders. Mirrors `tt_config::DEFAULT_SHOW_UNMANAGED_WORKTREES`. */
 const DEFAULT_SHOW_UNMANAGED_WORKTREES = false;
@@ -96,7 +86,6 @@ export function useBrowserPane(): [boolean, (on: boolean) => void] {
   return [on, setBrowserPane];
 }
 
-const setShowQuiet = (next: boolean) => persistAgentboardSetting("showQuiet", next);
 const setBrowserPane = (next: boolean) => persistAgentboardSetting("browserPane", next);
 const setShowUnmanagedWorktrees = (show: boolean) =>
   rustOwned("showUnmanagedWorktrees", show, "ab_set_show_unmanaged_worktrees", { show });

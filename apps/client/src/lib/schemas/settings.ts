@@ -157,7 +157,6 @@ const AgentboardBlockSchema = open({
   autoArchiveAfterHours: Schema.optional(Schema.Number),
   railRepoSort: lenient(RailSortSchema),
   railTaskSort: lenient(RailSortSchema),
-  showQuiet: Schema.optional(Schema.Boolean),
   showUnmanagedWorktrees: Schema.optional(Schema.Boolean),
   browserPane: Schema.optional(Schema.Boolean),
   pcKeybindings: Schema.optional(Schema.Boolean),

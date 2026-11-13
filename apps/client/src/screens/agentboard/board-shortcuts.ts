@@ -46,6 +46,10 @@ export type BoardShortcutContext = {
   queueActions: QueueRowActions;
   focusActiveTerminal: () => boolean;
   splitIntoWindow: () => void;
+  /** Park the focused task for later, or unpark it. */
+  togglePark: () => boolean;
+  /** Move the tree row under the cursor; declines on a row that cannot move. */
+  moveRailRow: (direction: "up" | "down") => boolean;
 };
 
 /** Agent Board's chord → handler map. A handler returning `false` declines the
@@ -92,6 +96,7 @@ export function boardShortcuts(c: BoardShortcutContext): Record<string, Chord> {
         baseBranch: activeFolder.comparedBase || null,
       });
     },
+    "ab-park-task": c.togglePark,
     "ab-toggle-rail": c.toggleRail,
     "ab-rail-view": () => c.setRailView(c.tree ? "queue" : "tree"),
     "ab-jump-next": () => c.jumpToNeedsYou("next"),
@@ -113,8 +118,12 @@ export function boardShortcuts(c: BoardShortcutContext): Record<string, Chord> {
     // queue's rank-top and the tree's collapse-all.
     ...(c.tree
       ? {
+          // Before move-up: a shift-less spec also matches Alt+Shift+↑, and
+          // the first matching handler wins.
           "ab-collapse-all": () => c.collapseWholeRail(true),
           "ab-expand-all": () => c.collapseWholeRail(false),
+          "ab-move-up": () => c.moveRailRow("up"),
+          "ab-move-down": () => c.moveRailRow("down"),
         }
       : {
           "queue-down": () => c.moveQueueCursor(1),

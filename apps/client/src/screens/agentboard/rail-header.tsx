@@ -128,16 +128,13 @@ function ViewMenu(props: {
   recentHours: number;
   onSetFilter: (next: RailFilter) => void;
   onSetRecentHours: (next: number) => void;
-  quietCount: number;
-  showQuiet: boolean;
-  onSetShowQuiet: (next: boolean) => void;
   showUnmanagedWorktrees: boolean;
   onSetShowUnmanagedWorktrees: (next: boolean) => void;
   dismissedPrCount: number;
   clearingDismissals: boolean;
   onClearDismissals: () => void;
 }) {
-  const { filter, recentHours, quietCount } = props;
+  const { filter, recentHours } = props;
   return (
     <DropdownMenu>
       <Hint label={`View options — showing ${FILTER_SUMMARY[filter]}`}>
@@ -213,19 +210,6 @@ function ViewMenu(props: {
         <DropdownMenu.Separator />
         <DropdownMenu.Group>
           <DropdownMenu.Label>Also show</DropdownMenu.Label>
-          {quietCount > 0 && (
-            <DropdownMenu.CheckboxItem
-              checked={props.showQuiet}
-              closeOnClick={false}
-              onCheckedChange={(on) => {
-                uiAction("agentboard.show_quiet", "agentboard", on ? "on" : "off");
-                props.onSetShowQuiet(on);
-              }}
-            >
-              <span className="flex-1">Checkouts marked quiet</span>
-              <span className="font-mono text-mini text-kumo-subtle">{quietCount}</span>
-            </DropdownMenu.CheckboxItem>
-          )}
           <DropdownMenu.CheckboxItem
             checked={props.showUnmanagedWorktrees}
             closeOnClick={false}
@@ -292,9 +276,6 @@ export function RailHeader(props: {
   recentHours: number;
   onSetFilter: (next: RailFilter) => void;
   onSetRecentHours: (next: number) => void;
-  quietCount: number;
-  showQuiet: boolean;
-  onSetShowQuiet: (next: boolean) => void;
   /** Transient by design, so the rail never opens narrowed to yesterday's search. */
   query: string;
   onSetQuery: (next: string) => void;
@@ -357,9 +338,6 @@ export function RailHeader(props: {
             recentHours={props.recentHours}
             onSetFilter={props.onSetFilter}
             onSetRecentHours={props.onSetRecentHours}
-            quietCount={props.quietCount}
-            showQuiet={props.showQuiet}
-            onSetShowQuiet={props.onSetShowQuiet}
             showUnmanagedWorktrees={props.showUnmanagedWorktrees}
             onSetShowUnmanagedWorktrees={props.onSetShowUnmanagedWorktrees}
             dismissedPrCount={props.dismissedPrCount}

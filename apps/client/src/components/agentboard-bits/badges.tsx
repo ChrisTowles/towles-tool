@@ -1,9 +1,4 @@
-import {
-  ArchiveIcon,
-  ArrowClockwiseIcon,
-  ChecksIcon,
-  CircleNotchIcon,
-} from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, ChecksIcon, CircleNotchIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@cloudflare/kumo";
 import { Hint } from "@/components/hint";
 import type { PortDrift } from "@/lib/agentboard/types";
@@ -47,19 +42,6 @@ export function NeedsBadge({ n, className }: { n: number; className?: string }) 
     >
       {n} ⚑
     </span>
-  );
-}
-
-/** A checkout marked quiet, on a row the rail is showing anyway — peeked from
- * the footer, or the one you're working in. Grayscale and inert: it explains
- * why the row is normally absent, it doesn't ask for anything. */
-export function QuietBadge() {
-  return (
-    <Hint label="Marked quiet — normally hidden from the rail. Unmark it from this row's ⋮ menu.">
-      <span className="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-muted-foreground/40 px-1 font-mono text-micro text-kumo-subtle">
-        <ArchiveIcon className="size-2.5" /> quiet
-      </span>
-    </Hint>
   );
 }
 

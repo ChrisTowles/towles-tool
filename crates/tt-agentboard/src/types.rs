@@ -303,9 +303,6 @@ pub struct FolderData {
     pub has_port_drift: bool,
     #[serde(default)]
     pub has_launch_config: bool,
-    /// Forced-quiet override (folder_meta.json), regardless of actual activity.
-    #[serde(default)]
-    pub quiet: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

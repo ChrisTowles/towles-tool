@@ -129,7 +129,6 @@ export type FolderData = {
   /** Gates the rail's dev-servers button; the configs themselves are fetched on
    * demand via `launch_configs`. */
   hasLaunchConfig: boolean;
-  quiet: boolean;
 };
 
 /** One commit's own line counts — not the folder's cumulative ones. */

@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::{Error, Result, Store};
 
 /// Current on-disk schema version, stored in the `meta` table.
-pub(crate) const SCHEMA_VERSION: i64 = 30;
+pub(crate) const SCHEMA_VERSION: i64 = 31;
 
 /// Oldest version [`Store::open`] accepts; see [`Store::ensure_schema_current`].
 pub(crate) const MIN_SUPPORTED_VERSION: i64 = 16;
@@ -346,6 +346,7 @@ impl Store {
         self.conn.execute_batch(SCHEMA_WATCHED_ISSUES_V28)?;
         self.conn.execute_batch(DROP_AGENTS_V30)?;
         self.conn.execute_batch(DROP_CLIP_SPEND_V31)?;
+        self.migrate_tasks_park_v31()?;
         self.conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -596,6 +597,24 @@ impl Store {
         if !has_assignees {
             self.conn.execute_batch(
                 "ALTER TABLE issues ADD COLUMN assignees TEXT NOT NULL DEFAULT '[]';",
+            )?;
+        }
+        Ok(())
+    }
+
+    fn migrate_tasks_park_v31(&self) -> Result<()> {
+        let has_park: bool = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name = 'park_kind'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if !has_park {
+            self.conn.execute_batch(
+                "ALTER TABLE tasks ADD COLUMN park_kind TEXT;
+                 ALTER TABLE tasks ADD COLUMN park_note TEXT;
+                 ALTER TABLE tasks ADD COLUMN park_until_ms INTEGER;
+                 ALTER TABLE tasks ADD COLUMN park_at INTEGER;
+                 ALTER TABLE tasks ADD COLUMN park_on_reason TEXT;",
             )?;
         }
         Ok(())

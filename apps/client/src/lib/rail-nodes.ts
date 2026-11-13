@@ -26,6 +26,10 @@ export type RailVisibility = {
   unmanagedDirs: Map<string, Set<string>>;
   /** Repo keys whose unmanaged rows are peeked open. */
   unmanagedRevealed: ReadonlySet<string>;
+  /** Repo key → the held parks folded into the "N parked" row. */
+  parkedDirs: Map<string, Set<string>>;
+  /** Repo keys whose parked rows are peeked open. */
+  parkedRevealed: ReadonlySet<string>;
   collapsed: Record<string, boolean>;
   /** Stays a row under a folded repo (`keptWhenCollapsed`). */
   activeFolderDir: string | null;
@@ -44,6 +48,8 @@ export function railNodes(v: RailVisibility): RailNode[] {
     idleRevealed,
     unmanagedDirs,
     unmanagedRevealed,
+    parkedDirs,
+    parkedRevealed,
     collapsed,
     activeFolderDir,
     wins,
@@ -51,9 +57,13 @@ export function railNodes(v: RailVisibility): RailNode[] {
   const out: RailNode[] = [];
   for (const repo of repos) {
     const shown = withoutFolded(
-      withoutFolded(repo.folders, unmanagedDirs.get(repo.key), unmanagedRevealed.has(repo.key)),
-      idleDirs.get(repo.key),
-      idleRevealed.has(repo.key),
+      withoutFolded(
+        withoutFolded(repo.folders, unmanagedDirs.get(repo.key), unmanagedRevealed.has(repo.key)),
+        idleDirs.get(repo.key),
+        idleRevealed.has(repo.key),
+      ),
+      parkedDirs.get(repo.key),
+      parkedRevealed.has(repo.key),
     );
     if (shown.length === 0) continue;
 
