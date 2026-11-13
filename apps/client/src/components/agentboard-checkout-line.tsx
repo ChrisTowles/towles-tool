@@ -11,7 +11,6 @@ import {
   GhostBadge,
   NoTaskBadge,
   PortDriftBadge,
-  QuietBadge,
   SettingUpBadge,
 } from "@/components/agentboard-bits/badges";
 import { CommittedChip, UncommittedChip } from "@/components/agentboard-bits/diff-chips";
@@ -42,7 +41,9 @@ import {
 import { folderPortDrift } from "@/lib/agentboard/session";
 import { collapsedLiveColor } from "@/lib/agentboard/status";
 import type { FolderData } from "@/lib/agentboard/types";
+import { parkFact, saveUnpark } from "@/lib/agentboard/park";
 import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
+import type { QueuePark } from "@/lib/schemas/queue";
 
 /** A checkout as one line under its repo: name, its sessions inline, then what
  * needs saying about it. Its actions live on the selected line
@@ -51,7 +52,8 @@ import { storeUpdateTask, type PrItem, type TaskItem } from "@/lib/data";
 export function CheckoutLine({
   title,
   folder,
-  quiet,
+  park,
+  now,
   needs,
   pr,
   task,
@@ -73,8 +75,9 @@ export function CheckoutLine({
 }: {
   title: string;
   folder: FolderData;
-  /** Marked quiet *and* on screen anyway — peeked, or the active checkout. */
-  quiet?: boolean;
+  /** The owning task's park, as the queue sees it now. */
+  park?: QueuePark | null;
+  now: number;
   needs: number;
   pr?: PrItem;
   task?: TaskItem;
@@ -179,7 +182,6 @@ export function CheckoutLine({
             </Hint>
           )}
           {missing && <GhostBadge />}
-          {quiet && !missing && <QuietBadge />}
         </div>
 
         <div
@@ -237,6 +239,11 @@ export function CheckoutLine({
                   onDeleteWorktree={onDeleteWorktree}
                 />
               )}
+              {park && task && (
+                <Hint label={park.note ? `Parked: ${park.note}` : "Parked — set aside, still open"}>
+                  <span className="whitespace-nowrap text-kumo-subtle">{parkFact(park, now)}</span>
+                </Hint>
+              )}
               <UncommittedChip stats={folder} onOpen={onOpenFiles} />
               {/* With no commits the chip's word is just a files opener, which
                   the hover toolbar already has. */}
@@ -247,7 +254,7 @@ export function CheckoutLine({
               secondary action, delete included, from any pointer position. */}
           {onRemoveRepo && (
             <span
-              data-hud={`More actions: ${onDeleteWorktree ? "delete, " : ""}external editor, sync, quiet`}
+              data-hud={`More actions: ${onDeleteWorktree ? "delete, " : ""}park, external editor, sync`}
             >
               <RepoMenu
                 ghost
@@ -255,7 +262,8 @@ export function CheckoutLine({
                 onRemove={onRemoveRepo}
                 dir={folder.dir}
                 isWorktree={folder.isWorktree}
-                quiet={folder.quiet}
+                park={park ?? null}
+                taskTitle={displayTitle}
                 // Every item needs a directory except closing the task out,
                 // which is the one thing a detached line is *for*.
                 onDeleteWorktree={!missing || folderDetached(folder) ? onDeleteWorktree : undefined}
@@ -273,6 +281,7 @@ export function CheckoutLine({
           folder={folder}
           onOpenPreview={onOpenPreview}
           onRename={task ? startRename : undefined}
+          onUnpark={park && task ? () => void saveUnpark(task.id) : undefined}
           onDeleteWorktree={onDeleteWorktree}
         />
       )}

@@ -2450,3 +2450,66 @@ fn delete_task_cascades_link_rows_but_archiving_keeps_them() {
     assert_eq!(s.archive_closed_tasks(100, 101).unwrap(), 1);
     assert_eq!(issue_link_rows(&s), vec![(b.id, "o/r".to_string(), 3)]);
 }
+
+#[test]
+fn a_park_round_trips_and_unpark_reports_a_change() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("waiting on infra", "doing", None, None, 1).unwrap();
+    assert_eq!(t.park, None);
+    let input = ParkInput {
+        kind: ParkKind::Blocked,
+        note: Some("infra ticket".into()),
+        until_ms: Some(5_000),
+        on_reason: Some("land".into()),
+    };
+    let parked = s.park_task(t.id, input, 2_000).unwrap();
+    let park = parked.park.expect("parked");
+    assert_eq!(park.kind, ParkKind::Blocked);
+    assert_eq!(park.note.as_deref(), Some("infra ticket"));
+    assert_eq!((park.until_ms, park.at_ms), (Some(5_000), 2_000));
+    assert_eq!(park.on_reason.as_deref(), Some("land"));
+    assert!(!parked.closed, "a park never closes the task");
+
+    assert!(s.unpark_task(t.id).unwrap());
+    assert!(!s.unpark_task(t.id).unwrap(), "a second unpark changes nothing");
+    assert_eq!(s.get_task(t.id).unwrap().unwrap().park, None);
+    assert!(matches!(s.unpark_task(999), Err(Error::TaskNotFound(999))));
+}
+
+#[test]
+fn a_blank_park_note_is_stored_as_none() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("x", "backlog", None, None, 1).unwrap();
+    let input = ParkInput {
+        kind: ParkKind::Later,
+        note: Some("  ".into()),
+        until_ms: None,
+        on_reason: None,
+    };
+    assert_eq!(s.park_task(t.id, input, 2).unwrap().park.unwrap().note, None);
+}
+
+#[test]
+fn closing_a_task_ends_its_park() {
+    let s = Store::open_in_memory().unwrap();
+    let t = s.add_task("x", "doing", None, None, 1).unwrap();
+    let input = ParkInput { kind: ParkKind::Parked, note: None, until_ms: None, on_reason: None };
+    s.park_task(t.id, input, 2).unwrap();
+    assert_eq!(s.close_task(t.id, TaskOutcome::Abandoned, 3).unwrap().park, None);
+}
+
+#[test]
+fn rail_worktrees_follow_the_shared_rank() {
+    let s = Store::open_in_memory().unwrap();
+    let a = s.add_task("a", "doing", None, None, 1).unwrap();
+    let b = s.add_task("b", "doing", None, None, 2).unwrap();
+    s.set_task_worktree(a.id, "/r", None, None, Some("/r/wt/a")).unwrap();
+    s.set_task_worktree(b.id, "/r", None, None, Some("/r/wt/b")).unwrap();
+    let ids = |s: &Store| s.rail_worktrees().unwrap().iter().map(|w| w.task_id).collect::<Vec<_>>();
+    assert_eq!(ids(&s), [a.id, b.id], "oldest first while nobody moved anything");
+    s.move_task(b.id, RankMove::Before(a.id)).unwrap();
+    assert_eq!(ids(&s), [b.id, a.id]);
+    // A detected worktree lands at the bottom, not ahead of every task at rank 0.
+    s.record_detected_worktree("/r", "/r/wt/agent", None, 3).unwrap();
+    assert_eq!(s.rail_worktrees().unwrap()[2].kind, TaskKind::Detected);
+}

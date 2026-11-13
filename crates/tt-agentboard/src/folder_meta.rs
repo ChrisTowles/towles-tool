@@ -1,8 +1,7 @@
 //! Persisted per-folder metadata (Folder Rail): the *base-branch override* —
-//! what this checkout's diff/ahead-behind stats compare against — the *quiet
-//! override*, which forces a folder off the rail under either narrowing filter
-//! whatever its own activity says, and the *last-worked stamp*, the pane
-//! open/close half of that filter's worked-recently mode. Stored in the app's
+//! what this checkout's diff/ahead-behind stats compare against — and the
+//! *last-worked stamp*, the pane open/close half of the rail filter's
+//! worked-recently mode. Stored in the app's
 //! own file, `~/.config/towles-tool/agentboard/folder_meta.json`, keyed by folder dir.
 
 use std::collections::{HashMap, HashSet};
@@ -18,13 +17,6 @@ pub struct FolderMeta {
     /// didn't fork from main (e.g. a release line).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,
-    /// Forces this folder to count as quiet — the rail treats it as quiet
-    /// regardless of its actual activity, so it collapses into the stub row
-    /// under a narrowing rail filter the same as an auto-detected one. Only ever
-    /// `Some(true)` on disk; the setter normalizes `false` to absent so "not
-    /// forced" is one state rather than two.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub quiet: Option<bool>,
     /// Epoch ms of a pane opened or closed on this checkout — the one act of
     /// working here that leaves no other trace. Feeds the rail's
     /// worked-recently filter alongside the git signals and agent activity. A
@@ -36,7 +28,7 @@ pub struct FolderMeta {
 
 impl FolderMeta {
     fn is_empty(&self) -> bool {
-        self.base_branch.is_none() && self.quiet.is_none() && self.last_worked_at.is_none()
+        self.base_branch.is_none() && self.last_worked_at.is_none()
     }
 }
 
@@ -81,25 +73,6 @@ impl FolderMetaStore {
             return false;
         }
         self.folders.entry(dir.to_string()).or_default().base_branch = normalized;
-        self.drop_if_empty(dir);
-        self.dirty.insert(dir.to_string());
-        true
-    }
-
-    /// Whether a folder's quiet state is forced, regardless of
-    /// its own activity signals.
-    pub fn quiet_for(&self, dir: &str) -> bool {
-        self.folders.get(dir).and_then(|m| m.quiet).unwrap_or(false)
-    }
-
-    /// Set (`true`) or clear (`false`, the default) a folder's quiet override.
-    pub fn set_quiet(&mut self, dir: &str, quiet: bool) -> bool {
-        let normalized = quiet.then_some(true);
-        let current = self.folders.get(dir).and_then(|m| m.quiet);
-        if current == normalized {
-            return false;
-        }
-        self.folders.entry(dir.to_string()).or_default().quiet = normalized;
         self.drop_if_empty(dir);
         self.dirty.insert(dir.to_string());
         true
@@ -211,35 +184,6 @@ mod tests {
     }
 
     #[test]
-    fn set_and_clear_quiet() {
-        let mut store = FolderMetaStore::new(None);
-        assert!(!store.quiet_for("/r/a"));
-        assert!(store.set_quiet("/r/a", true));
-        assert!(store.quiet_for("/r/a"));
-        assert!(!store.set_quiet("/r/a", true));
-        assert!(store.set_quiet("/r/a", false));
-        assert!(!store.quiet_for("/r/a"));
-        assert!(!store.set_quiet("/r/b", false));
-    }
-
-    #[test]
-    fn quiet_and_base_branch_coexist_on_one_folder() {
-        let mut store = FolderMetaStore::new(None);
-        store.set_base_branch("/r/a", Some("develop"));
-        store.set_quiet("/r/a", true);
-        assert_eq!(store.base_branch_for("/r/a"), Some("develop"));
-        assert!(store.quiet_for("/r/a"));
-
-        store.set_quiet("/r/a", false);
-        assert_eq!(store.base_branch_for("/r/a"), Some("develop"));
-        assert!(!store.quiet_for("/r/a"));
-
-        store.set_base_branch("/r/a", None);
-        assert_eq!(store.base_branch_for("/r/a"), None);
-        assert!(!store.quiet_for("/r/a"));
-    }
-
-    #[test]
     fn touch_only_moves_forward() {
         let mut store = FolderMetaStore::new(None);
         assert_eq!(store.last_worked_at_for("/r/a"), None);
@@ -256,8 +200,8 @@ mod tests {
     fn touch_survives_clearing_the_other_fields() {
         let mut store = FolderMetaStore::new(None);
         store.touch("/r/a", 1000);
-        store.set_quiet("/r/a", true);
-        store.set_quiet("/r/a", false);
+        store.set_base_branch("/r/a", Some("develop"));
+        store.set_base_branch("/r/a", None);
         assert_eq!(store.last_worked_at_for("/r/a"), Some(1000));
     }
 

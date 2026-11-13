@@ -21,7 +21,6 @@ const folder = {
   committedRemoved: 53,
   sessions: [],
   needs: 0,
-  quiet: false,
 } as unknown as FolderData;
 
 describe("CheckoutLine on the primary checkout", () => {
@@ -31,6 +30,7 @@ describe("CheckoutLine on the primary checkout", () => {
         title="toolbox"
         folder={folder}
         needs={0}
+        now={0}
         active={false}
         cursor={false}
         onSelect={vi.fn<() => void>()}

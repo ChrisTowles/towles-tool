@@ -707,18 +707,6 @@ pub fn ab_set_folder_focus(state: State<Ab>, dir: String, focused: bool) {
     }
 }
 
-/// Forces checkouts to count as quiet for a narrowing rail filter regardless of
-/// their own activity. A set, not one dir: the rail's repo menu marks a whole
-/// repo, meaning its root checkout and every worktree under it.
-#[tauri::command]
-pub fn ab_set_folder_quiet(state: State<Ab>, dirs: Vec<String>, quiet: bool) {
-    let changed = state.engine.lock().unwrap().set_folder_quiet(&dirs, quiet);
-    tracing::info!(count = dirs.len(), quiet, changed, "folder.quiet_set");
-    if changed {
-        state.emit.notify_one();
-    }
-}
-
 /// Captured when starting Claude, so the rail can show why a session exists.
 #[tauri::command]
 pub fn ab_set_session_purpose(state: State<Ab>, id: String, text: Option<String>) {

@@ -117,6 +117,16 @@ export type TaskItem = {
   /** A live worktree checkout on disk right now — not a "task only" card or a
    * closed task whose worktree was torn down. */
   hasWorktree: boolean;
+  /** Set aside without closing (`tt_store::TaskPark`); absent in the normal list. */
+  park?: TaskPark;
+};
+
+type TaskPark = {
+  kind: "blocked" | "later" | "parked";
+  note?: string;
+  untilMs?: number;
+  atMs: number;
+  onReason?: string;
 };
 
 /** `dismissedTs` = the `updatedTs` at dismissal (0 = never). Hidden while

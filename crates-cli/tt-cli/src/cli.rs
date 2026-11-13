@@ -212,8 +212,57 @@ pub enum TaskCommands {
         root: Option<PathBuf>,
     },
 
+    /// Set a task aside without closing it: it folds out of the rail until unparked or due
+    Park {
+        /// Task directory name under .claude/worktrees/ (default: the task containing cwd)
+        name: Option<String>,
+
+        /// Why it is set aside: blocked wakes when its queue reason changes
+        #[arg(long, value_enum, default_value_t = ParkKindArg::Later)]
+        kind: ParkKindArg,
+
+        /// A note for when you come back to it
+        #[arg(long, value_name = "TEXT")]
+        note: Option<String>,
+
+        /// Revisit date: the task comes back to the list that morning
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        until: Option<String>,
+
+        /// Repo checkout (default: walk up from cwd to the nearest git checkout)
+        #[arg(long, value_name = "DIR")]
+        root: Option<PathBuf>,
+    },
+
+    /// Put a parked task back in the list
+    Unpark {
+        /// Task directory name under .claude/worktrees/ (default: the task containing cwd)
+        name: Option<String>,
+
+        /// Repo checkout (default: walk up from cwd to the nearest git checkout)
+        #[arg(long, value_name = "DIR")]
+        root: Option<PathBuf>,
+    },
+
     /// Refresh a collector in this terminal's app instance now rather than on its next poll
     Nudge(NudgeArgs),
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum ParkKindArg {
+    Blocked,
+    Later,
+    Parked,
+}
+
+impl ParkKindArg {
+    pub fn to_store(self) -> tt_store::ParkKind {
+        match self {
+            ParkKindArg::Blocked => tt_store::ParkKind::Blocked,
+            ParkKindArg::Later => tt_store::ParkKind::Later,
+            ParkKindArg::Parked => tt_store::ParkKind::Parked,
+        }
+    }
 }
 
 impl TaskCommands {
@@ -227,6 +276,8 @@ impl TaskCommands {
             TaskCommands::Env { .. } => "env",
             TaskCommands::Ports { .. } => "ports",
             TaskCommands::Clean { .. } => "clean",
+            TaskCommands::Park { .. } => "park",
+            TaskCommands::Unpark { .. } => "unpark",
             TaskCommands::Nudge(_) => "nudge",
         }
     }
@@ -397,6 +448,8 @@ mod tests {
         (&["tt", "task", "env", "some-task"], ("task", "env")),
         (&["tt", "task", "ports"], ("task", "ports")),
         (&["tt", "task", "clean"], ("task", "clean")),
+        (&["tt", "task", "park", "some-task", "--kind", "blocked"], ("task", "park")),
+        (&["tt", "task", "unpark", "some-task"], ("task", "unpark")),
     ];
 
     #[test]
