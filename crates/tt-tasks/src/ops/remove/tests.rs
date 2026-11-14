@@ -613,3 +613,38 @@ fn disk_bytes_counts_a_hard_linked_file_once() {
 
     assert_eq!(disk_bytes(tmp.path(), &mut BTreeSet::new()), 5 + 2);
 }
+
+#[test]
+fn compose_owned_downs_whole_projects_and_spares_shared_ones() {
+    let listing = "gw\tclaude-gateway-gov\t/w/.claude/worktrees/a/packages/x/container\n\
+                   db\tclaude-gateway-gov\t/w/.claude/worktrees/a/packages/x/container\n\
+                   old_gw\tclaude-gateway-com\t/w/.claude/worktrees/a/packages/x/container\n\
+                   live_db\tclaude-gateway-com\t/w/.claude/worktrees/b/packages/x/container\n\
+                   sib\tother\t/w/.claude/worktrees/ab\n\
+                   bare\t\t/w/.claude/worktrees/a\n";
+    let task = Path::new("/w/.claude/worktrees/a");
+    let owned = compose_owned(listing, |wd| wd.starts_with(task));
+    assert_eq!(
+        owned,
+        ComposeOwned {
+            projects: ["claude-gateway-gov".to_string()].into(),
+            containers: ["old_gw".to_string()].into(),
+        }
+    );
+}
+
+#[test]
+fn removed_task_is_one_without_a_git_entry() {
+    let root = tempfile::tempdir().unwrap();
+    let tasks = root.path();
+    fs::create_dir_all(tasks.join("live")).unwrap();
+    fs::write(tasks.join("live/.git"), "gitdir: x").unwrap();
+    // What Docker leaves when it recreates a vanished bind-mount source.
+    fs::create_dir_all(tasks.join("gone/packages/configs")).unwrap();
+
+    assert!(!under_removed_task(tasks, &tasks.join("live/packages/container")));
+    assert!(under_removed_task(tasks, &tasks.join("gone/packages/container")));
+    assert!(under_removed_task(tasks, &tasks.join("never-existed")));
+    assert!(!under_removed_task(tasks, Path::new("/elsewhere/repo")));
+    assert!(!under_removed_task(tasks, tasks));
+}
