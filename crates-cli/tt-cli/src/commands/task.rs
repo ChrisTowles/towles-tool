@@ -915,6 +915,7 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
                 "paths": r.paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
                 "bytes": r.bytes,
             })).collect::<Vec<_>>(),
+            "sweptCompose": report.swept_compose,
             "agentboard": prunes.iter().map(|p| serde_json::json!({
                 "dir": p.dir.display().to_string(),
                 "sessionFoldersDropped": p.session_folders_dropped,
@@ -973,6 +974,13 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
             println!("  {} ({})", residue.identifier, human_bytes(residue.bytes));
         }
     }
+    if !report.swept_compose.is_empty() {
+        let verb = if dry_run { "would bring down" } else { "brought down" };
+        println!("{verb} compose resources of removed tasks:");
+        for project in &report.swept_compose {
+            println!("  {project}");
+        }
+    }
     for prune in &prunes {
         let verb = if dry_run { "would prune" } else { "pruned" };
         println!(
@@ -988,6 +996,7 @@ fn cmd_clean(dry_run: bool, json: bool, root: Option<&Path>) -> Result<(), Strin
         && report.swept_state_dirs.is_empty()
         && report.swept_port_registries.is_empty()
         && report.swept_host_residue.is_empty()
+        && report.swept_compose.is_empty()
         && prunes.is_empty()
     {
         println!("nothing to clean");
