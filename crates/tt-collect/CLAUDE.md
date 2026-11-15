@@ -2,8 +2,8 @@
 
 Collectors that fill `tt-store`'s `tt.db`: calendar (via `claude -p`), issues
 + PRs + CI runs (via `gh`), and the pure protocol logic for a watched Slack DM (via
-Socket Mode). Tauri-free — both `tt collect` (CLI) and the app's scheduler
-drive the same [`CollectSummary`] contract.
+Socket Mode). Tauri-free — the app's scheduler and its refresh button
+(`collect_manual`) drive the same [`CollectSummary`] contract.
 
 ## The never-panic, never-`Err` contract
 
@@ -63,7 +63,7 @@ not per-directory) from getting hammered:
   `collect_prs_merged` is how old an answer may be; `FETCH_NOW` (0) reuses
   nothing, which is what the post-`gh` nudge passes to show a change immediately.
   **`collect_prs` (the full sweep) takes no part in this in either direction** —
-  every caller is a `tt collect` run or the app's refresh button, so it would
+  its one caller is `collect_manual` (the app's refresh button), so it would
   never accept a shared answer, and no other collector asks its question, so
   there'd be no reader for what it published.
   Two things stay out of the cache deliberately, both in `sweep_repos_shared`: a

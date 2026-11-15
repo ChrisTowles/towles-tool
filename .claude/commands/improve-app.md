@@ -32,7 +32,7 @@ Run /tt:blindspot on this task first. Then:
 
 ## Mode: review
 
-Load the artifact-design skill, then publish an Artifact (favicon 💡, keep the
+Load the artifact-design skill, then publish an Artifact (icon `idea`, keep the
 same file path across reruns so it redeploys to one URL) presenting the
 options for my review before anything is built:
 
@@ -41,7 +41,7 @@ options for my review before anything is built:
   files/crates it touches, effort estimate, and how I'd verify it.
 - A short "cut but interesting" note for ideas 6–15 so nothing is lost.
 
-Do NOT implement anything in review mode. End by telling me to run
+Review mode builds nothing. End by telling me to run
 `/improve-app build` (optionally with the same theme) when I've picked —
 and note that I can name substitutions if I disagree with the top 5.
 

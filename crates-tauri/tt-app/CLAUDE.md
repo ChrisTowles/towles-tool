@@ -1,9 +1,9 @@
 # CLAUDE.md — crates-tauri/tt-app
 
-Tauri 2 desktop shell — the root [`CLAUDE.md`](../../CLAUDE.md) says what this
-crate is (identifier, dev-port picking, task labeling). This file is the internal
-invariants a single read won't surface: it is the largest crate in the repo
-(~6,100 lines / 20 modules), and most of what follows spans several files.
+Tauri 2 desktop shell — the root [`CLAUDE.md`](../../CLAUDE.md) has the
+workspace overview. This file is the internal invariants a single read won't
+surface: it is the largest crate in the repo, and most of what follows spans
+several files.
 
 ## Locking and ordering
 
@@ -54,11 +54,11 @@ invariants a single read won't surface: it is the largest crate in the repo
   a killed/replaced session can never close its successor. Treat `TermState`'s
   lock as map-surgery-only — never hold it across anything that can block.
 - **`task_delete` kills a folder's PTYs before touching its worktree on disk —
-  but only once the removal guards have passed** (via `ops::remove_task`'s
-  `before_removal` hook, `tasks.rs`). Both halves matter for any new
-  task-mutating command: kill before deleting or you orphan a shell pointed at a
-  deleted cwd; kill only past the guards or a *refused* removal costs a live
-  session the guard existed to protect.
+  but only once the removal guards have passed** (`ops::remove_task`'s
+  `on_phase` callback at `RemovePhase::StoppingSessions`, `task.rs`). Both
+  halves matter for any new task-mutating command: kill before deleting or you
+  orphan a shell pointed at a deleted cwd; kill only past the guards or a
+  *refused* removal costs a live session the guard existed to protect.
 - **Task-status mutations must route through `spawn_gh_status_sync`**
   (`store.rs`) — the single call site for gh close/reopen, added after a real
   drift bug (#246). Don't add a second path that flips status without it.
@@ -96,10 +96,11 @@ invariants a single read won't surface: it is the largest crate in the repo
 - **The scheduler's watchers/in-flight guards persist across a settings-reload
   rebuild** (`scheduler.rs`), and a failed `claude:calendar` run still counts as
   "recent" — this avoids re-billing tokens on relaunch.
-- **An external process can force an eager `prs` or `issues` collect via the
-  nudge dir** (`tt_config::nudge_dir_path()`, watched in `scheduler.rs`).
-  `tt task nudge prs`/`issues` is the write side — a plain filesystem touch, no
-  store I/O — and the plugin's `gh pr`/`gh issue` hook is the only caller today.
+- **An external process can force an eager collect via the nudge dir**
+  (`tt_config::nudge_dir_path()`, watched in `scheduler.rs`). `tt task nudge
+  <target>` (`NudgeTarget` in `tt-cli`'s `cli.rs`) is the write side — a plain
+  filesystem touch, no store I/O — called by the plugin's `gh pr`/`gh issue`
+  hook and `packages/core/scripts/pr.sh`.
   The dir is *separate* from `data_dir()` so the watch isn't spammed by tt.db's
   WAL/SHM churn. `DirNotifier` only signals "something changed", so
   `changed_nudge_batches` diffs each target's mtime to resolve specific batches,
