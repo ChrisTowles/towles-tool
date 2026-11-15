@@ -69,6 +69,7 @@ export const setQuery = fieldSetter("query");
 export const setRepoFilter = fieldSetter("repoFilter");
 export const setIdleRevealed = fieldSetter("idleRevealed");
 export const setUnmanagedRevealed = fieldSetter("unmanagedRevealed");
+export const setParkedRevealed = fieldSetter("parkedRevealed");
 export const setSnoozeId = fieldSetter("snoozeId");
 export const setRenaming = fieldSetter("renaming");
 export const setTitles = fieldSetter("titles");

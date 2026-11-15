@@ -2,7 +2,7 @@ import { Result } from "effect";
 /** What a repo's rail block *contains*: the repo in a left column, its
  * checkouts as lines beside it. How each line looks belongs to `CheckoutLine`,
  * `SessionChip` and `ViewPaneChip`. */
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, type DragEvent, useState } from "react";
 import { toast } from "@/lib/toast";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Tooltip } from "@cloudflare/kumo";
@@ -50,11 +50,28 @@ import { uiAction } from "@/lib/ui-action";
 import { railChipMotion, railRowMotion } from "@/lib/rail-motion";
 import { setRepoArchived } from "@/lib/repo-actions";
 import { folderNodeKey, sessionNodeKey } from "@/lib/rail-nodes";
+import { read } from "@/lib/atoms/registry";
+import { reposAtom } from "@/lib/agentboard/state";
+import { useRailSort } from "@/lib/rail-prefs";
+import {
+  railRepoDirs,
+  repoDropOrder,
+  saveRepoOrder,
+  saveTaskMove,
+  taskDropMove,
+} from "@/lib/rail-reorder";
+import type { QueuePark } from "@/lib/schemas/queue";
 import { AnimatePresence, motion } from "motion/react";
 
 const IDLE_HINT = "Checkouts with nothing going on right now";
 const UNMANAGED_HINT =
   "Worktrees no task of yours claims — an agent's own, or one added by hand. Adopt one to make it a task.";
+const PARKED_HINT =
+  "Tasks set aside without closing — each comes back on its revisit date, when it lands, or when its agent asks";
+
+/** The drag payload: one MIME type per row kind, so a task never drops on a repo. */
+const DRAG_REPO = "application/x-tt-repo";
+const DRAG_TASK = "application/x-tt-task";
 
 /** Undefined for every line but `detected` — that is what hides the affordance. */
 function adoptWorktree(folder: FolderData) {
@@ -74,6 +91,7 @@ export function RepoGroup({
   now,
   prs,
   tasks,
+  parks,
   selectedSessionId,
   activePaneId,
   activeFolderDir,
@@ -107,7 +125,9 @@ export function RepoGroup({
   unmanagedDirs,
   unmanagedRevealed,
   onToggleUnmanaged,
-  quietDirs,
+  parkedDirs,
+  parkedRevealed,
+  onToggleParked,
   taskFormOpen,
   taskFormSeed,
   onCancelTaskForm,
@@ -117,6 +137,8 @@ export function RepoGroup({
   now: number;
   prs: PrItem[];
   tasks: TaskItem[];
+  /** Folder dir → its task's park, as the queue reports it. */
+  parks: ReadonlyMap<string, QueuePark>;
   selectedSessionId: string | null;
   /** A view pane has no session record, so `selectedSessionId` can't name it. */
   activePaneId: string | null;
@@ -160,10 +182,10 @@ export function RepoGroup({
   unmanagedDirs?: Set<string>;
   unmanagedRevealed?: boolean;
   onToggleUnmanaged?: () => void;
-  /** Folders marked quiet by hand, normally already gone from `repo`
-   * (`partitionQuiet`). One arriving here is peeked or active, and gets a
-   * badge saying so. */
-  quietDirs?: Set<string>;
+  /** Held parks, folded into one "N parked" row. */
+  parkedDirs?: Set<string>;
+  parkedRevealed?: boolean;
+  onToggleParked?: () => void;
   taskFormOpen: boolean;
   /** Set when the form was opened on someone's behalf: a reopen, or an issue. */
   taskFormSeed?: TaskFormSeed;
@@ -176,7 +198,12 @@ export function RepoGroup({
   const showIdle = idleRevealed ?? false;
   const unmanaged = unmanagedDirs ?? new Set<string>();
   const showUnmanaged = unmanagedRevealed ?? false;
-  const quiet = quietDirs ?? new Set<string>();
+  const parked = parkedDirs ?? new Set<string>();
+  const showParked = parkedRevealed ?? false;
+  const [repoSort] = useRailSort("repos");
+  const [taskSort] = useRailSort("tasks");
+  // Leaf view state: which row a drag is over, for the drop rule.
+  const [dropDir, setDropDir] = useState<string | null>(null);
 
   const sessionChip = (folder: FolderData, s: SessionData) => (
     <motion.div key={s.id} {...railChipMotion} className="flex min-w-0">
@@ -290,9 +317,9 @@ export function RepoGroup({
 
   const repoCollapsed = collapsed[repo.key];
   const shownFolders = withoutFolded(
-    withoutFolded(repo.folders, unmanaged, showUnmanaged),
-    idle,
-    showIdle,
+    withoutFolded(withoutFolded(repo.folders, unmanaged, showUnmanaged), idle, showIdle),
+    parked,
+    showParked,
   );
   const lineFolders = repoCollapsed
     ? keptWhenCollapsed(shownFolders, activeFolderDir)
@@ -306,13 +333,68 @@ export function RepoGroup({
         name={repo.name}
         idle={idle.size}
         unmanaged={unmanaged.size}
+        parked={parked.size}
         onToggle={() => {
           if (idle.size > 0) onToggleIdle?.();
           if (unmanaged.size > 0) onToggleUnmanaged?.();
+          if (parked.size > 0) onToggleParked?.();
         }}
       />
     );
   }
+  // Moves write the manual order, so they only make sense while it is the one shown.
+  const repoDrag =
+    repoSort === "manual"
+      ? {
+          draggable: true,
+          onDragStart: (e: DragEvent) => {
+            e.dataTransfer.setData(DRAG_REPO, repo.dir);
+            e.dataTransfer.effectAllowed = "move";
+          },
+          onDragOver: (e: DragEvent) => {
+            if (!e.dataTransfer.types.includes(DRAG_REPO)) return;
+            e.preventDefault();
+            setDropDir(repo.dir);
+          },
+          onDragLeave: () => setDropDir(null),
+          onDrop: (e: DragEvent) => {
+            setDropDir(null);
+            const dragged = e.dataTransfer.getData(DRAG_REPO);
+            if (!dragged) return;
+            e.preventDefault();
+            const next = repoDropOrder(railRepoDirs(read(reposAtom)), dragged, repo.dir);
+            if (next) void saveRepoOrder(next, "drag");
+          },
+        }
+      : {};
+  const taskDrag = (folder: FolderData) =>
+    taskSort === "manual" && folderTask(folder) && !folder.dirMissing
+      ? {
+          draggable: true,
+          onDragStart: (e: DragEvent) => {
+            e.stopPropagation();
+            e.dataTransfer.setData(DRAG_TASK, `${repo.key}\n${folder.dir}`);
+            e.dataTransfer.effectAllowed = "move";
+          },
+          onDragOver: (e: DragEvent) => {
+            if (!e.dataTransfer.types.includes(DRAG_TASK)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setDropDir(folder.dir);
+          },
+          onDragLeave: () => setDropDir(null),
+          onDrop: (e: DragEvent) => {
+            setDropDir(null);
+            const [repoKey, dragged] = e.dataTransfer.getData(DRAG_TASK).split("\n");
+            // Tasks stay in their repo: a drop from another repo is no move.
+            if (repoKey !== repo.key || !dragged) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const move = taskDropMove(repo.folders, dragged, folder.dir);
+            if (move) void saveTaskMove(move, "drag");
+          },
+        }
+      : {};
   const scopePrefix = pathScope(repo.folders[0].dir);
   const RepoIcon = repoIcon(repo.meta);
   const accent = repoAccentStyles(repo);
@@ -323,10 +405,12 @@ export function RepoGroup({
     <div className="@container/repo border-b" data-focus-kind="repo" data-focus-id={repo.key}>
       <div className="flex flex-col @[34rem]/repo:flex-row">
         <div
+          {...repoDrag}
           onMouseEnter={() => setRepoHovered(true)}
           onMouseLeave={() => setRepoHovered(false)}
           style={statusOwnsEdge ? undefined : accent.edgeStyle}
           className={cn(
+            dropDir === repo.dir && "ring-1 ring-inset ring-agent/60",
             "flex items-center gap-2 border-l-[3px] border-l-transparent bg-background px-3 py-2",
             "@[34rem]/repo:sticky @[34rem]/repo:top-0 @[34rem]/repo:z-10 @[34rem]/repo:w-44 @[34rem]/repo:shrink-0 @[34rem]/repo:flex-col @[34rem]/repo:items-start @[34rem]/repo:self-start @[34rem]/repo:gap-1",
             statusOwnsEdge && "border-l-warn",
@@ -408,10 +492,6 @@ export function RepoGroup({
                 )
               }
               dir={repo.folders[0].dir}
-              // The repo speaks for the whole repo: "Mark quiet" covers the root
-              // checkout *and* every worktree, or the repo stays on the rail.
-              quietDirs={repo.folders.map((f) => f.dir)}
-              quiet={repo.folders.every((f) => f.quiet)}
               dirMissing={repo.folders[0].dirMissing}
               onArchive={() => void setRepoArchived(repo.dir, repo.name, true, "agentboard")}
               onNewTask={newTask}
@@ -442,44 +522,51 @@ export function RepoGroup({
                   // Dim via `animate`, not a class: motion writes an inline
                   // opacity no class could win against.
                   animate={{ ...railRowMotion.animate, opacity: deleting ? 0.5 : 1 }}
-                  className={cn(deleting && "pointer-events-none")}
+                  className={cn(
+                    deleting && "pointer-events-none",
+                    dropDir === folder.dir && "ring-1 ring-inset ring-agent/60",
+                  )}
                 >
-                  <CheckoutLine
-                    title={folder.name}
-                    folder={folder}
-                    quiet={quiet.has(folder.dir)}
-                    needs={folder.needs}
-                    pr={prForFolder(prs, repo.originUrl, folder.branch)}
-                    task={taskForFolder(tasks, folder.dir)}
-                    cursor={cursorKey === folderNodeKey(repo.key, folder.dir)}
-                    active={activeFolderDir === folder.dir}
-                    deleting={deleting}
-                    onAdoptWorktree={adoptWorktree(folder)}
-                    deletingLabel={folderPhaseLabel(folder)}
-                    settingUpSince={settingUpDirs?.get(folder.dir)}
-                    onSelect={() => onSelectFolder(folder.dir)}
-                    onRemoveRepo={() => onRemoveRepo([folder.dir], folder.name)}
-                    onDeleteWorktree={
-                      folderRemovableTask(folder)
-                        ? () => onDeleteWorktree(folder.dir, folder.name)
-                        : undefined
-                    }
-                    onDiscardWorktree={
-                      folderRemovableTask(folder)
-                        ? () => onDiscardWorktree(folder.dir, folder.name)
-                        : undefined
-                    }
-                    deleteBlockers={deleteBlockers.get(folder.dir)}
-                    onRecreateWorktree={
-                      folderRecreateBranch(folder) && folderDetached(folder)
-                        ? () => onRecreateWorktree(folder)
-                        : undefined
-                    }
-                    onOpenFiles={() => onOpenFiles(folder.dir)}
-                    onOpenPreview={() => onOpenPreview(folder.dir)}
-                  >
-                    {chips(folder)}
-                  </CheckoutLine>
+                  {/* Drag lives on a plain div: motion owns `onDrag*` on its own element. */}
+                  <div {...taskDrag(folder)}>
+                    <CheckoutLine
+                      title={folder.name}
+                      folder={folder}
+                      park={parks.get(folder.dir) ?? null}
+                      now={now}
+                      needs={folder.needs}
+                      pr={prForFolder(prs, repo.originUrl, folder.branch)}
+                      task={taskForFolder(tasks, folder.dir)}
+                      cursor={cursorKey === folderNodeKey(repo.key, folder.dir)}
+                      active={activeFolderDir === folder.dir}
+                      deleting={deleting}
+                      onAdoptWorktree={adoptWorktree(folder)}
+                      deletingLabel={folderPhaseLabel(folder)}
+                      settingUpSince={settingUpDirs?.get(folder.dir)}
+                      onSelect={() => onSelectFolder(folder.dir)}
+                      onRemoveRepo={() => onRemoveRepo([folder.dir], folder.name)}
+                      onDeleteWorktree={
+                        folderRemovableTask(folder)
+                          ? () => onDeleteWorktree(folder.dir, folder.name)
+                          : undefined
+                      }
+                      onDiscardWorktree={
+                        folderRemovableTask(folder)
+                          ? () => onDiscardWorktree(folder.dir, folder.name)
+                          : undefined
+                      }
+                      deleteBlockers={deleteBlockers.get(folder.dir)}
+                      onRecreateWorktree={
+                        folderRecreateBranch(folder) && folderDetached(folder)
+                          ? () => onRecreateWorktree(folder)
+                          : undefined
+                      }
+                      onOpenFiles={() => onOpenFiles(folder.dir)}
+                      onOpenPreview={() => onOpenPreview(folder.dir)}
+                    >
+                      {chips(folder)}
+                    </CheckoutLine>
+                  </div>
                 </motion.div>
               );
             })}
@@ -510,6 +597,15 @@ export function RepoGroup({
               hint={IDLE_HINT}
               revealed={showIdle}
               onToggle={onToggleIdle}
+            />
+          )}
+          {!repoCollapsed && parked.size > 0 && (
+            <FoldToggleRow
+              count={parked.size}
+              noun="parked"
+              hint={PARKED_HINT}
+              revealed={showParked}
+              onToggle={onToggleParked}
             />
           )}
         </div>

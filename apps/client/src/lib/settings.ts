@@ -321,7 +321,6 @@ export type UserSettings = {
     autoArchiveAfterHours?: number;
     railRepoSort?: RailSort;
     railTaskSort?: RailSort;
-    showQuiet?: boolean;
     showUnmanagedWorktrees?: boolean;
     browserPane?: boolean;
     /** macOS only — see `lib/keymap.ts`. */

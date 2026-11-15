@@ -31,6 +31,8 @@ export type BoardUi = Readonly<{
   repoFilter: ReadonlySet<string>;
   idleRevealed: ReadonlySet<string>;
   unmanagedRevealed: ReadonlySet<string>;
+  /** Repo keys whose "N parked" row is peeked open. */
+  parkedRevealed: ReadonlySet<string>;
   /** The checkout whose snooze menu is open — `z` opens it from the keyboard. */
   snoozeId: string | null;
   renaming: string | null;
@@ -61,6 +63,7 @@ export const INITIAL_BOARD_UI: BoardUi = {
   repoFilter: new Set(),
   idleRevealed: new Set(),
   unmanagedRevealed: new Set(),
+  parkedRevealed: new Set(),
   snoozeId: null,
   renaming: null,
   titles: {},

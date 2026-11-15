@@ -92,36 +92,6 @@ export function partitionArchived(repos: RepoData[]): {
   return { active, archived };
 }
 
-/** The rail minus its quiet checkouts, plus what was taken out. "Mark quiet"
- * is a hide, not a demotion, and it ignores the rail filter — under the
- * default `"all"` a filter-shaped quiet would do nothing at all. The checkout
- * you are working in is never taken, and `show` (the rail header's toggle)
- * puts them all back. `quietDirs` reports the marks either way, so a row shown
- * anyway can still say it is quiet, and the header can count them. */
-export function partitionQuiet(
-  repos: RepoData[],
-  args: { show: boolean; activeFolderDir: string | null },
-): { shown: RepoData[]; quietDirs: Map<string, Set<string>>; quietCount: number } {
-  const quietDirs = new Map<string, Set<string>>();
-  let quietCount = 0;
-  for (const r of repos) {
-    const dirs = new Set(
-      r.folders.filter((f) => f.quiet && f.dir !== args.activeFolderDir).map((f) => f.dir),
-    );
-    if (dirs.size === 0) continue;
-    quietDirs.set(r.key, dirs);
-    quietCount += dirs.size;
-  }
-  if (args.show || quietCount === 0) return { shown: repos, quietDirs, quietCount };
-  const shown = repos
-    .map((r) => {
-      const dirs = quietDirs.get(r.key);
-      return dirs ? { ...r, folders: r.folders.filter((f) => !dirs.has(f.dir)) } : r;
-    })
-    .filter((r) => r.folders.length > 0);
-  return { shown, quietDirs, quietCount };
-}
-
 /** The rail narrowed to what a typed query matches. A repo matched by *name*
  * keeps every checkout — you asked for the repo, not one branch in it. Branch
  * and the de-slugged title count, since that is what a worktree row reads as;
@@ -159,8 +129,7 @@ function folderLastActivityAt(f: FolderData): number {
 
 /** Nothing here needs attention: no live or eye-catching session, nothing
  * unpushed or dirty, and no agent activity inside `IDLE_GRACE_MS`. The rail
- * *filter*'s question — {@link FolderData.quiet}, the hand mark, is not part of
- * it: that one hides the checkout outright, whatever the filter says. */
+ * *filter*'s question; a parked task folds under its own row instead. */
 export function isFolderIdle(f: FolderData, now: number): boolean {
   return (
     liveSessions(f).length === 0 &&

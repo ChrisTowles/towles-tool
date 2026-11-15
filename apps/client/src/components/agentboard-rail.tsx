@@ -154,7 +154,7 @@ export function RailIconStrip({
 
 /** The agent tally pinned atop the rail: total + non-zero status buckets + a ❄
  * compact count, Agentboard settings behind the trailing ⚙. Counts the
- * *rail's* repos, not the payload's — a tally including quiet checkouts would
+ * *rail's* repos, not the payload's — a tally including archived repos would
  * point at rows nobody can click. */
 export function RollupChip({
   repos,

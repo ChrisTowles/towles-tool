@@ -28,6 +28,7 @@ import { DevServersButton } from "@/components/dev-servers";
 import type { NewTaskRepo } from "@/components/inline-new-task";
 import type { SessionActions } from "@/lib/agentboard/actions";
 import { dirCostAtom } from "@/lib/agentboard/cost";
+import { parksAtom } from "@/lib/board/derive";
 import { folderBranchDrift, folderIsHome, pathScope } from "@/lib/agentboard/folder";
 import { humanizeFolderName } from "@/lib/agentboard/folder-name";
 import {
@@ -88,6 +89,7 @@ export function WorkingContext({
   const drift = folderBranchDrift(folder);
   const onSync = syncBranch(folder);
   const cost = useAtomValue(dirCostAtom(folder.dir));
+  const parks = useAtomValue(parksAtom);
   const clean =
     folder.uncommittedFiles === 0 && folder.committedFiles === 0 && folder.commitsBehind === 0;
   return (
@@ -158,7 +160,8 @@ export function WorkingContext({
               path={folder.dir}
               dir={folder.dir}
               isWorktree={folder.isWorktree}
-              quiet={folder.quiet}
+              park={parks.get(folder.dir) ?? null}
+              taskTitle={task?.text}
               onNewTask={!missing ? newTask : undefined}
               onDeleteWorktree={
                 !missing && folder.isWorktree

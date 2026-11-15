@@ -99,13 +99,14 @@ PTYs, panes and selection, picked by the Tree/Queue tabs atop the rail.
 `App` can activate its shortcut scope: bindings both rails share are scope
 `agentboard`, and each rail's own chords are scope `queue` or `tree`, in the
 handler map only while that rail is up (Alt+Shift+↑ is rank-top on one,
-collapse-all on the other). A deep link picks the rail it needs: a PR lands on
+collapse-all on the other; Alt+↑/↓ is rank on the queue and a move on the tree,
+and both write the one `tasks.rank`). A deep link picks the rail it needs: a PR lands on
 the queue, a repo on the tree.
 
 The queue rail (`components/queue-rail.tsx`) is **the tree's checkouts, roots
 included, ordered to work one at a time** — keyed by `folderDir`, with a task
 lending a row its title and rank; a backlog task with no checkout, a PR or a CI
-run is not a row, and what the tree leaves out (quiet checkouts, idle unmanaged
+run is not a row, and what the tree leaves out (archived repos, idle unmanaged
 worktrees) the queue does too (`railQueue`). `railRows` (`lib/queue.ts`, read through `queueRowsAtom`) is the one walk the
 cursor (j/k, Ctrl+Shift+↑/↓) and the 1–9 jump digits read — folded lanes
 skipped, so the keyboard sees what you see —

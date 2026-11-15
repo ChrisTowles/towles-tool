@@ -69,7 +69,7 @@ notify = "6.1.1"
 # png, not two — 0.17 is build-time-only weight via tauri-codegen/ico.
 png = "0.18"
 portable-pty = "0.9.0"
-rusqlite = { version = "0.32.1", features = ["bundled"] }
+rusqlite = { version = "0.43.0", features = ["bundled", "fallible_uint"] }
 log = "0.4.29"
 schemars = { version = "0.8.22", features = ["chrono"] }
 serde = { version = "1.0.228", features = ["derive"] }

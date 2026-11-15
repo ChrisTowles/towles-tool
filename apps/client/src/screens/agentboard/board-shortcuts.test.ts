@@ -43,6 +43,8 @@ function context(over: Partial<BoardShortcutContext> = {}): BoardShortcutContext
     folderByDir: new Map(),
     focusActiveTerminal: vi.fn<() => boolean>(() => true),
     splitIntoWindow: mockFn(),
+    togglePark: vi.fn<() => boolean>(() => true),
+    moveRailRow: vi.fn<() => boolean>(() => true),
     ...over,
   };
 }

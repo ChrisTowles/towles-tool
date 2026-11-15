@@ -380,7 +380,7 @@ impl Engine {
                 repo_root: root.clone(),
                 record: RowRecord::Checkout,
             });
-            // Already `created_at`-ordered; an index would be rebuilt per push.
+            // Already in manual (rank) order; an index would be rebuilt per push.
             for wt in self.task_worktrees.iter().filter(|w| &w.repo_root == root) {
                 if wt.kind == tt_store::TaskKind::Detected && !show_unmanaged {
                     continue;

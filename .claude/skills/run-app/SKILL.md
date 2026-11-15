@@ -66,7 +66,7 @@ screen for Chris — doesn't replace driving it yourself first.
 - `click`/`type` need CSS selectors, not text — use `clicktext` for text.
 - Nav rail icons have no visible text, only `aria-label`:
   ```bash
-  node scripts/drive.mjs eval '(() => { document.querySelector(`[aria-label="Agentboard"]`).click(); return "clicked"; })()'
+  node scripts/drive.mjs eval '(() => { document.querySelector(`[aria-label="Agent Board"]`).click(); return "clicked"; })()'
   ```
 - `eval`'s arg is wrapped as `await (<expr>)` — pass one expression (an
   IIFE), not a `;`-separated statement list.

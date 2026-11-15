@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { EyeIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
+import { ArrowUUpLeftIcon, EyeIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { Kbd } from "@/components/ui/kbd";
 import type { FolderData } from "@/lib/agentboard/types";
 import { mouseAction } from "@/lib/shortcut-coach";
@@ -13,15 +13,18 @@ export function LineActionBar({
   folder,
   onOpenPreview,
   onRename,
+  onUnpark,
   onDeleteWorktree,
 }: {
   folder: FolderData;
   onOpenPreview: () => void;
   /** Set only when the line has a task title to rename. */
   onRename?: () => void;
+  /** Set only on a parked task's line. */
+  onUnpark?: () => void;
   onDeleteWorktree?: () => void;
 }) {
-  if (!folder.hasLaunchConfig && !onRename && !onDeleteWorktree) return null;
+  if (!folder.hasLaunchConfig && !onRename && !onUnpark && !onDeleteWorktree) return null;
   return (
     <div className="flex flex-wrap items-center gap-1 pb-1.5 pl-4">
       {folder.hasLaunchConfig && (
@@ -40,6 +43,15 @@ export function LineActionBar({
           hud="Rename this task (double-clicking the name works too)"
           action="agentboard.line_bar_rename"
           onClick={onRename}
+        />
+      )}
+      {onUnpark && (
+        <BarButton
+          icon={<ArrowUUpLeftIcon className="size-3" />}
+          label="Unpark"
+          hud="Put this task back in the list"
+          shortcut="ab-park-task"
+          onClick={onUnpark}
         />
       )}
       {onDeleteWorktree && (

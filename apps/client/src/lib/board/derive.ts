@@ -10,21 +10,17 @@ import {
   isFolderFiltered,
   isFolderUnmanaged,
   partitionArchived,
-  partitionQuiet,
   searchRepos,
   withoutFolded,
 } from "@/lib/agentboard/folder";
 import type { FolderData, RepoData, SessionData, WindowsPayload } from "@/lib/agentboard/types";
+import { parkedDirs, parksByDir } from "@/lib/agentboard/park";
 import { hydrateWins, pruneWins } from "@/lib/agentboard/windows";
 import { nowAtom } from "@/lib/now";
 import { filterQueue, onYouHead, queueAtom, railRows, taskQueueAtom } from "@/lib/queue";
 import { railHotkeyTargets } from "@/lib/rail-hotkeys";
 import { railNodes } from "@/lib/rail-nodes";
-import {
-  DEFAULT_RAIL_FILTER,
-  DEFAULT_RAIL_RECENT_HOURS,
-  DEFAULT_SHOW_QUIET,
-} from "@/lib/rail-prefs";
+import { DEFAULT_RAIL_FILTER, DEFAULT_RAIL_RECENT_HOURS } from "@/lib/rail-prefs";
 import { settingAtom } from "@/lib/settings";
 import { boardField, foldedLanesAtom } from "./atoms";
 import { ringSlot, treeSlot, type RingSlot, type TreeSlot } from "./cursor";
@@ -36,11 +32,10 @@ const recentHoursAtom = settingAtom(
   (s) => s.agentboard?.railRecentHours,
   DEFAULT_RAIL_RECENT_HOURS,
 );
-const showQuietAtom = settingAtom((s) => s.agentboard?.showQuiet, DEFAULT_SHOW_QUIET);
 const activeDirAtom = boardField("activeFolderDir");
 
 // ── Lookups: the full repo list. A pane open for a checkout since filtered or
-// marked quiet must keep working, so only the render surfaces hide anything.
+// parked must keep working, so only the render surfaces hide anything.
 
 export type RepoLookups = {
   folderOf: Map<string, FolderData>;
@@ -94,27 +89,25 @@ export const activeRepoAtom = keep(
   }),
 );
 
-// ── The rail's repos, narrowed in order: archived, quiet, then the search.
+// ── The rail's repos, narrowed in order: archived, then the search.
 
 /** Archived repos leave before anything else looks: they are not on the rail
  * at all, so no filter, stub or tally below may count them. */
 export const archiveSplitAtom = keep(Atom.make((get) => partitionArchived(get(reposAtom))));
 
-/** Every repo minus the hand-marked quiet checkouts — what is on the rail
- * before anyone types. The standby board walks this one. */
-export const quietSplitAtom = keep(
-  Atom.make((get) =>
-    partitionQuiet(get(archiveSplitAtom).active, {
-      show: get(showQuietAtom),
-      activeFolderDir: get(activeDirAtom),
-    }),
-  ),
-);
-
 /** The rail narrowed by the header's search — the tree, the icon strip, the
  * jump digits and the cyclers. */
 export const shownReposAtom = keep(
-  Atom.make((get) => searchRepos(get(quietSplitAtom).shown, get(boardField("query")))),
+  Atom.make((get) => searchRepos(get(archiveSplitAtom).active, get(boardField("query")))),
+);
+
+/** Each parked checkout's park as the queue reports it, by dir. */
+export const parksAtom = keep(Atom.make((get) => parksByDir(get(queueAtom))));
+
+/** Held parks per repo key — the "N parked" row. A due park, or one whose
+ * agent is asking, is a row again; the checkout you are in never folds. */
+export const parkedDirsAtom = keep(
+  Atom.make((get) => parkedDirs(get(shownReposAtom), get(parksAtom), get(activeDirAtom))),
 );
 
 /** Unclaimed checkout dirs per repo key — the "N unmanaged" stub. Agents' own
@@ -134,7 +127,7 @@ export const unmanagedDirsAtom = keep(
 );
 
 /** Filtered-out checkout dirs per repo key, when the filter is not "all". A
- * quiet checkout on screen is one you asked to see, so the filter skips it. */
+ * parked checkout already folds under its own row, so the filter skips it. */
 export const idleDirsAtom = keep(
   Atom.make((get) => {
     const m = new Map<string, Set<string>>();
@@ -143,7 +136,7 @@ export const idleDirsAtom = keep(
     const now = get(nowAtom);
     const hours = get(recentHoursAtom);
     const active = get(activeDirAtom);
-    const quiet = get(quietSplitAtom).quietDirs;
+    const parked = get(parkedDirsAtom);
     const unmanaged = get(unmanagedDirsAtom);
     for (const r of get(shownReposAtom)) {
       const q = new Set(
@@ -152,7 +145,7 @@ export const idleDirsAtom = keep(
             (f) =>
               isFolderFiltered(f, filter, now, hours) &&
               f.dir !== active &&
-              !quiet.get(r.key)?.has(f.dir) &&
+              !parked.get(r.key)?.has(f.dir) &&
               !unmanaged.get(r.key)?.has(f.dir),
           )
           .map((f) => f.dir),
@@ -169,15 +162,21 @@ export const visibleReposAtom = keep(
   Atom.make((get) => {
     const idle = get(idleDirsAtom);
     const unmanaged = get(unmanagedDirsAtom);
+    const parked = get(parkedDirsAtom);
     const idleRevealed = get(boardField("idleRevealed"));
     const unmanagedRevealed = get(boardField("unmanagedRevealed"));
+    const parkedRevealed = get(boardField("parkedRevealed"));
     return get(shownReposAtom)
       .map((r) => ({
         ...r,
         folders: withoutFolded(
-          withoutFolded(r.folders, unmanaged.get(r.key), unmanagedRevealed.has(r.key)),
-          idle.get(r.key),
-          idleRevealed.has(r.key),
+          withoutFolded(
+            withoutFolded(r.folders, unmanaged.get(r.key), unmanagedRevealed.has(r.key)),
+            idle.get(r.key),
+            idleRevealed.has(r.key),
+          ),
+          parked.get(r.key),
+          parkedRevealed.has(r.key),
         ),
       }))
       .filter((r) => r.folders.length > 0);
@@ -254,6 +253,8 @@ const railVisAtom = keep(
     idleRevealed: get(boardField("idleRevealed")),
     unmanagedDirs: get(unmanagedDirsAtom),
     unmanagedRevealed: get(boardField("unmanagedRevealed")),
+    parkedDirs: get(parkedDirsAtom),
+    parkedRevealed: get(boardField("parkedRevealed")),
     collapsed: get(collapsedAtom),
     activeFolderDir: get(activeDirAtom),
     wins: get(winsAtom),
@@ -279,13 +280,14 @@ export const hotkeyTargetsAtom = keep(Atom.make((get) => railHotkeyTargets(get(r
 
 // ── The queue: the tree's checkouts in another order.
 
-/** What the tree leaves out — quiet ones, and unmanaged worktrees nothing is
- * running in — the queue does too. */
+/** What the tree leaves out — archived repos, and unmanaged worktrees nothing
+ * is running in — the queue does too. Parked rows stay: the queue has its own
+ * Parked lane for them. */
 export const railQueueAtom = keep(
   Atom.make((get) => {
     const active = get(activeDirAtom);
     const onRail = new Set(
-      get(quietSplitAtom).shown.flatMap((r) =>
+      get(archiveSplitAtom).active.flatMap((r) =>
         r.folders.filter((f) => !isFolderUnmanaged(f) || f.dir === active).map((f) => f.dir),
       ),
     );

@@ -1210,3 +1210,92 @@ fn init_onboards_a_bare_repo_idempotently() {
     tt().args(["task", "init", "--root", &root_s]).assert().success();
     assert_eq!(std::fs::read_to_string(checkout.join(".env")).unwrap(), env_before);
 }
+
+#[test]
+fn park_sets_a_task_aside_and_ls_shows_it_until_unpark() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    let tt = tt_isolated(&tmp);
+    tt().args([
+        "task",
+        "new",
+        "aside",
+        "--repo",
+        &root_s,
+        "-b",
+        "feat/aside",
+    ])
+    .assert()
+    .success();
+
+    tt().args(["task", "ls", "--root", &root_s]).assert().success().stdout(contains("PARK").not());
+    let park_blocked = || {
+        let mut cmd = tt();
+        cmd.args([
+            "task",
+            "park",
+            "feat-aside",
+            "--kind",
+            "blocked",
+            "--root",
+            &root_s,
+        ]);
+        cmd
+    };
+    // Blocked wakes when the queue reason changes, which only a running app knows.
+    park_blocked().assert().failure().stderr(contains("needs this checkout's app running"));
+    let task = task_dir(&checkout, "feat-aside");
+    let app = FakeApp::start_answering(format!(
+        r#"{{"jsonrpc":"2.0","id":1,"result":{{"content":[],"structuredContent":{{"waiting":[{{"dir":{dir:?},"reason":"land"}}]}}}}}}"#,
+        dir = task.to_string_lossy()
+    ));
+    park_blocked()
+        .env("TT_MCP_PORT", app.port.to_string())
+        .args(["--note", "waiting on infra", "--until", "2031-02-03"])
+        .assert()
+        .success()
+        .stdout(contains("feat-aside: parked as blocked until 2031-02-03"));
+    assert_eq!(app.request().1["params"]["name"], "needs_you");
+
+    let out = tt().args(["task", "ls", "--json", "--root", &root_s]).output().unwrap();
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let row = rows.as_array().unwrap().iter().find(|r| r["name"] == "feat-aside").unwrap();
+    assert_eq!(row["park"], "blocked");
+    tt().args(["task", "ls", "--root", &root_s]).assert().success().stdout(contains("PARK"));
+
+    // With no NAME, the task is the one cwd sits in.
+    tt().args(["task", "unpark"])
+        .current_dir(&task)
+        .assert()
+        .success()
+        .stdout(contains("feat-aside: back in the list"));
+    tt().args(["task", "unpark", "feat-aside", "--root", &root_s])
+        .assert()
+        .success()
+        .stdout(contains("was not parked"));
+}
+
+#[test]
+fn park_refuses_a_bad_date_and_an_unbound_task() {
+    let (_guard, tmp) = canonical_temp();
+    let checkout = make_checkout(&tmp);
+    let root_s = checkout.to_string_lossy().to_string();
+    let tt = tt_isolated(&tmp);
+    tt().args([
+        "task",
+        "park",
+        "nope",
+        "--until",
+        "next week",
+        "--root",
+        &root_s,
+    ])
+    .assert()
+    .failure()
+    .stderr(contains("YYYY-MM-DD"));
+    tt().args(["task", "park", "nope", "--root", &root_s])
+        .assert()
+        .failure()
+        .stderr(contains("no board task is bound"));
+}

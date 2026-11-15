@@ -370,6 +370,25 @@ export const SHORTCUTS = defineShortcuts([
     allowInEditable: true,
   },
   {
+    id: "ab-park-task",
+    scope: "agentboard",
+    keys: "mod+shift+l",
+    description: "Park the focused task for later, or unpark it",
+    when: "a task is focused",
+  },
+  {
+    id: "ab-move-up",
+    scope: "tree",
+    keys: "alt+arrowup",
+    description: "Move the repo or task under the cursor up",
+  },
+  {
+    id: "ab-move-down",
+    scope: "tree",
+    keys: "alt+arrowdown",
+    description: "Move the repo or task under the cursor down",
+  },
+  {
     id: "ab-collapse-all",
     scope: "tree",
     keys: "alt+shift+arrowup",

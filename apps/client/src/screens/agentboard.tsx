@@ -43,7 +43,15 @@ import {
 } from "@/lib/agentboard/folder";
 import { claudeTitleName, sessionLabel } from "@/lib/agentboard/session";
 import { useStableFn, useStableFns } from "@/lib/use-stable-fn";
-import { setAgentOverlay, agentboardAtom } from "@/lib/agentboard/state";
+import { setAgentOverlay, agentboardAtom, reposAtom } from "@/lib/agentboard/state";
+import { savePark, saveUnpark } from "@/lib/agentboard/park";
+import {
+  railRepoDirs,
+  repoStepOrder,
+  saveRepoOrder,
+  saveTaskMove,
+  taskStepMove,
+} from "@/lib/rail-reorder";
 import type { FolderData, RepoData, SessionData } from "@/lib/agentboard/types";
 import { dropSessionlessWindows, paneCloseTarget } from "@/lib/agentboard/windows";
 import { shortcutHint, useModifierHeld, useShortcuts } from "@/lib/shortcuts";
@@ -53,8 +61,8 @@ import type { Lane } from "@/lib/schemas/queue";
 import { focusTargetAtom, useFocusTarget } from "@/lib/focus-target";
 import {
   useBrowserPane,
-  useShowQuiet,
   useRailFilter,
+  useRailSort,
   useShowUnmanagedWorktrees,
 } from "@/lib/rail-prefs";
 import {
@@ -96,6 +104,7 @@ import {
   setSplitOpen,
   setTermAttention,
   setTitles,
+  setParkedRevealed,
   setUnmanagedRevealed,
 } from "@/lib/board/atoms";
 import {
@@ -119,7 +128,8 @@ import {
   lookupsAtom,
   onYouHeadIdAtom,
   queueRowsAtom,
-  quietSplitAtom,
+  parkedDirsAtom,
+  parksAtom,
   railQueueAtom,
   railRef,
   railTreeAtom,
@@ -183,6 +193,7 @@ export function AgentBoardScreen() {
   const open = useAtomValue(boardField("open"));
   const idleRevealed = useAtomValue(boardField("idleRevealed"));
   const unmanagedRevealed = useAtomValue(boardField("unmanagedRevealed"));
+  const parkedRevealed = useAtomValue(boardField("parkedRevealed"));
   const query = useAtomValue(boardField("query"));
   const renaming = useAtomValue(boardField("renaming"));
   const titles = useAtomValue(boardField("titles"));
@@ -197,15 +208,13 @@ export function AgentBoardScreen() {
   // Whether worktrees `tt task` didn't create get rail folders at all.
   const [showUnmanagedWorktrees, setShowUnmanagedWorktrees] = useShowUnmanagedWorktrees();
   const [browserPane] = useBrowserPane();
-  // Quiet is a persisted view mode: its switch is in the rail header, so the
-  // hiding is never something you can't find your way back out of.
-  const [showQuiet, setShowQuiet] = useShowQuiet();
 
   const { active: unarchivedRepos, archived: archivedRepos } = useAtomValue(archiveSplitAtom);
-  const { shown: railRepos, quietDirs, quietCount } = useAtomValue(quietSplitAtom);
   const shownRepos = useAtomValue(shownReposAtom);
-  const queryHidden = railRepos.length - shownRepos.length;
+  const queryHidden = unarchivedRepos.length - shownRepos.length;
   const idleDirs = useAtomValue(idleDirsAtom);
+  const parkedDirs = useAtomValue(parkedDirsAtom);
+  const parks = useAtomValue(parksAtom);
   const unmanagedDirs = useAtomValue(unmanagedDirsAtom);
   const visibleRepos = useAtomValue(visibleReposAtom);
   const {
@@ -243,6 +252,45 @@ export function AgentBoardScreen() {
       unmanagedRevealed.has(repoKey) ? "hide" : "show",
     );
     setUnmanagedRevealed((keys) => toggled(keys, repoKey));
+  };
+  const [repoSort] = useRailSort("repos");
+  const [taskSort] = useRailSort("tasks");
+  /** `Mod+Shift+L`: park the checkout's task for later, or unpark it. */
+  const togglePark = () => {
+    const task = activeFolder?.record.origin === "task" ? activeFolder.record.task : undefined;
+    if (!activeFolder || !task || activeFolder.dirMissing) return false;
+    if (parks.has(activeFolder.dir)) void saveUnpark(task.id);
+    else void savePark(task.id, "later");
+    return true;
+  };
+  /** `Alt+↑/↓` on the tree: a repo header moves among repos, a task line among
+   * its repo's tasks as shown. Moves write the manual order, so a name or
+   * recency sort says so instead of moving nothing. */
+  const moveRailRow = (direction: "up" | "down") => {
+    const node = cursorNode;
+    if (!node || node.kind === "session") return false;
+    const repo = visibleRepos.find((r) => r.key === node.repoKey);
+    if (!repo) return false;
+    if (node.kind === "repo") {
+      if (repoSort !== "manual") {
+        toast("Repos are sorted — pick Manual in the view menu to move them");
+        return true;
+      }
+      const next = repoStepOrder(railRepoDirs(read(reposAtom)), repo.dir, direction);
+      if (next) void saveRepoOrder(next, "keys");
+      return true;
+    }
+    if (taskSort !== "manual") {
+      toast("Tasks are sorted — pick Manual in the view menu to move them");
+      return true;
+    }
+    const move = node.dir ? taskStepMove(repo.folders, node.dir, direction) : null;
+    if (move) void saveTaskMove(move, "keys");
+    return true;
+  };
+  const toggleParkedRevealed = (repoKey: string) => {
+    uiAction("rail.parked_peek", "agentboard", parkedRevealed.has(repoKey) ? "hide" : "show");
+    setParkedRevealed((keys) => toggled(keys, repoKey));
   };
 
   // Hold-to-reveal jump keys: the badges paint on the rows the numbering is
@@ -578,6 +626,8 @@ export function AgentBoardScreen() {
           folderByDir,
           focusActiveTerminal: nav.focusActiveTerminal,
           splitIntoWindow,
+          togglePark,
+          moveRailRow,
         }),
       // eslint-disable-next-line react-hooks/exhaustive-deps -- handlers are stable within a render; only the state they close over (listed) should rebuild the map
       [
@@ -613,6 +663,10 @@ export function AgentBoardScreen() {
         folderByDir,
         snapshot.tasks,
         browserPane,
+        parks,
+        visibleRepos,
+        repoSort,
+        taskSort,
       ],
     ),
     "agentboard",
@@ -657,9 +711,6 @@ export function AgentBoardScreen() {
       recentHours={recentHours}
       onSetFilter={setFilter}
       onSetRecentHours={setRecentHours}
-      quietCount={quietCount}
-      showQuiet={showQuiet}
-      onSetShowQuiet={setShowQuiet}
       query={query}
       onSetQuery={setQuery}
       queryHidden={queryHidden}
@@ -679,8 +730,6 @@ export function AgentBoardScreen() {
       shownRepos={shownRepos}
       query={query}
       onClearQuery={() => setQuery("")}
-      quietCount={quietCount}
-      showQuiet={showQuiet}
       onOpenRepoManager={openRepoManager}
       idleDirs={idleDirs}
       idleRevealed={idleRevealed}
@@ -688,7 +737,9 @@ export function AgentBoardScreen() {
       unmanagedDirs={unmanagedDirs}
       unmanagedRevealed={unmanagedRevealed}
       onToggleUnmanaged={toggleUnmanagedRevealed}
-      quietDirs={quietDirs}
+      parkedDirs={parkedDirs}
+      parkedRevealed={parkedRevealed}
+      onToggleParked={toggleParkedRevealed}
       taskCreation={taskCreation}
       onNewRootShell={(repo) => void newRootShell(repo)}
       onNewTask={(target) => openRailNewTask(target.key)}
@@ -697,6 +748,7 @@ export function AgentBoardScreen() {
         now,
         prs: snapshot.prs,
         tasks: snapshot.tasks,
+        parks,
         selectedSessionId: selected?.sessionId ?? null,
         activePaneId: focusedPaneId,
         activeFolderDir,
@@ -800,7 +852,7 @@ export function AgentBoardScreen() {
                 <RailPanel
                   view={railView}
                   onViewChange={setRailView}
-                  repos={railRepos}
+                  repos={unarchivedRepos}
                   compactPct={state.compactRecommendPercent}
                   now={now}
                   header={tree && railHeader}
@@ -867,8 +919,7 @@ export function AgentBoardScreen() {
               <div className="flex min-h-0 flex-1 flex-col">
                 <PaneGrid
                   open={open}
-                  // The standby board lists checkouts: quiet ones stay off it.
-                  repos={railRepos}
+                  repos={unarchivedRepos}
                   cwds={cwdsRef}
                   activeWin={activeWin}
                   activeFolderDir={activeFolderDir}

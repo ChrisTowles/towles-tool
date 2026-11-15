@@ -6,7 +6,7 @@
 //! grammar.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tt_agentboard::task_removal;
 // The clock read at the command boundary — the store, the removal sequence and
@@ -56,6 +56,11 @@ pub fn run(command: TaskCommands) -> i32 {
         TaskCommands::Env { name, root } => cmd_env(&name, root.as_deref()),
         TaskCommands::Ports { probe, json, root } => cmd_ports(probe, json, root.as_deref()),
         TaskCommands::Clean { dry_run, json, root } => cmd_clean(dry_run, json, root.as_deref()),
+        TaskCommands::Park { name, kind, note, until, root } => {
+            let park = ParkArgs { kind: kind.to_store(), note, until: until.as_deref() };
+            cmd_park(name.as_deref(), park, root.as_deref())
+        }
+        TaskCommands::Unpark { name, root } => cmd_unpark(name.as_deref(), root.as_deref()),
         // Nudge reports through its own `hook.nudge` event on every path — the
         // hook that calls it discards output — so it owns its exit code rather
         // than sharing this group's `Result<(), String>`.
@@ -445,8 +450,15 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
         staleness: Option<tt_tasks::Staleness>,
         ports: Vec<(String, String)>,
         primary: bool,
+        /// The bound task's park kind; `None` for a task in the list.
+        park: Option<&'static str>,
     }
 
+    let board = board_store_for(&sr.checkout);
+    let park_of = |dir: &Path| {
+        let task = board.as_ref()?.task_for_worktree_dir(&dir.to_string_lossy()).ok()??;
+        task.park.map(|p| p.kind.as_str())
+    };
     let mut rows = Vec::new();
     for (name, dir, is_primary) in checkouts {
         // One cached `tt_git::repo` handle per row instead of three `git` spawns; a
@@ -520,6 +532,7 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
             staleness,
             ports,
             primary: is_primary,
+            park: if is_primary { None } else { park_of(&dir) },
         });
     }
 
@@ -556,6 +569,11 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
                     map.insert("ageDays".into(), s.age_days.into());
                     map.insert("stale".into(), s.stale.into());
                 }
+                if let Some(park) = r.park {
+                    item.as_object_mut()
+                        .expect("json! built an object")
+                        .insert("park".into(), park.into());
+                }
                 item
             })
             .collect();
@@ -567,7 +585,12 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
         // `--stale` slots an AGE column ahead of PORTS. Columns are sized to the actual
         // rows: task names are branch slugs, and one overflowing a fixed width shifted
         // every later column out of alignment.
+        // PARK only when a row is parked, so the everyday table keeps its shape.
+        let any_parked = rows.iter().any(|r| r.park.is_some());
         let mut headers: Vec<&str> = vec!["CHECKOUT", "BRANCH", "STATE"];
+        if any_parked {
+            headers.push("PARK");
+        }
         if stale.is_some() {
             headers.push("AGE");
         }
@@ -577,6 +600,9 @@ fn cmd_ls(json: bool, stale: Option<u64>, root: Option<&Path>) -> Result<(), Str
             .map(|r| {
                 let ports: Vec<String> = r.ports.iter().map(|(k, v)| format!("{k}={v}")).collect();
                 let mut row = vec![r.name.clone(), r.branch.clone(), r.state.clone()];
+                if any_parked {
+                    row.push(r.park.unwrap_or("-").to_string());
+                }
                 if stale.is_some() {
                     let age = r
                         .staleness
@@ -736,18 +762,110 @@ fn rm_through_app(
 }
 
 /// Resync the board row's recorded branch to the one `git` reports for the task's worktree.
-fn cmd_sync(name: Option<&str>, json: bool, root: Option<&Path>) -> Result<(), String> {
-    let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
-    let dir = match name {
-        Some(name) => sr.task_dir(name),
+/// The named task's dir, or the task containing cwd; `verb` names the subcommand in the error.
+fn task_dir_or_cwd(sr: &TaskRoot, name: Option<&str>, verb: &str) -> Result<PathBuf, String> {
+    match name {
+        Some(name) => Ok(sr.task_dir(name)),
         None => {
             let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {e}"))?;
             cwd.ancestors()
                 .find(|d| tt_tasks::main_checkout_for(d) == Some(sr.checkout.as_path()))
                 .map(Path::to_path_buf)
-                .ok_or("not inside a task worktree — name the task: tt task sync <NAME>")?
+                .ok_or(format!("not inside a task worktree — name the task: tt task {verb} <NAME>"))
         }
+    }
+}
+
+struct ParkArgs<'a> {
+    kind: tt_store::ParkKind,
+    note: Option<String>,
+    until: Option<&'a str>,
+}
+
+/// `YYYY-MM-DD` → 09:00 local that day, the hour a revisit is useful.
+fn revisit_ms(date: &str) -> Result<i64, String> {
+    let day = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| format!("--until wants YYYY-MM-DD, got {date:?}"))?;
+    let at = day.and_hms_opt(9, 0, 0).expect("09:00 is a valid time");
+    at.and_local_timezone(chrono::Local)
+        .earliest()
+        .map(|t| t.timestamp_millis())
+        .ok_or_else(|| format!("{date} 09:00 does not exist in the local timezone"))
+}
+
+/// The board row bound to the task at `name` (or cwd), in the store that holds it.
+fn bound_task(
+    name: Option<&str>,
+    root: Option<&Path>,
+    verb: &str,
+) -> Result<(tt_store::Store, tt_store::TaskItem, String), String> {
+    let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
+    let dir = task_dir_or_cwd(&sr, name, verb)?;
+    let name = tt_tasks::task_name_from_dir(&dir);
+    let store = board_store_holding(&sr.checkout, &dir)
+        .ok_or_else(|| format!("{name}: no board task is bound to {}", dir.display()))?;
+    let task = store
+        .task_for_worktree_dir(&dir.to_string_lossy())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("{name}: no board task is bound to {}", dir.display()))?;
+    Ok((store, task, name))
+}
+
+fn cmd_park(name: Option<&str>, park: ParkArgs<'_>, root: Option<&Path>) -> Result<(), String> {
+    let until_ms = park.until.map(revisit_ms).transpose()?;
+    let (store, task, name) = bound_task(name, root, "park")?;
+    let on_reason = match park.kind {
+        tt_store::ParkKind::Blocked => blocked_on_reason(&task)?,
+        _ => None,
     };
+    let input = tt_store::ParkInput { kind: park.kind, note: park.note, until_ms, on_reason };
+    store.park_task(task.id, input, now_ms()).map_err(|e| e.to_string())?;
+    let until = park.until.map(|d| format!(" until {d}")).unwrap_or_default();
+    ui::success(&format!("{name}: parked as {}{until}", park.kind.as_str()));
+    Ok(())
+}
+
+/// The queue reason a `Blocked` park wakes on when it changes. Only the running app sees the
+/// agents and PRs the queue derives it from, so it is asked; a held park is out of its waiting
+/// list, so re-parking one keeps the reason it was parked on.
+fn blocked_on_reason(task: &tt_store::TaskItem) -> Result<Option<String>, String> {
+    let port = tt_mcp::port::for_this_checkout();
+    let timeout = std::time::Duration::from_secs(10);
+    let waiting = match mcp_call::call_tool(port, "needs_you", serde_json::json!({}), None, timeout)
+    {
+        Ok(result) => result,
+        Err(CallError::NoApp(_)) => {
+            return Err("--kind blocked needs this checkout's app running: it records the \
+                        queue reason the park wakes on"
+                .to_string());
+        }
+        Err(CallError::Failed(message)) => return Err(message),
+    };
+    let dir = task.worktree.as_ref().and_then(|w| w.dir.as_deref());
+    let row = waiting["waiting"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|w| dir.is_some() && w["dir"].as_str() == dir);
+    Ok(match row {
+        Some(w) => w["reason"].as_str().map(str::to_string),
+        None => task.park.as_ref().and_then(|p| p.on_reason.clone()),
+    })
+}
+
+fn cmd_unpark(name: Option<&str>, root: Option<&Path>) -> Result<(), String> {
+    let (store, task, name) = bound_task(name, root, "unpark")?;
+    if store.unpark_task(task.id).map_err(|e| e.to_string())? {
+        ui::success(&format!("{name}: back in the list"));
+    } else {
+        ui::success(&format!("{name}: was not parked"));
+    }
+    Ok(())
+}
+
+fn cmd_sync(name: Option<&str>, json: bool, root: Option<&Path>) -> Result<(), String> {
+    let sr = ops::discover_root(root).map_err(|e| e.to_string())?;
+    let dir = task_dir_or_cwd(&sr, name, "sync")?;
     let name = tt_tasks::task_name_from_dir(&dir);
     let dir_s = dir.to_string_lossy();
     let store = board_store_holding(&sr.checkout, &dir)

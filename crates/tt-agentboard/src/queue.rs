@@ -10,7 +10,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use tt_store::{
-    ChecksState, CiConclusion, CiRun, CiStatus, PrItem, PrState, QueueSnooze, ReviewState, TaskItem,
+    ChecksState, CiConclusion, CiRun, CiStatus, ParkKind, PrItem, PrState, QueueSnooze,
+    ReviewState, TaskItem, TaskPark,
 };
 
 use crate::bridge::StatePayload;
@@ -107,6 +108,31 @@ pub struct QueueCi {
     pub updated_ms: i64,
 }
 
+/// Why a parked task is back in the list without an unpark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParkDue {
+    /// The revisit date passed.
+    Date,
+    /// A `Blocked` park whose queue reason is not the one it was parked on.
+    Changed,
+    /// The work landed; nothing holds a landed task.
+    Landed,
+}
+
+/// A task's park as the queue sees it at `now_ms`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuePark {
+    pub kind: ParkKind,
+    pub note: Option<String>,
+    pub until_ms: Option<i64>,
+    pub at_ms: i64,
+    pub due: Option<ParkDue>,
+    /// Out of sight: not due, and no agent asks or errors in the checkout.
+    pub held: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueItem {
@@ -136,6 +162,8 @@ pub struct QueueItem {
     /// Held only while the PR's checks are pending.
     pub snoozed_until_ci: bool,
     pub snoozed: bool,
+    /// The owning task's park; `None` for a task in the normal list.
+    pub park: Option<QueuePark>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,7 +297,48 @@ fn checkout_item(
             if folder.is_worktree { folder.name.clone() } else { "Root".to_string() }
         }),
     };
+    if let Some(park) = task.and_then(|t| t.park.as_ref()) {
+        apply_park(&mut item, park, now_ms, settles_at_ms);
+    }
     item
+}
+
+/// A held park moves the row to [`Lane::Parked`] and keeps its reason as a fact.
+/// Only an agent that asks or errors breaks through; PR, CI and cleanup waits stay muted.
+fn apply_park(item: &mut QueueItem, park: &TaskPark, now_ms: i64, settles_at_ms: &mut Option<i64>) {
+    let due = park_due(item, park, now_ms);
+    let breaks_through = item.reason.is_some_and(WaitReason::blocks_agent);
+    let held = due.is_none() && !breaks_through;
+    if held {
+        item.lane = Lane::Parked;
+        if let Some(until) = park.until_ms {
+            *settles_at_ms = Some(settles_at_ms.map_or(until, |s| s.min(until)));
+        }
+    }
+    item.park = Some(QueuePark {
+        kind: park.kind,
+        note: park.note.clone(),
+        until_ms: park.until_ms,
+        at_ms: park.at_ms,
+        due,
+        held,
+    });
+}
+
+fn park_due(item: &QueueItem, park: &TaskPark, now_ms: i64) -> Option<ParkDue> {
+    let landed =
+        item.reason == Some(WaitReason::Cleanup) || item.also.contains(&WaitReason::Cleanup);
+    if landed {
+        Some(ParkDue::Landed)
+    } else if park.until_ms.is_some_and(|u| u <= now_ms) {
+        Some(ParkDue::Date)
+    } else if park.kind == ParkKind::Blocked
+        && park.on_reason.as_deref() != item.reason.map(WaitReason::as_str)
+    {
+        Some(ParkDue::Changed)
+    } else {
+        None
+    }
 }
 
 /// Lane, then — in On you — agent-blocking reasons first, then rank (ranked
@@ -313,6 +382,7 @@ fn base_item(
         snoozed_until_ms: None,
         snoozed_until_ci: false,
         snoozed: false,
+        park: None,
     }
 }
 
@@ -1165,5 +1235,91 @@ mod tests {
         let lookup = Lookup::new(&prs, &[]);
         assert_eq!(lookup.branch_pr("o/repo", "feat/x").map(|p| p.number), Some(8));
         assert_eq!(lookup.branch_pr("o/repo", "feat/y"), None, "a merged PR heads no live branch");
+    }
+
+    fn park(s: &Store, id: i64, kind: ParkKind, until_ms: Option<i64>, on_reason: Option<&str>) {
+        let input = tt_store::ParkInput {
+            kind,
+            note: None,
+            until_ms,
+            on_reason: on_reason.map(str::to_string),
+        };
+        s.park_task(id, input, 0).unwrap();
+    }
+
+    fn failing_pr(branch: &str) -> PrItem {
+        pr(branch, PrState::Open, ChecksState::Failing, ReviewState::None)
+    }
+
+    #[test]
+    fn a_held_park_mutes_pr_waits_and_leaves_the_head() {
+        let (s, ids) = store(&["a", "b"]);
+        park(&s, ids[0], ParkKind::Later, None, None);
+        let st = state(vec![folder("/a", vec![]), folder("/b", vec![])]);
+        let q = run(&s, &st, &[failing_pr("feat/a"), failing_pr("feat/b")], 0);
+        let a = item(&q, "/a");
+        assert_eq!(a.lane, Lane::Parked);
+        assert_eq!(a.reason, Some(WaitReason::FixCi), "the reason stays as a fact");
+        assert!(a.park.as_ref().unwrap().held);
+        assert_eq!(q.next, next("/b"));
+    }
+
+    #[test]
+    fn an_asking_agent_breaks_through_a_park() {
+        let (s, ids) = store(&["a"]);
+        park(&s, ids[0], ParkKind::Parked, None, None);
+        let st = state(vec![folder("/a", vec![waiting("sa", 1)])]);
+        let q = run(&s, &st, &[], ANSWER_GRACE_MS + 10);
+        let a = item(&q, "/a");
+        assert_eq!(a.lane, Lane::OnYou);
+        let p = a.park.as_ref().unwrap();
+        assert!(!p.held);
+        assert_eq!(p.due, None, "a break-through is not a due park");
+    }
+
+    #[test]
+    fn a_park_comes_due_on_its_revisit_date_and_asks_for_a_rebuild() {
+        let (s, ids) = store(&["a"]);
+        park(&s, ids[0], ParkKind::Later, Some(1_000), None);
+        let st = state(vec![folder("/a", vec![])]);
+        let before = run(&s, &st, &[], 999);
+        assert!(item(&before, "/a").park.as_ref().unwrap().held);
+        assert_eq!(before.settles_at_ms, Some(1_000));
+        let after = run(&s, &st, &[], 1_000);
+        let p = item(&after, "/a").park.clone().unwrap();
+        assert_eq!((p.due, p.held), (Some(ParkDue::Date), false));
+        assert_ne!(item(&after, "/a").lane, Lane::Parked);
+    }
+
+    #[test]
+    fn a_blocked_park_wakes_when_its_reason_changes() {
+        let (s, ids) = store(&["a"]);
+        park(&s, ids[0], ParkKind::Blocked, None, Some("fix_ci"));
+        let st = state(vec![folder("/a", vec![])]);
+        let same = run(&s, &st, &[failing_pr("feat/a")], 0);
+        assert!(item(&same, "/a").park.as_ref().unwrap().held);
+        let approved = pr("feat/a", PrState::Open, ChecksState::Passing, ReviewState::Approved);
+        let changed = run(&s, &st, &[approved], 0);
+        assert_eq!(item(&changed, "/a").park.as_ref().unwrap().due, Some(ParkDue::Changed));
+    }
+
+    #[test]
+    fn later_and_parked_ignore_a_reason_change() {
+        let (s, ids) = store(&["a", "b"]);
+        park(&s, ids[0], ParkKind::Later, None, Some("fix_ci"));
+        park(&s, ids[1], ParkKind::Parked, None, None);
+        let st = state(vec![folder("/a", vec![]), folder("/b", vec![])]);
+        let q = run(&s, &st, &[failing_pr("feat/b")], 0);
+        assert!(item(&q, "/a").park.as_ref().unwrap().held);
+        assert!(item(&q, "/b").park.as_ref().unwrap().held);
+    }
+
+    #[test]
+    fn landed_work_ends_every_park() {
+        let (s, ids) = store(&["a"]);
+        park(&s, ids[0], ParkKind::Parked, None, None);
+        let landed = FolderData { landed: Some("main".to_string()), ..folder("/a", vec![]) };
+        let q = run(&s, &state(vec![landed]), &[], 0);
+        assert_eq!(item(&q, "/a").park.as_ref().unwrap().due, Some(ParkDue::Landed));
     }
 }

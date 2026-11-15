@@ -41,6 +41,7 @@ function item(id: number, over: Partial<QueueItem> = {}): QueueItem {
     snoozedUntilMs: null,
     snoozedUntilCi: false,
     snoozed: false,
+    park: null,
     ...over,
   };
 }

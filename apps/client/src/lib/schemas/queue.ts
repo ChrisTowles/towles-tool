@@ -32,6 +32,24 @@ const QueueCiSchema = Schema.Struct({
   updatedMs: Schema.Number,
 });
 
+const ParkKindSchema = Schema.Literals(["blocked", "later", "parked"]);
+export type ParkKind = typeof ParkKindSchema.Type;
+
+/** Why a parked task is back in the list without an unpark. */
+const ParkDueSchema = Schema.Literals(["date", "changed", "landed"]);
+
+/** `tt_agentboard::queue::QueuePark` — a task's park as the queue sees it now. */
+const QueueParkSchema = Schema.Struct({
+  kind: ParkKindSchema,
+  note: Schema.NullOr(Schema.String),
+  untilMs: Schema.NullOr(Schema.Number),
+  atMs: Schema.Number,
+  due: Schema.NullOr(ParkDueSchema),
+  /** Out of sight: not due, and no agent asks or errors in the checkout. */
+  held: Schema.Boolean,
+});
+export type QueuePark = typeof QueueParkSchema.Type;
+
 /** One checkout — a task's worktree or a repo root; `folderDir` is its identity. */
 const QueueItemSchema = Schema.Struct({
   taskId: Schema.NullOr(Schema.Number),
@@ -54,6 +72,7 @@ const QueueItemSchema = Schema.Struct({
   snoozedUntilMs: Schema.NullOr(Schema.Number),
   snoozedUntilCi: Schema.Boolean,
   snoozed: Schema.Boolean,
+  park: Schema.NullOr(QueueParkSchema),
 });
 export type QueueItem = typeof QueueItemSchema.Type;
 

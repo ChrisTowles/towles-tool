@@ -11,11 +11,13 @@ export function FoldedRepoStub({
   name,
   idle,
   unmanaged,
+  parked,
   onToggle,
 }: {
   name: string;
   idle: number;
   unmanaged: number;
+  parked: number;
   onToggle?: () => void;
 }) {
   return (
@@ -29,23 +31,25 @@ export function FoldedRepoStub({
         <GitBranchIcon className="size-3.5 shrink-0 opacity-60" />
         <span className="min-w-0 truncate text-sm">{name}</span>
         <span className="ml-auto shrink-0 font-mono text-micro">
-          {foldedRepoLabel(idle, unmanaged)}
+          {foldedRepoLabel(idle, unmanaged, parked)}
         </span>
       </button>
     </Hint>
   );
 }
 
-/** "idle" / "3 unmanaged" / "8 hidden" — never a count under a noun that only
- * half of it answers to. */
-export function foldedRepoLabel(idle: number, unmanaged: number): string {
-  if (unmanaged === 0) return idle === 1 ? "idle" : `${idle} idle`;
-  if (idle === 0) return `${unmanaged} unmanaged`;
-  return `${idle + unmanaged} hidden`;
+/** "idle" / "3 unmanaged" / "2 parked" / "8 hidden" — never a count under a
+ * noun that only part of it answers to. */
+export function foldedRepoLabel(idle: number, unmanaged: number, parked = 0): string {
+  const kinds = [idle, unmanaged, parked].filter((n) => n > 0).length;
+  if (kinds > 1) return `${idle + unmanaged + parked} hidden`;
+  if (unmanaged > 0) return `${unmanaged} unmanaged`;
+  if (parked > 0) return `${parked} parked`;
+  return idle === 1 ? "idle" : `${idle} idle`;
 }
 
 /** The stub under a repo's visible folders: "N idle" / "hide N idle", and the
- * same shape for the worktrees agents made for themselves. */
+ * same shape for the worktrees agents made for themselves and for parked tasks. */
 export function FoldToggleRow({
   count,
   noun,
@@ -54,7 +58,7 @@ export function FoldToggleRow({
   onToggle,
 }: {
   count: number;
-  noun: "idle" | "unmanaged";
+  noun: "idle" | "unmanaged" | "parked";
   hint: string;
   revealed: boolean;
   onToggle?: () => void;

@@ -25,7 +25,6 @@ import {
   pathScope,
   prForFolder,
   partitionArchived,
-  partitionQuiet,
   searchRepos,
   taskForFolder,
   IDLE_GRACE_MS,
@@ -1253,7 +1252,6 @@ function folder(overrides: Partial<FolderData>): FolderData {
     needs: 0,
     hasPortDrift: false,
     hasLaunchConfig: false,
-    quiet: false,
     ...overrides,
   };
 }
@@ -1295,6 +1293,8 @@ describe("foldedRepoLabel", () => {
     expect(foldedRepoLabel(3, 0)).toBe("3 idle");
     expect(foldedRepoLabel(0, 6)).toBe("6 unmanaged");
     expect(foldedRepoLabel(1, 7)).toBe("8 hidden");
+    expect(foldedRepoLabel(0, 0, 2)).toBe("2 parked");
+    expect(foldedRepoLabel(1, 0, 2)).toBe("3 hidden");
   });
 });
 
@@ -1348,12 +1348,6 @@ describe("isFolderIdle", () => {
 
   it("is not quiet with a live session", () => {
     expect(isFolderIdle(folder({ sessions: [session({ live: true })] }), NOW)).toBe(false);
-  });
-
-  it("the hand mark is not its business — that one hides the row, filter or no", () => {
-    expect(isFolderIdle(folder({ quiet: true, sessions: [session({ live: true })] }), NOW)).toBe(
-      false,
-    );
   });
 
   it("is not quiet with a dirty working tree", () => {
@@ -1444,11 +1438,6 @@ describe("isFolderStale", () => {
     expect(isFolderStale(f, NOW, HOURS)).toBe(false);
   });
 
-  it("the hand mark doesn't make a worked-in checkout stale — it hides it instead", () => {
-    const f = folder({ quiet: true, workedAtMs: NOW, sessions: [session({ live: true })] });
-    expect(isFolderStale(f, NOW, HOURS)).toBe(false);
-  });
-
   it("widening the window brings a folder back", () => {
     const f = folder({ workedAtMs: OUTSIDE });
     expect(isFolderStale(f, NOW, 4)).toBe(true);
@@ -1477,60 +1466,6 @@ describe("partitionArchived", () => {
     const { active, archived } = partitionArchived(repos);
     expect(active.map((r) => r.key)).toEqual(["a", "c"]);
     expect(archived.map((r) => r.key)).toEqual(["b"]);
-  });
-});
-
-describe("partitionQuiet", () => {
-  const SHOWN = { show: false, activeFolderDir: null };
-
-  it("takes a marked checkout off the rail entirely — not a stub, gone", () => {
-    const repos = [repo("r", [folder({ dir: "/a" }), folder({ dir: "/b", quiet: true })])];
-    const { shown, quietCount } = partitionQuiet(repos, SHOWN);
-    expect(dirs(shown)).toEqual(["/a"]);
-    expect(quietCount).toBe(1);
-  });
-
-  it("drops a repo whose every checkout is marked", () => {
-    const repos = [
-      repo("gone", [folder({ dir: "/a", quiet: true })]),
-      repo("kept", [folder({ dir: "/b" })]),
-    ];
-    expect(partitionQuiet(repos, SHOWN).shown.map((r) => r.key)).toEqual(["kept"]);
-  });
-
-  it("hides regardless of the rail filter — the mark is a hand gesture, not a view mode", () => {
-    // Live session, dirty tree: nothing the "active" filter would ever fold.
-    const busy = folder({ dir: "/a", quiet: true, uncommittedFiles: 3 });
-    expect(partitionQuiet([repo("r", [busy])], SHOWN).shown).toEqual([]);
-  });
-
-  it("never takes the checkout you are working in", () => {
-    const repos = [repo("r", [folder({ dir: "/a", quiet: true }), folder({ dir: "/b" })])];
-    const { shown, quietCount } = partitionQuiet(repos, { show: false, activeFolderDir: "/a" });
-    expect(dirs(shown)).toEqual(["/a", "/b"]);
-    expect(quietCount).toBe(0);
-  });
-
-  it("shows every marked checkout when the header toggle is on, still counting them", () => {
-    const repos = [
-      repo("r", [folder({ dir: "/a", quiet: true })]),
-      repo("s", [folder({ dir: "/b", quiet: true }), folder({ dir: "/c" })]),
-    ];
-    const { shown, quietDirs, quietCount } = partitionQuiet(repos, {
-      show: true,
-      activeFolderDir: null,
-    });
-    expect(dirs(shown)).toEqual(["/a", "/b", "/c"]);
-    expect(quietCount).toBe(2);
-    expect(quietDirs.get("s")).toEqual(new Set(["/b"]));
-  });
-
-  it("returns the input untouched when nothing is marked", () => {
-    const repos = [repo("r", [folder({ dir: "/a" })])];
-    const { shown, quietDirs, quietCount } = partitionQuiet(repos, SHOWN);
-    expect(shown).toBe(repos);
-    expect(quietDirs.size).toBe(0);
-    expect(quietCount).toBe(0);
   });
 });
 
@@ -1576,9 +1511,9 @@ describe("searchRepos", () => {
 describe("isFolderFiltered", () => {
   const NOW = 100 * 60 * 60_000;
 
-  it('"all" hides nothing — and the hand mark is not the filter\'s to read', () => {
-    expect(isFolderFiltered(folder({ quiet: true }), "all", NOW, 4)).toBe(false);
-    const busy = folder({ quiet: true, uncommittedFiles: 3, workedAtMs: NOW });
+  it('"all" hides nothing', () => {
+    expect(isFolderFiltered(folder({}), "all", NOW, 4)).toBe(false);
+    const busy = folder({ uncommittedFiles: 3, workedAtMs: NOW });
     expect(isFolderFiltered(busy, "active", NOW, 4)).toBe(false);
     expect(isFolderFiltered(busy, "recent", NOW, 4)).toBe(false);
   });

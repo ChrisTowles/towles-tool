@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tt_agentboard::StatePayload;
 use tt_agentboard::queue::{QueueInputs, TaskQueue, snooze_key};
-use tt_store::{RankMove, SnoozeUntil};
+use tt_store::{ParkInput, ParkKind, RankMove, SnoozeUntil};
 
 use crate::store::{StoreState, now_ms};
 
@@ -216,6 +216,60 @@ pub async fn queue_move(
         .run_blocking(move |store| {
             let result = store.with(|s| s.move_task(id, to).map_err(|e| e.to_string()));
             tracing::info!(task_id = id, to = ?to, ok = result.is_ok(), "task.rank_set");
+            result?;
+            after_write(&app);
+            Ok(())
+        })
+        .await
+}
+
+/// Set a task aside without closing it. The queue reason it was parked on goes
+/// with it, so a `Blocked` park wakes when that reason changes. Never logs the note.
+#[tauri::command]
+pub async fn task_park(
+    app: AppHandle,
+    store: State<'_, StoreState>,
+    id: i64,
+    kind: ParkKind,
+    note: Option<String>,
+    until_ms: Option<i64>,
+) -> Result<(), String> {
+    store
+        .run_blocking(move |store| {
+            let on_reason = current(&app)
+                .and_then(|q| q.items.into_iter().find(|i| i.task_id == Some(id)))
+                .and_then(|i| i.reason)
+                .map(|r| r.as_str().to_string());
+            let has_note = note.as_deref().is_some_and(|n| !n.trim().is_empty());
+            let input = ParkInput { kind, note, until_ms, on_reason };
+            let result =
+                store.with(|s| s.park_task(id, input, now_ms()).map_err(|e| e.to_string()));
+            tracing::info!(
+                task_id = id,
+                kind = kind.as_str(),
+                has_note,
+                has_until = until_ms.is_some(),
+                ok = result.is_ok(),
+                "task.parked"
+            );
+            result?;
+            after_write(&app);
+            Ok(())
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn task_unpark(
+    app: AppHandle,
+    store: State<'_, StoreState>,
+    id: i64,
+) -> Result<(), String> {
+    store
+        .run_blocking(move |store| {
+            let result = store.with(|s| s.unpark_task(id).map_err(|e| e.to_string()));
+            let changed = result.as_ref().is_ok_and(|c| *c);
+            tracing::info!(task_id = id, changed, ok = result.is_ok(), "task.unparked");
             result?;
             after_write(&app);
             Ok(())

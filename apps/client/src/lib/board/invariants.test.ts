@@ -50,7 +50,6 @@ function snapshot(r: () => number, ts: number): StatePayload {
           name: `f${fi}`,
           isWorktree: fi > 0,
           record: { origin: fi === 0 ? "checkout" : pick(ORIGINS) } as FolderData["record"],
-          quiet: r() < 0.1,
           sessions,
         }),
       );

@@ -93,6 +93,60 @@ impl TaskKind {
     }
 }
 
+/// Why a task is set aside while it stays open. Never a board status: `work_state`
+/// and the agent's status never read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ParkKind {
+    /// Waiting on something outside; wakes when the queue reason changes.
+    Blocked,
+    /// Coming back to it, usually on a revisit date.
+    Later,
+    /// Set aside with no plan to come back soon.
+    Parked,
+}
+
+impl ParkKind {
+    pub const ALL: [ParkKind; 3] = [ParkKind::Blocked, ParkKind::Later, ParkKind::Parked];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ParkKind::Blocked => "blocked",
+            ParkKind::Later => "later",
+            ParkKind::Parked => "parked",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<ParkKind> {
+        ParkKind::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+}
+
+/// A task's park record: the columns `park_*` on `tasks`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskPark {
+    pub kind: ParkKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The revisit date: past it, the queue reports the park as due.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until_ms: Option<i64>,
+    pub at_ms: i64,
+    /// The queue reason when it was parked; a `Blocked` park wakes when it changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_reason: Option<String>,
+}
+
+/// What [`crate::Store::park_task`] writes; `at_ms` is its `now_ms`.
+#[derive(Debug, Clone)]
+pub struct ParkInput {
+    pub kind: ParkKind,
+    pub note: Option<String>,
+    pub until_ms: Option<i64>,
+    pub on_reason: Option<String>,
+}
+
 /// Not a [`TaskItem`]: the rail polls this every few seconds and needs the binding, not the links.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,7 +157,8 @@ pub struct RailWorktree {
     pub repo_root: String,
     pub dir: String,
     pub branch: Option<String>,
-    /// Ordering key — never anything the filesystem reports.
+    /// Manual order inside a repo: the task's queue rank, shared with the queue.
+    pub rank: i64,
     pub created_at: i64,
 }
 
@@ -168,7 +223,7 @@ pub(crate) const EVENT_COLS: &str =
 // `kind` is appended so the positional indices `map_task_row` reads stay put.
 pub(crate) const TASK_COLS: &str = "id, text, status, rank, created_at, completed_at, notes, \
      worktree_repo_root, worktree_repo, worktree_branch, worktree_dir, outcome, archived_at, goal, \
-     summary, summary_at, kind";
+     summary, summary_at, kind, park_kind, park_note, park_until_ms, park_at, park_on_reason";
 
 /// Every read meaning *the user's board* carries this, so a [`TaskKind::Detected`] row never
 /// reaches the Board, Cockpit, rollup or MCP `task_list`; `rail_worktrees` reads both kinds.
@@ -258,6 +313,9 @@ pub struct TaskItem {
     pub display_outcome: Option<String>,
     #[serde(default)]
     pub has_worktree: bool,
+    /// Set aside without closing; `None` for a task in the normal list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub park: Option<TaskPark>,
 }
 
 impl TaskItem {

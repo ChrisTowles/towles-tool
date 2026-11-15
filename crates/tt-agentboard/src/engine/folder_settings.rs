@@ -19,20 +19,6 @@ impl Engine {
         changed
     }
 
-    /// Set (or clear) the quiet override on every one of `dirs`, in one save: the
-    /// unit the user marks is a *repo*, and half of one still shows on the rail.
-    pub fn set_folder_quiet(&mut self, dirs: &[String], quiet: bool) -> bool {
-        // `|=`, never `any`: `any` stops at the first change, half-marking.
-        let mut changed = false;
-        for dir in dirs {
-            changed |= self.folder_meta.set_quiet(dir, quiet);
-        }
-        if changed {
-            persisted(self.folder_meta.save(), "folder metadata");
-        }
-        changed
-    }
-
     pub(crate) fn touch_folder(&mut self, dir: &str, now_ms: i64) {
         if self.folder_meta.touch(dir, now_ms) {
             persisted(self.folder_meta.save(), "folder metadata");

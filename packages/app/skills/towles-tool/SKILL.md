@@ -49,7 +49,9 @@ tt task new "Do the thing" --repo myrepo --status doing # Board column: backlog 
 tt task new --pr 123 --repo myrepo                     # review task: checks out PR #123's existing head branch (fork PRs as <owner>/<branch>)
 tt task new --issue 42 --repo myrepo                   # task for open issue #42 on feat/42-<slug>, titled after it, issue attached to the Board row (TITLE/-b override)
 tt task new "Fix login" --repo myrepo --template bug  # start from a task template (Settings → Agent Board): its goal leads --goal, its setup runs after the repo's; an unknown id lists the ones that apply
-tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports
+tt task ls                 # Fleet: main checkout + tasks, branch, dirty, ports (a PARK column once any task is parked)
+tt task park [<name>]      # Set a task aside without closing it (default: cwd's task): it folds out of the rail until unparked or due
+tt task unpark [<name>]    # Put a parked task back in the list
 tt task env <name>         # (Re)render a checkout's .env (or `primary`) — idempotent, keeps claims
 tt task ports              # Repo's port picture: every checkout's claims + registry, each probed (`--probe <port>` for one)
 tt task sync [<name>]      # Record the branch a task's worktree is on now (default: cwd's task); a worktree with no Board row gets one
@@ -79,6 +81,12 @@ More flags:
 - `rm --force` skips the guards (each skip is printed); `rm --outcome done|abandoned`
   sets what the closed Board row records (default: done if the work landed).
 - `clean --dry-run` reports what it would remove without touching anything.
+- `park --kind blocked|later|parked` says why (default `later`); `blocked` comes back
+  on its own when the task's queue reason changes (PR approved, CI red), so it needs the
+  checkout's app running to record that reason; a landed task is never held.
+  `--until YYYY-MM-DD` brings it back at 09:00 that day; `--note` is kept for when you
+  return. A parked task keeps its worktree, ports and sessions,
+  and an agent that asks or errors in it still reaches you.
 - Inside the towles-tool repo itself, each task's app build owns a WebKit data dir, a
   `.desktop` launcher and an icon under the user data dir, named by its per-task identifier
   (`dev.towles.tool.task-<name>`, Linux only). `rm` deletes the removed task's; `clean`

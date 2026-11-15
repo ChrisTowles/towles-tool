@@ -170,11 +170,6 @@ pub struct AgentboardSettings {
     )]
     pub rail_task_sort: Option<RailSort>,
 
-    /// Whether hand-marked quiet checkouts are on the rail. Opaque, like
-    /// [`rail_filter`](Self::rail_filter).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub show_quiet: Option<bool>,
-
     /// Unlike [`rail_filter`](Self::rail_filter), this one *is* read in Rust.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub show_unmanaged_worktrees: Option<bool>,
