@@ -565,6 +565,9 @@ pub struct CleanReport {
     pub swept_port_registries: Vec<PathBuf>,
     /// Per-task app identifiers whose worktree is gone, with what they left on the host.
     pub swept_host_residue: Vec<HostResidue>,
+    /// Compose projects and containers (`project <name>`, `container <name>`) removed
+    /// because the task they were started in is gone.
+    pub swept_compose: Vec<String>,
     /// State scopes of the checkouts that remain (checkout + kept tasks) —
     /// callers prune *these* agentboard stores plus the unscoped one.
     pub live_scopes: Vec<String>,
@@ -776,6 +779,26 @@ pub fn clean_tasks(
         }
     }
 
+    // Compose projects started inside a task that is no longer a worktree — one removed
+    // by anything but `tt task rm` — whose `restart: always` services otherwise restart
+    // forever against the vanished checkout.
+    let mut swept_compose = Vec::new();
+    let tasks_dirs = path_forms(&sr.tasks_dir());
+    let orphaned = |wd: &Path| tasks_dirs.iter().any(|t| under_removed_task(t, wd));
+    let stale = compose_owned(&compose_listing(), orphaned);
+    if opts.dry_run {
+        swept_compose.extend(stale.projects.iter().map(|p| format!("project {p}")));
+        swept_compose.extend(stale.containers.iter().map(|c| format!("container {c}")));
+    } else {
+        for (what, gone) in remove_compose_owned(&stale) {
+            if gone {
+                swept_compose.push(what);
+            } else {
+                warnings.push(format!("could not remove compose {what}"));
+            }
+        }
+    }
+
     // Sweep the app identifiers of removed tasks. A task still on disk after the loop is
     // live whatever the loop decided, and the base identifier is never a candidate.
     let mut swept_host_residue = Vec::new();
@@ -817,6 +840,7 @@ pub fn clean_tasks(
         swept_state_dirs,
         swept_port_registries,
         swept_host_residue,
+        swept_compose,
         live_scopes,
         warnings,
     })
@@ -869,24 +893,121 @@ pub(super) fn docker_owns_port(task_name: &str, port: u16) -> bool {
         .unwrap_or(false)
 }
 
-/// Compose down (containers, networks, volumes) then an anchored sweep of
-/// anything else named after the task. Best-effort: a missing docker is fine.
+/// `name<TAB>project<TAB>working_dir` for every container compose labelled.
+const COMPOSE_LISTING_FORMAT: &str = "{{.Names}}\t{{.Label \"com.docker.compose.project\"}}\t{{.Label \"com.docker.compose.project.working_dir\"}}";
+
+/// The compose resources whose working dir a predicate owns.
+#[derive(Debug, Default, PartialEq)]
+pub(super) struct ComposeOwned {
+    /// Projects every container of which is owned: brought down whole.
+    pub projects: BTreeSet<String>,
+    /// Owned containers of a project another checkout also runs under the same name.
+    pub containers: BTreeSet<String>,
+}
+
+/// Sort a [`COMPOSE_LISTING_FORMAT`] listing by whether `owned` accepts each working dir.
+pub(super) fn compose_owned(listing: &str, owned: impl Fn(&Path) -> bool) -> ComposeOwned {
+    let mut by_project: std::collections::BTreeMap<&str, Vec<(&str, bool)>> = Default::default();
+    for line in listing.lines() {
+        let mut fields = line.trim().splitn(3, '\t');
+        let (Some(name), Some(project), Some(dir)) = (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        if name.is_empty() || project.is_empty() || dir.is_empty() {
+            continue;
+        }
+        by_project.entry(project).or_default().push((name, owned(Path::new(dir))));
+    }
+    let mut out = ComposeOwned::default();
+    for (project, containers) in by_project {
+        if containers.iter().all(|(_, mine)| *mine) {
+            out.projects.insert(project.to_string());
+        } else {
+            out.containers
+                .extend(containers.iter().filter(|(_, mine)| *mine).map(|(n, _)| n.to_string()));
+        }
+    }
+    out
+}
+
+/// Tear `owned` down; each entry is `project <name>` or `container <name>` and whether it went.
+fn remove_compose_owned(owned: &ComposeOwned) -> Vec<(String, bool)> {
+    let projects = owned.projects.iter().map(|p| (format!("project {p}"), compose_down(p)));
+    let containers = owned.containers.iter().map(|c| {
+        let gone = tt_exec::run("docker", &["rm", "-f", c]).is_ok_and(|out| out.ok());
+        (format!("container {c}"), gone)
+    });
+    projects.chain(containers).collect()
+}
+
+/// Whether `working_dir` sits under a task dir of `tasks_dir` that is no longer a worktree.
+/// Docker recreates a missing bind-mount source as an empty directory, so the task dir can
+/// exist without being a checkout.
+pub(super) fn under_removed_task(tasks_dir: &Path, working_dir: &Path) -> bool {
+    working_dir
+        .strip_prefix(tasks_dir)
+        .ok()
+        .and_then(|rest| rest.components().next())
+        .is_some_and(|task| !tasks_dir.join(task).join(".git").exists())
+}
+
+fn compose_listing() -> String {
+    tt_exec::run(
+        "docker",
+        &[
+            "ps",
+            "-a",
+            "--filter",
+            "label=com.docker.compose.project",
+            "--format",
+            COMPOSE_LISTING_FORMAT,
+        ],
+    )
+    .ok()
+    .filter(|out| out.ok())
+    .map(|out| out.stdout)
+    .unwrap_or_default()
+}
+
+/// `docker compose down` by project name, needing no compose file. Runs outside any
+/// checkout: a compose file in the cwd would be loaded under the `-p` name.
+fn compose_down(project: &str) -> bool {
+    tt_exec::run_in_dir_with_timeout(
+        "docker",
+        &[
+            "compose",
+            "-p",
+            project,
+            "down",
+            "--volumes",
+            "--remove-orphans",
+        ],
+        &std::env::temp_dir(),
+        Duration::from_secs(120),
+    )
+    .is_ok_and(|out| out.ok())
+}
+
+/// `path` as given and canonicalized: compose records the path its caller resolved.
+fn path_forms(path: &Path) -> Vec<PathBuf> {
+    let mut forms = vec![path.to_path_buf()];
+    forms.extend(fs::canonicalize(path).ok().filter(|c| c != path));
+    forms
+}
+
+/// Compose down every project started anywhere inside the task (containers, networks,
+/// volumes), then an anchored sweep of anything else named after the task. Best-effort:
+/// a missing docker is fine.
 fn docker_cleanup(task_name: &str, dir: &Path, messages: &mut Vec<String>) {
-    let has_compose = [
-        "docker-compose.yml",
-        "docker-compose.yaml",
-        "compose.yml",
-        "compose.yaml",
-    ]
-    .iter()
-    .any(|f| dir.join(f).is_file());
-    if has_compose {
-        let _ = tt_exec::run_in_dir_with_timeout(
-            "docker",
-            &["compose", "down", "--volumes", "--remove-orphans"],
-            dir,
-            Duration::from_secs(120),
-        );
+    let dirs = path_forms(dir);
+    let owned = |wd: &Path| dirs.iter().any(|d| wd.starts_with(d));
+    for (what, gone) in remove_compose_owned(&compose_owned(&compose_listing(), owned)) {
+        messages.push(if gone {
+            format!("removed compose {what}")
+        } else {
+            format!("could not remove compose {what}")
+        });
     }
     if let Ok(out) = tt_exec::run("docker", &["ps", "-a", "--format", "{{.Names}}"]) {
         for container in out.stdout.lines().map(str::trim) {
