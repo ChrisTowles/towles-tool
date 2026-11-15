@@ -159,7 +159,7 @@ pub fn run(db: &EventDb, sql: &str, row_cap: usize) -> Result<QueryResult, Query
     if !stmt.readonly() {
         return Err(QueryError::NotReadOnly);
     }
-    let columns: Vec<String> = stmt.column_names().iter().map(|c| c.to_string()).collect();
+    let columns: Vec<String> = stmt.column_names().map(str::to_string).collect();
 
     // The watchdog waits on a channel the query side drops when it finishes;
     // only a *timeout* interrupts, so a query that ends first leaves the

@@ -12,8 +12,8 @@ binding), `github` (issue/PR caches, tracked-repo identities), `collect`
 (notification edge detection), `states` (the PR/checks/review/CI enums, parsed once at read;
 an unknown value reads as `Unknown`, inert, never an error).
 
-**`lib.rs` is ~60 lines of code and ~2,280 lines of tests.** The `Store` impl
-lives in the modules above, not there — don't go looking for it in the big file.
+**`lib.rs` is only module wiring and re-exports; the tests live in `tests.rs`.**
+The `Store` impl lives in the modules above.
 
 ## Time: epoch ms, except calendar events
 
@@ -103,5 +103,5 @@ the app header and Agentboard needs-you feed read snapshots, not these edges.
 A finished task row is *closed* (`outcome`, `worktree_dir` cleared) and later
 archived, not deleted; `delete_task` exists only for the Board's explicit
 "Delete permanently". The lifecycle and the removal ordering it participates in
-are documented in the root [CLAUDE.md](../../CLAUDE.md) (Worktree tasks) and
+are documented in [docs/WORKTREE-TASKS.md](../../docs/WORKTREE-TASKS.md) and
 owned by `tt_agentboard::task_removal`.

@@ -16,8 +16,8 @@ bun run dev:drive > /tmp/.../dev-drive.log 2>&1 &   # background; builds + launc
 disown
 ```
 
-The Rust build (cargo) + Vite dev server take **1–3 minutes** cold (less if
-`target/` is warm). Poll readiness instead of a fixed sleep:
+The Rust build (cargo) + Vite dev server take **several minutes** cold (5–7
+observed the first time in a task; less if `target/` is warm). Poll readiness instead of a fixed sleep:
 
 ```sh
 until node scripts/drive.mjs status; do sleep 3; done   # blocks until the automation server answers
@@ -50,7 +50,7 @@ node scripts/drive.mjs eval '(() => { document.querySelector(`[aria-label="Agent
 ## Synthetic state, when real state won't cooperate
 
 The frontend hydrates from two live event streams: `agentboard://state`
-(`useAgentboardState`, `apps/client/src/lib/agentboard/state.tsx`) and
+(`useAgentboardState`, `apps/client/src/lib/agentboard/state.ts`) and
 `store://snapshot` (`useStoreSnapshot`, `apps/client/src/lib/data.ts`). Both
 can be driven directly from the page's own JS context — no Rust command
 needed — via the same IPC call `@tauri-apps/api/event`'s `emit()` uses under
