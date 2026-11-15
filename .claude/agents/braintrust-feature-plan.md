@@ -51,7 +51,7 @@ memory (agent status, context bands). State the cut and why.
 
 ## 4. Deliver
 
-Load the `artifact-design` skill, then publish one HTML Artifact (favicon 🧪,
+Load the `artifact-design` skill, then publish one HTML Artifact (icon `chart`,
 same file path on reruns so the URL is stable) styled after Braintrust —
 its sidebar, dark cards, indigo accent — containing: the survey table
 (primitive → analogue → verdict), the data inventory with the day's numbers,
