@@ -23,6 +23,18 @@ need gh
 root=$(git rev-parse --show-toplevel 2>/dev/null) || stop "not inside a git repository" "cd into the checkout first."
 cd "$root" || exit 1
 
+# Act as the gh account that owns origin when it's logged in but not active (a
+# personal repo on a machine whose active account is a work one). GH_TOKEN is
+# honored by every gh call below and by git push through gh's credential helper,
+# so the global active account never switches.
+if [ -z "${GH_TOKEN:-}" ]; then
+  owner=$(git remote get-url origin 2>/dev/null | sed -nE 's#.*github\.com[:/]([^/]+)/.*#\1#p')
+  if [ -n "$owner" ] && token=$(gh auth token --user "$owner" 2>/dev/null) && [ -n "$token" ]; then
+    export GH_TOKEN=$token
+  fi
+  unset owner token
+fi
+
 default_branch() {
   local name
   name=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
