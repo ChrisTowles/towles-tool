@@ -597,6 +597,35 @@ fn claiming_folder_focus_invalidates_so_the_next_tick_recomputes() {
     assert!(!e.git_cache.is_fresh("/repo/x", now));
 }
 
+/// GitCacheBlind.cfg's counterexample: the result was read before the change
+/// the invalidation reports, so it must not land fresh.
+#[test]
+fn an_invalidation_during_a_recompute_survives_its_store() {
+    let (_tmp, mut e) = engine();
+    e.add_repo("/repo/x");
+    let now = 10_000_000;
+    assert_eq!(e.stale_git_targets(now).len(), 1);
+
+    e.invalidate_git("/repo/x", GitInvalidation::ControlFile);
+    e.store_git_info("/repo/x", git_info("main"), now + 10);
+    assert!(!e.git_cache.is_fresh("/repo/x", now + 10));
+    assert_eq!(e.git_cache.get("/repo/x").branch, "main", "still served while stale");
+    assert_eq!(e.stale_git_targets(now + 20).len(), 1, "the next tick recomputes");
+}
+
+/// GitCacheBlindDrop.cfg's counterexample: task removal mid-recompute.
+#[test]
+fn a_recompute_in_flight_at_removal_does_not_resurrect_the_entry() {
+    let (_tmp, mut e) = engine();
+    e.add_repo("/repo/x");
+    let now = 10_000_000;
+    assert_eq!(e.stale_git_targets(now).len(), 1);
+
+    e.drop_git_cache("/repo/x");
+    assert!(!e.store_git_info("/repo/x", git_info("main"), now + 10));
+    assert_eq!(e.git_cache.get("/repo/x"), crate::git_info::GitInfo::default());
+}
+
 #[test]
 fn set_folder_base_branch_change_detects_and_invalidates_git_cache() {
     let (_tmp, mut e) = engine();

@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tt_vt::{EngineOptions, Event as VtEvent, Frame, Input as VtInput};
 
 use super::open_path::pwd_from_file_uri;
-use super::session::{PtyActivity, Session, TermState, next_generation};
+use super::session::{PtyActivity, Session, TermState, reap};
 use super::shell::{SHELL_ENV_VAR, default_shell, shell_kind_from_path, start_dir};
 use super::view::TermTheme;
 use super::{EXIT_EVENT, FRAME_EVENT, MAIN_WINDOW_LABEL, NOTIFY_EVENT};
@@ -70,19 +70,21 @@ struct TermNotify {
     body: Option<String>,
 }
 
-/// Replaces any terminal with the same `term_id`. Blocking task, so PTY setup
-/// never blocks the main thread.
+/// Replaces any terminal with the same `term_id` started by an earlier mount
+/// (`generation` is the client's call order) and never a later one. Blocking
+/// task, so PTY setup never blocks the main thread.
 #[tauri::command]
 pub async fn term_start(
     app: AppHandle,
     term_id: String,
+    generation: u64,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     theme: Option<TermTheme>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        term_start_blocking(app, term_id, cols, rows, cwd, theme)
+        term_start_blocking(app, term_id, generation, cols, rows, cwd, theme)
     })
     .await
     .map_err(|e| format!("terminal spawn task failed: {e}"))?
@@ -91,13 +93,14 @@ pub async fn term_start(
 fn term_start_blocking(
     app: AppHandle,
     term_id: String,
+    generation: u64,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     theme: Option<TermTheme>,
 ) -> Result<(), String> {
     let state = app.state::<TermState>();
-    state.kill(&term_id);
+    state.detach_if(&term_id, |current| current < generation)();
 
     let pty = native_pty_system()
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
@@ -163,7 +166,6 @@ fn term_start_blocking(
     let mut writer =
         pty.master.take_writer().map_err(|e| format!("failed to take pty writer: {e}"))?;
 
-    let generation = next_generation();
     let (input_tx, input_rx): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) =
         sync_channel(INPUT_QUEUE_CAP);
 
@@ -244,7 +246,7 @@ fn term_start_blocking(
         let _ = vt_tx.send(VtInput::Theme(theme.into()));
     }
 
-    state.insert(
+    let inserted = state.insert_newest(
         term_id.clone(),
         Session {
             master: pty.master,
@@ -260,6 +262,14 @@ fn term_start_blocking(
             activity,
         },
     );
+    match inserted {
+        Ok(displaced) => displaced.into_iter().for_each(reap),
+        // A later mount spawned first; this one is already disposed client-side.
+        Err(superseded) => {
+            reap(*superseded);
+            return Ok(());
+        }
+    }
 
     notify_agentboard(&app);
 
@@ -313,13 +323,13 @@ pub(super) fn notify_agentboard(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub async fn term_kill(app: AppHandle, term_id: String) -> Result<(), String> {
+pub async fn term_kill(app: AppHandle, term_id: String, generation: u64) -> Result<(), String> {
     // So "which pane did the user close, and when" is a log query, not a repro.
     tracing::info!(%term_id, "terminal.killed");
-    // Out of the map before anything blocks, so a respawn under this id is safe.
-    let reap = app.state::<TermState>().detach(&term_id);
+    // Only the mount that started it: a late kill must spare its replacement.
+    let detached = app.state::<TermState>().detach_if(&term_id, |current| current == generation);
     crate::store::run_blocking(move || {
-        reap();
+        detached();
         Ok(())
     })
     .await?;

@@ -25,6 +25,7 @@
     "test:scripts": "node --test \"scripts/*.test.mjs\"",
     "check:md-links": "node scripts/check-md-links.mjs",
     "check:bundle": "node scripts/bundle-budget.mjs",
+    "check:tla": "node scripts/check-tla.mjs",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "typecheck:e2e": "tsc -p e2e/tsconfig.json"
   },
@@ -58,6 +59,7 @@
     "@wdio/tauri-plugin": "^1.2.0",
     "@wdio/tauri-service": "^1.2.0",
     "better-result": "^2.10.0",
+    "everystate": "0.4.0",
     "tsx": "^4.23.0"
   }
 }

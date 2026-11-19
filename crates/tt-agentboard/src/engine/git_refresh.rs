@@ -5,6 +5,9 @@ impl Engine {
     /// `reason` lands on the `git.invalidated` record.
     pub fn invalidate_git(&mut self, dir: &str, reason: GitInvalidation) {
         self.git_cache.invalidate(Some(dir));
+        if let Some(claim) = self.git_pending.get_mut(dir) {
+            claim.dirty = true;
+        }
         tracing::debug!(%dir, reason = reason.as_str(), "git.invalidated");
     }
 
@@ -32,6 +35,7 @@ impl Engine {
         let moved = self.git_cache.set_window_focused(focused);
         if moved && focused {
             self.git_cache.invalidate(None);
+            self.git_pending.values_mut().for_each(|claim| claim.dirty = true);
             tracing::debug!(reason = GitInvalidation::WindowFocus.as_str(), "git.invalidated");
         }
         moved
@@ -46,9 +50,7 @@ impl Engine {
         self.reload_repos();
         let all_paths = self.git_dirs();
         let pending_guard = |d: &str| {
-            self.git_pending
-                .get(d)
-                .is_some_and(|claimed_at| now - claimed_at < GIT_PENDING_GUARD_MS)
+            self.git_pending.get(d).is_some_and(|claim| now - claim.at < GIT_PENDING_GUARD_MS)
         };
         let stale: Vec<String> = all_paths
             .into_iter()
@@ -56,7 +58,8 @@ impl Engine {
             .collect();
         let out = self.targets_for(stale);
         for (d, _, _) in &out {
-            self.git_pending.insert(d.clone(), now);
+            self.git_dropped.remove(d);
+            self.git_pending.insert(d.clone(), GitClaim { at: now, dirty: false });
         }
         out
     }
@@ -168,17 +171,23 @@ impl Engine {
 
     /// Store one repo's git info, returning whether it differs. A compute that
     /// couldn't read the repository keeps the folder's structural identity.
+    /// One invalidated mid-compute lands stale so the next tick recomputes, and
+    /// one for a checkout dropped since its claim is discarded
+    /// (`crates/tt-agentboard/tla/GitCache.tla`).
     pub fn store_git_info(
         &mut self,
         dir: &str,
         mut info: crate::git_info::GitInfo,
         now: i64,
     ) -> bool {
+        if self.git_dropped.contains(dir) {
+            return false;
+        }
         let previous = self.git_cache.get(dir);
         crate::git_info::preserve_identity_on_failed_read(dir, &previous, &mut info);
         let changed = previous != info;
-        self.git_cache.insert(dir, info, now);
-        self.git_pending.remove(dir);
+        let dirty = self.git_pending.remove(dir).is_some_and(|claim| claim.dirty);
+        self.git_cache.insert(dir, info, if dirty { 0 } else { now });
         changed
     }
 
