@@ -1,2 +1,5 @@
 # shadcn/ui components, added with `bunx shadcn add`, not written here.
 apps/client/src/components/ui/** linguist-vendored
+
+# The everystate formal-verification skill, installed with `npx skills add`, not written here.
+.claude/skills/formal-verification/** linguist-vendored

@@ -50,8 +50,12 @@ several files.
   user's behalf must stamp `input_at_ms`** (`terminal/input.rs`) — that marks an
   attention notification answered; miss it and the session stays badged after
   the user has replied.
-- **PTY replacement is generation-checked** (`terminal/session.rs`), so a stale EOF from
-  a killed/replaced session can never close its successor. Treat `TermState`'s
+- **PTY replacement is generation-checked** (`terminal/session.rs`). The
+  client's mount order is the generation, and every map write names one: a
+  stale EOF, a disposed mount's late `term_kill`, or a slow `term_start` can
+  never take its successor's shell. Kills and inserts by id alone are the
+  silent-dead-pane race `tla/PtySession.tla` finds
+  ([docs/MODEL-CHECKING.md](../../docs/MODEL-CHECKING.md)). Treat `TermState`'s
   lock as map-surgery-only — never hold it across anything that can block.
 - **`task_delete` kills a folder's PTYs before touching its worktree on disk —
   but only once the removal guards have passed** (`ops::remove_task`'s

@@ -7,12 +7,11 @@
 //! `sessions.lock()` elsewhere is how the contract gets lost.
 //!
 //! [`PtyActivity`] is written by the vt thread on its render path and read by the
-//! emit path, so it is atomics rather than a mutex: nothing waits, and no two
-//! fields need to agree.
+//! emit path, so it is atomics rather than a mutex: nothing waits.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 
@@ -22,15 +21,6 @@ use sysinfo::{Pid as SysPid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tt_vt::{Input as VtInput, KeyEvent, Sender as VtSender};
 
 use super::open_path::process_cwd;
-
-/// A webview reload restarts every terminal, so id reuse is routine — and a
-/// replaced PTY's reader must recognize it was superseded, not close its
-/// successor.
-static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
-
-pub(super) fn next_generation() -> u64 {
-    NEXT_GENERATION.fetch_add(1, Ordering::Relaxed)
-}
 
 #[derive(Debug, Default)]
 pub struct PtyActivity {
@@ -57,8 +47,13 @@ impl PtyActivity {
     }
 
     fn signal(&self) -> tt_agentboard::pty_status::PtySignal {
+        // The frame before its run's start: see `note_output`.
+        let last_output_ms = match self.last_output_ms.load(Ordering::Acquire) {
+            0 => None,
+            ms => Some(ms),
+        };
         tt_agentboard::pty_status::PtySignal {
-            last_output_ms: Self::read(&self.last_output_ms),
+            last_output_ms,
             output_since_ms: Self::read(&self.output_since_ms),
             attention_at_ms: Self::read(&self.attention_at_ms),
             input_at_ms: Self::read(&self.input_at_ms),
@@ -67,13 +62,17 @@ impl PtyActivity {
 
     /// Whether this began a fresh burst — the only edge worth waking the emitter
     /// for, since per frame rebuilds the payload ~90 times a second.
+    ///
+    /// A run's start is released before its frame (`tla/PtyStatus.tla`): read
+    /// the other way round, one idle repaint pairs with the last run's start.
     pub(super) fn note_output(&self, now: i64) -> bool {
-        let previous = self.last_output_ms.swap(now, Ordering::Relaxed);
+        let previous = self.last_output_ms.load(Ordering::Relaxed);
         let fresh_burst = previous == 0
             || now.saturating_sub(previous) >= tt_agentboard::pty_status::OUTPUT_ACTIVE_MS;
         if fresh_burst {
             Self::stamp(&self.output_since_ms, now);
         }
+        self.last_output_ms.store(now, Ordering::Release);
         fresh_burst
     }
 }
@@ -83,6 +82,7 @@ pub(super) struct Session {
     pub(super) input: SyncSender<Vec<u8>>,
     pub(super) vt: VtSender,
     pub(super) child: Box<dyn Child + Send + Sync>,
+    /// The client's mount order; every map write names one (`tla/PtySession.tla`).
     pub(super) generation: u64,
     pub(super) shell_kind: String,
     /// Dropped with the session, lockfile and all. `None` if it failed to start:
@@ -201,8 +201,18 @@ impl TermState {
         Ok(())
     }
 
-    pub(super) fn insert(&self, term_id: String, session: Session) {
-        self.sessions.lock().unwrap().insert(term_id, session);
+    /// Registers `session` unless a newer mount owns the id; the caller reaps
+    /// the loser (`Ok`: the one displaced, `Err`: `session`) off the lock.
+    pub(super) fn insert_newest(
+        &self,
+        term_id: String,
+        session: Session,
+    ) -> Result<Option<Session>, Box<Session>> {
+        let mut guard = self.sessions.lock().unwrap();
+        if guard.get(&term_id).is_some_and(|s| s.generation > session.generation) {
+            return Err(Box::new(session));
+        }
+        Ok(guard.insert(term_id, session))
     }
 
     pub(super) fn take_if_current(&self, term_id: &str, generation: u64) -> Option<Session> {
@@ -384,14 +394,25 @@ impl TermState {
     /// After the lock is released. `pub(crate)` so task removal can clear a
     /// folder's PTYs before its worktree goes.
     pub(crate) fn kill(&self, term_id: &str) {
-        self.detach(term_id)();
+        self.detach_if(term_id, |_| true)();
     }
 
-    /// Removes the session from the map *now*, so a replacement registered under
-    /// the same id can never be reaped by a late kill; the returned closure does the
-    /// blocking half (kill, process-table sweep, wait) wherever the caller runs it.
-    pub(crate) fn detach(&self, term_id: &str) -> impl FnOnce() + Send + 'static {
-        let session = self.sessions.lock().unwrap().remove(term_id);
+    /// Removes the session from the map *now* if its generation `matches`, so a
+    /// late kill meant for an earlier mount spares the shell that replaced it;
+    /// the returned closure does the blocking half (kill, process-table sweep,
+    /// wait) wherever the caller runs it.
+    pub(crate) fn detach_if(
+        &self,
+        term_id: &str,
+        matches: impl FnOnce(u64) -> bool,
+    ) -> impl FnOnce() + Send + 'static {
+        let session = {
+            let mut guard = self.sessions.lock().unwrap();
+            match guard.get(term_id) {
+                Some(s) if matches(s.generation) => guard.remove(term_id),
+                _ => None,
+            }
+        };
         move || {
             if let Some(session) = session {
                 reap(session);
@@ -409,7 +430,7 @@ impl TermState {
 }
 
 /// Sweeps the POSIX session too: SIGHUP reaches only jobs the shell tracks.
-fn reap(mut session: Session) {
+pub(super) fn reap(mut session: Session) {
     let shell_pid = session.child.process_id();
     let _ = session.child.kill();
     if let Some(pid) = shell_pid {

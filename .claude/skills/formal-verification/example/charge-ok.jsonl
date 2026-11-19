@@ -1,0 +1,6 @@
+{"state": {"sent": 0, "charges": 0, "confirmed": false}}
+{"ts": "12:00:00.010", "action": "Send", "state": {"sent": 1}}
+{"ts": "12:00:02.010", "action": "Send", "state": {"sent": 2}}
+{"ts": "12:00:02.150", "action": "Handle", "state": {"charges": 1}}
+{"ts": "12:00:02.320", "action": "Handle", "state": {"charges": 1}}
+{"ts": "12:00:02.400", "action": "Receive", "state": {"confirmed": true}}

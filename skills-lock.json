@@ -1,6 +1,13 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
+    "formal-verification": {
+      "source": "mattzcarey/everystate",
+      "commit": "dc9f661a2fd6355f9a4daab2089aa1b227c67d8e",
+      "sourceType": "github",
+      "skillPath": "skills/formal-verification/SKILL.md",
+      "computedHash": "4ac7cf74f82aa01ff106a0ddbaf4e26d63a64e47dc98f455be1fb80e8b2d045b"
+    },
     "writing-great-skills": {
       "source": "mattpocock/skills",
       "sourceType": "github",

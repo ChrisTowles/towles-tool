@@ -15,6 +15,7 @@ bun run dev / bun start             # tauri dev (laggy) / release build + run
 bun run dev:drive                   # dev, with the window automatable
 bun run drive -- <verb>             # drive it (status|invoke|shot|click|…)
 bun run e2e                         # regression suite vs the real shell
+bun run check:tla                   # TLA+ models of the racy state machines
 cd apps/client && bun run lint      # oxlint  (`bun run format` for oxfmt)
 ```
 

@@ -56,6 +56,11 @@ import {
 } from "@/components/terminal-view/paint";
 const send = (cmd: string, args: Record<string, unknown>) => fire(invoke(cmd, args));
 
+// Orders this page's mounts of a terminal id for `term_start`/`term_kill`,
+// clock-seeded so a reloaded page's mounts outrank the last page's.
+let lastGeneration = 0;
+const nextGeneration = () => (lastGeneration = Math.max(Date.now(), lastGeneration + 1));
+
 /** Rust owns the PTY and the state, keyed by `termId`; this paints
  * `terminal://frame` diffs. Many mount at once, so each filters events by id. */
 export function TerminalView({
@@ -435,6 +440,7 @@ export function TerminalView({
     // `started` stops the stale mount killing one it didn't spawn.
     let disposed = false;
     let started = false;
+    const generation = nextGeneration();
     const unlisteners: (() => void)[] = [];
     const disposers: (() => void)[] = [];
 
@@ -466,6 +472,7 @@ export function TerminalView({
       const spawn = await runIpc(
         invoke("term_start", {
           termId,
+          generation,
           cols: grid.cols,
           rows: grid.rows,
           cwd,
@@ -480,7 +487,7 @@ export function TerminalView({
         return;
       }
       started = true;
-      if (disposed) return send("term_kill", { termId });
+      if (disposed) return send("term_kill", { termId, generation });
       // A frame emitted before the listener registered is repainted from here.
       send("term_request_full", { termId });
 
@@ -952,7 +959,7 @@ export function TerminalView({
       observer.disconnect();
       for (const dispose of disposers) dispose();
       for (const unlisten of unlisteners) unlisten();
-      if (started) send("term_kill", { termId });
+      if (started) send("term_kill", { termId, generation });
     };
     // termId/cwd identify the shell; changing them means a different terminal.
   }, [termId, cwd, searchRef, setSearchOpen]);

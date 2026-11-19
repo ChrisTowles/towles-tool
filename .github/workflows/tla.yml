@@ -1,0 +1,32 @@
+name: TLA+
+
+on:
+  push:
+    branches: [main]
+    paths: &tla-paths
+      - "**/tla/**"
+      - "scripts/check-tla.mjs"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/tla.yml"
+  pull_request:
+    paths: *tla-paths
+
+concurrency:
+  group: tla-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  models:
+    name: Model-check (everystate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run check:tla

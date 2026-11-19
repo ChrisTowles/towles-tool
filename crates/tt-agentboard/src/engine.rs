@@ -104,6 +104,14 @@ const IDLE_MS: i64 = 30 * 1000;
 /// caller — longer than any real compute, so only a dropped result hits it.
 const GIT_PENDING_GUARD_MS: i64 = 30_000;
 
+/// A dir handed to a recompute. `dirty` records an invalidation that landed
+/// while it ran: the result was read before that change, so it is stored stale.
+#[derive(Debug, Clone, Copy)]
+struct GitClaim {
+    at: i64,
+    dirty: bool,
+}
+
 /// How long a folder stays off the rail before a poll reaps its state: a `git
 /// checkout` of a repo tracking `repos.json` untracks newer repos for a second.
 const UNTRACKED_GRACE_MS: i64 = 10 * 60 * 1000;
@@ -139,7 +147,10 @@ pub struct Engine {
     sessions: SessionStore,
     git_cache: GitInfoCache,
     /// In-flight claims from [`Self::stale_git_targets`], released by [`Self::store_git_info`].
-    git_pending: HashMap<String, i64>,
+    git_pending: HashMap<String, GitClaim>,
+    /// Dirs [`Self::drop_git_cache`] forgot since their last claim, whose in-flight
+    /// result must not re-insert them (`tla/GitCache.tla`).
+    git_dropped: HashSet<String>,
     /// When each repo root was last handed to a `git fetch`, for [`Self::fetch_targets`].
     git_fetched: HashMap<String, i64>,
     watcher: Option<ClaudeCodeAgentWatcher>,
@@ -304,6 +315,7 @@ impl Engine {
             )),
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
+            git_dropped: HashSet::new(),
             git_fetched: HashMap::new(),
             watcher: Some(ClaudeCodeAgentWatcher::with_defaults(scope.clone())),
             compact_recommend_percent,
@@ -668,6 +680,7 @@ impl Engine {
     /// is off disk. Only the cache — the row outlives the directory by design.
     pub fn drop_git_cache(&mut self, dir: &str) -> bool {
         self.git_pending.remove(dir);
+        self.git_dropped.insert(dir.to_string());
         self.git_cache.forget(dir)
     }
 }
@@ -694,6 +707,7 @@ impl Engine {
             collapse: crate::collapse::CollapseStore::new(None),
             git_cache: GitInfoCache::new(),
             git_pending: HashMap::new(),
+            git_dropped: HashSet::new(),
             git_fetched: HashMap::new(),
             watcher: None,
             compact_recommend_percent: 80,
