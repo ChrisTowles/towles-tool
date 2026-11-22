@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: bnjbvr/cargo-machete@v0.9.2
+      - uses: bnjbvr/cargo-machete@v0.10.1
 
   rust-macos:
     name: Rust macOS (clippy, test)
